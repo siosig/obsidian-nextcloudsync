@@ -8,7 +8,7 @@ function lineDiff(aText: string, bText: string): Row[] {
   const a = aText.split('\n');
   const b = bText.split('\n');
   const m = a.length, n = b.length;
-  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0));
   for (let i = m - 1; i >= 0; i--) {
     for (let j = n - 1; j >= 0; j--) {
       dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
@@ -49,7 +49,7 @@ export class DiffModal extends Modal {
   }
 
   onOpen(): void {
-    this.modalEl.style.width = 'min(1100px, 95vw)';
+    this.modalEl.addClass('ncs-diff-modal');
     this.render();
   }
 
@@ -72,12 +72,10 @@ export class DiffModal extends Modal {
     contentEl.createEl('p', { text: `${status}  Nothing was synced.`, cls: 'setting-item-description' });
 
     // Left-source toggle
-    const controls = contentEl.createDiv();
-    controls.style.margin = '4px 0 8px';
+    const controls = contentEl.createDiv({ cls: 'ncs-diff-controls' });
     const makeBtn = (label: string, src: 'local' | 'remote') => {
-      const b = controls.createEl('button', { text: label });
+      const b = controls.createEl('button', { text: label, cls: 'ncs-diff-btn' });
       if (this.leftSource === src) b.addClass('mod-cta');
-      b.style.marginRight = '6px';
       b.addEventListener('click', () => { this.leftSource = src; this.render(); });
     };
     makeBtn('Before: Local', 'local');
@@ -90,52 +88,21 @@ export class DiffModal extends Modal {
     const bSplit = splitFm(beforeText);
     const aSplit = splitFm(preview.after);
 
-    // Column header row (gutter 32px + marker 14px + text flex, mirroring addRows layout)
-    const headers = contentEl.createDiv();
-    headers.style.display = 'flex';
-    headers.style.fontWeight = 'bold';
-    headers.style.borderBottom = '1px solid var(--background-modifier-border)';
+    // Column header row (gutter + marker + text flex, mirroring addRows layout)
+    const headers = contentEl.createDiv({ cls: 'ncs-diff-headers' });
     for (const txt of [beforeLabel, 'After (merge result)']) {
-      const spacer = headers.createDiv(); // gutter
-      spacer.style.width = '32px'; spacer.style.minWidth = '32px';
-      const marker = headers.createDiv(); // marker
-      marker.style.width = '14px'; marker.style.minWidth = '14px';
-      const h = headers.createDiv({ text: txt });
-      h.style.flex = '1'; h.style.padding = '4px 8px';
+      headers.createDiv({ cls: 'ncs-diff-gutter' });  // gutter spacer
+      headers.createDiv({ cls: 'ncs-diff-marker' });  // marker spacer
+      headers.createDiv({ text: txt, cls: 'ncs-diff-header-cell' });
     }
 
     // Scrollable diff body
-    const scrollEl = contentEl.createDiv();
-    scrollEl.style.maxHeight = '60vh';
-    scrollEl.style.overflowY = 'scroll'; // always show vertical scrollbar so position is visible
-    scrollEl.style.overflowX = 'auto';
-    scrollEl.style.fontFamily = 'var(--font-monospace)';
-    scrollEl.style.fontSize = '12px';
-    scrollEl.style.whiteSpace = 'pre-wrap';
-    scrollEl.style.wordBreak = 'break-word';
-
-    const cellBg = {
-      del:  'rgba(255, 89, 89, 0.20)',
-      add:  'rgba(83, 200, 110, 0.20)',
-      same: 'transparent',
-    } as const;
+    const scrollEl = contentEl.createDiv({ cls: 'ncs-diff-scroll' });
 
     // Render a section header and return the first changed row element (for auto-scroll).
     const addSectionHeader = (label: string, changedCount: number): HTMLElement => {
-      const header = scrollEl.createDiv();
-      header.style.display = 'flex';
-      header.style.alignItems = 'center';
-      header.style.fontWeight = 'bold';
-      header.style.fontSize = '11px';
-      header.style.letterSpacing = '0.05em';
-      header.style.textTransform = 'uppercase';
-      header.style.position = 'sticky';
-      header.style.top = '0';
-      header.style.zIndex = '1';
-      header.style.padding = '2px 8px';
-      header.style.background = changedCount > 0 ? 'rgba(255, 185, 0, 0.18)' : 'var(--background-secondary)';
-      header.style.borderBottom = '1px solid var(--background-modifier-border)';
-      header.style.color = changedCount > 0 ? 'var(--text-warning)' : 'var(--text-muted)';
+      const header = scrollEl.createDiv({ cls: 'ncs-diff-section-header' });
+      if (changedCount > 0) header.addClass('is-changed');
       const icon = changedCount > 0 ? '⚠' : '✓';
       const detail = changedCount > 0 ? `differs  (${changedCount} line${changedCount > 1 ? 's' : ''})` : 'identical';
       header.createSpan({ text: `${label}  ${icon} ${detail}` });
@@ -149,42 +116,22 @@ export class DiffModal extends Modal {
       for (const row of rows) {
         if (row.left !== undefined) lNum++;
         if (row.right !== undefined) rNum++;
-        const line = scrollEl.createDiv();
-        line.style.display = 'flex';
-        line.style.alignItems = 'baseline';
+        const line = scrollEl.createDiv({ cls: 'ncs-diff-row' });
         if (row.type !== 'same' && !firstChanged) firstChanged = line;
 
         // Left: line-number gutter + marker + text
-        const lGutter = line.createDiv({ text: row.left !== undefined ? String(lNum) : '' });
-        const lMarker = line.createDiv({ text: row.type === 'del' ? '−' : ' ' });
-        const left    = line.createDiv({ text: row.left ?? '' });
+        const lGutter = line.createDiv({ text: row.left !== undefined ? String(lNum) : '', cls: 'ncs-diff-gutter' });
+        const lMarker = line.createDiv({ text: row.type === 'del' ? '−' : ' ', cls: 'ncs-diff-marker' });
+        const left    = line.createDiv({ text: row.left ?? '', cls: 'ncs-diff-cell ncs-diff-cell-left' });
 
         // Right: line-number gutter + marker + text
-        const rGutter = line.createDiv({ text: row.right !== undefined ? String(rNum) : '' });
-        const rMarker = line.createDiv({ text: row.type === 'add' ? '+' : ' ' });
-        const right   = line.createDiv({ text: row.right ?? '' });
+        const rGutter = line.createDiv({ text: row.right !== undefined ? String(rNum) : '', cls: 'ncs-diff-gutter' });
+        const rMarker = line.createDiv({ text: row.type === 'add' ? '+' : ' ', cls: 'ncs-diff-marker' });
+        const right   = line.createDiv({ text: row.right ?? '', cls: 'ncs-diff-cell' });
 
-        // Gutter style
-        for (const g of [lGutter, rGutter]) {
-          g.style.width = '32px'; g.style.minWidth = '32px';
-          g.style.textAlign = 'right'; g.style.padding = '0 4px';
-          g.style.color = 'var(--text-faint)'; g.style.userSelect = 'none';
-          g.style.fontSize = '10px';
-        }
-        // Marker style
-        for (const [m, type] of [[lMarker, 'del'], [rMarker, 'add']] as const) {
-          m.style.width = '14px'; m.style.minWidth = '14px';
-          m.style.textAlign = 'center'; m.style.userSelect = 'none';
-          m.style.fontWeight = 'bold';
-          m.style.color = row.type === type
-            ? (type === 'del' ? 'var(--color-red)' : 'var(--color-green)')
-            : 'transparent';
-        }
-        left.style.flex = '1'; right.style.flex = '1';
-        left.style.padding = '0 4px'; right.style.padding = '0 4px';
-        left.style.borderRight = '1px solid var(--background-modifier-border)';
-        left.style.background  = row.type === 'del' ? cellBg.del : 'transparent';
-        right.style.background = row.type === 'add' ? cellBg.add : 'transparent';
+        void lGutter; void rGutter;  // gutters are styled purely via the class
+        if (row.type === 'del') { lMarker.addClass('is-del'); left.addClass('is-del'); }
+        if (row.type === 'add') { rMarker.addClass('is-add'); right.addClass('is-add'); }
       }
       return firstChanged;
     };
@@ -215,7 +162,7 @@ export class DiffModal extends Modal {
     // Auto-scroll to the first changed line after layout settles.
     if (firstChangedEl) {
       const target = firstChangedEl;
-      requestAnimationFrame(() => target.scrollIntoView({ block: 'center' }));
+      window.requestAnimationFrame(() => target.scrollIntoView({ block: 'center' }));
     }
   }
 }

@@ -9,5 +9,5 @@ export async function sha256(data: ArrayBuffer): Promise<string> {
 /** Compute SHA-256 of a UTF-8 string and return hex string. */
 export async function sha256String(text: string): Promise<string> {
   const encoder = new TextEncoder();
-  return sha256(encoder.encode(text).buffer as ArrayBuffer);
+  return sha256(encoder.encode(text).buffer);
 }

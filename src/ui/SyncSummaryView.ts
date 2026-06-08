@@ -9,7 +9,7 @@ export class SyncSummaryView extends Modal {
   onOpen(): void {
     const { contentEl, summary } = this;
     contentEl.empty();
-    contentEl.createEl('h2', { text: 'Last Sync Session' });
+    contentEl.createEl('h2', { text: 'Last sync session' });
 
     if (!summary) {
       contentEl.createEl('p', { text: 'No sync session has been run yet.' });
@@ -38,7 +38,7 @@ export class SyncSummaryView extends Modal {
     addRow('✗ Errors', String(summary.errorCount));
 
     if (summary.retriedFiles.length > 0) {
-      contentEl.createEl('h3', { text: 'Files Queued for Retry' });
+      contentEl.createEl('h3', { text: 'Files queued for retry' });
       const ul = contentEl.createEl('ul');
       summary.retriedFiles.forEach(f => ul.createEl('li', { text: f }));
     }
