@@ -2,26 +2,26 @@ import { requestUrl } from 'obsidian';
 import { LoginFlowInit, LoginFlowResult, LoginFlowError } from '../types';
 
 /**
- * Nextcloud Login Flow v2 クライアント。
+ * Nextcloud Login Flow v2 client.
  *
- * ブラウザ承認のみでアプリパスワードを発行する公式フロー。
+ * Official flow that issues an app password using browser approval alone.
  * 1. start(): POST /index.php/login/v2 → {@link LoginFlowInit}
- * 2. ユーザーが loginUrl をブラウザで開いて承認
- * 3. poll(): 承認完了までポーリングし {@link LoginFlowResult} を返す
+ * 2. The user opens loginUrl in a browser and approves
+ * 3. poll(): polls until approval completes and returns {@link LoginFlowResult}
  *
- * すべて Obsidian の requestUrl 経由（fetch 不使用）。`any` 不使用・型ガードで JSON を検証する。
+ * Everything goes through Obsidian's requestUrl (no fetch). No `any`; JSON is validated with type guards.
  */
 export class LoginFlowV2 {
-  /** ポーリング間隔（ミリ秒）。 */
+  /** Polling interval (milliseconds). */
   static readonly POLL_INTERVAL_MS = 2000;
-  /** 最大ポーリング回数（約3分）。 */
+  /** Maximum number of polls (about 3 minutes). */
   static readonly MAX_POLLS = 90;
 
   /**
-   * Login Flow を開始する。
-   * @param serverBaseUrl `/remote.php/...` を含まないサーバーのベース URL
-   * @returns 開始情報（ブラウザ URL とポーリング先）
-   * @throws {LoginFlowError} 開始 POST が失敗した場合
+   * Starts the Login Flow.
+   * @param serverBaseUrl Server base URL without `/remote.php/...`
+   * @returns Start info (browser URL and polling endpoint)
+   * @throws {LoginFlowError} If the start POST fails
    */
   static async start(serverBaseUrl: string): Promise<LoginFlowInit> {
     const base = serverBaseUrl.replace(/\/$/, '');
@@ -43,8 +43,8 @@ export class LoginFlowV2 {
   }
 
   /**
-   * 承認完了を一度だけ確認する。承認前は `pending`、完了で `success`。
-   * @returns ポーリング結果（判別付きユニオン）
+   * Checks for approval completion exactly once. Returns `pending` before approval, `success` once done.
+   * @returns Polling result (discriminated union)
    */
   static async pollOnce(init: LoginFlowInit): Promise<LoginFlowResult> {
     const res = await requestUrl({
@@ -62,8 +62,8 @@ export class LoginFlowV2 {
   }
 
   /**
-   * 承認完了まで、または最大回数までポーリングする。
-   * @param sleep テスト用に待機関数を注入可能（既定は setTimeout ベース）
+   * Polls until approval completes or the maximum number of polls is reached.
+   * @param sleep Wait function injectable for testing (defaults to a setTimeout-based one)
    */
   static async poll(
     init: LoginFlowInit,
@@ -77,7 +77,7 @@ export class LoginFlowV2 {
     return { status: 'timeout' };
   }
 
-  /** 開始レスポンス JSON を型ガードで検証して LoginFlowInit に変換する。 */
+  /** Validates the start response JSON with type guards and converts it to LoginFlowInit. */
   private static parseInit(json: unknown): LoginFlowInit | null {
     if (typeof json !== 'object' || json === null) return null;
     const obj = json as Record<string, unknown>;
@@ -92,7 +92,7 @@ export class LoginFlowV2 {
     return { pollToken: token, pollEndpoint: endpoint, loginUrl: login };
   }
 
-  /** ポーリング成功 JSON を型ガードで検証する。 */
+  /** Validates the successful polling JSON with type guards. */
   private static parseSuccess(
     json: unknown,
   ): { server: string; loginName: string; appPassword: string } | null {

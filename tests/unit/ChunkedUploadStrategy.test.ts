@@ -18,7 +18,7 @@ function settings(over: Partial<DavSyncSettings>): DavSyncSettings {
   return { ...DEFAULT_SETTINGS, ...over };
 }
 
-const data = new ArrayBuffer(10); // 約 9.5e-6 MB
+const data = new ArrayBuffer(10); // about 9.5e-6 MB
 
 describe('ChunkedUploadStrategy', () => {
   it('skips files larger than maxFileSizeMB', async () => {

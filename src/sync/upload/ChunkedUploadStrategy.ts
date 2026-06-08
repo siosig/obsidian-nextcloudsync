@@ -3,15 +3,15 @@ import { DavSyncSettings, NetworkError } from '../../types';
 import { IWebDAVClient } from '../../network/IWebDAVClient';
 import { IUploadStrategy, UploadOutcome } from './IUploadStrategy';
 
-/** 1チャンクのサイズ（バイト）。メモリ配慮で控えめな 10MB。 */
+/** Size of a single chunk (bytes). A conservative 10MB to be mindful of memory. */
 const CHUNK_SIZE_BYTES = 10 * 1024 * 1024;
 
 /**
- * サイズと設定に応じて単一送信／チャンク送信／スキップを選ぶ戦略（Nextcloud 用）。
+ * Strategy that chooses single upload / chunked upload / skip based on size and settings (for Nextcloud).
  *
- * - `> maxFileSizeMB`: スキップ（Notice 警告）
- * - `> uploadChunkThresholdMB`: チャンク送信（失敗時は単一 PUT にフォールバック）
- * - それ以下: 単一 PUT
+ * - `> maxFileSizeMB`: skip (Notice warning)
+ * - `> uploadChunkThresholdMB`: chunked upload (falls back to a single PUT on failure)
+ * - below that: single PUT
  */
 export class ChunkedUploadStrategy implements IUploadStrategy {
   constructor(private readonly settings: DavSyncSettings) {}
@@ -31,7 +31,7 @@ export class ChunkedUploadStrategy implements IUploadStrategy {
         await client.uploadChunked(remotePath, data, CHUNK_SIZE_BYTES);
         return 'uploaded';
       } catch (err) {
-        // チャンク送信に失敗したら単一 PUT にフォールバックする（FR-013）。
+        // If chunked upload fails, fall back to a single PUT (FR-013).
         console.warn(`[ChunkedUploadStrategy] chunked upload failed, falling back to PUT: ${remotePath}`, err);
         if (err instanceof NetworkError) {
           await client.uploadFile(remotePath, data);

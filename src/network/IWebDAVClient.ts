@@ -12,21 +12,21 @@ export interface IWebDAVClient {
   /** Returns the ArrayBuffer from the most recent downloadFile() call. */
   getLastDownloadBuffer(): ArrayBuffer;
 
-  // ── US2: バージョン履歴（非対応クライアントは FeatureUnsupportedError）──
-  /** fileId のバージョン一覧を新しい順で返す。 */
+  // ── US2: Version history (clients that don't support it throw FeatureUnsupportedError) ──
+  /** Returns the list of versions for fileId, newest first. */
   listVersions(fileId: string): Promise<FileVersion[]>;
-  /** version の内容を取得する。 */
+  /** Retrieves the content of the given version. */
   getVersionContent(version: FileVersion, fileId: string): Promise<ArrayBuffer>;
-  /** version をサーバー側の現行ファイルに復元する（MOVE restore）。 */
+  /** Restores the given version as the current file on the server (MOVE restore). */
   restoreVersion(version: FileVersion, fileId: string): Promise<void>;
 
-  // ── US3: チャンクアップロード ──
-  /** data をチャンク分割してアップロードする。完了で最終パスに原子的に出現する。 */
+  // ── US3: Chunked upload ──
+  /** Uploads data in chunks. On completion it appears atomically at the final path. */
   uploadChunked(remotePath: string, data: ArrayBuffer, chunkSizeBytes: number): Promise<void>;
 
   // ── US4: Files Locking ──
-  /** ファイルロックを取得しトークンを返す。HTTP 423 は FileLockedError。 */
+  /** Acquires a file lock and returns the token. HTTP 423 maps to FileLockedError. */
   lockFile(remotePath: string): Promise<string>;
-  /** トークンでロックを解放する（ベストエフォート・失敗しても例外を投げない）。 */
+  /** Releases the lock using the token (best-effort; never throws on failure). */
   unlockFile(remotePath: string, token: string): Promise<void>;
 }
