@@ -72,7 +72,7 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 
 ### Manual installation
 1. Download `main.js` and `manifest.json` (and `styles.css` if present) from the latest [GitHub Release](../../releases).
-2. Copy them into `<YourVault>/.obsidian/plugins/obsidian-nextcloudsync/`.
+2. Copy them into `<YourVault>/.obsidian/plugins/nextcloud-sync/`.
 3. Reload Obsidian and enable **Nextcloud Sync** under **Settings → Community plugins**.
 
 ---
@@ -143,7 +143,7 @@ On connect, the plugin probes `/status.php` (maintenance mode) and `/ocs/v1.php/
 - App passwords / credentials are kept in Obsidian's **secret credentials store**, never written in plain text to `data.json`.
 - Your **main account password is never used or stored** — only app passwords (issued manually or via Login Flow v2).
 - All network traffic uses Obsidian's `requestUrl` API.
-- The plugin's own folder (`.obsidian/plugins/obsidian-nextcloudsync/`) is excluded from sync.
+- The plugin's own folder (`.obsidian/plugins/nextcloud-sync/`) is excluded from sync.
 
 ---
 

@@ -1,4 +1,4 @@
-// Shared type definitions for obsidian-nextcloudsync
+// Shared type definitions for nextcloud-sync
 
 export interface DavSyncSettings {
   serverUrl: string;
