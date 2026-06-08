@@ -84,6 +84,23 @@ export class LocalAdapter {
     return this.adapter.list(path);
   }
 
+  /**
+   * Apply a specific mtime to a local file.
+   * Desktop (Electron/Node.js): calls fs.utimes. Mobile or unavailable: silently skips.
+   */
+  async setMtime(path: string, mtime: number): Promise<void> {
+    try {
+      const nodefs = (window as Window & { require?: (m: string) => { utimes: (p: string, a: number, m: number, cb: (e: Error | null) => void) => void } }).require?.('fs');
+      const getFullPath = (this.adapter as unknown as { getFullPath?: (p: string) => string }).getFullPath?.bind(this.adapter);
+      if (!nodefs || !getFullPath) return;
+      const fullPath = getFullPath(path);
+      const sec = mtime / 1000;
+      await new Promise<void>((resolve, reject) =>
+        nodefs.utimes(fullPath, sec, sec, (err) => (err ? reject(err) : resolve())),
+      );
+    } catch { /* best-effort: silently ignore on mobile or unsupported environments */ }
+  }
+
   /** Remove a tmp file only (never call remove on user files). */
   async removeTmp(tmpPath: string): Promise<void> {
     if (tmpPath.endsWith(TMP_SUFFIX) && await this.adapter.exists(tmpPath)) {

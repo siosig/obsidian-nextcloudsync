@@ -485,17 +485,21 @@ export class SyncEngine {
     remote: RemoteFileInfo, remoteId: string,
     idType: FileState['idType'], summary: SyncSessionSummary,
   ): Promise<void> {
-    await this.client!.downloadFile(remote.path, ''); // tmp path handled below
+    await this.client!.downloadFile(remote.path, '');
     const data = this.client!.getLastDownloadBuffer();
     await this.opts.localAdapter.atomicWriteBinary(remote.path, data);
     summary.downloadedCount++;
 
-    // Recompute local hash
+    // Preserve remote mtime on the local file so the two stay in sync.
+    if (remote.lastModified) {
+      await this.opts.localAdapter.setMtime(remote.path, remote.lastModified);
+    }
+
     const localHash = await sha256(data);
-    const stat = await this.opts.localAdapter.stat(remote.path);
+    const mtime = remote.lastModified || (await this.opts.localAdapter.stat(remote.path))?.mtime || Date.now();
     this.opts.stateDB.setFile({
       path: remote.path, localHash, remoteId, idType,
-      size: remote.size, mtime: stat?.mtime ?? Date.now(),
+      size: remote.size, mtime,
       remoteFileId: remote.fileId, isConflicted: false,
     });
   }
@@ -504,21 +508,31 @@ export class SyncEngine {
     path: string, base: FileState | undefined, remote: RemoteFileInfo,
     remoteId: string, idType: FileState['idType'], summary: SyncSessionSummary,
   ): Promise<void> {
+    // Capture local mtime BEFORE writing the merge result so we can compute max(local, remote).
+    const localStatBefore = await this.opts.localAdapter.stat(path);
+    const localMtimeBefore = localStatBefore?.mtime ?? 0;
+
     const localContent = await this.opts.localAdapter.read(path);
     await this.client!.downloadFile(remote.path, '');
     const remoteData = this.client!.getLastDownloadBuffer();
     const remoteContent = new TextDecoder().decode(remoteData);
-    const baseContent = ''; // Base content not stored; use empty as base for 3-way diff
+    const baseContent = '';
 
     const resolver = new ConflictResolver(this.opts.app, this.opts.localAdapter, this.opts.settings);
     await resolver.resolve(path, baseContent, localContent, remoteContent);
     summary.conflictCount++;
 
+    // Apply max(local, remote) mtime to the local file.
+    // Remote mtime update via PROPPATCH is not supported on Nextcloud (live property, silently ignored);
+    // X-OC-MTime on upload already handles mtime for newly uploaded files.
+    const maxMtime = Math.max(localMtimeBefore, remote.lastModified || 0) || Date.now();
+    await this.opts.localAdapter.setMtime(path, maxMtime);
+
     const stat = await this.opts.localAdapter.stat(path);
     const localHash = await sha256(await this.opts.localAdapter.readBinary(path));
     this.opts.stateDB.setFile({
       path, localHash, remoteId, idType,
-      size: stat?.size ?? 0, mtime: stat?.mtime ?? Date.now(),
+      size: stat?.size ?? 0, mtime: maxMtime,
       remoteFileId: remote.fileId, isConflicted: true,
     });
     void base;
@@ -619,14 +633,18 @@ export class SyncEngine {
     }
 
     // Files already identical on both sides: seed the state DB (no transfer needed).
+    // Apply remote mtime to local so both sides are in sync.
     for (const path of plan.unchanged) {
       const lf = localFiles.get(path);
       const remote = remoteMap.get(path);
       if (!lf || !remote) continue;
-      const stat = await this.opts.localAdapter.stat(path);
+      const mtime = remote.lastModified || lf.mtime;
+      if (remote.lastModified) {
+        await this.opts.localAdapter.setMtime(path, remote.lastModified);
+      }
       this.opts.stateDB.setFile({
         path, localHash: lf.hash, remoteId: remote.checksum ?? lf.hash, idType: 'sha256',
-        size: lf.size, mtime: stat?.mtime ?? 0, remoteFileId: remote.fileId, isConflicted: false,
+        size: lf.size, mtime, remoteFileId: remote.fileId, isConflicted: false,
       });
     }
 

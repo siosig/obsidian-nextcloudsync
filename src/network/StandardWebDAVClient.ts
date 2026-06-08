@@ -102,6 +102,17 @@ export class StandardWebDAVClient implements IWebDAVClient {
     return null;
   }
 
+  async setMtime(remotePath: string, mtime: number): Promise<void> {
+    const rfcDate = new Date(mtime).toUTCString();
+    await requestUrl({
+      url: this.remoteUrl(remotePath),
+      method: 'PROPPATCH',
+      headers: { Authorization: this.authHeader, 'Content-Type': 'application/xml; charset=utf-8' },
+      body: `<?xml version="1.0" encoding="utf-8"?><d:propertyupdate xmlns:d="DAV:"><d:set><d:prop><d:getlastmodified>${rfcDate}</d:getlastmodified></d:prop></d:set></d:propertyupdate>`,
+      throw: false,
+    });
+  }
+
   async uploadFile(remotePath: string, data: ArrayBuffer): Promise<void> {
     await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
     const res = await requestUrl({ url: this.remoteUrl(remotePath), method: 'PUT', headers: { Authorization: this.authHeader }, body: data, throw: false });

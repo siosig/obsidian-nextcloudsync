@@ -195,6 +195,19 @@ export class NextcloudClient implements IWebDAVClient {
     if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
   }
 
+  async setMtime(remotePath: string, mtime: number): Promise<void> {
+    // RFC 1123 date format expected by WebDAV getlastmodified.
+    const rfcDate = new Date(mtime).toUTCString();
+    await requestUrl({
+      url: this.remoteUrl(remotePath),
+      method: 'PROPPATCH',
+      headers: { Authorization: this.authHeader, 'Content-Type': 'application/xml; charset=utf-8' },
+      body: `<?xml version="1.0" encoding="utf-8"?><d:propertyupdate xmlns:d="DAV:"><d:set><d:prop><d:getlastmodified>${rfcDate}</d:getlastmodified></d:prop></d:set></d:propertyupdate>`,
+      throw: false,
+    });
+    // Errors are silently ignored: mtime sync is best-effort and must not abort the sync flow.
+  }
+
   async recalcChecksum(remotePath: string): Promise<string | null> {
     // Nextcloud's ChecksumUpdatePlugin computes the hash server-side for an existing file
     // (no download) and persists it, returning it in the OC-Checksum response header.
