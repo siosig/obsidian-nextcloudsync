@@ -53,8 +53,16 @@ export class SyncEngine {
   private readonly heldLocks = new Map<string, string>();
   /** Progress counters updated during a sync run (reset each run). */
   private syncProgress = { processed: 0, total: 0 };
+  private renameTracker: RenameTracker | null = null;
 
   constructor(private readonly opts: SyncEngineOptions) {}
+
+  private getOrCreateRenameTracker(): RenameTracker {
+    if (!this.renameTracker) {
+      this.renameTracker = new RenameTracker(this.opts.stateDB, this.client!);
+    }
+    return this.renameTracker;
+  }
 
   /**
    * Initialize the WebDAV client, capabilities, and upload strategy exactly once.
@@ -105,10 +113,11 @@ export class SyncEngine {
         conflictCount, summary.errorCount,
       );
       // Single summary notice at the end (no per-file notices during sync).
-      if (summary.uploadedCount + summary.downloadedCount + summary.conflictCount + summary.errorCount > 0) {
+      if (summary.uploadedCount + summary.downloadedCount + summary.deletedCount + summary.conflictCount + summary.errorCount > 0) {
         const parts: string[] = [];
         if (summary.uploadedCount)   parts.push(`↑ ${summary.uploadedCount}`);
         if (summary.downloadedCount) parts.push(`↓ ${summary.downloadedCount}`);
+        if (summary.deletedCount)    parts.push(`🗑 ${summary.deletedCount}`);
         if (summary.conflictCount)   parts.push(`⚠️ ${summary.conflictCount} conflict(s)`);
         if (summary.errorCount)      parts.push(`✗ ${summary.errorCount} error(s)`);
         new Notice(`Sync complete — ${parts.join('  ')}`, 5000);
@@ -160,7 +169,12 @@ export class SyncEngine {
       identical ? 'unchanged' : (this.opts.settings.autoMergeEnabled ? 'merge' : 'conflict');
 
     const entries: SyncPlanEntry[] = [];
-    const allPaths = new Set<string>([...localFiles.keys(), ...remoteMap.keys()]);
+    // Include StateDB paths so locally-deleted files (in StateDB but not local/remote) are shown.
+    const allPaths = new Set<string>([
+      ...localFiles.keys(),
+      ...remoteMap.keys(),
+      ...this.opts.stateDB.getAllFiles().map(f => f.path),
+    ]);
     for (const path of allPaths) {
       const lf = localFiles.get(path);
       const rf = remoteMap.get(path);
@@ -239,7 +253,7 @@ export class SyncEngine {
   private initSummary(): SyncSessionSummary {
     return {
       startedAt: Date.now(), completedAt: null,
-      uploadedCount: 0, downloadedCount: 0, conflictCount: 0,
+      uploadedCount: 0, downloadedCount: 0, deletedCount: 0, conflictCount: 0,
       errorCount: 0, retriedFiles: [],
     };
   }
@@ -281,6 +295,15 @@ export class SyncEngine {
         const changes = await client.getChanges(existingToken);
         this.opts.stateDB.setSyncToken(changes.newSyncToken);
         remoteFiles = changes.modified;
+
+        // Detect and apply remote renames (fileId-based) before processing deletions,
+        // so a rename is not misidentified as delete + new-upload.
+        const rt = this.getOrCreateRenameTracker();
+        const remoteRenames = rt.detectRemoteRenames(remoteFiles);
+        for (const [oldPath, newPath] of remoteRenames) {
+          await rt.applyRemoteRename(oldPath, newPath);
+        }
+
         // Handle deletions
         for (const deletedPath of changes.deleted) {
           await this.processRemoteDeletion(deletedPath, summary);
@@ -391,7 +414,7 @@ export class SyncEngine {
     let outcome: 'uploaded' | 'skipped';
     try {
       // US3: Delegate to the upload strategy (chunked/single/skip).
-      outcome = await this.uploadStrategy!.upload(this.client!, path, data);
+      outcome = await this.uploadStrategy!.upload(this.client!, path, data, stat.mtime);
     } finally {
       await this.releaseLock(path, token);
     }
@@ -429,6 +452,9 @@ export class SyncEngine {
           throw err;
         }
         if (err instanceof FeatureUnsupportedError) return null;
+        // NetworkError (e.g. HTTP 500 / 404 when the file does not yet exist on the server)
+        // must not abort the entire sync — proceed without a lock rather than failing.
+        if (err instanceof NetworkError) return null;
         throw err;
       }
     }
@@ -576,6 +602,52 @@ export class SyncEngine {
         summary,
       );
     }
+
+    // Detect local renames and deletions: files in StateDB that are no longer in localStats.
+    const rt = this.getOrCreateRenameTracker();
+    // Build a map of new (unsynced) local files for hash-based rename detection.
+    const newLocalFiles = new Map<string, { hash: string; size: number }>();
+    for (const [path, st] of localStats) {
+      if (!this.opts.stateDB.getFile(path)) {
+        const data = await this.opts.localAdapter.readBinary(path);
+        const hash = await sha256(data);
+        newLocalFiles.set(path, { hash, size: st.size });
+      }
+    }
+
+    const missingPaths = this.opts.stateDB.getAllFiles()
+      .map(f => f.path)
+      .filter(p => !this.isSystemExcluded(p) && !localStats.has(p) && !remotePathSet.has(p));
+
+    const localRenames = rt.detectLocalRenamesByHash(missingPaths, newLocalFiles);
+
+    for (const [oldPath, newPath] of localRenames) {
+      try {
+        await rt.applyLocalRename(oldPath, newPath);
+      } catch (err) {
+        console.warn(`[SyncEngine] Local rename ${oldPath} → ${newPath} failed:`, err);
+        summary.errorCount++;
+      }
+    }
+
+    // Remaining missing paths (not renames) are genuine local deletions → delete from remote.
+    for (const path of missingPaths) {
+      if (localRenames.has(path)) continue; // handled as rename above
+      const fileState = this.opts.stateDB.getFile(path);
+      if (!fileState) continue;
+      try {
+        await this.client!.deleteFile(path, fileState.remoteId);
+        summary.deletedCount++;
+      } catch (err) {
+        if (err instanceof NetworkError && err.status === 404) {
+          // Already gone from remote — StateDB cleanup is sufficient.
+        } else {
+          console.warn(`[SyncEngine] Failed to delete ${path} from remote:`, err);
+          summary.errorCount++;
+        }
+      }
+      this.opts.stateDB.deleteFile(path);
+    }
   }
 
   private buildInitialPlan(
@@ -615,7 +687,7 @@ export class SyncEngine {
         const lf = localFiles.get(path);
         if (!lf) continue;
         const data = await this.opts.localAdapter.readBinary(path);
-        const outcome = await this.uploadStrategy!.upload(this.client!, path, data);
+        const outcome = await this.uploadStrategy!.upload(this.client!, path, data, lf.mtime);
         if (outcome === 'skipped') continue;
         summary.uploadedCount++;
         const stat = await this.opts.localAdapter.stat(path);
