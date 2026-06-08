@@ -3,6 +3,7 @@ import { DavSyncSettings, DEFAULT_SETTINGS, FeatureUnsupportedError } from './ty
 import { NextcloudSyncSettingTab } from './settings/SettingTab';
 import { SyncEngine } from './sync/SyncEngine';
 import { VersionHistoryModal } from './ui/VersionHistoryModal';
+import { DebugPreviewModal } from './ui/DebugPreviewModal';
 import { v4 as uuidv4 } from './util/uuid';
 
 const MIN_OBSIDIAN_VERSION = '1.12.7';
@@ -41,7 +42,7 @@ export default class ObsidianNextcloudsync extends Plugin {
       id: 'sync-now',
       name: 'Sync Now',
       callback: async () => {
-        await this.syncEngine?.syncManual();
+        await this.runSyncNow();
       },
     });
 
@@ -67,6 +68,27 @@ export default class ObsidianNextcloudsync extends Plugin {
         debouncedSync();
       }),
     );
+  }
+
+  /**
+   * Run "Sync Now". In debug mode, show a dry-run plan modal instead of syncing.
+   * Shared by the command and the settings button.
+   */
+  async runSyncNow(): Promise<void> {
+    if (!this.syncEngine) {
+      new Notice('Configure the server settings first.');
+      return;
+    }
+    if (this.settings.debugMode) {
+      try {
+        const entries = await this.syncEngine.previewSync();
+        new DebugPreviewModal(this.app, this.app.vault.getName(), entries).open();
+      } catch (err) {
+        new Notice(`❌ Debug preview failed: ${(err as Error).message}`, 6000);
+      }
+      return;
+    }
+    await this.syncEngine.syncManual();
   }
 
   /** Fetch the server-side version history of the active note and show the modal (US2). */

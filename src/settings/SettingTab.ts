@@ -1,4 +1,4 @@
-import { App, PluginSettingTab, Setting, Notice, SecretComponent } from 'obsidian';
+import { App, PluginSettingTab, Setting, Notice, SecretComponent, ButtonComponent } from 'obsidian';
 import type ObsidianNextcloudsync from '../main';
 import { DavSyncSettings, LoginFlowError } from '../types';
 import { LoginFlowV2 } from '../auth/LoginFlowV2';
@@ -24,6 +24,11 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
       cls: 'setting-item-description',
     });
 
+    // Holds the Login Flow button so the Server URL field can enable/disable it live.
+    let loginButton: ButtonComponent | null = null;
+    // Holds the sync-target display so the Server URL field can refresh it live.
+    let targetSetting: Setting | null = null;
+
     new Setting(containerEl)
       .setName('Server URL')
       .setDesc('Nextcloud WebDAV endpoint (e.g. https://cloud.example.com/remote.php/dav/files/alice/)')
@@ -32,6 +37,8 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         .setValue(this.plugin.settings.serverUrl)
         .onChange(async (value) => {
           this.plugin.settings.serverUrl = value.trim();
+          loginButton?.setDisabled(this.plugin.settings.serverUrl.length === 0);
+          targetSetting?.setDesc(this.syncTargetUrl());
           await this.plugin.saveSettings();
         }));
 
@@ -59,11 +66,15 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Log in via browser (Nextcloud)')
       .setDesc('Use Nextcloud Login Flow v2 to obtain an app password automatically. Requires the Server URL above. Falls back to manual entry on non-Nextcloud servers.')
-      .addButton(btn => btn
-        .setButtonText('Log in via browser')
-        .onClick(async () => {
-          await this.runLoginFlow();
-        }));
+      .addButton(btn => {
+        loginButton = btn;
+        btn
+          .setButtonText('Log in via browser')
+          .setDisabled(this.plugin.settings.serverUrl.trim().length === 0)
+          .onClick(async () => {
+            await this.runLoginFlow();
+          });
+      });
 
     new Setting(containerEl)
       .setName('Sync Folder')
@@ -71,6 +82,12 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
       .addText(text => text
         .setValue(this.app.vault.getName())
         .setDisabled(true));
+
+    // Read-only display of the effective WebDAV sync target (Server URL + Sync Folder).
+    targetSetting = new Setting(containerEl)
+      .setName('Sync target (WebDAV)')
+      .setDesc(this.syncTargetUrl());
+    targetSetting.descEl.style.wordBreak = 'break-all';
 
     this.addNumberSlider(containerEl, {
       name: 'Sync Interval (minutes)', desc: '0 = manual sync only',
@@ -135,6 +152,16 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     containerEl.createEl('h3', { text: 'Experimental Features' });
 
     new Setting(containerEl)
+      .setName('Debug mode')
+      .setDesc('When enabled, "Sync Now" shows a dry-run plan (per-file local/remote paths and the action: upload, download, merge, etc.) instead of actually syncing.')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.debugMode)
+        .onChange(async (value) => {
+          this.plugin.settings.debugMode = value;
+          await this.plugin.saveSettings();
+        }));
+
+    new Setting(containerEl)
       .setName('File Locking (Experimental)')
       .setDesc('⚠️ When enabled, files are locked on the server during updates to prevent concurrent-edit conflicts. Requires the Nextcloud Files Locking app. Default off.')
       .addToggle(toggle => toggle
@@ -173,7 +200,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         .setButtonText('Sync Now')
         .setCta()
         .onClick(async () => {
-          await this.plugin.syncEngine?.syncManual();
+          await this.plugin.runSyncNow();
         }));
 
     new Setting(containerEl)
@@ -193,6 +220,16 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
             8000,
           );
         }));
+  }
+
+  /**
+   * Compute the effective WebDAV sync target URL (Server URL + this Vault's folder).
+   * Shown read-only so the user can confirm where the Vault will be synced.
+   */
+  private syncTargetUrl(): string {
+    const base = this.plugin.settings.serverUrl.trim().replace(/\/+$/, '');
+    if (!base) return '(enter the Server URL above)';
+    return `${base}/${this.app.vault.getName()}`;
   }
 
   /**

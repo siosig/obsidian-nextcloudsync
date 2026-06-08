@@ -22,6 +22,8 @@ export interface DavSyncSettings {
   watchOnChangeEnabled: boolean;
   /** Include Obsidian bookmarks (.obsidian/bookmarks.json) in the sync. */
   syncBookmarks: boolean;
+  /** Debug mode: "Sync Now" shows a dry-run plan instead of executing the sync. */
+  debugMode: boolean;
   /** Enable chunked uploads (default ON; Nextcloud only). */
   chunkedUploadEnabled: boolean;
   /** Enable Files Locking (experimental; default OFF; only on servers that support files_lock). */
@@ -41,6 +43,7 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   maxFileSizeMB: 1024,
   watchOnChangeEnabled: false,
   syncBookmarks: false,
+  debugMode: false,
   chunkedUploadEnabled: true,
   fileLockingEnabled: false,
   autoMergeEnabled: false,
@@ -108,6 +111,25 @@ export interface SyncSessionSummary {
 }
 
 export type SyncStatus = 'idle' | 'syncing' | 'error' | 'conflict';
+
+/** Planned action for a single file in a dry-run (debug) sync preview. */
+export type SyncAction =
+  | 'upload'
+  | 'download'
+  | 'merge'
+  | 'conflict'
+  | 'unchanged'
+  | 'delete-local'
+  | 'delete-remote';
+
+/** One entry in the debug dry-run plan. */
+export interface SyncPlanEntry {
+  /** Vault-relative path. */
+  path: string;
+  action: SyncAction;
+  localExists: boolean;
+  remoteExists: boolean;
+}
 
 // ── US1: Login Flow v2 ──────────────────────────────────────────────────────
 
