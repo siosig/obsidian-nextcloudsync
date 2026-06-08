@@ -51,6 +51,8 @@ export class SyncEngine {
   private running = false;
   /** Currently held lock tokens (path → token). */
   private readonly heldLocks = new Map<string, string>();
+  /** Progress counters updated during a sync run (reset each run). */
+  private syncProgress = { processed: 0, total: 0 };
 
   constructor(private readonly opts: SyncEngineOptions) {}
 
@@ -76,6 +78,7 @@ export class SyncEngine {
     if (this.running) return;
     this.running = true;
     await this.ensureClient();
+    this.syncProgress = { processed: 0, total: 0 };
     this.opts.statusBar.setStatus('syncing');
     const summary = this.initSummary();
 
@@ -101,6 +104,15 @@ export class SyncEngine {
         summary.uploadedCount, summary.downloadedCount,
         conflictCount, summary.errorCount,
       );
+      // Single summary notice at the end (no per-file notices during sync).
+      if (summary.uploadedCount + summary.downloadedCount + summary.conflictCount + summary.errorCount > 0) {
+        const parts: string[] = [];
+        if (summary.uploadedCount)   parts.push(`↑ ${summary.uploadedCount}`);
+        if (summary.downloadedCount) parts.push(`↓ ${summary.downloadedCount}`);
+        if (summary.conflictCount)   parts.push(`⚠️ ${summary.conflictCount} conflict(s)`);
+        if (summary.errorCount)      parts.push(`✗ ${summary.errorCount} error(s)`);
+        new Notice(`Sync complete — ${parts.join('  ')}`, 5000);
+      }
       this.running = false;
     }
   }
@@ -294,9 +306,12 @@ export class SyncEngine {
     summary.retriedFiles = retried;
 
     // Process each remote file
-    for (const remote of remoteFiles) {
-      if (this.isSystemExcluded(remote.path)) continue;
+    const eligible = remoteFiles.filter(f => !this.isSystemExcluded(f.path));
+    this.syncProgress = { processed: 0, total: eligible.length };
+    if (eligible.length > 0) this.opts.statusBar.setProgress(0, eligible.length);
+    for (const remote of eligible) {
       await this.processFileWithRetry(remote, summary);
+      this.tickProgress();
     }
 
     // Process local modifications (files in stateDB not covered by remote changes)
@@ -577,6 +592,9 @@ export class SyncEngine {
   private async executePlan(plan: DryRunPlan, remoteFiles: RemoteFileInfo[], summary: SyncSessionSummary): Promise<void> {
     const remoteMap = new Map(remoteFiles.map(f => [f.path, f]));
     const localFiles = await this.scanLocalFiles();
+    const actionFiles = plan.uploads.length + plan.downloads.length + plan.conflicts.length;
+    this.syncProgress = { processed: 0, total: actionFiles };
+    if (actionFiles > 0) this.opts.statusBar.setProgress(0, actionFiles);
 
     for (const path of plan.uploads) {
       try {
@@ -584,11 +602,12 @@ export class SyncEngine {
         if (!lf) continue;
         const data = await this.opts.localAdapter.readBinary(path);
         const outcome = await this.uploadStrategy!.upload(this.client!, path, data);
-        if (outcome === 'skipped') continue; // size limit exceeded (already warned by the strategy)
+        if (outcome === 'skipped') continue;
         summary.uploadedCount++;
         const stat = await this.opts.localAdapter.stat(path);
         this.opts.stateDB.setFile({ path, localHash: lf.hash, remoteId: lf.hash, idType: 'sha256', size: lf.size, mtime: stat?.mtime ?? 0, remoteFileId: null, isConflicted: false });
       } catch { summary.errorCount++; this.retryQueue.push(path); }
+      this.tickProgress();
     }
 
     for (const path of plan.downloads) {
@@ -596,10 +615,10 @@ export class SyncEngine {
         const remote = remoteMap.get(path)!;
         await this.downloadFile(remote, remote.checksum ?? remote.etag ?? String(remote.size), remote.checksum ? 'sha256' : 'etag', summary);
       } catch { summary.errorCount++; this.retryQueue.push(path); }
+      this.tickProgress();
     }
 
-    // Files already identical on both sides: seed the state DB so later syncs treat them as known
-    // and unchanged (no transfer, no conflict).
+    // Files already identical on both sides: seed the state DB (no transfer needed).
     for (const path of plan.unchanged) {
       const lf = localFiles.get(path);
       const remote = remoteMap.get(path);
@@ -611,8 +630,7 @@ export class SyncEngine {
       });
     }
 
-    // Files present on both sides with differing content: resolve as conflicts (download + merge/markers),
-    // reusing the same path as incremental sync. Without this, first-sync conflicts would be silently dropped.
+    // Files present on both sides with differing content: resolve as conflicts.
     for (const path of plan.conflicts) {
       try {
         const remote = remoteMap.get(path)!;
@@ -620,6 +638,15 @@ export class SyncEngine {
         const idType: FileState['idType'] = remote.checksum ? 'sha256' : (remote.etag ? 'etag' : 'size');
         await this.handleConflict(path, undefined, remote, remoteId, idType, summary);
       } catch { summary.errorCount++; this.retryQueue.push(path); }
+      this.tickProgress();
+    }
+  }
+
+  /** Increment progress counter and push to the status bar. */
+  private tickProgress(): void {
+    this.syncProgress.processed = Math.min(this.syncProgress.processed + 1, this.syncProgress.total);
+    if (this.syncProgress.total > 0) {
+      this.opts.statusBar.setProgress(this.syncProgress.processed, this.syncProgress.total);
     }
   }
 
