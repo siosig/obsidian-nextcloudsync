@@ -1,7 +1,8 @@
-import { App, Plugin, Notice } from 'obsidian';
-import { DavSyncSettings, DEFAULT_SETTINGS } from './types';
+import { App, Plugin, Notice, TFile } from 'obsidian';
+import { DavSyncSettings, DEFAULT_SETTINGS, FeatureUnsupportedError } from './types';
 import { NextcloudSyncSettingTab } from './settings/SettingTab';
 import { SyncEngine } from './sync/SyncEngine';
+import { VersionHistoryModal } from './ui/VersionHistoryModal';
 import { v4 as uuidv4 } from './util/uuid';
 
 const MIN_OBSIDIAN_VERSION = '1.12.7';
@@ -43,6 +44,39 @@ export default class ObsidianNextcloudsync extends Plugin {
         await this.syncEngine?.syncManual();
       },
     });
+
+    this.addCommand({
+      id: 'show-version-history',
+      name: 'Show version history',
+      checkCallback: (checking: boolean) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file || !this.syncEngine) return false;
+        if (checking) return true;
+        void this.showVersionHistory(file);
+        return true;
+      },
+    });
+  }
+
+  /** アクティブノートのサーバーバージョン履歴を取得して Modal を表示する（US2）。 */
+  private async showVersionHistory(file: TFile): Promise<void> {
+    const engine = this.syncEngine;
+    if (!engine) return;
+    try {
+      const versions = await engine.listVersions(file.path);
+      new VersionHistoryModal(
+        this.app,
+        file.path,
+        versions,
+        (version) => engine.restoreVersion(file.path, version),
+      ).open();
+    } catch (err) {
+      if (err instanceof FeatureUnsupportedError) {
+        new Notice('No server version history is available for this file.', 6000);
+      } else {
+        new Notice(`❌ Failed to load version history: ${(err as Error).message}`, 6000);
+      }
+    }
   }
 
   async onunload(): Promise<void> {

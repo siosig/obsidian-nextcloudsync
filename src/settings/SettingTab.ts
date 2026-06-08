@@ -1,6 +1,7 @@
 import { App, PluginSettingTab, Setting, Notice, SecretComponent } from 'obsidian';
 import type ObsidianNextcloudsync from '../main';
-import { DavSyncSettings } from '../types';
+import { DavSyncSettings, LoginFlowError } from '../types';
+import { LoginFlowV2 } from '../auth/LoginFlowV2';
 
 /** SecretStorage 上の既定シークレット ID（ユーザーが「リンク…」で別 ID を選ぶことも可能）。 */
 const DEFAULT_PASSWORD_SECRET_ID = 'obsidian-nextcloudsync-password';
@@ -56,6 +57,15 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         }));
 
     new Setting(containerEl)
+      .setName('Log in via browser (Nextcloud)')
+      .setDesc('Use Nextcloud Login Flow v2 to obtain an app password automatically. Requires the Server URL above. Falls back to manual entry on non-Nextcloud servers.')
+      .addButton(btn => btn
+        .setButtonText('Log in via browser')
+        .onClick(async () => {
+          await this.runLoginFlow();
+        }));
+
+    new Setting(containerEl)
       .setName('Sync Folder')
       .setDesc('Fixed to this Vault\'s name. The entire Vault is synced under a remote folder named after the Vault.')
       .addText(text => text
@@ -84,17 +94,50 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         }));
 
     new Setting(containerEl)
-      .setName('Upload Size Limit (MB)')
-      .setDesc('Files larger than this will be skipped with a warning')
+      .setName('Chunk threshold (MB)')
+      .setDesc('Files larger than this are uploaded in chunks (Nextcloud only). Smaller files use a single request.')
       .addSlider(slider => slider
         .setLimits(1, 500, 1)
         .setValue(this.plugin.settings.uploadChunkThresholdMB)
+        .setDynamicTooltip()
         .onChange(async (value) => {
           this.plugin.settings.uploadChunkThresholdMB = value;
           await this.plugin.saveSettings();
         }));
 
+    new Setting(containerEl)
+      .setName('Maximum file size (MB)')
+      .setDesc('Absolute limit. Files larger than this are skipped with a warning.')
+      .addSlider(slider => slider
+        .setLimits(50, 4096, 50)
+        .setValue(this.plugin.settings.maxFileSizeMB)
+        .setDynamicTooltip()
+        .onChange(async (value) => {
+          this.plugin.settings.maxFileSizeMB = value;
+          await this.plugin.saveSettings();
+        }));
+
+    new Setting(containerEl)
+      .setName('Chunked upload')
+      .setDesc('Upload large files in chunks instead of skipping them (Nextcloud only).')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.chunkedUploadEnabled)
+        .onChange(async (value) => {
+          this.plugin.settings.chunkedUploadEnabled = value;
+          await this.plugin.saveSettings();
+        }));
+
     containerEl.createEl('h3', { text: 'Experimental Features' });
+
+    new Setting(containerEl)
+      .setName('File Locking (Experimental)')
+      .setDesc('⚠️ When enabled, files are locked on the server during updates to prevent concurrent-edit conflicts. Requires the Nextcloud Files Locking app. Default off.')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.fileLockingEnabled)
+        .onChange(async (value) => {
+          this.plugin.settings.fileLockingEnabled = value;
+          await this.plugin.saveSettings();
+        }));
 
     new Setting(containerEl)
       .setName('Auto Merge (Experimental)')
@@ -146,6 +189,46 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
           );
         }));
   }
+
+  /**
+   * Login Flow v2 を実行し、成功時にユーザー名とアプリパスワードを設定する。
+   * パスワードは SecretStorage に保存し data.json には平文保存しない（FR-002）。
+   */
+  private async runLoginFlow(): Promise<void> {
+    const serverUrl = this.plugin.settings.serverUrl.trim();
+    if (!serverUrl) {
+      new Notice('Please enter the Server URL first.');
+      return;
+    }
+    const serverBaseUrl = serverUrl.replace(/\/remote\.php.*$/, '').replace(/\/$/, '');
+
+    try {
+      const init = await LoginFlowV2.start(serverBaseUrl);
+      window.open(init.loginUrl, '_blank');
+      new Notice('Waiting for browser approval… (up to 3 minutes)', 8000);
+
+      const result = await LoginFlowV2.poll(init);
+      if (result.status === 'success') {
+        this.plugin.settings.username = result.loginName;
+        saveAppPassword(this.app, DEFAULT_PASSWORD_SECRET_ID, result.appPassword);
+        this.plugin.settings.passwordSecretId = DEFAULT_PASSWORD_SECRET_ID;
+        await this.plugin.saveSettings();
+        await this.plugin.initSyncEngine();
+        new Notice(`✅ Logged in as ${result.loginName}`, 6000);
+        this.display(); // 設定欄を再描画
+      } else if (result.status === 'timeout') {
+        new Notice('⏱️ Login timed out. Please try again.', 6000);
+      } else {
+        new Notice('This server does not support Login Flow. Please enter an app password manually.', 8000);
+      }
+    } catch (err) {
+      if (err instanceof LoginFlowError && err.reason === 'unsupported') {
+        new Notice('This server does not support Login Flow. Please enter an app password manually.', 8000);
+      } else {
+        new Notice(`❌ Login failed: ${(err as Error).message}`, 6000);
+      }
+    }
+  }
 }
 
 /**
@@ -159,4 +242,13 @@ export function loadAppPassword(app: App, secretId: string): string | null {
   if (secret) return secret;
   // 移行フォールバック: 旧 localStorage に残っていれば利用する。
   return app.loadLocalStorage(LEGACY_CREDENTIALS_KEY);
+}
+
+/**
+ * アプリパスワードを SecretStorage に保存する（暗号化管理・data.json には保存しない）。
+ * Login Flow v2 で取得したパスワードの保存に使用する。
+ */
+export function saveAppPassword(app: App, secretId: string, value: string): void {
+  const id = secretId || DEFAULT_PASSWORD_SECRET_ID;
+  app.secretStorage.setSecret(id, value);
 }

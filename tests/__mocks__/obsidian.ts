@@ -56,9 +56,10 @@ export class TFile {
   }
 }
 
-export function requestUrl(_req: RequestUrlParam): Promise<RequestUrlResponse> {
-  return Promise.resolve({ status: 200, text: '', json: {}, arrayBuffer: new ArrayBuffer(0), headers: {} });
-}
+export const requestUrl = jest.fn(
+  (_req: RequestUrlParam): Promise<RequestUrlResponse> =>
+    Promise.resolve({ status: 200, text: '', json: {}, arrayBuffer: new ArrayBuffer(0), headers: {} }),
+);
 
 export interface RequestUrlParam {
   url: string;

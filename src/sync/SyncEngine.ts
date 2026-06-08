@@ -2,10 +2,14 @@ import { App, Notice, TFile } from 'obsidian';
 import {
   DavSyncSettings,
   FileState,
+  FileVersion,
+  NextcloudFeatures,
   RemoteFileInfo,
   SyncSessionSummary,
   SyncTokenExpiredError,
   NetworkError,
+  FileLockedError,
+  FeatureUnsupportedError,
 } from '../types';
 import { LocalAdapter } from '../data/LocalAdapter';
 import { StateDB } from '../data/StateDB';
@@ -16,6 +20,9 @@ import { DryRunModal, DryRunPlan } from '../ui/DryRunModal';
 import { RenameTracker } from './RenameTracker';
 import { ConflictResolver } from './ConflictResolver';
 import { sha256 } from '../util/hash';
+import { IUploadStrategy } from './upload/IUploadStrategy';
+import { SimpleUploadStrategy } from './upload/SimpleUploadStrategy';
+import { ChunkedUploadStrategy } from './upload/ChunkedUploadStrategy';
 
 export interface SyncEngineOptions {
   app: App;
@@ -35,15 +42,32 @@ export class SyncEngine {
   private lastSummary: SyncSessionSummary | null = null;
   private retryQueue: string[] = [];
   private client: IWebDAVClient | null = null;
+  private features: NextcloudFeatures | null = null;
+  private uploadStrategy: IUploadStrategy | null = null;
+  /** 取得中のロックトークン（path → token）。 */
+  private readonly heldLocks = new Map<string, string>();
 
   constructor(private readonly opts: SyncEngineOptions) {}
 
+  /**
+   * WebDAV クライアント・Capability・アップロード戦略を一度だけ初期化する。
+   * Capability を見て chunked/lock 等の拡張可否を決める（Progressive Enhancement）。
+   */
+  private async ensureClient(): Promise<{ client: IWebDAVClient; features: NextcloudFeatures }> {
+    if (!this.client || !this.features) {
+      const { client, features } = await this.opts.webdavFactory.createClient();
+      this.client = client;
+      this.features = features;
+      this.uploadStrategy = (this.opts.settings.chunkedUploadEnabled && features.isNextcloud)
+        ? new ChunkedUploadStrategy(this.opts.settings)
+        : new SimpleUploadStrategy();
+    }
+    return { client: this.client, features: this.features };
+  }
+
   /** Manual sync: Dry Run → user approval → execute */
   async syncManual(): Promise<void> {
-    if (!this.client) {
-      const { client } = await this.opts.webdavFactory.createClient();
-      this.client = client;
-    }
+    await this.ensureClient();
     this.opts.statusBar.setStatus('syncing');
     const summary = this.initSummary();
 
@@ -228,15 +252,29 @@ export class SyncEngine {
     const stat = await this.opts.localAdapter.stat(path);
     if (!stat) return;
 
-    const thresholdBytes = this.opts.settings.uploadChunkThresholdMB * 1024 * 1024;
-    if (stat.size > thresholdBytes) {
-      new Notice(`⚠️ File too large to sync: ${path} (${(stat.size / 1024 / 1024).toFixed(1)} MB > ${this.opts.settings.uploadChunkThresholdMB} MB)`);
-      this.retryQueue.push(path);
-      return;
+    const data = await this.opts.localAdapter.readBinary(path);
+
+    // US4: ロック取得（有効かつ対応サーバーのみ）。他者ロック中はスキップしてリトライへ。
+    let token: string | null;
+    try {
+      token = await this.acquireLock(path);
+    } catch (err) {
+      if (err instanceof FileLockedError) {
+        this.retryQueue.push(path);
+        return;
+      }
+      throw err;
     }
 
-    const data = await this.opts.localAdapter.readBinary(path);
-    await this.client!.uploadFile(path, data);
+    let outcome: 'uploaded' | 'skipped';
+    try {
+      // US3: アップロード戦略（チャンク/単一/スキップ）に委譲。
+      outcome = await this.uploadStrategy!.upload(this.client!, path, data);
+    } finally {
+      await this.releaseLock(path, token);
+    }
+
+    if (outcome === 'skipped') return; // 上限超過。戦略側で警告済み（リトライ不要）。
     summary.uploadedCount++;
 
     this.opts.stateDB.setFile({
@@ -244,6 +282,81 @@ export class SyncEngine {
       size: stat.size, mtime: stat.mtime,
       remoteFileId: remote.fileId, isConflicted: false,
     });
+  }
+
+  // ── US4: ロック取得・解放 ──────────────────────────────────────────────────
+
+  /**
+   * 更新前にファイルロックを取得する。ロック無効/非対応なら null。
+   * 他者ロック中（423）はバックオフ再試行し、解放されなければ FileLockedError を投げる。
+   */
+  private async acquireLock(path: string): Promise<string | null> {
+    if (!this.opts.settings.fileLockingEnabled || !this.features?.hasFilesLocking) return null;
+    const maxAttempts = 3;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const token = await this.client!.lockFile(path);
+        if (token) this.heldLocks.set(path, token);
+        return token;
+      } catch (err) {
+        if (err instanceof FileLockedError) {
+          if (attempt < maxAttempts - 1) {
+            await this.sleep(500 * Math.pow(2, attempt)); // 指数バックオフ
+            continue;
+          }
+          throw err;
+        }
+        if (err instanceof FeatureUnsupportedError) return null;
+        throw err;
+      }
+    }
+    return null;
+  }
+
+  /** 更新後にロックを解放する（ベストエフォート）。 */
+  private async releaseLock(path: string, token: string | null): Promise<void> {
+    if (!token) return;
+    await this.client!.unlockFile(path, token);
+    this.heldLocks.delete(path);
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
+  }
+
+  // ── US2: バージョン履歴 ────────────────────────────────────────────────────
+
+  /** アクティブノートのバージョン一覧を返す。非対応・fileId 無しは FeatureUnsupportedError。 */
+  async listVersions(path: string): Promise<FileVersion[]> {
+    const { client, features } = await this.ensureClient();
+    if (!features.isNextcloud) throw new FeatureUnsupportedError('versions');
+    const fileId = this.opts.stateDB.getFile(path)?.remoteFileId;
+    if (!fileId) throw new FeatureUnsupportedError('versions');
+    return client.listVersions(fileId);
+  }
+
+  /** 指定バージョンを復元し、ローカルへ反映して状態DBを更新する（FR-007/008）。 */
+  async restoreVersion(path: string, version: FileVersion): Promise<void> {
+    const { client, features } = await this.ensureClient();
+    if (!features.isNextcloud) throw new FeatureUnsupportedError('versions');
+    const fileId = this.opts.stateDB.getFile(path)?.remoteFileId;
+    if (!fileId) throw new FeatureUnsupportedError('versions');
+
+    // 1. サーバー側を復元（MOVE restore）。
+    await client.restoreVersion(version, fileId);
+    // 2. 復元後の現行内容を取得してローカルへアトミック反映。
+    await client.downloadFile(path, '');
+    const data = client.getLastDownloadBuffer();
+    await this.opts.localAdapter.atomicWriteBinary(path, data);
+    // 3. 状態DB を更新（localHash=remoteId=復元内容のハッシュ、isConflicted=false）。
+    const localHash = await sha256(data);
+    const stat = await this.opts.localAdapter.stat(path);
+    this.opts.stateDB.setFile({
+      path, localHash, remoteId: localHash, idType: 'sha256',
+      size: stat?.size ?? data.byteLength, mtime: stat?.mtime ?? Date.now(),
+      remoteFileId: fileId, isConflicted: false,
+    });
+    await this.opts.stateDB.save();
   }
 
   private async downloadFile(
@@ -340,7 +453,8 @@ export class SyncEngine {
         const lf = localFiles.get(path);
         if (!lf) continue;
         const data = await this.opts.localAdapter.readBinary(path);
-        await this.client!.uploadFile(path, data);
+        const outcome = await this.uploadStrategy!.upload(this.client!, path, data);
+        if (outcome === 'skipped') continue; // 上限超過（戦略側で警告済み）
         summary.uploadedCount++;
         const stat = await this.opts.localAdapter.stat(path);
         this.opts.stateDB.setFile({ path, localHash: lf.hash, remoteId: lf.hash, idType: 'sha256', size: lf.size, mtime: stat?.mtime ?? 0, remoteFileId: null, isConflicted: false });

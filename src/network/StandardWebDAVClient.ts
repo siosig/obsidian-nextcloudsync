@@ -3,9 +3,11 @@ import {
   NextcloudFeatures,
   RemoteFileInfo,
   SyncChanges,
+  FileVersion,
   NetworkError,
   SyncTokenExpiredError,
   ConflictError,
+  FeatureUnsupportedError,
 } from '../types';
 import { IWebDAVClient } from './IWebDAVClient';
 import { DavSyncSettings } from '../types';
@@ -114,6 +116,32 @@ export class StandardWebDAVClient implements IWebDAVClient {
 
   async getSyncToken(): Promise<string | null> {
     return null;
+  }
+
+  // ── Nextcloud 固有機能は標準 WebDAV では非対応 ──
+
+  async listVersions(_fileId: string): Promise<FileVersion[]> {
+    throw new FeatureUnsupportedError('versions');
+  }
+
+  async getVersionContent(_version: FileVersion, _fileId: string): Promise<ArrayBuffer> {
+    throw new FeatureUnsupportedError('versions');
+  }
+
+  async restoreVersion(_version: FileVersion, _fileId: string): Promise<void> {
+    throw new FeatureUnsupportedError('versions');
+  }
+
+  async uploadChunked(_remotePath: string, _data: ArrayBuffer, _chunkSizeBytes: number): Promise<void> {
+    throw new FeatureUnsupportedError('chunked-upload');
+  }
+
+  async lockFile(_remotePath: string): Promise<string> {
+    throw new FeatureUnsupportedError('file-locking');
+  }
+
+  async unlockFile(_remotePath: string, _token: string): Promise<void> {
+    throw new FeatureUnsupportedError('file-locking');
   }
 
   /**

@@ -3,13 +3,17 @@ import {
   NextcloudFeatures,
   RemoteFileInfo,
   SyncChanges,
+  FileVersion,
   NetworkError,
   SyncTokenExpiredError,
   ConflictError,
+  FeatureUnsupportedError,
+  FileLockedError,
 } from '../types';
 import { IWebDAVClient } from './IWebDAVClient';
 import { DavSyncSettings } from '../types';
 import { toRemotePath, fromRemotePath, encodeRemoteUrl, ensureRemoteDir } from './remotePath';
+import { sha256 } from '../util/hash';
 
 const PROPFIND_BODY = `<?xml version="1.0" encoding="utf-8" ?>
 <d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">
@@ -54,6 +58,16 @@ export class NextcloudClient implements IWebDAVClient {
     return this.settings.serverUrl.replace(/\/$/, '');
   }
 
+  /** WebDAV エンドポイント URL から `/remote.php/...` 以降を除いたサーバーのベース URL。 */
+  private serverBaseUrl(): string {
+    return this.settings.serverUrl.replace(/\/remote\.php.*$/, '').replace(/\/$/, '');
+  }
+
+  /** versions / uploads など files 以外の DAV 名前空間のベース URL を返す。 */
+  private davBase(namespace: 'versions' | 'uploads'): string {
+    return `${this.serverBaseUrl()}/remote.php/dav/${namespace}/${encodeURIComponent(this.settings.username)}`;
+  }
+
   /** Vault 相対パスを、ベースフォルダ配下の WebDAV URL に変換する。 */
   private remoteUrl(rel: string): string {
     return encodeRemoteUrl(this.baseUrl, toRemotePath(this.remoteBase, rel));
@@ -89,6 +103,7 @@ export class NextcloudClient implements IWebDAVClient {
 
     let version = '';
     let hasChecksums = false;
+    let hasFilesLocking = false;
 
     if (capRes.status === 200) {
       const cap = capRes.json as Record<string, unknown>;
@@ -97,6 +112,9 @@ export class NextcloudClient implements IWebDAVClient {
       const caps = data?.capabilities as Record<string, unknown> | undefined;
       const checksums = caps?.checksums as Record<string, unknown> | undefined;
       hasChecksums = Array.isArray(checksums?.supportedTypes) && (checksums.supportedTypes as string[]).length > 0;
+      // files_lock app が有効だと capabilities.files.locking にバージョン文字列が入る。
+      const files = caps?.files as Record<string, unknown> | undefined;
+      hasFilesLocking = files?.locking != null && files.locking !== false;
     }
 
     // Get current sync-token
@@ -106,7 +124,7 @@ export class NextcloudClient implements IWebDAVClient {
       isNextcloud: true,
       version,
       hasChecksums,
-      hasFilesLocking: false,
+      hasFilesLocking,
       syncToken,
     };
     return this.features;
@@ -206,6 +224,179 @@ export class NextcloudClient implements IWebDAVClient {
     if (res.status !== 207) return null;
     const match = res.text.match(/<d:sync-token>([^<]+)<\/d:sync-token>/);
     return match ? match[1] : null;
+  }
+
+  // ── US2: バージョン履歴 ────────────────────────────────────────────────────
+
+  async listVersions(fileId: string): Promise<FileVersion[]> {
+    if (!fileId) throw new FeatureUnsupportedError('versions');
+    const collectionUrl = `${this.davBase('versions')}/versions/${encodeURIComponent(fileId)}`;
+    const res = await requestUrl({
+      url: collectionUrl,
+      method: 'PROPFIND',
+      headers: {
+        Authorization: this.authHeader,
+        Depth: '1',
+        'Content-Type': 'application/xml; charset=utf-8',
+      },
+      body: `<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:getlastmodified/><d:getcontentlength/></d:prop></d:propfind>`,
+      throw: false,
+    });
+    if (res.status === 404) return [];
+    if (res.status !== 207) throw new NetworkError(res.status, res.text);
+    return this.parseVersions(res.text, fileId);
+  }
+
+  async getVersionContent(version: FileVersion, fileId: string): Promise<ArrayBuffer> {
+    if (!fileId) throw new FeatureUnsupportedError('versions');
+    const res = await requestUrl({
+      url: this.versionUrl(version, fileId),
+      method: 'GET',
+      headers: { Authorization: this.authHeader },
+      throw: false,
+    });
+    if (res.status !== 200) throw new NetworkError(res.status, '');
+    return res.arrayBuffer;
+  }
+
+  async restoreVersion(version: FileVersion, fileId: string): Promise<void> {
+    if (!fileId) throw new FeatureUnsupportedError('versions');
+    const destination = `${this.davBase('versions')}/restore/target`;
+    const res = await requestUrl({
+      url: this.versionUrl(version, fileId),
+      method: 'MOVE',
+      headers: { Authorization: this.authHeader, Destination: destination },
+      throw: false,
+    });
+    if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
+  }
+
+  /** バージョンの GET/MOVE 用 URL を組み立てる。 */
+  private versionUrl(version: FileVersion, fileId: string): string {
+    return `${this.davBase('versions')}/versions/${encodeURIComponent(fileId)}/${encodeURIComponent(version.versionId)}`;
+  }
+
+  private parseVersions(xml: string, fileId: string): FileVersion[] {
+    const versions: FileVersion[] = [];
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(xml, 'text/xml');
+    const responses = doc.getElementsByTagNameNS('DAV:', 'response');
+    for (let i = 0; i < responses.length; i++) {
+      const resp = responses[i];
+      const href = resp.getElementsByTagNameNS('DAV:', 'href')[0]?.textContent ?? '';
+      // 末尾スラッシュ（コレクション自身）はスキップ。
+      if (href.endsWith('/')) continue;
+      const segments = decodeURIComponent(href).split('/').filter(Boolean);
+      const versionId = segments[segments.length - 1] ?? '';
+      // 自身（fileId フォルダ）や restore は対象外。
+      if (!versionId || versionId === fileId) continue;
+      const prop = resp.getElementsByTagNameNS('DAV:', 'prop')[0];
+      const lastModifiedStr = prop?.getElementsByTagNameNS('DAV:', 'getlastmodified')[0]?.textContent ?? '';
+      const lastModified = lastModifiedStr ? new Date(lastModifiedStr).getTime() : 0;
+      const size = parseInt(prop?.getElementsByTagNameNS('DAV:', 'getcontentlength')[0]?.textContent ?? '0', 10);
+      versions.push({ versionId, href, lastModified, size });
+    }
+    // 新しい順（lastModified 降順）。
+    versions.sort((a, b) => b.lastModified - a.lastModified);
+    return versions;
+  }
+
+  // ── US3: チャンクアップロード ──────────────────────────────────────────────
+
+  async uploadChunked(remotePath: string, data: ArrayBuffer, chunkSizeBytes: number): Promise<void> {
+    const uploadId = `obsidian-${this.settings.deviceId.slice(-8)}-${Date.now()}`;
+    const sessionUrl = `${this.davBase('uploads')}/${uploadId}`;
+    const finalUrl = this.remoteUrl(remotePath);
+    const total = data.byteLength;
+
+    try {
+      // 1. アップロードセッション作成。
+      const mk = await requestUrl({ url: sessionUrl, method: 'MKCOL', headers: { Authorization: this.authHeader }, throw: false });
+      if (mk.status < 200 || mk.status >= 300) throw new NetworkError(mk.status, mk.text);
+
+      // 2. 各チャンクを「15桁ゼロ埋めの開始バイトオフセット」名で PUT（辞書順 = 結合順）。
+      for (let offset = 0; offset < total; offset += chunkSizeBytes) {
+        const end = Math.min(offset + chunkSizeBytes, total);
+        const chunk = data.slice(offset, end);
+        const chunkName = String(offset).padStart(15, '0');
+        const put = await requestUrl({
+          url: `${sessionUrl}/${chunkName}`,
+          method: 'PUT',
+          headers: { Authorization: this.authHeader },
+          body: chunk,
+          throw: false,
+        });
+        if (put.status < 200 || put.status >= 300) throw new NetworkError(put.status, put.text);
+      }
+
+      // 3. 最終ファイルの親ディレクトリを確保してから .file を MOVE で結合。
+      await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
+      const move = await requestUrl({
+        url: `${sessionUrl}/.file`,
+        method: 'MOVE',
+        headers: {
+          Authorization: this.authHeader,
+          Destination: finalUrl,
+          'OC-Total-Length': String(total),
+        },
+        throw: false,
+      });
+      if (move.status < 200 || move.status >= 300) throw new NetworkError(move.status, move.text);
+
+      // 4. 結合後のチェックサム検証（FR-012）。取得できる場合のみ照合する。
+      await this.verifyRemoteChecksum(remotePath, data);
+    } catch (err) {
+      // 中断時はセッションを破棄して最終パスに不完全ファイルを残さない（FR-011）。
+      await requestUrl({ url: sessionUrl, method: 'DELETE', headers: { Authorization: this.authHeader }, throw: false }).catch(() => undefined);
+      throw err;
+    }
+  }
+
+  /** アップロード後にリモート checksum を取得しローカル SHA-256 と照合する。取得不可なら検証スキップ。 */
+  private async verifyRemoteChecksum(remotePath: string, data: ArrayBuffer): Promise<void> {
+    const res = await requestUrl({
+      url: this.remoteUrl(remotePath),
+      method: 'PROPFIND',
+      headers: { Authorization: this.authHeader, Depth: '0', 'Content-Type': 'application/xml; charset=utf-8' },
+      body: `<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:prop><oc:checksums/></d:prop></d:propfind>`,
+      throw: false,
+    });
+    if (res.status !== 207) return;
+    const m = res.text.match(/SHA256:([0-9a-fA-F]+)/i);
+    if (!m) return;
+    const remoteHash = m[1].toLowerCase();
+    const localHash = await sha256(data);
+    if (remoteHash !== localHash) {
+      throw new NetworkError(0, `Checksum mismatch after chunked upload: ${remotePath}`);
+    }
+  }
+
+  // ── US4: Files Locking ─────────────────────────────────────────────────────
+
+  async lockFile(remotePath: string): Promise<string> {
+    const res = await requestUrl({
+      url: this.remoteUrl(remotePath),
+      method: 'LOCK',
+      headers: { Authorization: this.authHeader, 'X-User-Lock': '1' },
+      throw: false,
+    });
+    if (res.status === 423) throw new FileLockedError(remotePath);
+    if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
+    const token = res.headers['lock-token'] ?? res.headers['oc-lock-token'] ?? '';
+    return token;
+  }
+
+  async unlockFile(remotePath: string, token: string): Promise<void> {
+    try {
+      await requestUrl({
+        url: this.remoteUrl(remotePath),
+        method: 'UNLOCK',
+        headers: { Authorization: this.authHeader, 'Lock-Token': token, 'X-User-Lock': '1' },
+        throw: false,
+      });
+    } catch {
+      // ベストエフォート。残留ロックは次回同期で回復する（FR-016）。
+    }
   }
 
   private parsePropfindResponse(xml: string): RemoteFileInfo[] {
