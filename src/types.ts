@@ -18,6 +18,8 @@ export interface DavSyncSettings {
   uploadChunkThresholdMB: number;
   /** 絶対上限（MB）。これを超えるファイルのみスキップ＋警告する。 */
   maxFileSizeMB: number;
+  /** ローカルの Markdown 編集を検知して即時同期する（ウォッチモード）。 */
+  watchOnChangeEnabled: boolean;
   /** チャンク分割アップロードを有効化する（既定 ON・Nextcloud のみ作動）。 */
   chunkedUploadEnabled: boolean;
   /** Files Locking を有効化する（実験的・既定 OFF・files_lock 対応サーバーのみ作動）。 */
@@ -35,6 +37,7 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   deviceId: '',
   uploadChunkThresholdMB: 50,
   maxFileSizeMB: 1024,
+  watchOnChangeEnabled: false,
   chunkedUploadEnabled: true,
   fileLockingEnabled: false,
   autoMergeEnabled: false,

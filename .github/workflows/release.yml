@@ -1,0 +1,60 @@
+name: Release Obsidian plugin
+
+# バージョン番号そのもの（例: 1.0.0、v 接頭辞なし）のタグ push で発火する。
+# Obsidian コミュニティプラグインのリリース慣習に従い、タグ名 = manifest.json の version とする。
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build plugin
+        run: pnpm run build
+
+      - name: Verify tag matches manifest version
+        run: |
+          MANIFEST_VERSION=$(node -p "require('./manifest.json').version")
+          TAG="${GITHUB_REF_NAME}"
+          if [ "$MANIFEST_VERSION" != "$TAG" ]; then
+            echo "::error::Tag ($TAG) does not match manifest.json version ($MANIFEST_VERSION)."
+            exit 1
+          fi
+
+      - name: Collect release assets
+        id: assets
+        run: |
+          ASSETS="main.js manifest.json"
+          if [ -f styles.css ]; then
+            ASSETS="$ASSETS styles.css"
+          fi
+          echo "files=$ASSETS" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            ${{ steps.assets.outputs.files }}

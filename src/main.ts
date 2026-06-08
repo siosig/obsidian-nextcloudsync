@@ -1,4 +1,4 @@
-import { App, Plugin, Notice, TFile } from 'obsidian';
+import { App, Plugin, Notice, TFile, TAbstractFile, debounce } from 'obsidian';
 import { DavSyncSettings, DEFAULT_SETTINGS, FeatureUnsupportedError } from './types';
 import { NextcloudSyncSettingTab } from './settings/SettingTab';
 import { SyncEngine } from './sync/SyncEngine';
@@ -56,6 +56,17 @@ export default class ObsidianNextcloudsync extends Plugin {
         return true;
       },
     });
+
+    // ウォッチモード: ローカル Markdown 編集を検知して即時同期する。
+    // 連続編集での過剰同期を避けるため、最後の編集から 2 秒後に 1 回だけ実行（デバウンス）。
+    const debouncedSync = debounce(() => { void this.syncEngine?.syncManual(); }, 2000, true);
+    this.registerEvent(
+      this.app.vault.on('modify', (file: TAbstractFile) => {
+        if (!this.settings.watchOnChangeEnabled) return;
+        if (!(file instanceof TFile) || file.extension !== 'md') return;
+        debouncedSync();
+      }),
+    );
   }
 
   /** アクティブノートのサーバーバージョン履歴を取得して Modal を表示する（US2）。 */
