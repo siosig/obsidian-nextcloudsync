@@ -1,5 +1,7 @@
 import esbuild from "esbuild";
 import process from "process";
+import path from "path";
+import fs from "fs";
 import builtins from "builtin-modules";
 
 const banner = `/*
@@ -9,6 +11,22 @@ if you want to view the source visit the plugins github repository
 `;
 
 const prod = process.argv[2] === "production";
+
+// 出力先ディレクトリ（OUTDIR で上書き可能。未指定時はプロジェクトルート）。
+// Obsidian の plugins フォルダへ直接ビルドしたい場合に利用する。
+const outDir = process.env.OUTDIR ?? ".";
+const outfile = path.join(outDir, "main.js");
+
+// プラグイン配布に必要な静的ファイルを出力先へコピーする。
+function copyAssets() {
+  if (outDir === ".") return;
+  fs.mkdirSync(outDir, { recursive: true });
+  for (const asset of ["manifest.json", "styles.css"]) {
+    if (fs.existsSync(asset)) {
+      fs.copyFileSync(asset, path.join(outDir, asset));
+    }
+  }
+}
 
 const context = await esbuild.context({
   banner: { js: banner },
@@ -35,12 +53,14 @@ const context = await esbuild.context({
   logLevel: "info",
   sourcemap: prod ? false : "inline",
   treeShaking: true,
-  outfile: "main.js",
+  outfile,
 });
 
 if (prod) {
   await context.rebuild();
+  copyAssets();
   process.exit(0);
 } else {
+  copyAssets();
   await context.watch();
 }

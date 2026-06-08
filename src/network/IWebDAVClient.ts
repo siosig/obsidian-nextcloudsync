@@ -9,4 +9,6 @@ export interface IWebDAVClient {
   moveFile(oldPath: string, newPath: string): Promise<void>;
   deleteFile(path: string, expectedRemoteId: string): Promise<void>;
   getSyncToken(): Promise<string | null>;
+  /** Returns the ArrayBuffer from the most recent downloadFile() call. */
+  getLastDownloadBuffer(): ArrayBuffer;
 }

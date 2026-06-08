@@ -251,7 +251,7 @@ export class SyncEngine {
     idType: FileState['idType'], summary: SyncSessionSummary,
   ): Promise<void> {
     await this.client!.downloadFile(remote.path, ''); // tmp path handled below
-    const data = (this.client as NextcloudClientLike).getLastDownloadBuffer();
+    const data = this.client!.getLastDownloadBuffer();
     await this.opts.localAdapter.atomicWriteBinary(remote.path, data);
     summary.downloadedCount++;
 
@@ -271,7 +271,7 @@ export class SyncEngine {
   ): Promise<void> {
     const localContent = await this.opts.localAdapter.read(path);
     await this.client!.downloadFile(remote.path, '');
-    const remoteData = (this.client as NextcloudClientLike).getLastDownloadBuffer();
+    const remoteData = this.client!.getLastDownloadBuffer();
     const remoteContent = new TextDecoder().decode(remoteData);
     const baseContent = ''; // Base content not stored; use empty as base for 3-way diff
 
@@ -386,7 +386,3 @@ export class SyncEngine {
   }
 }
 
-// Minimal interface for calling getLastDownloadBuffer
-interface NextcloudClientLike {
-  getLastDownloadBuffer(): ArrayBuffer;
-}

@@ -3,7 +3,11 @@
 export interface DavSyncSettings {
   serverUrl: string;
   username: string;
-  /** stored via Obsidian Credentials API, not in data.json */
+  /**
+   * Obsidian SecretStorage に保存したアプリパスワードの参照 ID。
+   * 実際のパスワード値は data.json には保存されず、secretStorage が暗号化管理する。
+   */
+  passwordSecretId: string;
   syncFolder: string;
   syncIntervalMinutes: number;
   networkTimeoutSeconds: number;
@@ -16,6 +20,7 @@ export interface DavSyncSettings {
 export const DEFAULT_SETTINGS: DavSyncSettings = {
   serverUrl: '',
   username: '',
+  passwordSecretId: '',
   syncFolder: '',
   syncIntervalMinutes: 15,
   networkTimeoutSeconds: 30,

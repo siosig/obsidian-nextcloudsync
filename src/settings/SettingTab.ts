@@ -1,8 +1,11 @@
-import { App, PluginSettingTab, Setting, Notice } from 'obsidian';
+import { App, PluginSettingTab, Setting, Notice, SecretComponent } from 'obsidian';
 import type ObsidianNextcloudsync from '../main';
 import { DavSyncSettings } from '../types';
 
-const CREDENTIALS_KEY = 'obsidian-nextcloudsync-password';
+/** SecretStorage 上の既定シークレット ID（ユーザーが「リンク…」で別 ID を選ぶことも可能）。 */
+const DEFAULT_PASSWORD_SECRET_ID = 'obsidian-nextcloudsync-password';
+/** 旧バージョンが localStorage に保存していたパスワードのキー（移行用）。 */
+const LEGACY_CREDENTIALS_KEY = 'obsidian-nextcloudsync-password';
 
 export class NextcloudSyncSettingTab extends PluginSettingTab {
   constructor(app: App, private readonly plugin: ObsidianNextcloudsync) {
@@ -43,19 +46,14 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('App Password')
-      .setDesc('Nextcloud app password (stored securely, never saved in data.json). Generate at Settings → Security → Devices & Sessions.')
-      .addText(text => {
-        const input = text
-          .setPlaceholder('App password here...')
-          .onChange(async (value) => {
-            // Store via Credentials API
-            this.app.saveLocalStorage(CREDENTIALS_KEY, value);
-          });
-        // Load existing password hint
-        const existing = this.app.loadLocalStorage(CREDENTIALS_KEY);
-        if (existing) input.setValue('••••••••');
-        return input;
-      });
+      .setDesc('Nextcloud app password. Click "Link…" to store it in Obsidian\'s encrypted Secret Storage (never saved in data.json). Generate at Settings → Security → Devices & Sessions.')
+      .addComponent((el) => new SecretComponent(this.app, el)
+        .setValue(this.plugin.settings.passwordSecretId || DEFAULT_PASSWORD_SECRET_ID)
+        .onChange(async (secretId) => {
+          // SecretComponent が返すのはシークレットの参照 ID（実値は secretStorage 側）。
+          this.plugin.settings.passwordSecretId = secretId;
+          await this.plugin.saveSettings();
+        }));
 
     new Setting(containerEl)
       .setName('Sync Folder')
@@ -154,10 +152,15 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
   }
 }
 
-export function loadAppPassword(app: App): string | null {
-  return app.loadLocalStorage(CREDENTIALS_KEY);
-}
-
-export function saveAppPassword(app: App, password: string | null): void {
-  app.saveLocalStorage(CREDENTIALS_KEY, password);
+/**
+ * SecretStorage からアプリパスワードを取得する。
+ * secretId が未設定、または該当シークレットが無い場合は、旧 localStorage 保存値へフォールバックする
+ * （旧バージョンからの移行を壊さないため）。
+ */
+export function loadAppPassword(app: App, secretId: string): string | null {
+  const id = secretId || DEFAULT_PASSWORD_SECRET_ID;
+  const secret = app.secretStorage.getSecret(id);
+  if (secret) return secret;
+  // 移行フォールバック: 旧 localStorage に残っていれば利用する。
+  return app.loadLocalStorage(LEGACY_CREDENTIALS_KEY);
 }
