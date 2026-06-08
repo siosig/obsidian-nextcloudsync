@@ -52,7 +52,6 @@ export class RenameTracker {
     if (!file) return;
     this.stateDB.deleteFile(oldPath);
     this.stateDB.setFile({ ...file, path: newPath });
-    console.log(`[RenameTracker] Renamed (remote→local): ${oldPath} → ${newPath}`);
   }
 
   /** Issue a WebDAV MOVE for a locally-renamed file. Falls back to conflict on 412. */

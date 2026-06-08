@@ -31,7 +31,7 @@ export class DebugPreviewModal extends Modal {
   }
 
   onOpen(): void {
-    this.modalEl.style.width = 'min(900px, 95vw)';
+    this.modalEl.addClass('ncs-debug-modal');
     this.render();
   }
 
@@ -55,11 +55,7 @@ export class DebugPreviewModal extends Modal {
 
     // Clickable filter chips: "All" plus one per present action. Clicking narrows the list;
     // clicking the active chip again clears the filter.
-    const chips = contentEl.createDiv();
-    chips.style.display = 'flex';
-    chips.style.flexWrap = 'wrap';
-    chips.style.gap = '6px';
-    chips.style.margin = '4px 0 8px';
+    const chips = contentEl.createDiv({ cls: 'ncs-debug-chips' });
 
     const makeChip = (label: string, value: SyncAction | null) => {
       const active = this.filter === value;
@@ -83,24 +79,14 @@ export class DebugPreviewModal extends Modal {
     });
 
     // One clickable row per file: action mark + local path + remote path.
-    const list = contentEl.createDiv();
-    list.style.maxHeight = '50vh';
-    list.style.overflow = 'auto';
-    list.style.fontFamily = 'var(--font-monospace)';
-    list.style.fontSize = '12px';
+    const list = contentEl.createDiv({ cls: 'ncs-debug-list' });
 
     for (const e of shown) {
       const local = e.localExists ? e.path : '—';
       const remote = e.remoteExists ? `${this.vaultName}/${e.path}` : '—';
 
-      const row = list.createDiv();
-      row.style.padding = '3px 6px';
-      row.style.borderRadius = '4px';
-      row.style.cursor = 'pointer';
-      row.style.whiteSpace = 'pre';
+      const row = list.createDiv({ cls: 'ncs-debug-row' });
       row.setText(`${ACTION_LABEL[e.action].padEnd(18)}  L: ${local}\n${''.padEnd(20)}  R: ${remote}`);
-      row.addEventListener('mouseenter', () => { row.style.background = 'var(--background-modifier-hover)'; });
-      row.addEventListener('mouseleave', () => { row.style.background = 'transparent'; });
       row.addEventListener('click', () => this.onSelect?.(e));
     }
   }

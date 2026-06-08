@@ -32,3 +32,6 @@ report/
 # TypeScript incremental build info
 *.tsbuildinfo
 .env
+
+# Playwright MCP snapshot output
+.playwright-mcp/

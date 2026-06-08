@@ -4,22 +4,22 @@ const TMP_SUFFIX = '.nextcloudsync.tmp';
 const IGNORE_TIMEOUT_MS = 5000;
 
 export class LocalAdapter {
-  private ignoreList: Map<string, ReturnType<typeof setTimeout>> = new Map();
+  private ignoreList: Map<string, number> = new Map();
 
   constructor(private readonly adapter: DataAdapter) {}
 
   /** Register a path to be ignored for Vault events (prevents sync loop). */
   ignore(path: string): void {
     const existing = this.ignoreList.get(path);
-    if (existing) clearTimeout(existing);
-    const timer = setTimeout(() => this.ignoreList.delete(path), IGNORE_TIMEOUT_MS);
+    if (existing) window.clearTimeout(existing);
+    const timer = window.setTimeout(() => this.ignoreList.delete(path), IGNORE_TIMEOUT_MS);
     this.ignoreList.set(path, timer);
   }
 
   /** Check and consume an ignore entry. Returns true if the path should be skipped. */
   shouldIgnore(path: string): boolean {
     if (this.ignoreList.has(path)) {
-      clearTimeout(this.ignoreList.get(path)!);
+      window.clearTimeout(this.ignoreList.get(path));
       this.ignoreList.delete(path);
       return true;
     }
