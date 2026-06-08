@@ -12,7 +12,7 @@ import {
 } from '../types';
 import { IWebDAVClient } from './IWebDAVClient';
 import { DavSyncSettings } from '../types';
-import { toRemotePath, fromRemotePath, encodeRemoteUrl, ensureRemoteDir } from './remotePath';
+import { toRemotePath, hrefToRelative, encodeRemoteUrl, ensureRemoteDir } from './remotePath';
 import { sha256 } from '../util/hash';
 
 const PROPFIND_BODY = `<?xml version="1.0" encoding="utf-8" ?>
@@ -182,14 +182,32 @@ export class NextcloudClient implements IWebDAVClient {
   async uploadFile(remotePath: string, data: ArrayBuffer): Promise<void> {
     // PUT does not auto-create parent directories, so create the parent hierarchy (including the base folder) first.
     await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
+    // Send OC-Checksum so Nextcloud persists the SHA-256 (the server does not compute it on its own).
+    // This lets later syncs recognise unchanged files cheaply via PROPFIND instead of re-downloading.
+    const checksum = `SHA256:${await sha256(data)}`;
     const res = await requestUrl({
       url: this.remoteUrl(remotePath),
       method: 'PUT',
-      headers: { Authorization: this.authHeader },
+      headers: { Authorization: this.authHeader, 'OC-Checksum': checksum },
       body: data,
       throw: false,
     });
     if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
+  }
+
+  async recalcChecksum(remotePath: string): Promise<string | null> {
+    // Nextcloud's ChecksumUpdatePlugin computes the hash server-side for an existing file
+    // (no download) and persists it, returning it in the OC-Checksum response header.
+    const res = await requestUrl({
+      url: this.remoteUrl(remotePath),
+      method: 'PATCH',
+      headers: { Authorization: this.authHeader, 'X-Recalculate-Hash': 'sha256' },
+      throw: false,
+    });
+    if (res.status !== 204 && res.status !== 200) return null;
+    const header = res.headers['oc-checksum'] ?? res.headers['OC-Checksum'] ?? '';
+    const m = header.match(/SHA256:([0-9a-fA-F]+)/i);
+    return m ? m[1].toLowerCase() : null;
   }
 
   async moveFile(oldPath: string, newPath: string): Promise<void> {
@@ -338,6 +356,8 @@ export class NextcloudClient implements IWebDAVClient {
           Authorization: this.authHeader,
           Destination: finalUrl,
           'OC-Total-Length': String(total),
+          // Persist the SHA-256 on the assembled file (same rationale as uploadFile).
+          'OC-Checksum': `SHA256:${await sha256(data)}`,
         },
         throw: false,
       });
@@ -427,8 +447,7 @@ export class NextcloudClient implements IWebDAVClient {
         checksum = m ? m[1].toLowerCase() : null;
       }
 
-      const fullPath = decodeURIComponent(href.replace(/^.*\/remote\.php\/dav\/files\/[^/]+\//, ''));
-      const path = fromRemotePath(this.remoteBase, fullPath);
+      const path = hrefToRelative(this.baseUrl, this.remoteBase, href);
       if (path === null || path === '') continue; // Skip entries outside the base folder or the folder itself
       results.push({ path, fileId, checksum, etag, size, lastModified });
     }
@@ -447,8 +466,7 @@ export class NextcloudClient implements IWebDAVClient {
     for (let i = 0; i < responses.length; i++) {
       const resp = responses[i];
       const href = resp.getElementsByTagNameNS('DAV:', 'href')[0]?.textContent ?? '';
-      const fullPath = decodeURIComponent(href.replace(/^.*\/remote\.php\/dav\/files\/[^/]+\//, ''));
-      const path = fromRemotePath(this.remoteBase, fullPath);
+      const path = hrefToRelative(this.baseUrl, this.remoteBase, href);
       if (path === null || path === '') continue; // Skip entries outside the base folder or the folder itself
       const statusEl = resp.getElementsByTagNameNS('DAV:', 'status')[0];
       if (statusEl?.textContent?.includes('404')) {

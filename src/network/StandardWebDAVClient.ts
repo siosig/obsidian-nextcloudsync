@@ -11,7 +11,7 @@ import {
 } from '../types';
 import { IWebDAVClient } from './IWebDAVClient';
 import { DavSyncSettings } from '../types';
-import { toRemotePath, fromRemotePath, encodeRemoteUrl, ensureRemoteDir } from './remotePath';
+import { toRemotePath, hrefToRelative, encodeRemoteUrl, ensureRemoteDir } from './remotePath';
 
 export class StandardWebDAVClient implements IWebDAVClient {
   /** Remote directories already created via MKCOL (in-session cache). */
@@ -96,6 +96,12 @@ export class StandardWebDAVClient implements IWebDAVClient {
     return (this as Record<string, unknown>)._lastDownload as ArrayBuffer ?? new ArrayBuffer(0);
   }
 
+  async recalcChecksum(_remotePath: string): Promise<string | null> {
+    // Server-side checksum computation is a Nextcloud extension; not available on plain WebDAV.
+    // Returning null makes the initial sync fall back to content-based conflict resolution.
+    return null;
+  }
+
   async uploadFile(remotePath: string, data: ArrayBuffer): Promise<void> {
     await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
     const res = await requestUrl({ url: this.remoteUrl(remotePath), method: 'PUT', headers: { Authorization: this.authHeader }, body: data, throw: false });
@@ -177,22 +183,8 @@ export class StandardWebDAVClient implements IWebDAVClient {
     return { files, folders };
   }
 
-  /**
-   * Converts an href from a PROPFIND response into a Vault-relative path.
-   * Strips the serverUrl's path portion from the href (an absolute URL or absolute path) to get the files-root-relative
-   * path, then removes the base folder (the Vault name). Returns null if outside the base.
-   */
+  /** Converts an href from a PROPFIND response into a Vault-relative path (see {@link hrefToRelative}). */
   private hrefToRel(href: string): string | null {
-    let pathname: string;
-    try {
-      pathname = new URL(href, this.baseUrl).pathname;
-    } catch {
-      pathname = href;
-    }
-    pathname = decodeURIComponent(pathname);
-    const basePath = decodeURIComponent(new URL(this.baseUrl).pathname).replace(/\/+$/, '');
-    let fromRoot = basePath && pathname.startsWith(basePath) ? pathname.slice(basePath.length) : pathname;
-    fromRoot = fromRoot.replace(/^\/+|\/+$/g, '');
-    return fromRemotePath(this.remoteBase, fromRoot);
+    return hrefToRelative(this.baseUrl, this.remoteBase, href);
   }
 }

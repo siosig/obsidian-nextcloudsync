@@ -7,6 +7,8 @@ const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
 
 export interface MergeEngineOptions {
   maxConflictRegions: number;
+  /** What to do when frontmatter differs. Default 'conflict' inserts markers for the whole file. */
+  frontmatterConflictStrategy?: 'local-wins' | 'remote-wins' | 'conflict';
 }
 
 export class MergeEngine {
@@ -29,9 +31,24 @@ export class MergeEngine {
     const { frontmatter: remoteFm, body: remoteBody } = this.splitFrontmatter(remote);
     const { body: baseBody } = this.splitFrontmatter(base);
 
-    // 2. If frontmatter differs → refuse auto-merge (Critical: FR-010)
+    // 2. If frontmatter differs, apply the configured strategy.
     if (localFm !== remoteFm) {
-      return { success: false, mergedContent: local, hadConflicts: true, conflictRegions: -1 };
+      const strategy = this.opts.frontmatterConflictStrategy ?? 'conflict';
+      if (strategy === 'conflict') {
+        return { success: false, mergedContent: local, hadConflicts: true, conflictRegions: -1 };
+      }
+      // local-wins / remote-wins: pick frontmatter from the chosen side, then merge bodies.
+      const chosenFm = strategy === 'local-wins' ? localFm : remoteFm;
+      let result = this.primaryStrategy.merge(baseBody, localBody, remoteBody);
+      if (!result.success || result.conflictRegions < 0) {
+        result = this.fallbackStrategy.merge(baseBody, localBody, remoteBody);
+      }
+      if (result.conflictRegions > this.opts.maxConflictRegions) {
+        return { success: false, mergedContent: local, hadConflicts: true, conflictRegions: result.conflictRegions };
+      }
+      const mergedBody = typeof result.mergedContent === 'string' ? result.mergedContent : (result.mergedContent as unknown as { text: string })?.text ?? '';
+      const merged = chosenFm ? `${chosenFm}\n${mergedBody}` : mergedBody;
+      return { ...result, mergedContent: merged };
     }
 
     // 3. Try reconcile-text first

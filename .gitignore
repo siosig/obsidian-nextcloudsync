@@ -33,3 +33,4 @@ CLAUDE.md
 
 # TypeScript incremental build info
 *.tsbuildinfo
+.env

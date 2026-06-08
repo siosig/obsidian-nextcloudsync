@@ -1,11 +1,13 @@
 import { MergeEngine } from '../../src/sync/merge/MergeEngine';
 
-// Mock reconcile-text and node-diff3 for unit tests
+// Mock reconcile-text and node-diff3 for unit tests.
+// IMPORTANT: the real reconcile() returns a TextWithCursors object ({ text, cursors }), not a string —
+// the mock must mirror that shape so the strategy's `.text` extraction is exercised.
 jest.mock('reconcile-text', () => ({
   reconcile: (base: string, local: string, remote: string) => {
     // Simplistic: concatenate unique lines
-    if (local === remote) return local;
-    return local + remote;
+    const text = local === remote ? local : local + remote;
+    return { text, cursors: [] };
   },
 }), { virtual: true });
 

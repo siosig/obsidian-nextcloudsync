@@ -9,7 +9,12 @@
     "test": "jest --passWithNoTests",
     "test:watch": "jest --watch"
   },
-  "keywords": ["obsidian", "nextcloud", "sync", "webdav"],
+  "keywords": [
+    "obsidian",
+    "nextcloud",
+    "sync",
+    "webdav"
+  ],
   "author": "Daisuke ITO",
   "license": "MIT",
   "devDependencies": {
@@ -25,5 +30,8 @@
   "dependencies": {
     "node-diff3": "^3.1.2",
     "reconcile-text": "^0.11.0"
+  },
+  "allowScripts": {
+    "esbuild@0.21.4": true
   }
 }
