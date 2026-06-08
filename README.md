@@ -166,6 +166,10 @@ npm run build    # type-check + production build
 npm test         # run the test suite
 ```
 
+**Commit messages must be written in English.** Keep the subject in the imperative mood and explain the *why* in the body when it isn't obvious.
+
+**Commits must be authored as `Daisuke ITO <siosig@gmail.com>`.** This author identity is fixed for the project; configure your local Git accordingly (e.g. `git commit --author="Daisuke ITO <siosig@gmail.com>"`).
+
 Issues and pull requests are welcome.
 
 ---

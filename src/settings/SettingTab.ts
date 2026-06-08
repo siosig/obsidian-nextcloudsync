@@ -1,6 +1,6 @@
 import { App, PluginSettingTab, Setting, Notice, SecretComponent, ButtonComponent } from 'obsidian';
 import type ObsidianNextcloudsync from '../main';
-import { DavSyncSettings, LoginFlowError } from '../types';
+import { LoginFlowError } from '../types';
 import { LoginFlowV2 } from '../auth/LoginFlowV2';
 import { MIN_NEXTCLOUD_VERSION, isSupportedNextcloudVersion } from '../util/version';
 
@@ -16,24 +16,22 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
 
   display(): void {
     const { containerEl } = this;
+    const configDir = this.app.vault.configDir;
     containerEl.empty();
-    containerEl.createEl('h2', { text: 'Nextcloud Sync Settings' });
 
     // Recommendation banner: shown when the last-connected server is below the recommended
     // Nextcloud version. This no longer blocks syncing — it only advises an upgrade.
     const serverVersion = this.plugin.settings.lastKnownServerVersion;
     if (serverVersion && !isSupportedNextcloudVersion(serverVersion)) {
-      const warn = containerEl.createEl('div', {
+      containerEl.createEl('div', {
         text: `⚠️ Connected Nextcloud server is ${serverVersion}. Nextcloud ${MIN_NEXTCLOUD_VERSION} (Hub 26 "Winter") or later is recommended; some features may be unavailable or degrade on older servers.`,
+        cls: 'ncs-setting-warning',
       });
-      warn.style.cssText =
-        'border-left: 3px solid var(--text-warning, #d08770); background: var(--background-secondary);'
-        + ' padding: 8px 12px; margin: 8px 0 16px; border-radius: 4px;';
     }
 
     // Multi-Vault notice
     containerEl.createEl('p', {
-      text: 'Settings are stored per-Vault. Each Vault can have a different Nextcloud server and user.',
+      text: 'Settings are stored per-vault. Each vault can have a different Nextcloud server and user.',
       cls: 'setting-item-description',
     });
 
@@ -57,7 +55,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Username')
-      .setDesc('Nextcloud username (Vault-specific)')
+      .setDesc('Nextcloud username (vault-specific)')
       .addText(text => text
         .setValue(this.plugin.settings.username)
         .onChange(async (value) => {
@@ -66,7 +64,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         }));
 
     new Setting(containerEl)
-      .setName('App Password')
+      .setName('App password')
       .setDesc('Nextcloud app password. Click "Link…" to store it in Obsidian\'s encrypted Secret Storage (never saved in data.json). Generate at Settings → Security → Devices & Sessions.')
       .addComponent((el) => new SecretComponent(this.app, el)
         .setValue(this.plugin.settings.passwordSecretId || DEFAULT_PASSWORD_SECRET_ID)
@@ -78,7 +76,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Log in via browser (Nextcloud)')
-      .setDesc('Use Nextcloud Login Flow v2 to obtain an app password automatically. Requires the Server URL above. Falls back to manual entry on non-Nextcloud servers.')
+      .setDesc('Use Nextcloud login flow v2 to obtain an app password automatically. Requires the server URL above. Falls back to manual entry on non-nextcloud servers.')
       .addButton(btn => {
         loginButton = btn;
         btn
@@ -90,8 +88,8 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName('Sync Folder')
-      .setDesc('Fixed to this Vault\'s name. The entire Vault is synced under a remote folder named after the Vault.')
+      .setName('Sync folder')
+      .setDesc('Fixed to this vault\'s name. The entire vault is synced under a remote folder named after the vault.')
       .addText(text => text
         .setValue(this.app.vault.getName())
         .setDisabled(true));
@@ -100,17 +98,17 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     targetSetting = new Setting(containerEl)
       .setName('Sync target (WebDAV)')
       .setDesc(this.syncTargetUrl());
-    targetSetting.descEl.style.wordBreak = 'break-all';
+    targetSetting.descEl.addClass('ncs-break-all');
 
     this.addNumberSlider(containerEl, {
-      name: 'Sync Interval (minutes)', desc: '0 = manual sync only',
+      name: 'Sync interval (minutes)', desc: '0 = manual sync only',
       min: 0, max: 60, step: 1,
       get: () => this.plugin.settings.syncIntervalMinutes,
       set: (v) => { this.plugin.settings.syncIntervalMinutes = v; },
     });
 
     this.addNumberSlider(containerEl, {
-      name: 'Network Timeout (seconds)',
+      name: 'Network timeout (seconds)',
       min: 5, max: 120, step: 5,
       get: () => this.plugin.settings.networkTimeoutSeconds,
       set: (v) => { this.plugin.settings.networkTimeoutSeconds = v; },
@@ -128,7 +126,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Sync bookmarks')
-      .setDesc('The .obsidian config folder is excluded from sync. Enable this to also sync Obsidian bookmarks (.obsidian/bookmarks.json) across devices.')
+      .setDesc(`The ${configDir} config folder is excluded from sync. Enable this to also sync Obsidian bookmarks (${configDir}/bookmarks.json) across devices.`)
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.syncBookmarks)
         .onChange(async (value) => {
@@ -162,11 +160,11 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
-    containerEl.createEl('h3', { text: 'Experimental Features' });
+    new Setting(containerEl).setName('Experimental features').setHeading();
 
     new Setting(containerEl)
       .setName('Debug mode')
-      .setDesc('When enabled, "Sync Now" shows a dry-run plan (per-file local/remote paths and the action: upload, download, merge, etc.) instead of actually syncing.')
+      .setDesc('When enabled, "sync now" shows a dry-run plan (per-file local/remote paths and the action: upload, download, merge, etc.) instead of actually syncing.')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.debugMode)
         .onChange(async (value) => {
@@ -175,8 +173,8 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         }));
 
     new Setting(containerEl)
-      .setName('File Locking (Experimental)')
-      .setDesc('⚠️ When enabled, files are locked on the server during updates to prevent concurrent-edit conflicts. Requires the Nextcloud Files Locking app. Default off.')
+      .setName('File locking (experimental)')
+      .setDesc('⚠️ when enabled, files are locked on the server during updates to prevent concurrent-edit conflicts. Requires the Nextcloud files locking app. Default off.')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.fileLockingEnabled)
         .onChange(async (value) => {
@@ -185,8 +183,8 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         }));
 
     new Setting(containerEl)
-      .setName('Auto Merge (Experimental)')
-      .setDesc('⚠️ When enabled, conflicts are auto-merged using reconcile-text. Results may be unexpected. Ensure Nextcloud version history is enabled before activating.')
+      .setName('Auto merge (experimental)')
+      .setDesc('⚠️ when enabled, conflicts are auto-merged using reconcile-text. Results may be unexpected. Ensure Nextcloud version history is enabled before activating.')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.autoMergeEnabled)
         .onChange(async (value) => {
@@ -195,8 +193,8 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         }));
 
     new Setting(containerEl)
-      .setName('Frontmatter Conflict Strategy (Auto Merge)')
-      .setDesc('When local and remote frontmatter differ: "Conflict markers" inserts markers for the whole file (safest). "Local wins" / "Remote wins" keeps that side\'s frontmatter and still merges the body.')
+      .setName('Frontmatter conflict strategy (auto merge)')
+      .setDesc('When local and remote frontmatter differ: "Conflict markers" inserts markers for the whole file (safest). "local wins" / "remote wins" keeps that side\'s frontmatter and still merges the body.')
       .addDropdown(drop => drop
         .addOption('conflict', 'Conflict markers (safe default)')
         .addOption('local-wins', 'Local wins (keep local frontmatter)')
@@ -208,7 +206,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         }));
 
     new Setting(containerEl)
-      .setName('Max Conflict Regions (Auto Merge)')
+      .setName('Max conflict regions (auto merge)')
       .setDesc('If more regions conflict than this threshold, fall back to inline markers')
       .addSlider(slider => slider
         .setLimits(0, 20, 1)
@@ -218,19 +216,19 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
-    containerEl.createEl('h3', { text: 'Actions' });
+    new Setting(containerEl).setName('Actions').setHeading();
 
     new Setting(containerEl)
-      .setName('Sync Now')
+      .setName('Sync now')
       .addButton(btn => btn
-        .setButtonText('Sync Now')
+        .setButtonText('Sync now')
         .setCta()
         .onClick(async () => {
           await this.plugin.runSyncNow();
         }));
 
     new Setting(containerEl)
-      .setName('Last Session Summary')
+      .setName('Last session summary')
       .addButton(btn => btn
         .setButtonText('View')
         .onClick(() => {
@@ -278,8 +276,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     if (opts.desc) setting.setDesc(opts.desc);
 
     // Current-value label (always shown to the left of the slider).
-    const valueLabel = setting.controlEl.createSpan({ cls: 'setting-item-description' });
-    valueLabel.style.marginRight = '8px';
+    const valueLabel = setting.controlEl.createSpan({ cls: 'setting-item-description ncs-slider-value' });
     valueLabel.setText(String(opts.get()));
 
     setting.addSlider(slider => slider
@@ -300,7 +297,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
   private async runLoginFlow(): Promise<void> {
     const serverUrl = this.plugin.settings.serverUrl.trim();
     if (!serverUrl) {
-      new Notice('Please enter the Server URL first.');
+      new Notice('Please enter the server URL first.');
       return;
     }
     const serverBaseUrl = serverUrl.replace(/\/remote\.php.*$/, '').replace(/\/$/, '');
@@ -318,15 +315,16 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         await this.plugin.saveSettings();
         await this.plugin.initSyncEngine();
         new Notice(`✅ Logged in as ${result.loginName}`, 6000);
+        // eslint-disable-next-line @typescript-eslint/no-deprecated -- display() is the supported imperative settings API; getSettingDefinitions requires insider-only Obsidian 1.13.0, so migrate after it reaches GA.
         this.display(); // Re-render the settings panel
       } else if (result.status === 'timeout') {
-        new Notice('⏱️ Login timed out. Please try again.', 6000);
+        new Notice('⏱️ login timed out. Please try again.', 6000);
       } else {
-        new Notice('This server does not support Login Flow. Please enter an app password manually.', 8000);
+        new Notice('This server does not support login flow. Please enter an app password manually.', 8000);
       }
     } catch (err) {
       if (err instanceof LoginFlowError && err.reason === 'unsupported') {
-        new Notice('This server does not support Login Flow. Please enter an app password manually.', 8000);
+        new Notice('This server does not support login flow. Please enter an app password manually.', 8000);
       } else {
         new Notice(`❌ Login failed: ${(err as Error).message}`, 6000);
       }
@@ -344,7 +342,7 @@ export function loadAppPassword(app: App, secretId: string): string | null {
   const secret = app.secretStorage.getSecret(id);
   if (secret) return secret;
   // Migration fallback: use the legacy localStorage value if it remains.
-  return app.loadLocalStorage(LEGACY_CREDENTIALS_KEY);
+  return app.loadLocalStorage(LEGACY_CREDENTIALS_KEY) as string | null;
 }
 
 /**
