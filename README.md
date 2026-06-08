@@ -34,12 +34,13 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 - **Dry-run preview** — see exactly what will upload / download *before* the first sync runs, and approve it.
 - **Atomic writes** — a download interrupted mid-transfer never leaves a half-written or 0-byte file in your Vault.
 - **Rename / move tracking** via Nextcloud file IDs — moving a note doesn't re-upload it everywhere.
-- **Trashbin deletes** — local deletions go to the system trash; remote deletions use the Nextcloud trashbin (recoverable).
+- **Trashbin deletes** — remote deletions use the Nextcloud trashbin (recoverable). When a deletion is applied to your local Vault, it follows **your Obsidian "Deleted files" setting** (system trash / move to `.trash` / permanently delete) rather than forcing one behavior; folders and files outside the Vault's tracked notes (e.g. config-folder files) are handled too.
 - **Per-Vault configuration** — each Vault can target a different Nextcloud server / account without state bleeding between them.
 - **Periodic auto-sync** with a configurable interval (set to `0` for manual-only), plus a **Sync Now** command.
 - **Sync on file change (watch mode)** — optionally sync immediately after you edit a local Markdown file (debounced ~2s after you stop typing). Toggle on/off in settings; works alongside the periodic interval.
 - **Resilient retries** — failed files are skipped, queued, and retried next sync with exponential backoff; a dropped Wi-Fi connection resumes automatically.
 - **Standard WebDAV fallback** — works against any WebDAV server (recursive), Nextcloud features auto-disabled.
+- **Debug mode (dry-run inspector)** — a settings toggle that turns **Sync Now** into a *preview only*: it lists every file with its local/remote paths and the action a real sync would take (upload / download / merge / delete), **without changing anything**. Click a file row to open a read-only before/after merge preview for that file. Watch mode is suspended while Debug mode is on. Turn it off to run real syncs again.
 
 ### Conflict safety (never lose content)
 - **Content is never discarded** on conflict.
