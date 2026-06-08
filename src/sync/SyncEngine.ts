@@ -23,6 +23,7 @@ import { DryRunModal, DryRunPlan } from '../ui/DryRunModal';
 import { RenameTracker } from './RenameTracker';
 import { ConflictResolver } from './ConflictResolver';
 import { sha256 } from '../util/hash';
+import { isSafeVaultRelativePath } from '../network/remotePath';
 import { IUploadStrategy } from './upload/IUploadStrategy';
 import { SimpleUploadStrategy } from './upload/SimpleUploadStrategy';
 import { ChunkedUploadStrategy } from './upload/ChunkedUploadStrategy';
@@ -623,9 +624,11 @@ export class SyncEngine {
         // delete) instead of forcing one behavior. trashFile handles both files and folders.
         await this.opts.app.fileManager.trashFile(file);
         summary.downloadedCount++;
-      } else if (await this.opts.app.vault.adapter.exists(normalized)) {
+      } else if (isSafeVaultRelativePath(path) && await this.opts.app.vault.adapter.exists(normalized)) {
         // Not a vault-tracked abstract file (e.g. dotfiles under a config folder): delete it
-        // directly so the deletion is never silently skipped.
+        // directly so the deletion is never silently skipped. Defense-in-depth: only when the
+        // path is safe (no traversal / not absolute), so an attacker-controlled remote path can
+        // never reach this raw fs sink even if the boundary guard is ever bypassed.
         await this.opts.app.vault.adapter.remove(normalized);
         summary.downloadedCount++;
       }

@@ -80,6 +80,15 @@ describe('SyncEngine.processRemoteDeletion', () => {
     expect(deleteFile).toHaveBeenCalledWith('gone.md');
   });
 
+  // T6 (security): 未追跡かつ traversal を含むパスは adapter.remove を呼ばない（多層防御）
+  it('T6: 抽象ファイル未解決でも traversal パスは adapter.remove で削除しない', async () => {
+    const { run, remove } = makeEngine({ resolved: null, exists: true });
+
+    await run('../../etc/passwd');
+
+    expect(remove).not.toHaveBeenCalled();
+  });
+
   // T5: 削除失敗は例外を伝播させず、StateDB.deleteFile も呼ばない (不変条件 C3 / FR-006)
   it('T5: trashFile が失敗しても例外を伝播させず、再試行余地のため deleteFile を呼ばない', async () => {
     const file = new (TFile as unknown as new (p: string) => TFile)('Notes/b.md');
