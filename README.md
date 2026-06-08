@@ -4,7 +4,7 @@ Bidirectional sync between your Obsidian Vault and Nextcloud — built **specifi
 
 Most "WebDAV sync" plugins treat the server as a dumb file store: they compare modification times, copy files, and hope for the best. **Nextcloud Sync** instead talks to Nextcloud's own APIs (Capabilities, file IDs, checksums, versions, locking, Login Flow v2) to make syncing *safe*, *fast*, and *frictionless* — while still degrading gracefully to plain WebDAV when those APIs aren't available.
 
-> 日本語版は [`README.ja.md`](README.ja.md) を参照してください（下部に概要もあります）。
+> A Japanese translation is available at [`README.ja.md`](README.ja.md).
 
 ---
 
@@ -91,6 +91,47 @@ Your Vault is synced into a folder named after the Vault on the Nextcloud side, 
 
 ---
 
+## Enabling Nextcloud server-side features
+
+Two power features depend on server-side Nextcloud apps. Each only needs to be enabled **once by a Nextcloud administrator**. The plugin detects them through the capabilities API — if an app is missing, the corresponding feature simply stays inactive (no error).
+
+### File Locking
+
+Locking uses Nextcloud's **Temporary files lock** app (app ID `files_lock`, available since Nextcloud 24; bundled with Nextcloud Hub from v34).
+
+- **Web UI (admin):** sign in as an administrator → profile menu (top-right) → **Apps** → search for **Temporary files lock** → **Enable** (download it first if it isn't installed).
+- **Command line (`occ`)** — run as the web-server user (often `www-data`):
+  ```bash
+  sudo -u www-data php /var/www/nextcloud/occ app:enable files_lock
+  ```
+- Then enable **File Locking (Experimental)** in the plugin settings and re-sync. (Docker: `docker exec -u www-data <container> php occ app:enable files_lock`.)
+
+### Version history
+
+Server-side versions come from the built-in **Versions** app (app ID `files_versions`), which is **enabled by default** on a standard Nextcloud install — usually nothing to do.
+
+- If it was disabled, re-enable it: **Apps → Versions → Enable**, or:
+  ```bash
+  sudo -u www-data php /var/www/nextcloud/occ app:enable files_versions
+  ```
+- Versions are created automatically as files change; browse and restore them with the **Show version history** command in Obsidian.
+- A note must have been changed on the server at least once for prior revisions to exist. Retention is configured server-side by the admin (`versions_retention_obligation` in `config.php`).
+
+### Other settings worth checking
+
+These are not strictly required, but on self-hosted instances they often need attention for smooth, reliable syncing. All are server-side (admin) settings.
+
+- **Trusted domains** — the host you connect to must be listed in `trusted_domains` in `config.php`, otherwise the server rejects requests. Add your domain/IP if needed.
+- **HTTPS & reverse proxy (important for Login Flow v2)** — behind a reverse proxy, set `overwriteprotocol => 'https'`, `overwritehost`, `overwrite.cli.url`, and `trusted_proxies` correctly. If these are wrong, the URLs returned by Login Flow v2 (and downloads) can point to the wrong scheme/host and fail. Always use an `https://` server URL in the plugin.
+- **Upload size limits (for chunked upload / large attachments)** — raise PHP `upload_max_filesize` and `post_max_size`, and the web-server body limit (nginx `client_max_body_size`, e.g. `0` or a large value). Chunked upload sends small chunks, but the final assembly and very large files still hit these limits.
+- **Request timeouts** — for large vaults or big files, increase PHP `max_execution_time` and php-fpm / web-server timeouts (e.g. nginx `fastcgi_read_timeout`). The plugin's own network timeout is configurable in settings.
+- **Brute-force protection** — Nextcloud throttles repeated requests from one IP and can return HTTP 429, especially when several devices sync from the same network or after auth errors. If you hit this, whitelist the network in **Administration settings → Security**, or set `auth.bruteforce.protection.enabled`/the IP allow-list in `config.php`.
+- **Background jobs (cron)** — configure Nextcloud's recommended **Cron** background-job mode so version cleanup and other maintenance run reliably.
+- **App passwords & two-factor auth** — never use your main account password; if 2FA is enabled an app password is mandatory. Login Flow v2 issues one for you automatically.
+- **Checksums (optional, recommended)** — the plugin prefers Nextcloud's `oc:checksums` (SHA-256) for change detection and automatically falls back to ETag when they aren't present, so no configuration is required; leaving Nextcloud's default checksum support enabled gives the most accurate detection.
+
+---
+
 ## How it works (in brief)
 
 On connect, the plugin probes `/status.php` (maintenance mode) and `/ocs/v1.php/cloud/capabilities` to learn the server version and which features (`checksums`, `files locking`, …) are available. It then maintains a **per-device state database** — a snapshot of every file's path, content hash, and remote file ID at the last successful sync. Each sync diffs the current state against that snapshot and the server's `sync-token`, transferring only what changed. Every Nextcloud-specific behavior is gated behind capability detection, so the same plugin works against a full Nextcloud Hub and a bare WebDAV server alike (**Progressive Enhancement**).
@@ -131,22 +172,3 @@ Issues and pull requests are welcome.
 ## License
 
 [MIT](LICENSE) © Daisuke ITO
-
----
-
-## 概要（日本語）
-
-**Nextcloud Sync** は、Obsidian Vault と Nextcloud を双方向同期するプラグインです。単なる WebDAV 同期とは異なり、**Nextcloud 固有の API を活用**して同期を安全・高速・簡単にします。
-
-- **ハッシュベース差分同期** … 更新日時ではなく内容ハッシュ＋ Nextcloud の `sync-token` で判定。誤再アップロードがなく大規模 Vault でも高速。
-- **ファイル ID（`OC-FileId`）でリネーム追跡** … 移動・改名を「削除＋新規」にせず履歴を保持。
-- **ゴミ箱経由の削除** … Nextcloud のゴミ箱に入るため復元可能。
-- **Login Flow v2** … ブラウザ承認だけでアプリパスワードを自動発行・保存（平文保存なし）。
-- **サーバーバージョン履歴の閲覧・復元** … 誤編集を Obsidian 内から過去版へ復元。
-- **チャンクアップロード** … 大容量ファイルを分割・再開可能・チェックサム検証付きで確実に同期。
-- **Files Locking（実験的・任意）** … 更新中にサーバーロックを取得し、同時編集コンフリクトを未然に防止。
-- **ファイル変更時の即時同期（ウォッチモード・任意）** … ローカル Markdown を編集すると自動で同期（編集が止まって約2秒後）。トグルで ON/OFF、定期同期と併用可。
-- **コンフリクト時に内容を消さない** … インラインマーカー挿入＋任意の自動マージ（YAML フロントマターは対象外）。
-- **Capability 検出による Progressive Enhancement** … 非 Nextcloud／標準 WebDAV サーバーでは Nextcloud 機能を自動無効化し、標準同期にフォールバック。
-
-**動作要件**: Obsidian 1.12.7 以上（デスクトップ）、Nextcloud Hub 26 Winter（33.0.4）以上。モバイル・E2EE は対象外です。
