@@ -12,6 +12,7 @@ export class StatusBarItem {
   private errorCount = 0;
   private status: SyncStatus = 'idle';
   private lastSyncTime: number | null = null;
+  private progressText = '';
 
   constructor(private readonly el: HTMLElement) {
     this.render();
@@ -19,6 +20,14 @@ export class StatusBarItem {
 
   setStatus(status: SyncStatus): void {
     this.status = status;
+    if (status !== 'syncing') this.progressText = '';
+    this.render();
+  }
+
+  /** Show per-file progress during sync: "🔄 12/150" */
+  setProgress(processed: number, total: number): void {
+    this.status = 'syncing';
+    this.progressText = `${processed}/${total}`;
     this.render();
   }
 
@@ -37,6 +46,7 @@ export class StatusBarItem {
     this.lastSyncTime = Date.now();
     this.conflictCount = conflictCount;
     this.errorCount = errorCount;
+    this.progressText = '';
     this.status = conflictCount > 0 ? 'conflict' : (errorCount > 0 ? 'error' : 'idle');
     void uploadedCount; void downloadedCount;
     this.render();
@@ -47,7 +57,7 @@ export class StatusBarItem {
     let text = icon;
 
     if (this.status === 'syncing') {
-      text = '🔄 Syncing…';
+      text = this.progressText ? `🔄 ${this.progressText}` : '🔄 Syncing…';
     } else if (this.conflictCount > 0) {
       text = `🟡 Conflicts: ${this.conflictCount}`;
     } else if (this.errorCount > 0) {

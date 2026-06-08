@@ -90,12 +90,16 @@ export class DiffModal extends Modal {
     const bSplit = splitFm(beforeText);
     const aSplit = splitFm(preview.after);
 
-    // Column header row
+    // Column header row (gutter 32px + marker 14px + text flex, mirroring addRows layout)
     const headers = contentEl.createDiv();
     headers.style.display = 'flex';
     headers.style.fontWeight = 'bold';
     headers.style.borderBottom = '1px solid var(--background-modifier-border)';
     for (const txt of [beforeLabel, 'After (merge result)']) {
+      const spacer = headers.createDiv(); // gutter
+      spacer.style.width = '32px'; spacer.style.minWidth = '32px';
+      const marker = headers.createDiv(); // marker
+      marker.style.width = '14px'; marker.style.minWidth = '14px';
       const h = headers.createDiv({ text: txt });
       h.style.flex = '1'; h.style.padding = '4px 8px';
     }
@@ -103,7 +107,8 @@ export class DiffModal extends Modal {
     // Scrollable diff body
     const scrollEl = contentEl.createDiv();
     scrollEl.style.maxHeight = '60vh';
-    scrollEl.style.overflow = 'auto';
+    scrollEl.style.overflowY = 'scroll'; // always show vertical scrollbar so position is visible
+    scrollEl.style.overflowX = 'auto';
     scrollEl.style.fontFamily = 'var(--font-monospace)';
     scrollEl.style.fontSize = '12px';
     scrollEl.style.whiteSpace = 'pre-wrap';
@@ -140,14 +145,43 @@ export class DiffModal extends Modal {
     // Render a block of aligned diff rows; returns the first changed row element (or null).
     const addRows = (rows: Row[]): HTMLElement | null => {
       let firstChanged: HTMLElement | null = null;
+      let lNum = 0, rNum = 0;
       for (const row of rows) {
+        if (row.left !== undefined) lNum++;
+        if (row.right !== undefined) rNum++;
         const line = scrollEl.createDiv();
         line.style.display = 'flex';
+        line.style.alignItems = 'baseline';
         if (row.type !== 'same' && !firstChanged) firstChanged = line;
-        const left = line.createDiv({ text: row.left ?? '' });
-        const right = line.createDiv({ text: row.right ?? '' });
+
+        // Left: line-number gutter + marker + text
+        const lGutter = line.createDiv({ text: row.left !== undefined ? String(lNum) : '' });
+        const lMarker = line.createDiv({ text: row.type === 'del' ? '−' : ' ' });
+        const left    = line.createDiv({ text: row.left ?? '' });
+
+        // Right: line-number gutter + marker + text
+        const rGutter = line.createDiv({ text: row.right !== undefined ? String(rNum) : '' });
+        const rMarker = line.createDiv({ text: row.type === 'add' ? '+' : ' ' });
+        const right   = line.createDiv({ text: row.right ?? '' });
+
+        // Gutter style
+        for (const g of [lGutter, rGutter]) {
+          g.style.width = '32px'; g.style.minWidth = '32px';
+          g.style.textAlign = 'right'; g.style.padding = '0 4px';
+          g.style.color = 'var(--text-faint)'; g.style.userSelect = 'none';
+          g.style.fontSize = '10px';
+        }
+        // Marker style
+        for (const [m, type] of [[lMarker, 'del'], [rMarker, 'add']] as const) {
+          m.style.width = '14px'; m.style.minWidth = '14px';
+          m.style.textAlign = 'center'; m.style.userSelect = 'none';
+          m.style.fontWeight = 'bold';
+          m.style.color = row.type === type
+            ? (type === 'del' ? 'var(--color-red)' : 'var(--color-green)')
+            : 'transparent';
+        }
         left.style.flex = '1'; right.style.flex = '1';
-        left.style.padding = '0 8px'; right.style.padding = '0 8px';
+        left.style.padding = '0 4px'; right.style.padding = '0 4px';
         left.style.borderRight = '1px solid var(--background-modifier-border)';
         left.style.background  = row.type === 'del' ? cellBg.del : 'transparent';
         right.style.background = row.type === 'add' ? cellBg.add : 'transparent';

@@ -1,4 +1,4 @@
-import { App, Notice } from 'obsidian';
+import { App } from 'obsidian';
 import { DavSyncSettings } from '../types';
 import { LocalAdapter } from '../data/LocalAdapter';
 import { MergeEngine } from './merge/MergeEngine';
@@ -58,18 +58,9 @@ export class ConflictResolver {
    * Returns true if the file was successfully resolved (no markers remaining).
    */
   async resolve(path: string, base: string, local: string, remote: string): Promise<boolean> {
-    const { content, clean, conflictRegions } = this.computeResolution(base, local, remote);
+    const { content, clean } = this.computeResolution(base, local, remote);
     await this.localAdapter.atomicWrite(path, content);
-    if (clean) {
-      new Notice(`✅ ${path}: Auto-merge complete (${conflictRegions} conflicts resolved)`);
-    } else if (conflictRegions >= 0) {
-      new Notice(
-        `⚠️ ${path}: ${conflictRegions} conflict(s) remain. Check file for markers and remove ${CONFLICT_TAG} when resolved.`,
-        10000,
-      );
-    } else {
-      new Notice(`⚠️ ${path}: Conflict markers inserted. Search for <<<<<<< to resolve.`, 10000);
-    }
+    // Per-file notices are suppressed here; the caller (SyncEngine) shows a single summary notice.
     return clean;
   }
 
