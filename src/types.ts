@@ -8,7 +8,6 @@ export interface DavSyncSettings {
    * 実際のパスワード値は data.json には保存されず、secretStorage が暗号化管理する。
    */
   passwordSecretId: string;
-  syncFolder: string;
   syncIntervalMinutes: number;
   networkTimeoutSeconds: number;
   deviceId: string;
@@ -21,7 +20,6 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   serverUrl: '',
   username: '',
   passwordSecretId: '',
-  syncFolder: '',
   syncIntervalMinutes: 15,
   networkTimeoutSeconds: 30,
   deviceId: '',

@@ -108,7 +108,7 @@ export class SyncEngine {
   /** First-ever sync: full scan → Dry Run → user approval → execute */
   private async initialSync(summary: SyncSessionSummary): Promise<void> {
     const client = this.client!;
-    const remoteFiles = await client.getFiles(this.opts.settings.syncFolder);
+    const remoteFiles = await client.getFiles('');
     const localFiles = await this.scanLocalFiles();
 
     const plan = this.buildInitialPlan(localFiles, remoteFiles);
@@ -145,7 +145,7 @@ export class SyncEngine {
       } catch (err) {
         if (err instanceof SyncTokenExpiredError) {
           // Fallback to full scan
-          remoteFiles = await client.getFiles(this.opts.settings.syncFolder);
+          remoteFiles = await client.getFiles('');
           const token = await client.getSyncToken();
           this.opts.stateDB.setSyncToken(token);
         } else {
@@ -153,7 +153,7 @@ export class SyncEngine {
         }
       }
     } else {
-      remoteFiles = await client.getFiles(this.opts.settings.syncFolder);
+      remoteFiles = await client.getFiles('');
       const token = await client.getSyncToken();
       this.opts.stateDB.setSyncToken(token);
     }
@@ -357,8 +357,8 @@ export class SyncEngine {
 
   private async scanLocalFiles(): Promise<Map<string, { hash: string; size: number; mtime: number }>> {
     const results = new Map<string, { hash: string; size: number; mtime: number }>();
-    const root = this.opts.settings.syncFolder || '';
-    await this.scanDir(root, results);
+    // ローカルは常に Vault 全体をスキャンする（リモート側は Vault 名フォルダ配下に同期される）。
+    await this.scanDir('', results);
     return results;
   }
 

@@ -9,6 +9,7 @@ import {
 } from '../types';
 import { IWebDAVClient } from './IWebDAVClient';
 import { DavSyncSettings } from '../types';
+import { toRemotePath, fromRemotePath, encodeRemoteUrl, ensureRemoteDir } from './remotePath';
 
 const PROPFIND_BODY = `<?xml version="1.0" encoding="utf-8" ?>
 <d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">
@@ -39,14 +40,23 @@ const REPORT_BODY = (syncToken: string) => `<?xml version="1.0" encoding="utf-8"
 
 export class NextcloudClient implements IWebDAVClient {
   private features: NextcloudFeatures | null = null;
+  /** MKCOL で作成済みのリモートディレクトリ（セッション内キャッシュ）。 */
+  private readonly createdDirs = new Set<string>();
 
   constructor(
     private readonly settings: DavSyncSettings,
     private readonly appPassword: string,
+    /** リモート同期先のベースフォルダ（通常は Vault 名）。空文字なら files ルート直下。 */
+    private readonly remoteBase: string = '',
   ) {}
 
   private get baseUrl(): string {
     return this.settings.serverUrl.replace(/\/$/, '');
+  }
+
+  /** Vault 相対パスを、ベースフォルダ配下の WebDAV URL に変換する。 */
+  private remoteUrl(rel: string): string {
+    return encodeRemoteUrl(this.baseUrl, toRemotePath(this.remoteBase, rel));
   }
 
   private get authHeader(): string {
@@ -103,9 +113,8 @@ export class NextcloudClient implements IWebDAVClient {
   }
 
   async getFiles(path: string): Promise<RemoteFileInfo[]> {
-    const url = `${this.baseUrl}/${encodeURIComponent(path).replace(/%2F/g, '/')}`;
     const res = await requestUrl({
-      url,
+      url: this.remoteUrl(path),
       method: 'PROPFIND',
       headers: {
         Authorization: this.authHeader,
@@ -115,14 +124,16 @@ export class NextcloudClient implements IWebDAVClient {
       body: PROPFIND_BODY,
       throw: false,
     });
+    // ベースフォルダ未作成（初回同期前）は 404。空リスト扱いにして初回アップロードへ進む。
+    if (res.status === 404) return [];
     if (res.status !== 207) throw new NetworkError(res.status, res.text);
     return this.parsePropfindResponse(res.text);
   }
 
   async getChanges(syncToken: string): Promise<SyncChanges> {
-    const url = this.baseUrl;
+    // sync-collection REPORT はベースフォルダ（Vault フォルダ）に限定して実行する。
     const res = await requestUrl({
-      url,
+      url: this.remoteUrl(''),
       method: 'REPORT',
       headers: {
         Authorization: this.authHeader,
@@ -137,8 +148,7 @@ export class NextcloudClient implements IWebDAVClient {
   }
 
   async downloadFile(remotePath: string, localTmpPath: string): Promise<void> {
-    const url = `${this.baseUrl}/${remotePath}`;
-    const res = await requestUrl({ url, method: 'GET', headers: { Authorization: this.authHeader }, throw: false });
+    const res = await requestUrl({ url: this.remoteUrl(remotePath), method: 'GET', headers: { Authorization: this.authHeader }, throw: false });
     if (res.status !== 200) throw new NetworkError(res.status, '');
     // The actual write to localTmpPath is handled by SyncEngine via LocalAdapter
     // Store buffer reference for retrieval
@@ -152,9 +162,10 @@ export class NextcloudClient implements IWebDAVClient {
   }
 
   async uploadFile(remotePath: string, data: ArrayBuffer): Promise<void> {
-    const url = `${this.baseUrl}/${remotePath}`;
+    // PUT は親ディレクトリを自動生成しないため、先にベースフォルダ含む親階層を作成する。
+    await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
     const res = await requestUrl({
-      url,
+      url: this.remoteUrl(remotePath),
       method: 'PUT',
       headers: { Authorization: this.authHeader },
       body: data,
@@ -164,12 +175,12 @@ export class NextcloudClient implements IWebDAVClient {
   }
 
   async moveFile(oldPath: string, newPath: string): Promise<void> {
-    const src = `${this.baseUrl}/${oldPath}`;
-    const dest = `${this.baseUrl}/${newPath}`;
+    // 移動先の親ディレクトリを確保してから MOVE する。
+    await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader }, toRemotePath(this.remoteBase, newPath), this.createdDirs);
     const res = await requestUrl({
-      url: src,
+      url: this.remoteUrl(oldPath),
       method: 'MOVE',
-      headers: { Authorization: this.authHeader, Destination: dest, Overwrite: 'F' },
+      headers: { Authorization: this.authHeader, Destination: this.remoteUrl(newPath), Overwrite: 'F' },
       throw: false,
     });
     if (res.status === 412) throw new ConflictError(newPath);
@@ -177,16 +188,16 @@ export class NextcloudClient implements IWebDAVClient {
   }
 
   async deleteFile(path: string, _expectedRemoteId: string): Promise<void> {
-    const url = `${this.baseUrl}/${path}`;
     const res = await requestUrl({
-      url, method: 'DELETE', headers: { Authorization: this.authHeader }, throw: false,
+      url: this.remoteUrl(path), method: 'DELETE', headers: { Authorization: this.authHeader }, throw: false,
     });
     if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
   }
 
   async getSyncToken(): Promise<string | null> {
+    // sync-token は REPORT と同じコレクション（ベースフォルダ）から取得する。
     const res = await requestUrl({
-      url: this.baseUrl,
+      url: this.remoteUrl(''),
       method: 'PROPFIND',
       headers: { Authorization: this.authHeader, Depth: '0', 'Content-Type': 'application/xml; charset=utf-8' },
       body: `<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:sync-token/></d:prop></d:propfind>`,
@@ -225,7 +236,9 @@ export class NextcloudClient implements IWebDAVClient {
         checksum = m ? m[1].toLowerCase() : null;
       }
 
-      const path = decodeURIComponent(href.replace(/^.*\/remote\.php\/dav\/files\/[^/]+\//, ''));
+      const fullPath = decodeURIComponent(href.replace(/^.*\/remote\.php\/dav\/files\/[^/]+\//, ''));
+      const path = fromRemotePath(this.remoteBase, fullPath);
+      if (path === null || path === '') continue; // ベースフォルダ外、またはフォルダ自身はスキップ
       results.push({ path, fileId, checksum, etag, size, lastModified });
     }
     return results;
@@ -243,7 +256,9 @@ export class NextcloudClient implements IWebDAVClient {
     for (let i = 0; i < responses.length; i++) {
       const resp = responses[i];
       const href = resp.getElementsByTagNameNS('DAV:', 'href')[0]?.textContent ?? '';
-      const path = decodeURIComponent(href.replace(/^.*\/remote\.php\/dav\/files\/[^/]+\//, ''));
+      const fullPath = decodeURIComponent(href.replace(/^.*\/remote\.php\/dav\/files\/[^/]+\//, ''));
+      const path = fromRemotePath(this.remoteBase, fullPath);
+      if (path === null || path === '') continue; // ベースフォルダ外、またはフォルダ自身はスキップ
       const statusEl = resp.getElementsByTagNameNS('DAV:', 'status')[0];
       if (statusEl?.textContent?.includes('404')) {
         deleted.push(path);

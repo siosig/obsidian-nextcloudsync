@@ -28,7 +28,7 @@ function makeAdapter(store: Record<string, string> = {}): DataAdapter {
 
 function makeSettings(autoMerge = false) {
   return {
-    serverUrl: '', username: '', syncFolder: '', syncIntervalMinutes: 0,
+    serverUrl: '', username: '', passwordSecretId: '', syncIntervalMinutes: 0,
     networkTimeoutSeconds: 30, deviceId: 'test-dev-abcd', uploadChunkThresholdMB: 50,
     autoMergeEnabled: autoMerge, maxConflictRegions: 3,
   };

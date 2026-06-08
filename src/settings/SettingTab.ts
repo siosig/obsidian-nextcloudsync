@@ -57,14 +57,10 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Sync Folder')
-      .setDesc('Sub-folder to sync (leave empty to sync entire Vault)')
+      .setDesc('Fixed to this Vault\'s name. The entire Vault is synced under a remote folder named after the Vault.')
       .addText(text => text
-        .setPlaceholder('(entire Vault)')
-        .setValue(this.plugin.settings.syncFolder)
-        .onChange(async (value) => {
-          this.plugin.settings.syncFolder = value.trim();
-          await this.plugin.saveSettings();
-        }));
+        .setValue(this.app.vault.getName())
+        .setDisabled(true));
 
     new Setting(containerEl)
       .setName('Sync Interval (minutes)')

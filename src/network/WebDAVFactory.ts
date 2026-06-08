@@ -4,6 +4,7 @@ import { IWebDAVClient } from './IWebDAVClient';
 import { NextcloudClient } from './NextcloudClient';
 import { StandardWebDAVClient } from './StandardWebDAVClient';
 import { CredentialsNotFoundError } from '../types';
+import { normalizeBase } from './remotePath';
 
 const MIN_NEXTCLOUD_VERSION = '33.0.4';
 
@@ -27,14 +28,17 @@ export class WebDAVFactory {
   async createClient(): Promise<{ client: IWebDAVClient; features: NextcloudFeatures }> {
     if (!this.appPassword) throw new CredentialsNotFoundError();
 
-    const nextcloudClient = new NextcloudClient(this.settings, this.appPassword);
+    // リモート同期先のベースフォルダは Vault 名に固定する（Vault ごとにサーバー上で分離）。
+    const remoteBase = normalizeBase(this.app.vault.getName());
+
+    const nextcloudClient = new NextcloudClient(this.settings, this.appPassword, remoteBase);
     let features: NextcloudFeatures;
 
     try {
       features = await nextcloudClient.connect();
     } catch {
       // Not Nextcloud or connection failed: try standard WebDAV
-      const stdClient = new StandardWebDAVClient(this.settings, this.appPassword);
+      const stdClient = new StandardWebDAVClient(this.settings, this.appPassword, remoteBase);
       features = await stdClient.connect();
       return { client: stdClient, features };
     }
