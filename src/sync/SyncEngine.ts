@@ -10,6 +10,8 @@ import {
   NetworkError,
   FileLockedError,
   FeatureUnsupportedError,
+  SyncAction,
+  SyncPlanEntry,
 } from '../types';
 import { LocalAdapter } from '../data/LocalAdapter';
 import { StateDB } from '../data/StateDB';
@@ -123,6 +125,52 @@ export class SyncEngine {
 
   getUnresolvedConflictCount(): Promise<number> {
     return Promise.resolve(this.opts.stateDB.countConflicted());
+  }
+
+  /**
+   * Compute a dry-run plan (debug mode): classify each file by what a sync would do,
+   * without making any change. Best-effort approximation of the real sync decisions.
+   */
+  async previewSync(): Promise<SyncPlanEntry[]> {
+    const { client } = await this.ensureClient();
+    const remoteFiles = await client.getFiles('');
+    const remoteMap = new Map(
+      remoteFiles.filter(f => !this.isSystemExcluded(f.path)).map(f => [f.path, f]),
+    );
+    const localFiles = await this.scanLocalFiles();
+
+    const entries: SyncPlanEntry[] = [];
+    const allPaths = new Set<string>([...localFiles.keys(), ...remoteMap.keys()]);
+    for (const path of allPaths) {
+      const lf = localFiles.get(path);
+      const rf = remoteMap.get(path);
+      const base = this.opts.stateDB.getFile(path);
+      const localExists = lf !== undefined;
+      const remoteExists = rf !== undefined;
+
+      const remoteId = rf ? (rf.checksum ?? rf.etag ?? String(rf.size)) : null;
+      const localChanged = localExists ? (!base || base.localHash !== lf!.hash) : Boolean(base);
+      const remoteChanged = remoteExists ? (!base || base.remoteId !== remoteId) : Boolean(base);
+
+      let action: SyncAction;
+      if (localExists && remoteExists) {
+        if (!localChanged && !remoteChanged) action = 'unchanged';
+        else if (localChanged && !remoteChanged) action = 'upload';
+        else if (!localChanged && remoteChanged) action = 'download';
+        else action = this.opts.settings.autoMergeEnabled ? 'merge' : 'conflict';
+      } else if (localExists && !remoteExists) {
+        // Remote missing: new local file → upload; previously synced → remote was deleted.
+        action = !base ? 'upload' : (localChanged ? 'upload' : 'delete-local');
+      } else {
+        // Local missing: new remote file → download; previously synced → local was deleted.
+        action = !base ? 'download' : (remoteChanged ? 'download' : 'delete-remote');
+      }
+
+      entries.push({ path, action, localExists, remoteExists });
+    }
+
+    entries.sort((a, b) => a.path.localeCompare(b.path));
+    return entries;
   }
 
   // ── Private ──────────────────────────────────────────────────────────────
