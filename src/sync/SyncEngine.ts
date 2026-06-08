@@ -126,6 +126,64 @@ export class SyncEngine {
     }
   }
 
+  // ── Single-file lightweight operations (used by watch mode) ─────────────────
+  // These avoid a full vault scan / remote REPORT and only touch the one file.
+
+  /** Upload a single locally-modified or created file. No-ops if content is unchanged. */
+  async syncSingleFile(path: string): Promise<void> {
+    if (this.isSystemExcluded(path)) return;
+    await this.ensureClient();
+    const stat = await this.opts.localAdapter.stat(path);
+    if (!stat) return; // already deleted before the debounce fired
+    const data = await this.opts.localAdapter.readBinary(path);
+    const localHash = await sha256(data);
+    const base = this.opts.stateDB.getFile(path);
+    if (base && localHash === base.localHash) return; // content unchanged, skip
+    const remoteId = base?.remoteId ?? localHash;
+    const idType: FileState['idType'] = base?.idType ?? 'sha256';
+    const dummySummary = this.initSummary();
+    try {
+      await this.uploadFile(
+        path, localHash, remoteId, idType,
+        { path, fileId: base?.remoteFileId ?? null, checksum: null, etag: null, size: stat.size, lastModified: stat.mtime },
+        dummySummary,
+      );
+      await this.opts.stateDB.save();
+    } catch (err) {
+      console.warn(`[SyncEngine] Single-file upload failed for ${path}:`, err);
+    }
+  }
+
+  /** Delete a single file from the remote when it was deleted locally. */
+  async deleteSingleFile(path: string): Promise<void> {
+    if (this.isSystemExcluded(path)) return;
+    await this.ensureClient();
+    const base = this.opts.stateDB.getFile(path);
+    if (!base) return; // not tracked — nothing to do on remote
+    try {
+      await this.client!.deleteFile(path, base.remoteId);
+    } catch (err) {
+      if (!(err instanceof NetworkError && err.status === 404)) {
+        console.warn(`[SyncEngine] Single-file delete failed for ${path}:`, err);
+      }
+    }
+    this.opts.stateDB.deleteFile(path);
+    await this.opts.stateDB.save();
+  }
+
+  /** MOVE a single file on the remote when it was renamed/moved locally. */
+  async renameSingleFile(oldPath: string, newPath: string): Promise<void> {
+    if (this.isSystemExcluded(oldPath) && this.isSystemExcluded(newPath)) return;
+    await this.ensureClient();
+    const rt = this.getOrCreateRenameTracker();
+    try {
+      await rt.applyLocalRename(oldPath, newPath);
+      await this.opts.stateDB.save();
+    } catch (err) {
+      console.warn(`[SyncEngine] Single-file rename failed ${oldPath} → ${newPath}:`, err);
+    }
+  }
+
   startAutoSync(intervalMinutes: number): void {
     this.stopAutoSync();
     const ms = intervalMinutes * 60 * 1000;
