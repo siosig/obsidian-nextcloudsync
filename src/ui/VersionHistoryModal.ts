@@ -1,5 +1,6 @@
 import { App, Modal, Notice, Setting } from 'obsidian';
 import { FileVersion } from '../types';
+import { confirmModal } from './ConfirmModal';
 
 /**
  * Modal that lists the server-side versions of the active note and restores the selected one (US2).
@@ -34,12 +35,16 @@ export class VersionHistoryModal extends Modal {
         .setDesc(`${sizeKb} KB`)
         .addButton(btn => btn
           .setButtonText('Restore')
-          .setWarning()
+          .setClass('mod-warning')
           .onClick(async () => {
-            const confirmed = window.confirm(
-              `Restore "${this.filePath}" to the version from ${date}? ` +
-              'Unsaved local changes to this file will be overwritten.',
-            );
+            const confirmed = await confirmModal(this.app, {
+              title: 'Restore version',
+              message:
+                `Restore "${this.filePath}" to the version from ${date}? ` +
+                'Unsaved local changes to this file will be overwritten.',
+              cta: 'Restore',
+              destructive: true,
+            });
             if (!confirmed) return;
             try {
               await this.onRestore(version);
