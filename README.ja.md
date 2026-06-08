@@ -4,7 +4,7 @@ Obsidian Vault と Nextcloud を双方向同期するプラグインです。汎
 
 多くの「WebDAV 同期」プラグインはサーバーを単なるファイル置き場として扱い、更新日時を比較してファイルをコピーするだけです。**Nextcloud Sync** は Nextcloud 固有の API（Capabilities、ファイル ID、チェックサム、バージョン、ロック、Login Flow v2）を活用し、同期を *安全* かつ *高速* かつ *簡単* にします。同時に、それらの API が使えない場合は標準 WebDAV へ自動的にフォールバックします。
 
-> English version: see [`README.md`](README.md)
+> 英語版（原文）は [`README.md`](README.md) を参照してください。
 
 ---
 
@@ -88,6 +88,47 @@ Obsidian Vault と Nextcloud を双方向同期するプラグインです。汎
 5. **Sync Now** コマンドを実行（または定期同期を待つ）。初回は **Dry-run プレビュー**（`アップロード N 件 / ダウンロード M 件`）が表示されるので承認する。
 
 Vault は Nextcloud 側で Vault 名のフォルダ配下に同期され、複数 Vault がきれいに分離されます。
+
+---
+
+## Nextcloud サーバー側機能の有効化
+
+2 つの強化機能はサーバー側の Nextcloud アプリに依存します。いずれも **Nextcloud 管理者が一度だけ有効化**すれば十分です。プラグインは capabilities API で検出し、アプリが無ければ該当機能を自動的に無効化します（エラーにはなりません）。
+
+### File Locking
+
+ロックは Nextcloud の **Temporary files lock** アプリ（アプリ ID `files_lock`、Nextcloud 24 以降。v34 以降は Hub に同梱）を使用します。
+
+- **Web UI（管理者）**: 管理者でログイン → 右上のプロフィールメニュー → **Apps** → 「**Temporary files lock**」を検索 → **有効化**（未インストールなら先にダウンロード）。
+- **コマンドライン（`occ`）** — Web サーバーユーザー（多くは `www-data`）で実行:
+  ```bash
+  sudo -u www-data php /var/www/nextcloud/occ app:enable files_lock
+  ```
+- その後、プラグイン設定の **File Locking (Experimental)** を ON にして再同期してください。（Docker の場合: `docker exec -u www-data <container> php occ app:enable files_lock`）
+
+### バージョン履歴
+
+サーバー側のバージョンは組み込みの **Versions** アプリ（アプリ ID `files_versions`）が提供します。標準インストールでは**既定で有効**のため通常は作業不要です。
+
+- 無効化されている場合のみ再有効化: **Apps → Versions → 有効化**、または:
+  ```bash
+  sudo -u www-data php /var/www/nextcloud/occ app:enable files_versions
+  ```
+- バージョンはファイル変更時に自動作成され、Obsidian の **Show version history** コマンドで閲覧・復元できます。
+- 過去版が存在するには、サーバー上で当該ファイルが一度以上変更されている必要があります。保持世代数は管理者が `config.php` の `versions_retention_obligation` で設定します。
+
+### その他の確認しておきたい設定
+
+必須ではありませんが、セルフホスト環境では安定した同期のために確認が必要になりがちな項目です。いずれもサーバー側（管理者）の設定です。
+
+- **信頼済みドメイン（trusted_domains）** — 接続先ホストが `config.php` の `trusted_domains` に登録されている必要があります。未登録だとサーバーがリクエストを拒否します。必要に応じてドメイン／IP を追加してください。
+- **HTTPS とリバースプロキシ（Login Flow v2 で重要）** — リバースプロキシ配下では `overwriteprotocol => 'https'`、`overwritehost`、`overwrite.cli.url`、`trusted_proxies` を正しく設定してください。これらが誤っていると、Login Flow v2 が返す URL（やダウンロード URL）のスキーム／ホストが不正になり失敗します。プラグインのサーバー URL は必ず `https://` を使用してください。
+- **アップロードサイズ上限（チャンクアップロード／大容量添付向け）** — PHP の `upload_max_filesize`・`post_max_size`、および Web サーバーのボディ上限（nginx の `client_max_body_size`、例: `0` か大きい値）を引き上げてください。チャンクアップロードは小さく分割しますが、最終結合や非常に大きなファイルではこれらの上限に達します。
+- **リクエストタイムアウト** — 大規模 Vault や大きいファイルでは、PHP の `max_execution_time` や php-fpm／Web サーバーのタイムアウト（例: nginx の `fastcgi_read_timeout`）を延長してください。プラグイン側の通信タイムアウトは設定画面で調整できます。
+- **ブルートフォース保護** — Nextcloud は同一 IP からの連続リクエストを抑制し、特に複数デバイスが同一ネットワークから同期する場合や認証エラー後に HTTP 429 を返すことがあります。発生する場合は **管理設定 → セキュリティ** でネットワークを許可リストに追加するか、`config.php` で `auth.bruteforce.protection.enabled`／IP 許可リストを設定してください。
+- **バックグラウンドジョブ（cron）** — 推奨される **Cron** 方式のバックグラウンドジョブを設定し、バージョンのクリーンアップ等の保守処理が確実に実行されるようにしてください。
+- **アプリパスワードと二要素認証** — メインアカウントのパスワードは使用しないでください。2FA 有効時はアプリパスワードが必須です。Login Flow v2 が自動で発行します。
+- **チェックサム（任意・推奨）** — プラグインは変更検出に Nextcloud の `oc:checksums`（SHA-256）を優先し、無い場合は ETag に自動フォールバックするため設定は不要です。Nextcloud 既定のチェックサム対応を有効のままにしておくと最も正確に検出できます。
 
 ---
 
