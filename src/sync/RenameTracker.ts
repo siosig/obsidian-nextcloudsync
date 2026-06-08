@@ -1,4 +1,3 @@
-import { Notice } from 'obsidian';
 import { RemoteFileInfo, ConflictError } from '../types';
 import { StateDB } from '../data/StateDB';
 import { IWebDAVClient } from '../network/IWebDAVClient';
@@ -53,7 +52,7 @@ export class RenameTracker {
     if (!file) return;
     this.stateDB.deleteFile(oldPath);
     this.stateDB.setFile({ ...file, path: newPath });
-    new Notice(`📂 Renamed: ${oldPath} → ${newPath}`);
+    console.log(`[RenameTracker] Renamed (remote→local): ${oldPath} → ${newPath}`);
   }
 
   /** Issue a WebDAV MOVE for a locally-renamed file. Falls back to conflict on 412. */
@@ -67,7 +66,7 @@ export class RenameTracker {
       }
     } catch (err) {
       if (err instanceof ConflictError) {
-        new Notice(`⚠️ Rename conflict: ${newRemotePath} already exists on server.`);
+        console.warn(`[RenameTracker] Rename conflict: ${newRemotePath} already exists on server (skipped).`);
       } else {
         throw err;
       }

@@ -112,16 +112,8 @@ export class SyncEngine {
         summary.uploadedCount, summary.downloadedCount,
         conflictCount, summary.errorCount,
       );
-      // Single summary notice at the end (no per-file notices during sync).
-      if (summary.uploadedCount + summary.downloadedCount + summary.deletedCount + summary.conflictCount + summary.errorCount > 0) {
-        const parts: string[] = [];
-        if (summary.uploadedCount)   parts.push(`↑ ${summary.uploadedCount}`);
-        if (summary.downloadedCount) parts.push(`↓ ${summary.downloadedCount}`);
-        if (summary.deletedCount)    parts.push(`🗑 ${summary.deletedCount}`);
-        if (summary.conflictCount)   parts.push(`⚠️ ${summary.conflictCount} conflict(s)`);
-        if (summary.errorCount)      parts.push(`✗ ${summary.errorCount} error(s)`);
-        new Notice(`Sync complete — ${parts.join('  ')}`, 5000);
-      }
+      // Sync results are reflected in the status bar only (no completion popup).
+      // Genuine failures still surface via the catch-block notice / NextcloudErrorParser.
       this.running = false;
     }
   }
