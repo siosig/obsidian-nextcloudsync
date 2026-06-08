@@ -1,4 +1,9 @@
-import { hrefToRelative, fromRemotePath, toRemotePath } from '../../src/network/remotePath';
+import {
+  hrefToRelative,
+  fromRemotePath,
+  toRemotePath,
+  isSafeVaultRelativePath,
+} from '../../src/network/remotePath';
 
 describe('hrefToRelative', () => {
   // Regression: Server URL pointing at a subfolder under the WebDAV files root.
@@ -42,5 +47,36 @@ describe('hrefToRelative', () => {
   it('round-trips with toRemotePath/fromRemotePath for the relative form', () => {
     const rel = 'notes/a.md';
     expect(fromRemotePath(vault, toRemotePath(vault, rel))).toBe(rel);
+  });
+
+  // Security: a malicious/compromised server must not be able to craft an href that
+  // escapes the Vault root and reaches a local file sink (write/delete/rename).
+  it('rejects path-traversal hrefs (returns null, treated as out of scope)', () => {
+    const href = '/nextcloud/remote.php/dav/files/alice/Documents/obsidian/Obsidian%20Vault/../../../etc/passwd';
+    expect(hrefToRelative(baseUrl, vault, href)).toBeNull();
+  });
+});
+
+describe('isSafeVaultRelativePath', () => {
+  it.each([
+    ['notes/a.md', true],
+    ['', true],
+    ['.obsidian/snippets/x.css', true],
+    ['../escape.md', false],
+    ['notes/../../etc/passwd', false],
+    ['/abs/path.md', false],
+    ['C:/Windows/system32', false],
+    ['notes\\a.md', false],
+  ])('%s → %s', (rel, expected) => {
+    expect(isSafeVaultRelativePath(rel as string)).toBe(expected);
+  });
+});
+
+describe('fromRemotePath (traversal hardening)', () => {
+  it('returns null when the stripped path contains a .. segment', () => {
+    expect(fromRemotePath('Vault', 'Vault/../../secret.md')).toBeNull();
+  });
+  it('returns null for traversal when no base is configured', () => {
+    expect(fromRemotePath('', '../secret.md')).toBeNull();
   });
 });
