@@ -3,6 +3,7 @@
   "compilerOptions": {
     "module": "CommonJS",
     "moduleResolution": "node",
+    "types": ["node", "jest"],
     "allowImportingTsExtensions": false,
     "isolatedModules": false
   },

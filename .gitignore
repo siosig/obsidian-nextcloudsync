@@ -1,11 +1,35 @@
-/refs/
+# --- Obsidian プラグイン公開用 .gitignore ---
+
+# 依存
 node_modules/
+
+# ビルド成果物（main.js は GitHub Release に添付するため Git では管理しない）
 main.js
 *.js.map
 dist/
 build/
+
+# テスト
+coverage/
+
+# 環境変数・ログ
 .env
 .env.*
 *.log
+
+# OS / エディタ
 .DS_Store
 Thumbs.db
+.vscode/
+.idea/
+
+# --- 開発専用ファイル（プラグイン公開リポジトリには含めない） ---
+refs/
+.specify/
+.claude/
+specs/
+report/
+CLAUDE.md
+
+# TypeScript incremental build info
+*.tsbuildinfo

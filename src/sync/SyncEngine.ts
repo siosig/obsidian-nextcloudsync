@@ -44,6 +44,8 @@ export class SyncEngine {
   private client: IWebDAVClient | null = null;
   private features: NextcloudFeatures | null = null;
   private uploadStrategy: IUploadStrategy | null = null;
+  /** 同期実行中フラグ（多重起動防止）。 */
+  private running = false;
   /** 取得中のロックトークン（path → token）。 */
   private readonly heldLocks = new Map<string, string>();
 
@@ -67,6 +69,9 @@ export class SyncEngine {
 
   /** Manual sync: Dry Run → user approval → execute */
   async syncManual(): Promise<void> {
+    // 多重起動防止（ウォッチモードや定期同期と手動実行の競合を避ける）。
+    if (this.running) return;
+    this.running = true;
     await this.ensureClient();
     this.opts.statusBar.setStatus('syncing');
     const summary = this.initSummary();
@@ -93,6 +98,7 @@ export class SyncEngine {
         summary.uploadedCount, summary.downloadedCount,
         conflictCount, summary.errorCount,
       );
+      this.running = false;
     }
   }
 

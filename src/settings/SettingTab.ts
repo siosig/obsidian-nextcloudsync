@@ -72,50 +72,45 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         .setValue(this.app.vault.getName())
         .setDisabled(true));
 
+    this.addNumberSlider(containerEl, {
+      name: 'Sync Interval (minutes)', desc: '0 = manual sync only',
+      min: 0, max: 60, step: 1,
+      get: () => this.plugin.settings.syncIntervalMinutes,
+      set: (v) => { this.plugin.settings.syncIntervalMinutes = v; },
+    });
+
+    this.addNumberSlider(containerEl, {
+      name: 'Network Timeout (seconds)',
+      min: 5, max: 120, step: 5,
+      get: () => this.plugin.settings.networkTimeoutSeconds,
+      set: (v) => { this.plugin.settings.networkTimeoutSeconds = v; },
+    });
+
     new Setting(containerEl)
-      .setName('Sync Interval (minutes)')
-      .setDesc('0 = manual sync only')
-      .addSlider(slider => slider
-        .setLimits(0, 60, 1)
-        .setValue(this.plugin.settings.syncIntervalMinutes)
+      .setName('Sync on file change')
+      .setDesc('Immediately sync when a local Markdown file is modified (a short delay after you stop editing). Works alongside the periodic sync interval.')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.watchOnChangeEnabled)
         .onChange(async (value) => {
-          this.plugin.settings.syncIntervalMinutes = value;
+          this.plugin.settings.watchOnChangeEnabled = value;
           await this.plugin.saveSettings();
         }));
 
-    new Setting(containerEl)
-      .setName('Network Timeout (seconds)')
-      .addSlider(slider => slider
-        .setLimits(5, 120, 5)
-        .setValue(this.plugin.settings.networkTimeoutSeconds)
-        .onChange(async (value) => {
-          this.plugin.settings.networkTimeoutSeconds = value;
-          await this.plugin.saveSettings();
-        }));
+    this.addNumberSlider(containerEl, {
+      name: 'Chunk threshold (MB)',
+      desc: 'Files larger than this are uploaded in chunks (Nextcloud only). Smaller files use a single request.',
+      min: 1, max: 500, step: 1,
+      get: () => this.plugin.settings.uploadChunkThresholdMB,
+      set: (v) => { this.plugin.settings.uploadChunkThresholdMB = v; },
+    });
 
-    new Setting(containerEl)
-      .setName('Chunk threshold (MB)')
-      .setDesc('Files larger than this are uploaded in chunks (Nextcloud only). Smaller files use a single request.')
-      .addSlider(slider => slider
-        .setLimits(1, 500, 1)
-        .setValue(this.plugin.settings.uploadChunkThresholdMB)
-        .setDynamicTooltip()
-        .onChange(async (value) => {
-          this.plugin.settings.uploadChunkThresholdMB = value;
-          await this.plugin.saveSettings();
-        }));
-
-    new Setting(containerEl)
-      .setName('Maximum file size (MB)')
-      .setDesc('Absolute limit. Files larger than this are skipped with a warning.')
-      .addSlider(slider => slider
-        .setLimits(50, 4096, 50)
-        .setValue(this.plugin.settings.maxFileSizeMB)
-        .setDynamicTooltip()
-        .onChange(async (value) => {
-          this.plugin.settings.maxFileSizeMB = value;
-          await this.plugin.saveSettings();
-        }));
+    this.addNumberSlider(containerEl, {
+      name: 'Maximum file size (MB)',
+      desc: 'Absolute limit. Files larger than this are skipped with a warning.',
+      min: 50, max: 4096, step: 50,
+      get: () => this.plugin.settings.maxFileSizeMB,
+      set: (v) => { this.plugin.settings.maxFileSizeMB = v; },
+    });
 
     new Setting(containerEl)
       .setName('Chunked upload')
@@ -188,6 +183,41 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
             8000,
           );
         }));
+  }
+
+  /**
+   * 数値スライダー設定を追加する。ドラッグ中の数値ポップアップ（動的ツールチップ）と、
+   * 現在値を常時表示するラベルを備える。
+   */
+  private addNumberSlider(
+    containerEl: HTMLElement,
+    opts: {
+      name: string;
+      desc?: string;
+      min: number;
+      max: number;
+      step: number;
+      get: () => number;
+      set: (value: number) => void;
+    },
+  ): void {
+    const setting = new Setting(containerEl).setName(opts.name);
+    if (opts.desc) setting.setDesc(opts.desc);
+
+    // 現在値ラベル（スライダーの左に常時表示）。
+    const valueLabel = setting.controlEl.createSpan({ cls: 'setting-item-description' });
+    valueLabel.style.marginRight = '8px';
+    valueLabel.setText(String(opts.get()));
+
+    setting.addSlider(slider => slider
+      .setLimits(opts.min, opts.max, opts.step)
+      .setValue(opts.get())
+      .setDynamicTooltip()
+      .onChange(async (value) => {
+        opts.set(value);
+        valueLabel.setText(String(value));
+        await this.plugin.saveSettings();
+      }));
   }
 
   /**
