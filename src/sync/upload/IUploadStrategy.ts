@@ -12,5 +12,5 @@ export interface IUploadStrategy {
    * Upload a file.
    * @returns 'skipped' when skipped due to the size limit, 'uploaded' when sent.
    */
-  upload(client: IWebDAVClient, remotePath: string, data: ArrayBuffer): Promise<UploadOutcome>;
+  upload(client: IWebDAVClient, remotePath: string, data: ArrayBuffer, mtime?: number): Promise<UploadOutcome>;
 }

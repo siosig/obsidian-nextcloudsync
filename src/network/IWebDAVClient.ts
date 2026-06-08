@@ -5,7 +5,8 @@ export interface IWebDAVClient {
   getFiles(path: string): Promise<RemoteFileInfo[]>;
   getChanges(syncToken: string): Promise<SyncChanges>;
   downloadFile(remotePath: string, localTmpPath: string): Promise<void>;
-  uploadFile(remotePath: string, data: ArrayBuffer): Promise<void>;
+  /** mtime (ms epoch): when provided, sent as X-OC-MTime so Nextcloud preserves the local timestamp. */
+  uploadFile(remotePath: string, data: ArrayBuffer, mtime?: number): Promise<void>;
   moveFile(oldPath: string, newPath: string): Promise<void>;
   deleteFile(path: string, expectedRemoteId: string): Promise<void>;
   getSyncToken(): Promise<string | null>;

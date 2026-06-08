@@ -113,6 +113,7 @@ export interface SyncSessionSummary {
   completedAt: number | null;
   uploadedCount: number;
   downloadedCount: number;
+  deletedCount: number;
   conflictCount: number;
   errorCount: number;
   retriedFiles: string[];

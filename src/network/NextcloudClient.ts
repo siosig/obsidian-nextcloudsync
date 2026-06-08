@@ -179,33 +179,17 @@ export class NextcloudClient implements IWebDAVClient {
     return (this as Record<string, unknown>)._lastDownload as ArrayBuffer ?? new ArrayBuffer(0);
   }
 
-  async uploadFile(remotePath: string, data: ArrayBuffer): Promise<void> {
-    // PUT does not auto-create parent directories, so create the parent hierarchy (including the base folder) first.
+  async uploadFile(remotePath: string, data: ArrayBuffer, mtime?: number): Promise<void> {
     await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
-    // Send OC-Checksum so Nextcloud persists the SHA-256 (the server does not compute it on its own).
-    // This lets later syncs recognise unchanged files cheaply via PROPFIND instead of re-downloading.
     const checksum = `SHA256:${await sha256(data)}`;
-    const res = await requestUrl({
-      url: this.remoteUrl(remotePath),
-      method: 'PUT',
-      headers: { Authorization: this.authHeader, 'OC-Checksum': checksum },
-      body: data,
-      throw: false,
-    });
+    const headers: Record<string, string> = {
+      Authorization: this.authHeader,
+      'OC-Checksum': checksum,
+    };
+    // X-OC-MTime (Unix seconds) tells Nextcloud to preserve the local file's modification time.
+    if (mtime) headers['X-OC-MTime'] = String(Math.floor(mtime / 1000));
+    const res = await requestUrl({ url: this.remoteUrl(remotePath), method: 'PUT', headers, body: data, throw: false });
     if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
-  }
-
-  async setMtime(remotePath: string, mtime: number): Promise<void> {
-    // RFC 1123 date format expected by WebDAV getlastmodified.
-    const rfcDate = new Date(mtime).toUTCString();
-    await requestUrl({
-      url: this.remoteUrl(remotePath),
-      method: 'PROPPATCH',
-      headers: { Authorization: this.authHeader, 'Content-Type': 'application/xml; charset=utf-8' },
-      body: `<?xml version="1.0" encoding="utf-8"?><d:propertyupdate xmlns:d="DAV:"><d:set><d:prop><d:getlastmodified>${rfcDate}</d:getlastmodified></d:prop></d:set></d:propertyupdate>`,
-      throw: false,
-    });
-    // Errors are silently ignored: mtime sync is best-effort and must not abort the sync flow.
   }
 
   async recalcChecksum(remotePath: string): Promise<string | null> {

@@ -59,16 +59,21 @@ export default class ObsidianNextcloudsync extends Plugin {
       },
     });
 
-    // Watch mode: detect local Markdown edits and sync immediately.
-    // To avoid excessive syncing during continuous editing, run once 2 seconds after the last edit (debounced).
+    // Watch mode: trigger sync on local file changes (debounced to avoid thrashing).
     const debouncedSync = debounce(() => { void this.syncEngine?.syncManual(); }, 2000, true);
-    this.registerEvent(
-      this.app.vault.on('modify', (file: TAbstractFile) => {
-        if (!this.settings.watchOnChangeEnabled) return;
-        if (!(file instanceof TFile) || file.extension !== 'md') return;
-        debouncedSync();
-      }),
-    );
+    const triggerSync = (file: TAbstractFile) => {
+      if (!this.settings.watchOnChangeEnabled || this.settings.debugMode) return;
+      if (!(file instanceof TFile)) return;
+      debouncedSync();
+    };
+    this.registerEvent(this.app.vault.on('modify', triggerSync));
+    this.registerEvent(this.app.vault.on('create', triggerSync));
+    this.registerEvent(this.app.vault.on('delete', triggerSync));
+    this.registerEvent(this.app.vault.on('rename', (file: TAbstractFile) => {
+      if (!this.settings.watchOnChangeEnabled || this.settings.debugMode) return;
+      if (!(file instanceof TFile)) return;
+      debouncedSync();
+    }));
   }
 
   /**
@@ -164,6 +169,12 @@ export default class ObsidianNextcloudsync extends Plugin {
 
     if (this.settings.syncIntervalMinutes > 0) {
       this.syncEngine.startAutoSync(this.settings.syncIntervalMinutes);
+    }
+
+    // Fire an initial sync 1 second after startup so the vault is up-to-date immediately.
+    // Skipped in debug mode to avoid accidental data changes during development.
+    if (!this.settings.debugMode) {
+      window.setTimeout(() => { void this.syncEngine?.syncManual(); }, 1000);
     }
   }
 
