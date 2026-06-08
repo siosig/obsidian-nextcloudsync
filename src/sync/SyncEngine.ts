@@ -12,6 +12,7 @@ import {
   FeatureUnsupportedError,
   SyncAction,
   SyncPlanEntry,
+  MergePreview,
 } from '../types';
 import { LocalAdapter } from '../data/LocalAdapter';
 import { StateDB } from '../data/StateDB';
@@ -134,10 +135,17 @@ export class SyncEngine {
   async previewSync(): Promise<SyncPlanEntry[]> {
     const { client } = await this.ensureClient();
     const remoteFiles = await client.getFiles('');
-    const remoteMap = new Map(
-      remoteFiles.filter(f => !this.isSystemExcluded(f.path)).map(f => [f.path, f]),
-    );
+    const remoteList = remoteFiles.filter(f => !this.isSystemExcluded(f.path));
     const localFiles = await this.scanLocalFiles();
+    // Resolve missing server-side checksums (computed by the server, no download) so the preview
+    // matches what a real first sync would decide. Without this, files that are byte-identical on
+    // both sides but have no recorded base state are all mis-reported as merges.
+    await this.resolveRemoteChecksums(remoteList, localFiles);
+    const remoteMap = new Map(remoteList.map(f => [f.path, f]));
+
+    // First sync (no recorded base): the decision is purely content identity (mirrors buildInitialPlan).
+    const firstSyncBoth = (identical: boolean): SyncAction =>
+      identical ? 'unchanged' : (this.opts.settings.autoMergeEnabled ? 'merge' : 'conflict');
 
     const entries: SyncPlanEntry[] = [];
     const allPaths = new Set<string>([...localFiles.keys(), ...remoteMap.keys()]);
@@ -147,23 +155,26 @@ export class SyncEngine {
       const base = this.opts.stateDB.getFile(path);
       const localExists = lf !== undefined;
       const remoteExists = rf !== undefined;
-
       const remoteId = rf ? (rf.checksum ?? rf.etag ?? String(rf.size)) : null;
-      const localChanged = localExists ? (!base || base.localHash !== lf!.hash) : Boolean(base);
-      const remoteChanged = remoteExists ? (!base || base.remoteId !== remoteId) : Boolean(base);
 
       let action: SyncAction;
       if (localExists && remoteExists) {
-        if (!localChanged && !remoteChanged) action = 'unchanged';
-        else if (localChanged && !remoteChanged) action = 'upload';
-        else if (!localChanged && remoteChanged) action = 'download';
-        else action = this.opts.settings.autoMergeEnabled ? 'merge' : 'conflict';
+        if (!base) {
+          action = firstSyncBoth(rf!.checksum != null && rf!.checksum === lf!.hash);
+        } else {
+          const localChanged = base.localHash !== lf!.hash;
+          const remoteChanged = base.remoteId !== remoteId;
+          if (!localChanged && !remoteChanged) action = 'unchanged';
+          else if (localChanged && !remoteChanged) action = 'upload';
+          else if (!localChanged && remoteChanged) action = 'download';
+          else action = firstSyncBoth(false);
+        }
       } else if (localExists && !remoteExists) {
         // Remote missing: new local file → upload; previously synced → remote was deleted.
-        action = !base ? 'upload' : (localChanged ? 'upload' : 'delete-local');
+        action = !base ? 'upload' : (base.localHash !== lf!.hash ? 'upload' : 'delete-local');
       } else {
         // Local missing: new remote file → download; previously synced → local was deleted.
-        action = !base ? 'download' : (remoteChanged ? 'download' : 'delete-remote');
+        action = !base ? 'download' : (base.remoteId !== remoteId ? 'download' : 'delete-remote');
       }
 
       entries.push({ path, action, localExists, remoteExists });
@@ -171,6 +182,44 @@ export class SyncEngine {
 
     entries.sort((a, b) => a.path.localeCompare(b.path));
     return entries;
+  }
+
+  /**
+   * Debug-mode merge preview for one file: read the local content, fetch the remote content,
+   * and compute what a real sync would write — all WITHOUT modifying anything. For files that
+   * exist only on one side, the "after" side is simply that side's content (upload/download as-is).
+   */
+  async previewMerge(path: string): Promise<MergePreview> {
+    const { client } = await this.ensureClient();
+    const stat = await this.opts.localAdapter.stat(path);
+    const localExists = stat != null;
+    const local = localExists ? await this.opts.localAdapter.read(path) : '';
+
+    let remote = '';
+    let remoteExists = false;
+    try {
+      await client.downloadFile(path, '');
+      remote = new TextDecoder().decode(client.getLastDownloadBuffer());
+      remoteExists = true;
+    } catch {
+      remoteExists = false; // remote missing (e.g. a new local file)
+    }
+
+    let after: string;
+    let clean = true;
+    if (localExists && !remoteExists) {
+      after = local; // upload as-is
+    } else if (!localExists && remoteExists) {
+      after = remote; // download as-is
+    } else {
+      // Both sides present: compute exactly what ConflictResolver would write (base unknown → '').
+      const resolver = new ConflictResolver(this.opts.app, this.opts.localAdapter, this.opts.settings);
+      const res = resolver.computeResolution('', local, remote);
+      after = res.content;
+      clean = res.clean;
+    }
+
+    return { path, localExists, remoteExists, local, remote, after, clean };
   }
 
   // ── Private ──────────────────────────────────────────────────────────────
@@ -188,6 +237,10 @@ export class SyncEngine {
     const client = this.client!;
     const remoteFiles = await client.getFiles('');
     const localFiles = await this.scanLocalFiles();
+
+    // Populate missing server-side checksums (computed by the server, no download) so that
+    // files already identical on both sides are recognised as unchanged instead of conflicts.
+    await this.resolveRemoteChecksums(remoteFiles, localFiles);
 
     const plan = this.buildInitialPlan(localFiles, remoteFiles);
 
@@ -503,17 +556,22 @@ export class SyncEngine {
     const uploads: string[] = [];
     const downloads: string[] = [];
     const conflicts: string[] = [];
+    const unchanged: string[] = [];
     const remoteMap = new Map(remoteFiles.map(f => [f.path, f]));
 
-    for (const [path] of localFiles) {
-      if (!remoteMap.has(path)) uploads.push(path);
-      else conflicts.push(path); // exists on both sides — assume conflict for first sync
+    for (const [path, lf] of localFiles) {
+      const remote = remoteMap.get(path);
+      if (!remote) { uploads.push(path); continue; }
+      // Identical content (server-computed SHA-256 == local) → no transfer needed.
+      // When the checksum is unavailable (older/standard server), fall back to conflict resolution.
+      if (remote.checksum && remote.checksum === lf.hash) unchanged.push(path);
+      else conflicts.push(path);
     }
     for (const remote of remoteFiles) {
       if (this.isSystemExcluded(remote.path)) continue; // do not import excluded paths (.obsidian, etc.)
       if (!localFiles.has(remote.path)) downloads.push(remote.path);
     }
-    return { uploads, downloads, conflicts, deletes: [] };
+    return { uploads, downloads, conflicts, unchanged, deletes: [] };
   }
 
   private async executePlan(plan: DryRunPlan, remoteFiles: RemoteFileInfo[], summary: SyncSessionSummary): Promise<void> {
@@ -538,6 +596,53 @@ export class SyncEngine {
         const remote = remoteMap.get(path)!;
         await this.downloadFile(remote, remote.checksum ?? remote.etag ?? String(remote.size), remote.checksum ? 'sha256' : 'etag', summary);
       } catch { summary.errorCount++; this.retryQueue.push(path); }
+    }
+
+    // Files already identical on both sides: seed the state DB so later syncs treat them as known
+    // and unchanged (no transfer, no conflict).
+    for (const path of plan.unchanged) {
+      const lf = localFiles.get(path);
+      const remote = remoteMap.get(path);
+      if (!lf || !remote) continue;
+      const stat = await this.opts.localAdapter.stat(path);
+      this.opts.stateDB.setFile({
+        path, localHash: lf.hash, remoteId: remote.checksum ?? lf.hash, idType: 'sha256',
+        size: lf.size, mtime: stat?.mtime ?? 0, remoteFileId: remote.fileId, isConflicted: false,
+      });
+    }
+
+    // Files present on both sides with differing content: resolve as conflicts (download + merge/markers),
+    // reusing the same path as incremental sync. Without this, first-sync conflicts would be silently dropped.
+    for (const path of plan.conflicts) {
+      try {
+        const remote = remoteMap.get(path)!;
+        const remoteId = remote.checksum ?? remote.etag ?? String(remote.size);
+        const idType: FileState['idType'] = remote.checksum ? 'sha256' : (remote.etag ? 'etag' : 'size');
+        await this.handleConflict(path, undefined, remote, remoteId, idType, summary);
+      } catch { summary.errorCount++; this.retryQueue.push(path); }
+    }
+  }
+
+  /**
+   * For files that exist on both sides but whose server-side checksum is not yet stored,
+   * ask the server to compute SHA-256 on demand (no download; Nextcloud ChecksumUpdatePlugin).
+   * Best-effort and bounded-parallel: clients/servers without support leave the checksum null,
+   * which makes buildInitialPlan fall back to content-based conflict resolution.
+   */
+  private async resolveRemoteChecksums(
+    remoteFiles: RemoteFileInfo[],
+    localFiles: Map<string, { hash: string; size: number; mtime: number }>,
+  ): Promise<void> {
+    const targets = remoteFiles.filter(rf => !rf.checksum && localFiles.has(rf.path));
+    const CONCURRENCY = 8;
+    for (let i = 0; i < targets.length; i += CONCURRENCY) {
+      const batch = targets.slice(i, i + CONCURRENCY);
+      await Promise.all(batch.map(async (rf) => {
+        try {
+          const sum = await this.client!.recalcChecksum(rf.path);
+          if (sum) rf.checksum = sum;
+        } catch { /* leave null; falls back to conflict resolution */ }
+      }));
     }
   }
 

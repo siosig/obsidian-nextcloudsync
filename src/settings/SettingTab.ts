@@ -182,6 +182,19 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         }));
 
     new Setting(containerEl)
+      .setName('Frontmatter Conflict Strategy (Auto Merge)')
+      .setDesc('When local and remote frontmatter differ: "Conflict markers" inserts markers for the whole file (safest). "Local wins" / "Remote wins" keeps that side\'s frontmatter and still merges the body.')
+      .addDropdown(drop => drop
+        .addOption('conflict', 'Conflict markers (safe default)')
+        .addOption('local-wins', 'Local wins (keep local frontmatter)')
+        .addOption('remote-wins', 'Remote wins (use remote frontmatter)')
+        .setValue(this.plugin.settings.frontmatterConflictStrategy)
+        .onChange(async (value) => {
+          this.plugin.settings.frontmatterConflictStrategy = value as 'conflict' | 'local-wins' | 'remote-wins';
+          await this.plugin.saveSettings();
+        }));
+
+    new Setting(containerEl)
       .setName('Max Conflict Regions (Auto Merge)')
       .setDesc('If more regions conflict than this threshold, fall back to inline markers')
       .addSlider(slider => slider

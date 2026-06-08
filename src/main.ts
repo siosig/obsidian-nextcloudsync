@@ -4,6 +4,7 @@ import { NextcloudSyncSettingTab } from './settings/SettingTab';
 import { SyncEngine } from './sync/SyncEngine';
 import { VersionHistoryModal } from './ui/VersionHistoryModal';
 import { DebugPreviewModal } from './ui/DebugPreviewModal';
+import { DiffModal } from './ui/DiffModal';
 import { v4 as uuidv4 } from './util/uuid';
 
 const MIN_OBSIDIAN_VERSION = '1.12.7';
@@ -81,8 +82,19 @@ export default class ObsidianNextcloudsync extends Plugin {
     }
     if (this.settings.debugMode) {
       try {
-        const entries = await this.syncEngine.previewSync();
-        new DebugPreviewModal(this.app, this.app.vault.getName(), entries).open();
+        const engine = this.syncEngine;
+        const entries = await engine.previewSync();
+        new DebugPreviewModal(this.app, this.app.vault.getName(), entries, (entry) => {
+          // On click: compute the merge preview (read-only) and show the before/after diff.
+          void (async () => {
+            try {
+              const preview = await engine.previewMerge(entry.path);
+              new DiffModal(this.app, preview).open();
+            } catch (err) {
+              new Notice(`❌ Merge preview failed: ${(err as Error).message}`, 6000);
+            }
+          })();
+        }).open();
       } catch (err) {
         new Notice(`❌ Debug preview failed: ${(err as Error).message}`, 6000);
       }

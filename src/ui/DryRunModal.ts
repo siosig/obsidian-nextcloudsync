@@ -5,6 +5,8 @@ export interface DryRunPlan {
   downloads: string[];
   conflicts: string[];
   deletes: string[];
+  /** Files present and identical on both sides (no transfer needed; state is seeded). */
+  unchanged: string[];
 }
 
 export class DryRunModal extends Modal {
@@ -28,6 +30,7 @@ export class DryRunModal extends Modal {
     };
     addStat('↑', plan.uploads.length, 'uploads');
     addStat('↓', plan.downloads.length, 'downloads');
+    addStat('=', plan.unchanged.length, 'unchanged');
     addStat('⚠️', plan.conflicts.length, 'conflicts');
     addStat('🗑️', plan.deletes.length, 'deletes');
 

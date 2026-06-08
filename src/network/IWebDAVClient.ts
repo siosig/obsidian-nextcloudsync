@@ -12,6 +12,13 @@ export interface IWebDAVClient {
   /** Returns the ArrayBuffer from the most recent downloadFile() call. */
   getLastDownloadBuffer(): ArrayBuffer;
 
+  /**
+   * Ask the server to compute and persist the SHA-256 checksum of an existing remote file
+   * (no download). Returns the lowercase hex digest, or null when unsupported/unavailable.
+   * Used during the initial sync to recognise already-identical files without transferring them.
+   */
+  recalcChecksum(remotePath: string): Promise<string | null>;
+
   // ── US2: Version history (clients that don't support it throw FeatureUnsupportedError) ──
   /** Returns the list of versions for fileId, newest first. */
   listVersions(fileId: string): Promise<FileVersion[]>;

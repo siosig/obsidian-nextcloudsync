@@ -31,3 +31,4 @@ report/
 
 # TypeScript incremental build info
 *.tsbuildinfo
+.env

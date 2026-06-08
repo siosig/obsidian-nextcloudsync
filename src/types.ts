@@ -30,6 +30,13 @@ export interface DavSyncSettings {
   fileLockingEnabled: boolean;
   autoMergeEnabled: boolean;
   maxConflictRegions: number;
+  /**
+   * What to do when local and remote frontmatter differ during auto-merge:
+   *   'local-wins'  — keep local frontmatter, merge bodies
+   *   'remote-wins' — use remote frontmatter, merge bodies
+   *   'conflict'    — insert conflict markers for the whole file (default / safe)
+   */
+  frontmatterConflictStrategy: 'local-wins' | 'remote-wins' | 'conflict';
 }
 
 export const DEFAULT_SETTINGS: DavSyncSettings = {
@@ -48,6 +55,7 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   fileLockingEnabled: false,
   autoMergeEnabled: false,
   maxConflictRegions: 3,
+  frontmatterConflictStrategy: 'conflict',
 };
 
 export type RemoteIdType = 'sha256' | 'sha1' | 'etag' | 'size';
@@ -129,6 +137,21 @@ export interface SyncPlanEntry {
   action: SyncAction;
   localExists: boolean;
   remoteExists: boolean;
+}
+
+/** Debug merge preview for a single file: the two sides and the content a sync would write. */
+export interface MergePreview {
+  path: string;
+  localExists: boolean;
+  remoteExists: boolean;
+  /** Current local content (the "before" side). */
+  local: string;
+  /** Current remote content. */
+  remote: string;
+  /** Content a real sync would write (the "after" side): merged result or conflict-marked text. */
+  after: string;
+  /** True when the merge resolved cleanly with no markers remaining. */
+  clean: boolean;
 }
 
 // ── US1: Login Flow v2 ──────────────────────────────────────────────────────
