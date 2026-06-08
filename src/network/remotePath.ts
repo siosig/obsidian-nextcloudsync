@@ -22,15 +22,34 @@ export function toRemotePath(base: string, rel: string): string {
 }
 
 /**
+ * Reject Vault-relative paths that could escape the Vault root or are absolute.
+ *
+ * A legitimate Vault-relative path never contains a `..` segment, a leading slash, a
+ * backslash, or a Windows drive-letter prefix. A malicious or compromised server could
+ * craft a PROPFIND/REPORT href that decodes to such a path; without this guard it would
+ * reach local file sinks (download write, delete, rename) and allow arbitrary-path access
+ * outside the Vault. Treated as out of scope (callers map an unsafe path to null).
+ */
+export function isSafeVaultRelativePath(rel: string): boolean {
+  if (!rel) return true; // empty = the base folder itself; callers handle separately
+  if (rel.startsWith('/') || rel.includes('\\')) return false;
+  if (/^[a-zA-Z]:/.test(rel)) return false; // Windows drive letter (e.g. C:\)
+  return !rel.split('/').includes('..');
+}
+
+/**
  * Strip the base folder from a files-root-relative remote path to get a Vault-relative path.
- * Returns null when the path is not under the base folder (so it is ignored as out of scope).
+ * Returns null when the path is not under the base folder, or when the resulting path is
+ * unsafe (path traversal / absolute), so it is ignored as out of scope.
  */
 export function fromRemotePath(base: string, full: string): string | null {
   const f = (full ?? '').replace(/^\/+/, '');
-  if (!base) return f;
+  if (!base) return isSafeVaultRelativePath(f) ? f : null;
   if (f === base) return ''; // the base folder itself
   const prefix = `${base}/`;
-  return f.startsWith(prefix) ? f.slice(prefix.length) : null;
+  if (!f.startsWith(prefix)) return null;
+  const rel = f.slice(prefix.length);
+  return isSafeVaultRelativePath(rel) ? rel : null;
 }
 
 /**
