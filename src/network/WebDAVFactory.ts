@@ -1,22 +1,10 @@
-import { App, Notice } from 'obsidian';
-import { DavSyncSettings, NextcloudFeatures, UnsupportedVersionError } from '../types';
+import { App } from 'obsidian';
+import { DavSyncSettings, NextcloudFeatures } from '../types';
 import { IWebDAVClient } from './IWebDAVClient';
 import { NextcloudClient } from './NextcloudClient';
 import { StandardWebDAVClient } from './StandardWebDAVClient';
 import { CredentialsNotFoundError } from '../types';
 import { normalizeBase } from './remotePath';
-
-const MIN_NEXTCLOUD_VERSION = '33.0.4';
-
-function compareVersions(a: string, b: string): number {
-  const pa = a.split('.').map(Number);
-  const pb = b.split('.').map(Number);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
-    if (diff !== 0) return diff;
-  }
-  return 0;
-}
 
 export class WebDAVFactory {
   constructor(
@@ -43,15 +31,9 @@ export class WebDAVFactory {
       return { client: stdClient, features };
     }
 
-    // Version check
-    if (features.version && compareVersions(features.version, MIN_NEXTCLOUD_VERSION) < 0) {
-      new Notice(
-        `⚠️ Nextcloud ${features.version} is not supported. Please upgrade to ${MIN_NEXTCLOUD_VERSION} or later.`,
-        8000,
-      );
-      throw new UnsupportedVersionError(features.version);
-    }
-
+    // Older Nextcloud servers are no longer hard-blocked here. The version is surfaced to
+    // the caller (and recorded for the settings-screen recommendation banner); features
+    // still degrade gracefully via capability detection.
     return { client: nextcloudClient, features };
   }
 }

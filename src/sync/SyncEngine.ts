@@ -36,6 +36,12 @@ export interface SyncEngineOptions {
   statusBar: StatusBarItem;
   webdavFactory: WebDAVFactory;
   pluginDir: string;
+  /**
+   * Invoked once per established connection with the detected server features.
+   * Lets the host persist the server version (for the settings recommendation banner)
+   * without coupling the sync engine to plugin settings persistence.
+   */
+  onFeatures?: (features: NextcloudFeatures) => void;
 }
 
 // Obsidian's bookmarks config file (the only candidate exception to the .obsidian exclusion).
@@ -77,6 +83,7 @@ export class SyncEngine {
       this.uploadStrategy = (this.opts.settings.chunkedUploadEnabled && features.isNextcloud)
         ? new ChunkedUploadStrategy(this.opts.settings)
         : new SimpleUploadStrategy();
+      this.opts.onFeatures?.(features);
     }
     return { client: this.client, features: this.features };
   }

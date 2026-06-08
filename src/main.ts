@@ -186,6 +186,14 @@ export default class ObsidianNextcloudsync extends Plugin {
       statusBar,
       webdavFactory,
       pluginDir,
+      onFeatures: (features) => {
+        // Record the server version so the settings screen can recommend an upgrade
+        // when it is below the supported minimum. Persist only on change.
+        if (features.version && features.version !== this.settings.lastKnownServerVersion) {
+          this.settings.lastKnownServerVersion = features.version;
+          void this.saveSettings();
+        }
+      },
     });
 
     if (this.settings.syncIntervalMinutes > 0) {
