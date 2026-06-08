@@ -36,6 +36,8 @@ export interface SyncEngineOptions {
   statusBar: StatusBarItem;
   webdavFactory: WebDAVFactory;
   pluginDir: string;
+  /** Obsidian's configuration folder (Vault#configDir), e.g. `.obsidian`. User-configurable. */
+  configDir: string;
   /**
    * Invoked once per established connection with the detected server features.
    * Lets the host persist the server version (for the settings recommendation banner)
@@ -43,9 +45,6 @@ export interface SyncEngineOptions {
    */
   onFeatures?: (features: NextcloudFeatures) => void;
 }
-
-// Obsidian's bookmarks config file (the only candidate exception to the .obsidian exclusion).
-const BOOKMARKS_PATH = '.obsidian/bookmarks.json';
 
 export class SyncEngine {
   private autoSyncHandle: number | null = null;
@@ -63,6 +62,11 @@ export class SyncEngine {
   private renameTracker: RenameTracker | null = null;
 
   constructor(private readonly opts: SyncEngineOptions) {}
+
+  /** Obsidian's bookmarks config file (the only candidate exception to the config-folder exclusion). */
+  private get bookmarksPath(): string {
+    return `${this.opts.configDir}/bookmarks.json`;
+  }
 
   private getOrCreateRenameTracker(): RenameTracker {
     if (!this.renameTracker) {
@@ -187,8 +191,8 @@ export class SyncEngine {
   startAutoSync(intervalMinutes: number): void {
     this.stopAutoSync();
     const ms = intervalMinutes * 60 * 1000;
-    this.autoSyncHandle = window.setInterval(async () => {
-      await this.syncManual();
+    this.autoSyncHandle = window.setInterval(() => {
+      void this.syncManual();
     }, ms);
   }
 
@@ -244,9 +248,9 @@ export class SyncEngine {
       let action: SyncAction;
       if (localExists && remoteExists) {
         if (!base) {
-          action = firstSyncBoth(rf!.checksum != null && rf!.checksum === lf!.hash);
+          action = firstSyncBoth(rf.checksum != null && rf.checksum === lf.hash);
         } else {
-          const localChanged = base.localHash !== lf!.hash;
+          const localChanged = base.localHash !== lf.hash;
           const remoteChanged = base.remoteId !== remoteId;
           if (!localChanged && !remoteChanged) action = 'unchanged';
           else if (localChanged && !remoteChanged) action = 'upload';
@@ -255,7 +259,7 @@ export class SyncEngine {
         }
       } else if (localExists && !remoteExists) {
         // Remote missing: new local file → upload; previously synced → remote was deleted.
-        action = !base ? 'upload' : (base.localHash !== lf!.hash ? 'upload' : 'delete-local');
+        action = !base ? 'upload' : (base.localHash !== lf.hash ? 'upload' : 'delete-local');
       } else {
         // Local missing: new remote file → download; previously synced → local was deleted.
         action = !base ? 'download' : (base.remoteId !== remoteId ? 'download' : 'delete-remote');
@@ -655,10 +659,10 @@ export class SyncEngine {
     // Scan local files in scope for sync (both new and modified).
     const localStats = new Map<string, { size: number; mtime: number }>();
     await this.collectLocalStats('', localStats);
-    // .obsidian is not scanned, so explicitly add bookmarks when allowed.
+    // The config folder is not scanned, so explicitly add bookmarks when allowed.
     if (this.opts.settings.syncBookmarks) {
-      const st = await this.opts.localAdapter.stat(BOOKMARKS_PATH);
-      if (st) localStats.set(BOOKMARKS_PATH, { size: st.size, mtime: st.mtime });
+      const st = await this.opts.localAdapter.stat(this.bookmarksPath);
+      if (st) localStats.set(this.bookmarksPath, { size: st.size, mtime: st.mtime });
     }
 
     for (const [path, st] of localStats) {
@@ -843,12 +847,12 @@ export class SyncEngine {
     const results = new Map<string, { hash: string; size: number; mtime: number }>();
     // Locally, always scan the entire Vault (remotely, content is synced under a folder named after the Vault).
     await this.scanDir('', results);
-    // The entire .obsidian folder is excluded from scanning, so explicitly inject bookmarks when allowed.
+    // The entire config folder is excluded from scanning, so explicitly inject bookmarks when allowed.
     if (this.opts.settings.syncBookmarks) {
-      const stat = await this.opts.localAdapter.stat(BOOKMARKS_PATH);
+      const stat = await this.opts.localAdapter.stat(this.bookmarksPath);
       if (stat) {
-        const data = await this.opts.localAdapter.readBinary(BOOKMARKS_PATH);
-        results.set(BOOKMARKS_PATH, { hash: await sha256(data), size: stat.size, mtime: stat.mtime });
+        const data = await this.opts.localAdapter.readBinary(this.bookmarksPath);
+        results.set(this.bookmarksPath, { hash: await sha256(data), size: stat.size, mtime: stat.mtime });
       }
     }
     return results;
@@ -889,10 +893,11 @@ export class SyncEngine {
   }
 
   private isSystemExcluded(path: string): boolean {
-    // Bookmarks are synced only when enabled in settings (an exception to the .obsidian exclusion).
-    if (path === BOOKMARKS_PATH) return !this.opts.settings.syncBookmarks;
-    // Everything under .obsidian (settings, themes, other plugins, state DB, etc.) is always excluded from sync.
-    return path === '.obsidian' || path.startsWith('.obsidian/');
+    // Bookmarks are synced only when enabled in settings (an exception to the config-folder exclusion).
+    if (path === this.bookmarksPath) return !this.opts.settings.syncBookmarks;
+    // Everything under the config folder (settings, themes, other plugins, state DB, etc.) is always excluded.
+    const configDir = this.opts.configDir;
+    return path === configDir || path.startsWith(`${configDir}/`);
   }
 }
 

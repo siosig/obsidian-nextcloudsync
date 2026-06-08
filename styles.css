@@ -1,0 +1,155 @@
+/* Nextcloud Sync — plugin styles.
+   Classes are prefixed `ncs-` to avoid collisions. Dynamic state is expressed
+   through `.is-*` modifier classes rather than inline styles. */
+
+/* ── Settings tab ───────────────────────────────────────────────────────── */
+.ncs-setting-warning {
+  border-left: 3px solid var(--text-warning, #d08770);
+  background: var(--background-secondary);
+  padding: 8px 12px;
+  margin: 8px 0 16px;
+  border-radius: 4px;
+}
+
+.ncs-break-all {
+  word-break: break-all;
+}
+
+.ncs-slider-value {
+  margin-right: 8px;
+}
+
+/* ── Debug preview modal ─────────────────────────────────────────────────── */
+.ncs-debug-modal {
+  width: min(900px, 95vw);
+}
+
+.ncs-debug-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 8px;
+}
+
+.ncs-debug-list {
+  max-height: 50vh;
+  overflow: auto;
+  font-family: var(--font-monospace);
+  font-size: 12px;
+}
+
+.ncs-debug-row {
+  padding: 3px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: pre;
+}
+
+.ncs-debug-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+/* ── Diff / merge preview modal ──────────────────────────────────────────── */
+.ncs-diff-modal {
+  width: min(1100px, 95vw);
+}
+
+.ncs-diff-controls {
+  margin: 4px 0 8px;
+}
+
+.ncs-diff-btn {
+  margin-right: 6px;
+}
+
+.ncs-diff-headers {
+  display: flex;
+  font-weight: bold;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.ncs-diff-header-cell {
+  flex: 1;
+  padding: 4px 8px;
+}
+
+.ncs-diff-scroll {
+  max-height: 60vh;
+  overflow-y: scroll; /* always show vertical scrollbar so position is visible */
+  overflow-x: auto;
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ncs-diff-section-header {
+  display: flex;
+  align-items: center;
+  font-weight: bold;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 2px 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+}
+
+.ncs-diff-section-header.is-changed {
+  background: rgba(255, 185, 0, 0.18);
+  color: var(--text-warning);
+}
+
+.ncs-diff-row {
+  display: flex;
+  align-items: baseline;
+}
+
+.ncs-diff-gutter {
+  width: 32px;
+  min-width: 32px;
+  text-align: right;
+  padding: 0 4px;
+  color: var(--text-faint);
+  user-select: none;
+  font-size: 10px;
+}
+
+.ncs-diff-marker {
+  width: 14px;
+  min-width: 14px;
+  text-align: center;
+  user-select: none;
+  font-weight: bold;
+  color: transparent;
+}
+
+.ncs-diff-marker.is-del {
+  color: var(--color-red);
+}
+
+.ncs-diff-marker.is-add {
+  color: var(--color-green);
+}
+
+.ncs-diff-cell {
+  flex: 1;
+  padding: 0 4px;
+  background: transparent;
+}
+
+.ncs-diff-cell-left {
+  border-right: 1px solid var(--background-modifier-border);
+}
+
+.ncs-diff-cell.is-del {
+  background: rgba(255, 89, 89, 0.20);
+}
+
+.ncs-diff-cell.is-add {
+  background: rgba(83, 200, 110, 0.20);
+}

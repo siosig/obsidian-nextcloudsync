@@ -6,7 +6,8 @@ export class ReconcileTextStrategy implements IMergeStrategy {
     try {
       // reconcile() returns a TextWithCursors object ({ text, cursors }), not a string.
       // The merged document is in `.text`; using the object directly corrupts content to "[object Object]".
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      // require() keeps this CJS dependency working in both the esbuild bundle and the ts-jest tests.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports -- CJS interop for a bundled dependency
       const { reconcile } = require('reconcile-text') as {
         reconcile: (b: string, l: string, r: string) => string | { text: string };
       };
