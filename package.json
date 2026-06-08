@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Bidirectional sync between Obsidian and Nextcloud",
   "main": "main.js",
+  "packageManager": "pnpm@11.4.0",
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production",
