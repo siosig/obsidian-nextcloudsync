@@ -1,4 +1,4 @@
-import { App, Notice, TFile } from 'obsidian';
+import { App, Notice, TFile, TFolder, normalizePath } from 'obsidian';
 import {
   DavSyncSettings,
   FileState,
@@ -616,9 +616,25 @@ export class SyncEngine {
 
   private async processRemoteDeletion(path: string, summary: SyncSessionSummary): Promise<void> {
     const file = this.opts.app.vault.getAbstractFileByPath(path);
-    if (file instanceof TFile) {
-      await this.opts.app.vault.trash(file, true);
-      summary.downloadedCount++;
+    const normalized = normalizePath(path);
+    try {
+      if (file instanceof TFile || file instanceof TFolder) {
+        // Honor the user's Obsidian "Deleted files" setting (system trash / .trash / permanent
+        // delete) instead of forcing one behavior. trashFile handles both files and folders.
+        await this.opts.app.fileManager.trashFile(file);
+        summary.downloadedCount++;
+      } else if (await this.opts.app.vault.adapter.exists(normalized)) {
+        // Not a vault-tracked abstract file (e.g. dotfiles under a config folder): delete it
+        // directly so the deletion is never silently skipped.
+        await this.opts.app.vault.adapter.remove(normalized);
+        summary.downloadedCount++;
+      }
+      // else: already gone locally — nothing to delete, fall through to state cleanup.
+    } catch (err) {
+      // Don't abort the whole sync session for one failed deletion; notify and keep the
+      // StateDB entry so the next sync retries this path.
+      new Notice(`❌ Failed to delete ${path}: ${(err as Error).message}`, 6000);
+      return;
     }
     this.opts.stateDB.deleteFile(path);
   }

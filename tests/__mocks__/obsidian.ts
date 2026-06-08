@@ -56,6 +56,18 @@ export class TFile {
   }
 }
 
+export class TFolder {
+  path: string;
+  name: string;
+  parent: { path: string } | null;
+  constructor(path: string) {
+    this.path = path;
+    const parts = path.split('/');
+    this.name = parts[parts.length - 1];
+    this.parent = parts.length > 1 ? { path: parts.slice(0, -1).join('/') } : null;
+  }
+}
+
 export const requestUrl = jest.fn(
   (_req: RequestUrlParam): Promise<RequestUrlResponse> =>
     Promise.resolve({ status: 200, text: '', json: {}, arrayBuffer: new ArrayBuffer(0), headers: {} }),
@@ -79,13 +91,18 @@ export interface RequestUrlResponse {
 
 export interface App {
   vault: Vault;
+  fileManager: FileManager;
   saveLocalStorage(key: string, value: string | null): void;
   loadLocalStorage(key: string): string | null;
 }
 
+export interface FileManager {
+  trashFile(file: TFile | TFolder): Promise<void>;
+}
+
 export interface Vault {
   adapter: DataAdapter;
-  getAbstractFileByPath(path: string): TFile | null;
+  getAbstractFileByPath(path: string): TFile | TFolder | null;
   trash(file: TFile, system: boolean): Promise<void>;
 }
 
