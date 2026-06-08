@@ -2,6 +2,7 @@ import { App, PluginSettingTab, Setting, Notice, SecretComponent, ButtonComponen
 import type ObsidianNextcloudsync from '../main';
 import { DavSyncSettings, LoginFlowError } from '../types';
 import { LoginFlowV2 } from '../auth/LoginFlowV2';
+import { MIN_NEXTCLOUD_VERSION, isSupportedNextcloudVersion } from '../util/version';
 
 /** Default secret ID in SecretStorage (users can pick a different ID via "Link…"). */
 const DEFAULT_PASSWORD_SECRET_ID = 'obsidian-nextcloudsync-password';
@@ -17,6 +18,18 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.createEl('h2', { text: 'Nextcloud Sync Settings' });
+
+    // Recommendation banner: shown when the last-connected server is below the recommended
+    // Nextcloud version. This no longer blocks syncing — it only advises an upgrade.
+    const serverVersion = this.plugin.settings.lastKnownServerVersion;
+    if (serverVersion && !isSupportedNextcloudVersion(serverVersion)) {
+      const warn = containerEl.createEl('div', {
+        text: `⚠️ Connected Nextcloud server is ${serverVersion}. Nextcloud ${MIN_NEXTCLOUD_VERSION} (Hub 26 "Winter") or later is recommended; some features may be unavailable or degrade on older servers.`,
+      });
+      warn.style.cssText =
+        'border-left: 3px solid var(--text-warning, #d08770); background: var(--background-secondary);'
+        + ' padding: 8px 12px; margin: 8px 0 16px; border-radius: 4px;';
+    }
 
     // Multi-Vault notice
     containerEl.createEl('p', {
