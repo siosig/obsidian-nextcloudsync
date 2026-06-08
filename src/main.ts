@@ -59,20 +59,41 @@ export default class ObsidianNextcloudsync extends Plugin {
       },
     });
 
-    // Watch mode: trigger sync on local file changes (debounced to avoid thrashing).
-    const debouncedSync = debounce(() => { void this.syncEngine?.syncManual(); }, 2000, true);
-    const triggerSync = (file: TAbstractFile) => {
-      if (!this.settings.watchOnChangeEnabled || this.settings.debugMode) return;
-      if (!(file instanceof TFile)) return;
-      debouncedSync();
-    };
-    this.registerEvent(this.app.vault.on('modify', triggerSync));
-    this.registerEvent(this.app.vault.on('create', triggerSync));
-    this.registerEvent(this.app.vault.on('delete', triggerSync));
-    this.registerEvent(this.app.vault.on('rename', (file: TAbstractFile) => {
-      if (!this.settings.watchOnChangeEnabled || this.settings.debugMode) return;
-      if (!(file instanceof TFile)) return;
-      debouncedSync();
+    // Watch mode: react to individual file events with lightweight single-file operations.
+    // Full vault sync is reserved for manual Sync Now and the periodic interval.
+    const guard = (file: TAbstractFile): file is TFile =>
+      this.settings.watchOnChangeEnabled && !this.settings.debugMode && file instanceof TFile;
+
+    // Accumulate paths changed during rapid editing and flush them together after the
+    // debounce window so each keystroke does not trigger a separate network request.
+    const pendingUploads = new Set<string>();
+    const debouncedUpload = debounce(() => {
+      const paths = [...pendingUploads];
+      pendingUploads.clear();
+      for (const path of paths) {
+        void this.syncEngine?.syncSingleFile(path);
+      }
+    }, 2000, true);
+
+    this.registerEvent(this.app.vault.on('modify', (file: TAbstractFile) => {
+      if (!guard(file)) return;
+      pendingUploads.add(file.path);
+      debouncedUpload();
+    }));
+    this.registerEvent(this.app.vault.on('create', (file: TAbstractFile) => {
+      if (!guard(file)) return;
+      pendingUploads.add(file.path);
+      debouncedUpload();
+    }));
+    this.registerEvent(this.app.vault.on('delete', (file: TAbstractFile) => {
+      if (!guard(file)) return;
+      pendingUploads.delete(file.path); // cancel any pending upload for this path
+      void this.syncEngine?.deleteSingleFile(file.path);
+    }));
+    this.registerEvent(this.app.vault.on('rename', (file: TAbstractFile, oldPath: string) => {
+      if (!guard(file)) return;
+      pendingUploads.delete(oldPath);
+      void this.syncEngine?.renameSingleFile(oldPath, file.path);
     }));
   }
 
