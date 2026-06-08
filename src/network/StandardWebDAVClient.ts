@@ -14,13 +14,13 @@ import { DavSyncSettings } from '../types';
 import { toRemotePath, fromRemotePath, encodeRemoteUrl, ensureRemoteDir } from './remotePath';
 
 export class StandardWebDAVClient implements IWebDAVClient {
-  /** MKCOL で作成済みのリモートディレクトリ（セッション内キャッシュ）。 */
+  /** Remote directories already created via MKCOL (in-session cache). */
   private readonly createdDirs = new Set<string>();
 
   constructor(
     private readonly settings: DavSyncSettings,
     private readonly appPassword: string,
-    /** リモート同期先のベースフォルダ（通常は Vault 名）。空文字なら files ルート直下。 */
+    /** Base folder for the remote sync target (usually the Vault name). Empty string means directly under the files root. */
     private readonly remoteBase: string = '',
   ) {}
 
@@ -28,7 +28,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
     return this.settings.serverUrl.replace(/\/$/, '');
   }
 
-  /** Vault 相対パスを、ベースフォルダ配下の WebDAV URL に変換する。 */
+  /** Converts a Vault-relative path into a WebDAV URL under the base folder. */
   private remoteUrl(rel: string): string {
     return encodeRemoteUrl(this.baseUrl, toRemotePath(this.remoteBase, rel));
   }
@@ -54,15 +54,15 @@ export class StandardWebDAVClient implements IWebDAVClient {
   }
 
   async getFiles(path: string): Promise<RemoteFileInfo[]> {
-    // Depth:infinity を許可しない標準 WebDAV サーバーが多いため、Depth:1 を再帰して全階層を走査する。
+    // Many standard WebDAV servers disallow Depth:infinity, so recurse with Depth:1 to traverse the entire tree.
     const results: RemoteFileInfo[] = [];
     await this.propfindRecursive(path, results, new Set());
     return results;
   }
 
-  /** 1 つのコレクションを Depth:1 で取得し、ファイルを収集しつつサブコレクションを再帰する。 */
+  /** Fetches a single collection with Depth:1, collecting files while recursing into subcollections. */
   private async propfindRecursive(rel: string, out: RemoteFileInfo[], visited: Set<string>): Promise<void> {
-    if (visited.has(rel)) return; // 自己参照・循環ガード
+    if (visited.has(rel)) return; // Guard against self-reference and cycles
     visited.add(rel);
     const res = await requestUrl({
       url: this.remoteUrl(rel),
@@ -71,7 +71,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
       body: `<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:getetag/><d:getcontentlength/><d:getlastmodified/><d:resourcetype/></d:prop></d:propfind>`,
       throw: false,
     });
-    // フォルダ未作成（初回同期前など）は 404。空として扱う。
+    // A missing folder (e.g. before the first sync) returns 404. Treat it as empty.
     if (res.status === 404) return;
     if (res.status !== 207) throw new NetworkError(res.status, res.text);
     const { files, folders } = this.parseListing(res.text, rel);
@@ -118,7 +118,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
     return null;
   }
 
-  // ── Nextcloud 固有機能は標準 WebDAV では非対応 ──
+  // ── Nextcloud-specific features are not supported on standard WebDAV ──
 
   async listVersions(_fileId: string): Promise<FileVersion[]> {
     throw new FeatureUnsupportedError('versions');
@@ -145,9 +145,9 @@ export class StandardWebDAVClient implements IWebDAVClient {
   }
 
   /**
-   * Depth:1 の PROPFIND 応答を解析し、ファイルとサブフォルダ（いずれも Vault 相対パス）に分類する。
-   * 要求対象のコレクション自身・ベースフォルダ外のエントリは除外する。
-   * @param requestRel この PROPFIND を発行した Vault 相対パス（自己エントリ除外に使用）
+   * Parses a Depth:1 PROPFIND response and classifies entries into files and subfolders (both as Vault-relative paths).
+   * Excludes the requested collection itself and any entries outside the base folder.
+   * @param requestRel The Vault-relative path this PROPFIND was issued for (used to exclude the self entry)
    */
   private parseListing(xml: string, requestRel: string): { files: RemoteFileInfo[]; folders: string[] } {
     const files: RemoteFileInfo[] = [];
@@ -161,7 +161,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
       const prop = resp.getElementsByTagNameNS('DAV:', 'prop')[0];
       if (!prop) continue;
       const rel = this.hrefToRel(href);
-      if (rel === null || rel === '' || rel === requestRel) continue; // ベース外・コレクション自身はスキップ
+      if (rel === null || rel === '' || rel === requestRel) continue; // Skip entries outside the base or the collection itself
       const resourcetype = prop.getElementsByTagNameNS('DAV:', 'resourcetype')[0];
       const isCollection = (resourcetype?.getElementsByTagNameNS('DAV:', 'collection').length ?? 0) > 0;
       if (isCollection) {
@@ -178,9 +178,9 @@ export class StandardWebDAVClient implements IWebDAVClient {
   }
 
   /**
-   * PROPFIND 応答の href を Vault 相対パスへ変換する。
-   * href（絶対 URL または絶対パス）から serverUrl のパス部分を除いて files ルート相対を求め、
-   * さらにベースフォルダ（Vault 名）を除去する。ベース外なら null。
+   * Converts an href from a PROPFIND response into a Vault-relative path.
+   * Strips the serverUrl's path portion from the href (an absolute URL or absolute path) to get the files-root-relative
+   * path, then removes the base folder (the Vault name). Returns null if outside the base.
    */
   private hrefToRel(href: string): string | null {
     let pathname: string;

@@ -34,8 +34,8 @@ export interface SyncEngineOptions {
   pluginDir: string;
 }
 
-// Paths always excluded from sync
-const SYSTEM_EXCLUDE_PATTERNS = ['.obsidian/plugins/obsidian-nextcloudsync/'];
+// Obsidian's bookmarks config file (the only candidate exception to the .obsidian exclusion).
+const BOOKMARKS_PATH = '.obsidian/bookmarks.json';
 
 export class SyncEngine {
   private autoSyncHandle: number | null = null;
@@ -44,16 +44,16 @@ export class SyncEngine {
   private client: IWebDAVClient | null = null;
   private features: NextcloudFeatures | null = null;
   private uploadStrategy: IUploadStrategy | null = null;
-  /** 同期実行中フラグ（多重起動防止）。 */
+  /** Sync-in-progress flag (prevents concurrent runs). */
   private running = false;
-  /** 取得中のロックトークン（path → token）。 */
+  /** Currently held lock tokens (path → token). */
   private readonly heldLocks = new Map<string, string>();
 
   constructor(private readonly opts: SyncEngineOptions) {}
 
   /**
-   * WebDAV クライアント・Capability・アップロード戦略を一度だけ初期化する。
-   * Capability を見て chunked/lock 等の拡張可否を決める（Progressive Enhancement）。
+   * Initialize the WebDAV client, capabilities, and upload strategy exactly once.
+   * Inspects capabilities to decide whether extensions like chunked/lock are available (Progressive Enhancement).
    */
   private async ensureClient(): Promise<{ client: IWebDAVClient; features: NextcloudFeatures }> {
     if (!this.client || !this.features) {
@@ -69,7 +69,7 @@ export class SyncEngine {
 
   /** Manual sync: Dry Run → user approval → execute */
   async syncManual(): Promise<void> {
-    // 多重起動防止（ウォッチモードや定期同期と手動実行の競合を避ける）。
+    // Prevent concurrent runs (avoid clashing with watch mode or scheduled sync).
     if (this.running) return;
     this.running = true;
     await this.ensureClient();
@@ -260,7 +260,7 @@ export class SyncEngine {
 
     const data = await this.opts.localAdapter.readBinary(path);
 
-    // US4: ロック取得（有効かつ対応サーバーのみ）。他者ロック中はスキップしてリトライへ。
+    // US4: Acquire lock (only when enabled and supported by the server). If locked by someone else, skip and queue for retry.
     let token: string | null;
     try {
       token = await this.acquireLock(path);
@@ -274,13 +274,13 @@ export class SyncEngine {
 
     let outcome: 'uploaded' | 'skipped';
     try {
-      // US3: アップロード戦略（チャンク/単一/スキップ）に委譲。
+      // US3: Delegate to the upload strategy (chunked/single/skip).
       outcome = await this.uploadStrategy!.upload(this.client!, path, data);
     } finally {
       await this.releaseLock(path, token);
     }
 
-    if (outcome === 'skipped') return; // 上限超過。戦略側で警告済み（リトライ不要）。
+    if (outcome === 'skipped') return; // Size limit exceeded. Already warned by the strategy (no retry needed).
     summary.uploadedCount++;
 
     this.opts.stateDB.setFile({
@@ -290,11 +290,11 @@ export class SyncEngine {
     });
   }
 
-  // ── US4: ロック取得・解放 ──────────────────────────────────────────────────
+  // ── US4: Lock acquire/release ──────────────────────────────────────────────
 
   /**
-   * 更新前にファイルロックを取得する。ロック無効/非対応なら null。
-   * 他者ロック中（423）はバックオフ再試行し、解放されなければ FileLockedError を投げる。
+   * Acquire a file lock before updating. Returns null if locking is disabled/unsupported.
+   * If locked by someone else (423), retries with backoff and throws FileLockedError if not released.
    */
   private async acquireLock(path: string): Promise<string | null> {
     if (!this.opts.settings.fileLockingEnabled || !this.features?.hasFilesLocking) return null;
@@ -307,7 +307,7 @@ export class SyncEngine {
       } catch (err) {
         if (err instanceof FileLockedError) {
           if (attempt < maxAttempts - 1) {
-            await this.sleep(500 * Math.pow(2, attempt)); // 指数バックオフ
+            await this.sleep(500 * Math.pow(2, attempt)); // exponential backoff
             continue;
           }
           throw err;
@@ -319,7 +319,7 @@ export class SyncEngine {
     return null;
   }
 
-  /** 更新後にロックを解放する（ベストエフォート）。 */
+  /** Release the lock after updating (best-effort). */
   private async releaseLock(path: string, token: string | null): Promise<void> {
     if (!token) return;
     await this.client!.unlockFile(path, token);
@@ -330,9 +330,9 @@ export class SyncEngine {
     return new Promise((resolve) => window.setTimeout(resolve, ms));
   }
 
-  // ── US2: バージョン履歴 ────────────────────────────────────────────────────
+  // ── US2: Version history ───────────────────────────────────────────────────
 
-  /** アクティブノートのバージョン一覧を返す。非対応・fileId 無しは FeatureUnsupportedError。 */
+  /** Return the version list for the active note. Throws FeatureUnsupportedError if unsupported or fileId is missing. */
   async listVersions(path: string): Promise<FileVersion[]> {
     const { client, features } = await this.ensureClient();
     if (!features.isNextcloud) throw new FeatureUnsupportedError('versions');
@@ -341,20 +341,20 @@ export class SyncEngine {
     return client.listVersions(fileId);
   }
 
-  /** 指定バージョンを復元し、ローカルへ反映して状態DBを更新する（FR-007/008）。 */
+  /** Restore the specified version, apply it locally, and update the state DB (FR-007/008). */
   async restoreVersion(path: string, version: FileVersion): Promise<void> {
     const { client, features } = await this.ensureClient();
     if (!features.isNextcloud) throw new FeatureUnsupportedError('versions');
     const fileId = this.opts.stateDB.getFile(path)?.remoteFileId;
     if (!fileId) throw new FeatureUnsupportedError('versions');
 
-    // 1. サーバー側を復元（MOVE restore）。
+    // 1. Restore on the server side (MOVE restore).
     await client.restoreVersion(version, fileId);
-    // 2. 復元後の現行内容を取得してローカルへアトミック反映。
+    // 2. Fetch the current content after restore and atomically apply it locally.
     await client.downloadFile(path, '');
     const data = client.getLastDownloadBuffer();
     await this.opts.localAdapter.atomicWriteBinary(path, data);
-    // 3. 状態DB を更新（localHash=remoteId=復元内容のハッシュ、isConflicted=false）。
+    // 3. Update the state DB (localHash=remoteId=hash of restored content, isConflicted=false).
     const localHash = await sha256(data);
     const stat = await this.opts.localAdapter.stat(path);
     this.opts.stateDB.setFile({
@@ -419,15 +419,32 @@ export class SyncEngine {
 
   private async processLocalModifications(remoteFiles: RemoteFileInfo[], summary: SyncSessionSummary): Promise<void> {
     const remotePathSet = new Set(remoteFiles.map(f => f.path));
-    for (const base of this.opts.stateDB.getAllFiles()) {
-      if (remotePathSet.has(base.path)) continue; // already handled
-      const stat = await this.opts.localAdapter.stat(base.path);
-      if (!stat) continue; // file deleted locally — handled elsewhere
-      if (stat.mtime <= base.mtime) continue; // unchanged
-      const data = await this.opts.localAdapter.readBinary(base.path);
+
+    // Scan local files in scope for sync (both new and modified).
+    const localStats = new Map<string, { size: number; mtime: number }>();
+    await this.collectLocalStats('', localStats);
+    // .obsidian is not scanned, so explicitly add bookmarks when allowed.
+    if (this.opts.settings.syncBookmarks) {
+      const st = await this.opts.localAdapter.stat(BOOKMARKS_PATH);
+      if (st) localStats.set(BOOKMARKS_PATH, { size: st.size, mtime: st.mtime });
+    }
+
+    for (const [path, st] of localStats) {
+      if (remotePathSet.has(path)) continue; // already handled in the remote-changes loop
+      const base = this.opts.stateDB.getFile(path);
+      // For known files, use mtime as a first-pass filter to quickly skip unchanged ones.
+      if (base && st.mtime <= base.mtime) continue;
+      const data = await this.opts.localAdapter.readBinary(path);
       const localHash = await sha256(data);
-      if (localHash === base.localHash) continue;
-      await this.uploadFile(base.path, localHash, base.remoteId, base.idType, { path: base.path, fileId: base.remoteFileId, checksum: null, etag: null, size: stat.size, lastModified: stat.mtime }, summary);
+      if (base && localHash === base.localHash) continue; // content unchanged
+      // For new files, use the local hash as remoteId (= the server checksum after upload).
+      const remoteId = base?.remoteId ?? localHash;
+      const idType: FileState['idType'] = base?.idType ?? 'sha256';
+      await this.uploadFile(
+        path, localHash, remoteId, idType,
+        { path, fileId: base?.remoteFileId ?? null, checksum: null, etag: null, size: st.size, lastModified: st.mtime },
+        summary,
+      );
     }
   }
 
@@ -445,6 +462,7 @@ export class SyncEngine {
       else conflicts.push(path); // exists on both sides — assume conflict for first sync
     }
     for (const remote of remoteFiles) {
+      if (this.isSystemExcluded(remote.path)) continue; // do not import excluded paths (.obsidian, etc.)
       if (!localFiles.has(remote.path)) downloads.push(remote.path);
     }
     return { uploads, downloads, conflicts, deletes: [] };
@@ -460,7 +478,7 @@ export class SyncEngine {
         if (!lf) continue;
         const data = await this.opts.localAdapter.readBinary(path);
         const outcome = await this.uploadStrategy!.upload(this.client!, path, data);
-        if (outcome === 'skipped') continue; // 上限超過（戦略側で警告済み）
+        if (outcome === 'skipped') continue; // size limit exceeded (already warned by the strategy)
         summary.uploadedCount++;
         const stat = await this.opts.localAdapter.stat(path);
         this.opts.stateDB.setFile({ path, localHash: lf.hash, remoteId: lf.hash, idType: 'sha256', size: lf.size, mtime: stat?.mtime ?? 0, remoteFileId: null, isConflicted: false });
@@ -477,9 +495,32 @@ export class SyncEngine {
 
   private async scanLocalFiles(): Promise<Map<string, { hash: string; size: number; mtime: number }>> {
     const results = new Map<string, { hash: string; size: number; mtime: number }>();
-    // ローカルは常に Vault 全体をスキャンする（リモート側は Vault 名フォルダ配下に同期される）。
+    // Locally, always scan the entire Vault (remotely, content is synced under a folder named after the Vault).
     await this.scanDir('', results);
+    // The entire .obsidian folder is excluded from scanning, so explicitly inject bookmarks when allowed.
+    if (this.opts.settings.syncBookmarks) {
+      const stat = await this.opts.localAdapter.stat(BOOKMARKS_PATH);
+      if (stat) {
+        const data = await this.opts.localAdapter.readBinary(BOOKMARKS_PATH);
+        results.set(BOOKMARKS_PATH, { hash: await sha256(data), size: stat.size, mtime: stat.mtime });
+      }
+    }
     return results;
+  }
+
+  /** Collect path→stat for local files in sync scope without computing hashes (first-pass filter for change detection). */
+  private async collectLocalStats(dir: string, out: Map<string, { size: number; mtime: number }>): Promise<void> {
+    try {
+      const listing = await this.opts.localAdapter.list(dir);
+      for (const file of listing.files) {
+        if (this.isSystemExcluded(file)) continue;
+        const stat = await this.opts.localAdapter.stat(file);
+        if (stat) out.set(file, { size: stat.size, mtime: stat.mtime });
+      }
+      for (const folder of listing.folders) {
+        if (!this.isSystemExcluded(folder)) await this.collectLocalStats(folder, out);
+      }
+    } catch { /* ignore unreadable dirs */ }
   }
 
   private async scanDir(dir: string, results: Map<string, { hash: string; size: number; mtime: number }>): Promise<void> {
@@ -502,7 +543,10 @@ export class SyncEngine {
   }
 
   private isSystemExcluded(path: string): boolean {
-    return SYSTEM_EXCLUDE_PATTERNS.some(p => path.startsWith(p));
+    // Bookmarks are synced only when enabled in settings (an exception to the .obsidian exclusion).
+    if (path === BOOKMARKS_PATH) return !this.opts.settings.syncBookmarks;
+    // Everything under .obsidian (settings, themes, other plugins, state DB, etc.) is always excluded from sync.
+    return path === '.obsidian' || path.startsWith('.obsidian/');
   }
 }
 

@@ -2,8 +2,8 @@ import { App, Modal, Notice, Setting } from 'obsidian';
 import { FileVersion } from '../types';
 
 /**
- * アクティブノートのサーバーバージョン一覧を表示し、選択した版を復元する Modal（US2）。
- * 復元の実処理は onRestore コールバックに委譲する（SRP）。
+ * Modal that lists the server-side versions of the active note and restores the selected one (US2).
+ * The actual restore work is delegated to the onRestore callback (SRP).
  */
 export class VersionHistoryModal extends Modal {
   constructor(

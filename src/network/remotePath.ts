@@ -1,20 +1,20 @@
 import { requestUrl } from 'obsidian';
 
 /**
- * リモートのベースフォルダ（Vault 名）とパスを変換するユーティリティ。
+ * Helpers for converting between the remote base folder (the Vault name) and paths.
  *
- * SyncEngine は常に Vault 相対パス（例: `Notes/a.md`）で動作し、
- * WebDAV クライアント層がここのヘルパで「ベースフォルダ配下」へ透過的に
- * 変換・逆変換する。これによりローカル（Vault 全体）とリモート
- * （`/<Vault名>/...`）の非対称マッピングをクライアント内部に閉じ込める。
+ * The SyncEngine always works with Vault-relative paths (e.g. `Notes/a.md`), and
+ * the WebDAV client layer transparently maps them into / out of the base folder
+ * using these helpers. This keeps the asymmetric mapping between local (the whole
+ * Vault) and remote (`/<VaultName>/...`) contained inside the client.
  */
 
-/** 先頭・末尾のスラッシュを除去し、リモートフォルダ名として正規化する。 */
+/** Strip leading/trailing slashes and normalize as a remote folder name. */
 export function normalizeBase(name: string): string {
   return (name ?? '').replace(/^\/+|\/+$/g, '');
 }
 
-/** ベースフォルダと Vault 相対パスを連結して、files ルート相対のリモートパスを得る。 */
+/** Join the base folder and a Vault-relative path into a files-root-relative remote path. */
 export function toRemotePath(base: string, rel: string): string {
   const r = (rel ?? '').replace(/^\/+/, '');
   if (!base) return r;
@@ -22,34 +22,34 @@ export function toRemotePath(base: string, rel: string): string {
 }
 
 /**
- * files ルート相対のリモートパスからベースフォルダを除去し、Vault 相対パスを得る。
- * ベースフォルダ配下でない場合は null を返す（同期対象外として無視するため）。
+ * Strip the base folder from a files-root-relative remote path to get a Vault-relative path.
+ * Returns null when the path is not under the base folder (so it is ignored as out of scope).
  */
 export function fromRemotePath(base: string, full: string): string | null {
   const f = (full ?? '').replace(/^\/+/, '');
   if (!base) return f;
-  if (f === base) return ''; // ベースフォルダ自身
+  if (f === base) return ''; // the base folder itself
   const prefix = `${base}/`;
   return f.startsWith(prefix) ? f.slice(prefix.length) : null;
 }
 
-/** files ルート相対パスを WebDAV URL に組み立てる（スラッシュは保持しつつ各セグメントを URL エンコード）。 */
+/** Build a WebDAV URL from a files-root-relative path (keep slashes, URL-encode each segment). */
 export function encodeRemoteUrl(baseUrl: string, remotePath: string): string {
   if (!remotePath) return baseUrl;
   return `${baseUrl}/${encodeURIComponent(remotePath).replace(/%2F/g, '/')}`;
 }
 
 /**
- * リモートファイルパスの親コレクション（ディレクトリ）を MKCOL で冪等に作成する。
- * 既存（405）は無視し、作成済みは createdCache で重複リクエストを抑止する。
- * WebDAV の PUT は親ディレクトリを自動生成しないため、アップロード前に必須。
+ * Idempotently create the parent collections (directories) of a remote file path via MKCOL.
+ * Existing collections (405) are ignored, and createdCache suppresses duplicate requests.
+ * Required before upload because WebDAV PUT does not auto-create parent directories.
  */
 export async function ensureRemoteDir(
   ctx: { baseUrl: string; authHeader: string },
   remoteFilePath: string,
   createdCache: Set<string>,
 ): Promise<void> {
-  const segments = remoteFilePath.split('/').slice(0, -1); // 末尾のファイル名を除外
+  const segments = remoteFilePath.split('/').slice(0, -1); // drop the trailing file name
   let acc = '';
   for (const seg of segments) {
     if (!seg) continue;
@@ -61,7 +61,7 @@ export async function ensureRemoteDir(
       headers: { Authorization: ctx.authHeader },
       throw: false,
     });
-    // 201=作成 / 405=既存 のいずれもOK。その他のコードもベストエフォートで続行。
+    // 201=created / 405=already exists are both fine; continue best-effort on other codes too.
     createdCache.add(acc);
   }
 }

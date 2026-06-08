@@ -29,10 +29,10 @@ describe('NextcloudClient.uploadChunked', () => {
       return ok(201);
     });
 
-    const data = new ArrayBuffer(5); // 2バイトチャンク → offset 0,2,4 の3チャンク
+    const data = new ArrayBuffer(5); // 2-byte chunks → 3 chunks at offsets 0, 2, 4
     await new NextcloudClient(settings, 'pw', 'Vault').uploadChunked('Notes/big.bin', data, 2);
 
-    // セッション作成 MKCOL（uploads 配下）が発行される。親ディレクトリ用 MKCOL も別途発行される。
+    // The session-creation MKCOL (under uploads) is issued. A separate MKCOL for the parent directory is also issued.
     expect(methodsOf('MKCOL').some(c => c.url.includes('/uploads/alice/'))).toBe(true);
     const puts = methodsOf('PUT');
     expect(puts).toHaveLength(3);

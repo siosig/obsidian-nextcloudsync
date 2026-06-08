@@ -57,8 +57,8 @@ export default class ObsidianNextcloudsync extends Plugin {
       },
     });
 
-    // ウォッチモード: ローカル Markdown 編集を検知して即時同期する。
-    // 連続編集での過剰同期を避けるため、最後の編集から 2 秒後に 1 回だけ実行（デバウンス）。
+    // Watch mode: detect local Markdown edits and sync immediately.
+    // To avoid excessive syncing during continuous editing, run once 2 seconds after the last edit (debounced).
     const debouncedSync = debounce(() => { void this.syncEngine?.syncManual(); }, 2000, true);
     this.registerEvent(
       this.app.vault.on('modify', (file: TAbstractFile) => {
@@ -69,7 +69,7 @@ export default class ObsidianNextcloudsync extends Plugin {
     );
   }
 
-  /** アクティブノートのサーバーバージョン履歴を取得して Modal を表示する（US2）。 */
+  /** Fetch the server-side version history of the active note and show the modal (US2). */
   private async showVersionHistory(file: TFile): Promise<void> {
     const engine = this.syncEngine;
     if (!engine) return;

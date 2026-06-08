@@ -3,9 +3,9 @@ import type ObsidianNextcloudsync from '../main';
 import { DavSyncSettings, LoginFlowError } from '../types';
 import { LoginFlowV2 } from '../auth/LoginFlowV2';
 
-/** SecretStorage 上の既定シークレット ID（ユーザーが「リンク…」で別 ID を選ぶことも可能）。 */
+/** Default secret ID in SecretStorage (users can pick a different ID via "Link…"). */
 const DEFAULT_PASSWORD_SECRET_ID = 'obsidian-nextcloudsync-password';
-/** 旧バージョンが localStorage に保存していたパスワードのキー（移行用）。 */
+/** Key under which older versions stored the password in localStorage (for migration). */
 const LEGACY_CREDENTIALS_KEY = 'obsidian-nextcloudsync-password';
 
 export class NextcloudSyncSettingTab extends PluginSettingTab {
@@ -51,7 +51,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
       .addComponent((el) => new SecretComponent(this.app, el)
         .setValue(this.plugin.settings.passwordSecretId || DEFAULT_PASSWORD_SECRET_ID)
         .onChange(async (secretId) => {
-          // SecretComponent が返すのはシークレットの参照 ID（実値は secretStorage 側）。
+          // SecretComponent returns the secret's reference ID (the actual value stays in secretStorage).
           this.plugin.settings.passwordSecretId = secretId;
           await this.plugin.saveSettings();
         }));
@@ -93,6 +93,16 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         .setValue(this.plugin.settings.watchOnChangeEnabled)
         .onChange(async (value) => {
           this.plugin.settings.watchOnChangeEnabled = value;
+          await this.plugin.saveSettings();
+        }));
+
+    new Setting(containerEl)
+      .setName('Sync bookmarks')
+      .setDesc('The .obsidian config folder is excluded from sync. Enable this to also sync Obsidian bookmarks (.obsidian/bookmarks.json) across devices.')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.syncBookmarks)
+        .onChange(async (value) => {
+          this.plugin.settings.syncBookmarks = value;
           await this.plugin.saveSettings();
         }));
 
@@ -186,8 +196,8 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
   }
 
   /**
-   * 数値スライダー設定を追加する。ドラッグ中の数値ポップアップ（動的ツールチップ）と、
-   * 現在値を常時表示するラベルを備える。
+   * Add a numeric slider setting. It includes a numeric popup while dragging (dynamic tooltip)
+   * and a label that always shows the current value.
    */
   private addNumberSlider(
     containerEl: HTMLElement,
@@ -204,7 +214,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     const setting = new Setting(containerEl).setName(opts.name);
     if (opts.desc) setting.setDesc(opts.desc);
 
-    // 現在値ラベル（スライダーの左に常時表示）。
+    // Current-value label (always shown to the left of the slider).
     const valueLabel = setting.controlEl.createSpan({ cls: 'setting-item-description' });
     valueLabel.style.marginRight = '8px';
     valueLabel.setText(String(opts.get()));
@@ -221,8 +231,8 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
   }
 
   /**
-   * Login Flow v2 を実行し、成功時にユーザー名とアプリパスワードを設定する。
-   * パスワードは SecretStorage に保存し data.json には平文保存しない（FR-002）。
+   * Run Login Flow v2 and, on success, set the username and app password.
+   * The password is stored in SecretStorage and never saved in plaintext in data.json (FR-002).
    */
   private async runLoginFlow(): Promise<void> {
     const serverUrl = this.plugin.settings.serverUrl.trim();
@@ -245,7 +255,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         await this.plugin.saveSettings();
         await this.plugin.initSyncEngine();
         new Notice(`✅ Logged in as ${result.loginName}`, 6000);
-        this.display(); // 設定欄を再描画
+        this.display(); // Re-render the settings panel
       } else if (result.status === 'timeout') {
         new Notice('⏱️ Login timed out. Please try again.', 6000);
       } else {
@@ -262,21 +272,21 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
 }
 
 /**
- * SecretStorage からアプリパスワードを取得する。
- * secretId が未設定、または該当シークレットが無い場合は、旧 localStorage 保存値へフォールバックする
- * （旧バージョンからの移行を壊さないため）。
+ * Retrieve the app password from SecretStorage.
+ * If secretId is unset or the secret does not exist, fall back to the legacy localStorage value
+ * (to avoid breaking migration from older versions).
  */
 export function loadAppPassword(app: App, secretId: string): string | null {
   const id = secretId || DEFAULT_PASSWORD_SECRET_ID;
   const secret = app.secretStorage.getSecret(id);
   if (secret) return secret;
-  // 移行フォールバック: 旧 localStorage に残っていれば利用する。
+  // Migration fallback: use the legacy localStorage value if it remains.
   return app.loadLocalStorage(LEGACY_CREDENTIALS_KEY);
 }
 
 /**
- * アプリパスワードを SecretStorage に保存する（暗号化管理・data.json には保存しない）。
- * Login Flow v2 で取得したパスワードの保存に使用する。
+ * Save the app password to SecretStorage (encrypted; never stored in data.json).
+ * Used to store the password obtained via Login Flow v2.
  */
 export function saveAppPassword(app: App, secretId: string, value: string): void {
   const id = secretId || DEFAULT_PASSWORD_SECRET_ID;

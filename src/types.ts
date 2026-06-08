@@ -4,25 +4,27 @@ export interface DavSyncSettings {
   serverUrl: string;
   username: string;
   /**
-   * Obsidian SecretStorage に保存したアプリパスワードの参照 ID。
-   * 実際のパスワード値は data.json には保存されず、secretStorage が暗号化管理する。
+   * Reference ID for the app password stored in Obsidian SecretStorage.
+   * The actual password value is never saved in data.json; secretStorage manages it encrypted.
    */
   passwordSecretId: string;
   syncIntervalMinutes: number;
   networkTimeoutSeconds: number;
   deviceId: string;
   /**
-   * このサイズ（MB）を超えるファイルはチャンク分割アップロードを開始する閾値。
-   * （旧仕様の「超過でスキップ」から「チャンク化開始」に意味変更。002 仕様）
+   * Threshold (MB) above which files start chunked uploads.
+   * (Meaning changed from the old "skip when exceeded" to "start chunking". 002 spec.)
    */
   uploadChunkThresholdMB: number;
-  /** 絶対上限（MB）。これを超えるファイルのみスキップ＋警告する。 */
+  /** Absolute limit (MB). Only files exceeding this are skipped with a warning. */
   maxFileSizeMB: number;
-  /** ローカルの Markdown 編集を検知して即時同期する（ウォッチモード）。 */
+  /** Detect local Markdown edits and sync immediately (watch mode). */
   watchOnChangeEnabled: boolean;
-  /** チャンク分割アップロードを有効化する（既定 ON・Nextcloud のみ作動）。 */
+  /** Include Obsidian bookmarks (.obsidian/bookmarks.json) in the sync. */
+  syncBookmarks: boolean;
+  /** Enable chunked uploads (default ON; Nextcloud only). */
   chunkedUploadEnabled: boolean;
-  /** Files Locking を有効化する（実験的・既定 OFF・files_lock 対応サーバーのみ作動）。 */
+  /** Enable Files Locking (experimental; default OFF; only on servers that support files_lock). */
   fileLockingEnabled: boolean;
   autoMergeEnabled: boolean;
   maxConflictRegions: number;
@@ -38,6 +40,7 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   uploadChunkThresholdMB: 50,
   maxFileSizeMB: 1024,
   watchOnChangeEnabled: false,
+  syncBookmarks: false,
   chunkedUploadEnabled: true,
   fileLockingEnabled: false,
   autoMergeEnabled: false,
@@ -108,17 +111,17 @@ export type SyncStatus = 'idle' | 'syncing' | 'error' | 'conflict';
 
 // ── US1: Login Flow v2 ──────────────────────────────────────────────────────
 
-/** Login Flow v2 開始レスポンス（POST /index.php/login/v2）。 */
+/** Login Flow v2 init response (POST /index.php/login/v2). */
 export interface LoginFlowInit {
-  /** ポーリングに使うトークン。 */
+  /** Token used for polling. */
   pollToken: string;
-  /** ポーリング先の絶対 URL。 */
+  /** Absolute URL to poll. */
   pollEndpoint: string;
-  /** ブラウザで開くログイン承認 URL。 */
+  /** Login approval URL to open in the browser. */
   loginUrl: string;
 }
 
-/** Login Flow v2 ポーリング結果（判別付きユニオン）。 */
+/** Login Flow v2 polling result (discriminated union). */
 export type LoginFlowResult =
   | { status: 'success'; server: string; loginName: string; appPassword: string }
   | { status: 'pending' }
@@ -127,21 +130,21 @@ export type LoginFlowResult =
 
 // ── US2: File Versions ──────────────────────────────────────────────────────
 
-/** サーバーが保持する1ファイルの過去バージョン。 */
+/** A past version of a single file held on the server. */
 export interface FileVersion {
-  /** versions/{fileId}/{versionId} の末尾識別子。 */
+  /** Trailing identifier of versions/{fileId}/{versionId}. */
   versionId: string;
-  /** GET/MOVE に使うリモートパス（files ルートとは別の versions 名前空間）。 */
+  /** Remote path used for GET/MOVE (the versions namespace, separate from the files root). */
   href: string;
-  /** 最終更新（エポックミリ秒）。 */
+  /** Last modified (epoch milliseconds). */
   lastModified: number;
-  /** バイトサイズ。 */
+  /** Size in bytes. */
   size: number;
 }
 
-// ── US3: Chunked Upload（実装内部）──────────────────────────────────────────
+// ── US3: Chunked Upload (implementation internal) ───────────────────────────
 
-/** チャンクアップロードの進行状態。 */
+/** Progress state of a chunked upload. */
 export interface ChunkUploadSession {
   uploadId: string;
   remotePath: string;
@@ -149,9 +152,9 @@ export interface ChunkUploadSession {
   chunkSizeBytes: number;
 }
 
-// ── US4: Files Locking（実装内部）───────────────────────────────────────────
+// ── US4: Files Locking (implementation internal) ────────────────────────────
 
-/** 取得中のサーバーロック。 */
+/** A held server-side lock. */
 export interface FileLock {
   path: string;
   token: string;
@@ -182,21 +185,21 @@ export class UnsupportedVersionError extends Error {
 export class CredentialsNotFoundError extends Error {
   constructor() { super('App password not found in credentials'); this.name = 'CredentialsNotFoundError'; }
 }
-/** Nextcloud 固有機能が非対応クライアント（標準 WebDAV）で呼ばれた。 */
+/** A Nextcloud-specific feature was invoked on a client that does not support it (standard WebDAV). */
 export class FeatureUnsupportedError extends Error {
   constructor(public readonly feature: string) {
     super(`Feature not supported on this server: ${feature}`);
     this.name = 'FeatureUnsupportedError';
   }
 }
-/** Login Flow v2 の開始・ポーリングに失敗した。 */
+/** Failed to start or poll Login Flow v2. */
 export class LoginFlowError extends Error {
   constructor(public readonly reason: string) {
     super(`Login Flow failed: ${reason}`);
     this.name = 'LoginFlowError';
   }
 }
-/** 対象ファイルが他クライアントにロックされている（HTTP 423）。 */
+/** The target file is locked by another client (HTTP 423). */
 export class FileLockedError extends Error {
   constructor(public readonly path: string) {
     super(`File is locked: ${path}`);

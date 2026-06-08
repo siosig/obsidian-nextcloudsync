@@ -44,13 +44,13 @@ const REPORT_BODY = (syncToken: string) => `<?xml version="1.0" encoding="utf-8"
 
 export class NextcloudClient implements IWebDAVClient {
   private features: NextcloudFeatures | null = null;
-  /** MKCOL で作成済みのリモートディレクトリ（セッション内キャッシュ）。 */
+  /** Remote directories already created via MKCOL (in-session cache). */
   private readonly createdDirs = new Set<string>();
 
   constructor(
     private readonly settings: DavSyncSettings,
     private readonly appPassword: string,
-    /** リモート同期先のベースフォルダ（通常は Vault 名）。空文字なら files ルート直下。 */
+    /** Base folder for the remote sync target (usually the Vault name). Empty string means directly under the files root. */
     private readonly remoteBase: string = '',
   ) {}
 
@@ -58,17 +58,17 @@ export class NextcloudClient implements IWebDAVClient {
     return this.settings.serverUrl.replace(/\/$/, '');
   }
 
-  /** WebDAV エンドポイント URL から `/remote.php/...` 以降を除いたサーバーのベース URL。 */
+  /** The server's base URL, derived by stripping `/remote.php/...` and everything after it from the WebDAV endpoint URL. */
   private serverBaseUrl(): string {
     return this.settings.serverUrl.replace(/\/remote\.php.*$/, '').replace(/\/$/, '');
   }
 
-  /** versions / uploads など files 以外の DAV 名前空間のベース URL を返す。 */
+  /** Returns the base URL for non-files DAV namespaces such as versions / uploads. */
   private davBase(namespace: 'versions' | 'uploads'): string {
     return `${this.serverBaseUrl()}/remote.php/dav/${namespace}/${encodeURIComponent(this.settings.username)}`;
   }
 
-  /** Vault 相対パスを、ベースフォルダ配下の WebDAV URL に変換する。 */
+  /** Converts a Vault-relative path into a WebDAV URL under the base folder. */
   private remoteUrl(rel: string): string {
     return encodeRemoteUrl(this.baseUrl, toRemotePath(this.remoteBase, rel));
   }
@@ -112,7 +112,7 @@ export class NextcloudClient implements IWebDAVClient {
       const caps = data?.capabilities as Record<string, unknown> | undefined;
       const checksums = caps?.checksums as Record<string, unknown> | undefined;
       hasChecksums = Array.isArray(checksums?.supportedTypes) && (checksums.supportedTypes as string[]).length > 0;
-      // files_lock app が有効だと capabilities.files.locking にバージョン文字列が入る。
+      // When the files_lock app is enabled, capabilities.files.locking contains a version string.
       const files = caps?.files as Record<string, unknown> | undefined;
       hasFilesLocking = files?.locking != null && files.locking !== false;
     }
@@ -142,14 +142,14 @@ export class NextcloudClient implements IWebDAVClient {
       body: PROPFIND_BODY,
       throw: false,
     });
-    // ベースフォルダ未作成（初回同期前）は 404。空リスト扱いにして初回アップロードへ進む。
+    // A missing base folder (before the first sync) returns 404. Treat it as an empty list and proceed to the initial upload.
     if (res.status === 404) return [];
     if (res.status !== 207) throw new NetworkError(res.status, res.text);
     return this.parsePropfindResponse(res.text);
   }
 
   async getChanges(syncToken: string): Promise<SyncChanges> {
-    // sync-collection REPORT はベースフォルダ（Vault フォルダ）に限定して実行する。
+    // Run the sync-collection REPORT scoped to the base folder (the Vault folder) only.
     const res = await requestUrl({
       url: this.remoteUrl(''),
       method: 'REPORT',
@@ -180,7 +180,7 @@ export class NextcloudClient implements IWebDAVClient {
   }
 
   async uploadFile(remotePath: string, data: ArrayBuffer): Promise<void> {
-    // PUT は親ディレクトリを自動生成しないため、先にベースフォルダ含む親階層を作成する。
+    // PUT does not auto-create parent directories, so create the parent hierarchy (including the base folder) first.
     await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
     const res = await requestUrl({
       url: this.remoteUrl(remotePath),
@@ -193,7 +193,7 @@ export class NextcloudClient implements IWebDAVClient {
   }
 
   async moveFile(oldPath: string, newPath: string): Promise<void> {
-    // 移動先の親ディレクトリを確保してから MOVE する。
+    // Ensure the destination's parent directory exists before MOVE.
     await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader }, toRemotePath(this.remoteBase, newPath), this.createdDirs);
     const res = await requestUrl({
       url: this.remoteUrl(oldPath),
@@ -213,7 +213,7 @@ export class NextcloudClient implements IWebDAVClient {
   }
 
   async getSyncToken(): Promise<string | null> {
-    // sync-token は REPORT と同じコレクション（ベースフォルダ）から取得する。
+    // Fetch the sync-token from the same collection (the base folder) used by REPORT.
     const res = await requestUrl({
       url: this.remoteUrl(''),
       method: 'PROPFIND',
@@ -226,7 +226,7 @@ export class NextcloudClient implements IWebDAVClient {
     return match ? match[1] : null;
   }
 
-  // ── US2: バージョン履歴 ────────────────────────────────────────────────────
+  // ── US2: Version history ────────────────────────────────────────────────────
 
   async listVersions(fileId: string): Promise<FileVersion[]> {
     if (!fileId) throw new FeatureUnsupportedError('versions');
@@ -271,7 +271,7 @@ export class NextcloudClient implements IWebDAVClient {
     if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
   }
 
-  /** バージョンの GET/MOVE 用 URL を組み立てる。 */
+  /** Builds the URL used for GET/MOVE on a version. */
   private versionUrl(version: FileVersion, fileId: string): string {
     return `${this.davBase('versions')}/versions/${encodeURIComponent(fileId)}/${encodeURIComponent(version.versionId)}`;
   }
@@ -284,11 +284,11 @@ export class NextcloudClient implements IWebDAVClient {
     for (let i = 0; i < responses.length; i++) {
       const resp = responses[i];
       const href = resp.getElementsByTagNameNS('DAV:', 'href')[0]?.textContent ?? '';
-      // 末尾スラッシュ（コレクション自身）はスキップ。
+      // Skip a trailing slash (the collection itself).
       if (href.endsWith('/')) continue;
       const segments = decodeURIComponent(href).split('/').filter(Boolean);
       const versionId = segments[segments.length - 1] ?? '';
-      // 自身（fileId フォルダ）や restore は対象外。
+      // Exclude the collection itself (the fileId folder) and restore.
       if (!versionId || versionId === fileId) continue;
       const prop = resp.getElementsByTagNameNS('DAV:', 'prop')[0];
       const lastModifiedStr = prop?.getElementsByTagNameNS('DAV:', 'getlastmodified')[0]?.textContent ?? '';
@@ -296,12 +296,12 @@ export class NextcloudClient implements IWebDAVClient {
       const size = parseInt(prop?.getElementsByTagNameNS('DAV:', 'getcontentlength')[0]?.textContent ?? '0', 10);
       versions.push({ versionId, href, lastModified, size });
     }
-    // 新しい順（lastModified 降順）。
+    // Newest first (descending by lastModified).
     versions.sort((a, b) => b.lastModified - a.lastModified);
     return versions;
   }
 
-  // ── US3: チャンクアップロード ──────────────────────────────────────────────
+  // ── US3: Chunked upload ──────────────────────────────────────────────
 
   async uploadChunked(remotePath: string, data: ArrayBuffer, chunkSizeBytes: number): Promise<void> {
     const uploadId = `obsidian-${this.settings.deviceId.slice(-8)}-${Date.now()}`;
@@ -310,11 +310,11 @@ export class NextcloudClient implements IWebDAVClient {
     const total = data.byteLength;
 
     try {
-      // 1. アップロードセッション作成。
+      // 1. Create the upload session.
       const mk = await requestUrl({ url: sessionUrl, method: 'MKCOL', headers: { Authorization: this.authHeader }, throw: false });
       if (mk.status < 200 || mk.status >= 300) throw new NetworkError(mk.status, mk.text);
 
-      // 2. 各チャンクを「15桁ゼロ埋めの開始バイトオフセット」名で PUT（辞書順 = 結合順）。
+      // 2. PUT each chunk named by its start byte offset (15-digit zero-padded) so lexical order = assembly order.
       for (let offset = 0; offset < total; offset += chunkSizeBytes) {
         const end = Math.min(offset + chunkSizeBytes, total);
         const chunk = data.slice(offset, end);
@@ -329,7 +329,7 @@ export class NextcloudClient implements IWebDAVClient {
         if (put.status < 200 || put.status >= 300) throw new NetworkError(put.status, put.text);
       }
 
-      // 3. 最終ファイルの親ディレクトリを確保してから .file を MOVE で結合。
+      // 3. Ensure the parent directory of the final file exists, then assemble by MOVE-ing .file.
       await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
       const move = await requestUrl({
         url: `${sessionUrl}/.file`,
@@ -343,16 +343,16 @@ export class NextcloudClient implements IWebDAVClient {
       });
       if (move.status < 200 || move.status >= 300) throw new NetworkError(move.status, move.text);
 
-      // 4. 結合後のチェックサム検証（FR-012）。取得できる場合のみ照合する。
+      // 4. Verify the checksum after assembly (FR-012). Only compare when it can be retrieved.
       await this.verifyRemoteChecksum(remotePath, data);
     } catch (err) {
-      // 中断時はセッションを破棄して最終パスに不完全ファイルを残さない（FR-011）。
+      // On abort, discard the session so no incomplete file is left at the final path (FR-011).
       await requestUrl({ url: sessionUrl, method: 'DELETE', headers: { Authorization: this.authHeader }, throw: false }).catch(() => undefined);
       throw err;
     }
   }
 
-  /** アップロード後にリモート checksum を取得しローカル SHA-256 と照合する。取得不可なら検証スキップ。 */
+  /** After upload, fetches the remote checksum and compares it with the local SHA-256. Skips verification if unavailable. */
   private async verifyRemoteChecksum(remotePath: string, data: ArrayBuffer): Promise<void> {
     const res = await requestUrl({
       url: this.remoteUrl(remotePath),
@@ -395,7 +395,7 @@ export class NextcloudClient implements IWebDAVClient {
         throw: false,
       });
     } catch {
-      // ベストエフォート。残留ロックは次回同期で回復する（FR-016）。
+      // Best-effort. A leftover lock is recovered on the next sync (FR-016).
     }
   }
 
@@ -429,7 +429,7 @@ export class NextcloudClient implements IWebDAVClient {
 
       const fullPath = decodeURIComponent(href.replace(/^.*\/remote\.php\/dav\/files\/[^/]+\//, ''));
       const path = fromRemotePath(this.remoteBase, fullPath);
-      if (path === null || path === '') continue; // ベースフォルダ外、またはフォルダ自身はスキップ
+      if (path === null || path === '') continue; // Skip entries outside the base folder or the folder itself
       results.push({ path, fileId, checksum, etag, size, lastModified });
     }
     return results;
@@ -449,7 +449,7 @@ export class NextcloudClient implements IWebDAVClient {
       const href = resp.getElementsByTagNameNS('DAV:', 'href')[0]?.textContent ?? '';
       const fullPath = decodeURIComponent(href.replace(/^.*\/remote\.php\/dav\/files\/[^/]+\//, ''));
       const path = fromRemotePath(this.remoteBase, fullPath);
-      if (path === null || path === '') continue; // ベースフォルダ外、またはフォルダ自身はスキップ
+      if (path === null || path === '') continue; // Skip entries outside the base folder or the folder itself
       const statusEl = resp.getElementsByTagNameNS('DAV:', 'status')[0];
       if (statusEl?.textContent?.includes('404')) {
         deleted.push(path);

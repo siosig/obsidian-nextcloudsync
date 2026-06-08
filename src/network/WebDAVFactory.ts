@@ -28,7 +28,7 @@ export class WebDAVFactory {
   async createClient(): Promise<{ client: IWebDAVClient; features: NextcloudFeatures }> {
     if (!this.appPassword) throw new CredentialsNotFoundError();
 
-    // リモート同期先のベースフォルダは Vault 名に固定する（Vault ごとにサーバー上で分離）。
+    // Fix the remote sync target's base folder to the Vault name (isolating each Vault on the server).
     const remoteBase = normalizeBase(this.app.vault.getName());
 
     const nextcloudClient = new NextcloudClient(this.settings, this.appPassword, remoteBase);

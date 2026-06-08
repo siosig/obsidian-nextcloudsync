@@ -1,15 +1,16 @@
 import { IWebDAVClient } from '../../network/IWebDAVClient';
 
-/** アップロードの結果。スキップ（上限超過）か送信完了かを表す。 */
+/** Result of an upload: either skipped (over the size limit) or sent. */
 export type UploadOutcome = 'uploaded' | 'skipped';
 
 /**
- * アップロード戦略（DIP）。サイズ・Capability に応じて単一送信／チャンク送信／スキップを切り替える。
+ * Upload strategy (DIP). Switches between single PUT / chunked upload / skip
+ * depending on file size and server capabilities.
  */
 export interface IUploadStrategy {
   /**
-   * ファイルをアップロードする。
-   * @returns 上限超過でスキップした場合 'skipped'、送信した場合 'uploaded'
+   * Upload a file.
+   * @returns 'skipped' when skipped due to the size limit, 'uploaded' when sent.
    */
   upload(client: IWebDAVClient, remotePath: string, data: ArrayBuffer): Promise<UploadOutcome>;
 }
