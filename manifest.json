@@ -1,0 +1,10 @@
+{
+  "id": "obsidian-nextcloudsync",
+  "name": "Nextcloud Sync",
+  "version": "0.1.0",
+  "minAppVersion": "1.12.7",
+  "description": "Bidirectional sync between Obsidian and Nextcloud using hash-based change detection.",
+  "author": "Daisuke ITO",
+  "authorUrl": "",
+  "isDesktopOnly": true
+}

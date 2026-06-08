@@ -1,0 +1,61 @@
+import { App, Modal } from 'obsidian';
+
+export interface DryRunPlan {
+  uploads: string[];
+  downloads: string[];
+  conflicts: string[];
+  deletes: string[];
+}
+
+export class DryRunModal extends Modal {
+  private approved = false;
+  private resolve!: (approved: boolean) => void;
+
+  constructor(app: App, private readonly plan: DryRunPlan) {
+    super(app);
+  }
+
+  onOpen(): void {
+    const { contentEl, plan } = this;
+    contentEl.empty();
+    contentEl.createEl('h2', { text: 'Sync Preview (Dry Run)' });
+
+    const stats = contentEl.createEl('p');
+    const addStat = (icon: string, count: number, label: string) => {
+      stats.appendText(`${icon} `);
+      stats.createEl('strong', { text: String(count) });
+      stats.appendText(` ${label}   `);
+    };
+    addStat('↑', plan.uploads.length, 'uploads');
+    addStat('↓', plan.downloads.length, 'downloads');
+    addStat('⚠️', plan.conflicts.length, 'conflicts');
+    addStat('🗑️', plan.deletes.length, 'deletes');
+
+    if (plan.conflicts.length > 0) {
+      contentEl.createEl('h3', { text: 'Conflicts' });
+      const ul = contentEl.createEl('ul');
+      plan.conflicts.slice(0, 20).forEach(p => ul.createEl('li', { text: p }));
+      if (plan.conflicts.length > 20) ul.createEl('li', { text: `…and ${plan.conflicts.length - 20} more` });
+    }
+
+    const btnRow = contentEl.createDiv({ cls: 'modal-button-container' });
+
+    const cancelBtn = btnRow.createEl('button', { text: 'Cancel' });
+    cancelBtn.addEventListener('click', () => { this.close(); this.resolve(false); });
+
+    const proceedBtn = btnRow.createEl('button', { text: 'Proceed', cls: 'mod-cta' });
+    proceedBtn.addEventListener('click', () => { this.approved = true; this.close(); this.resolve(true); });
+  }
+
+  onClose(): void {
+    if (this.resolve && !this.approved) this.resolve(false);
+  }
+
+  /** Opens modal and returns true if user approved. */
+  waitForDecision(): Promise<boolean> {
+    return new Promise(resolve => {
+      this.resolve = resolve;
+      this.open();
+    });
+  }
+}

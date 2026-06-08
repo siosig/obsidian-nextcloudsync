@@ -1,0 +1,29 @@
+{
+  "name": "obsidian-nextcloudsync",
+  "version": "0.1.0",
+  "description": "Bidirectional sync between Obsidian and Nextcloud",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production",
+    "test": "jest --passWithNoTests",
+    "test:watch": "jest --watch"
+  },
+  "keywords": ["obsidian", "nextcloud", "sync", "webdav"],
+  "author": "Daisuke ITO",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "@types/node": "^20.0.0",
+    "builtin-modules": "^3.3.0",
+    "esbuild": "0.21.4",
+    "jest": "^29.7.0",
+    "obsidian": "latest",
+    "ts-jest": "^29.1.4",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "node-diff3": "^3.1.2",
+    "reconcile-text": "^0.11.0"
+  }
+}

@@ -1,1 +1,11 @@
 /refs/
+node_modules/
+main.js
+*.js.map
+dist/
+build/
+.env
+.env.*
+*.log
+.DS_Store
+Thumbs.db
