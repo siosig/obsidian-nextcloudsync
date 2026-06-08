@@ -1,5 +1,5 @@
 {
-  "id": "obsidian-nextcloudsync",
+  "id": "nextcloud-sync",
   "name": "Nextcloud Sync",
   "version": "0.1.0",
   "minAppVersion": "1.12.7",
