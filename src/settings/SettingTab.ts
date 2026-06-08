@@ -15,6 +15,14 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
   }
 
   display(): void {
+    this.render();
+  }
+
+  /**
+   * Build the settings UI. Kept separate from display() so the panel can be re-rendered
+   * (e.g. after Login Flow) without calling the deprecated PluginSettingTab.display().
+   */
+  private render(): void {
     const { containerEl } = this;
     const configDir = this.app.vault.configDir;
     containerEl.empty();
@@ -315,8 +323,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         await this.plugin.saveSettings();
         await this.plugin.initSyncEngine();
         new Notice(`✅ Logged in as ${result.loginName}`, 6000);
-        // eslint-disable-next-line @typescript-eslint/no-deprecated -- display() is the supported imperative settings API; getSettingDefinitions requires insider-only Obsidian 1.13.0, so migrate after it reaches GA.
-        this.display(); // Re-render the settings panel
+        this.render(); // Re-render the settings panel
       } else if (result.status === 'timeout') {
         new Notice('⏱️ login timed out. Please try again.', 6000);
       } else {
