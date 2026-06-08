@@ -41,7 +41,7 @@ export default class ObsidianNextcloudsync extends Plugin {
 
     this.addCommand({
       id: 'sync-now',
-      name: 'Sync Now',
+      name: 'Sync now',
       callback: async () => {
         await this.runSyncNow();
       },
@@ -150,7 +150,7 @@ export default class ObsidianNextcloudsync extends Plugin {
     }
   }
 
-  async onunload(): Promise<void> {
+  onunload(): void {
     this.syncEngine?.stopAutoSync();
   }
 
@@ -170,7 +170,7 @@ export default class ObsidianNextcloudsync extends Plugin {
     const { loadAppPassword } = await import('./settings/SettingTab');
 
     const localAdapter = new LocalAdapter(this.app.vault.adapter);
-    const pluginDir = `.obsidian/plugins/${this.manifest.id}`;
+    const pluginDir = `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
     const stateDB = new StateDB(this.app.vault.adapter, pluginDir, this.settings.deviceId);
     await stateDB.load();
 
@@ -186,6 +186,7 @@ export default class ObsidianNextcloudsync extends Plugin {
       statusBar,
       webdavFactory,
       pluginDir,
+      configDir: this.app.vault.configDir,
       onFeatures: (features) => {
         // Record the server version so the settings screen can recommend an upgrade
         // when it is below the supported minimum. Persist only on change.

@@ -9,7 +9,9 @@ interface Diff3Chunk {
 export class Diff3Strategy implements IMergeStrategy {
   merge(base: string, local: string, remote: string): MergeResult {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      // node-diff3 is a CommonJS module with no type declarations resolvable under node module
+      // resolution; require() keeps it working in both the esbuild bundle and the ts-jest tests.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports -- CJS interop for an untyped bundled dependency
       const { merge: diff3Merge } = require('node-diff3') as {
         merge: (a: string[], o: string[], b: string[], opts?: Record<string, unknown>) => { result: Diff3Chunk[]; conflict: boolean };
       };
