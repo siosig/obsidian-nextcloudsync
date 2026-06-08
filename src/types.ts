@@ -37,6 +37,12 @@ export interface DavSyncSettings {
    *   'conflict'    — insert conflict markers for the whole file (default / safe)
    */
   frontmatterConflictStrategy: 'local-wins' | 'remote-wins' | 'conflict';
+  /**
+   * Last Nextcloud server version observed at connect time. Used only to show a
+   * recommendation banner in settings when it is below the recommended minimum.
+   * Empty/undefined until the first successful connection.
+   */
+  lastKnownServerVersion?: string;
 }
 
 export const DEFAULT_SETTINGS: DavSyncSettings = {
@@ -56,6 +62,7 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   autoMergeEnabled: false,
   maxConflictRegions: 3,
   frontmatterConflictStrategy: 'conflict',
+  lastKnownServerVersion: '',
 };
 
 export type RemoteIdType = 'sha256' | 'sha1' | 'etag' | 'size';
@@ -222,11 +229,6 @@ export class NetworkError extends Error {
 }
 export class MaintenanceModeError extends Error {
   constructor() { super('Nextcloud is in maintenance mode'); this.name = 'MaintenanceModeError'; }
-}
-export class UnsupportedVersionError extends Error {
-  constructor(public readonly detectedVersion: string) {
-    super(`Unsupported Nextcloud version: ${detectedVersion}`); this.name = 'UnsupportedVersionError';
-  }
 }
 export class CredentialsNotFoundError extends Error {
   constructor() { super('App password not found in credentials'); this.name = 'CredentialsNotFoundError'; }

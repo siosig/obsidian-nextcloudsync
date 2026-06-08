@@ -59,7 +59,7 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 ## Requirements
 
 - **Obsidian** `1.12.7` or later (desktop / Electron). Mobile is out of scope for now.
-- **Nextcloud** Hub 26 "Winter" (`33.0.4`) or later for the Nextcloud-specific features. Older servers are warned at connect time; plain WebDAV servers fall back to core sync.
+- **Nextcloud** Hub 26 "Winter" (server `33`) or later is **recommended** for the Nextcloud-specific features. Older Nextcloud servers are no longer blocked — they still connect and sync, but the settings screen shows a recommendation banner and some features may degrade. Plain WebDAV servers fall back to core sync.
 - A Nextcloud account. You can authenticate with **Login Flow v2** (recommended) or a manually issued **app password** (never your main password).
 
 ---
