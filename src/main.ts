@@ -109,6 +109,10 @@ export default class ObsidianNextcloudsync extends Plugin {
    * Shared by the command and the settings button.
    */
   async runSyncNow(): Promise<void> {
+    // Initialize lazily if credentials were entered after startup (e.g. first-time setup).
+    if (!this.syncEngine && this.settings.serverUrl && this.settings.username) {
+      await this.initSyncEngine();
+    }
     if (!this.syncEngine) {
       new Notice('Configure the server settings first.');
       return;

@@ -48,6 +48,26 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     // Holds the sync-target display so the Server URL field can refresh it live.
     let targetSetting: Setting | null = null;
 
+    // "Sync now" lives at the top. It stays disabled until authentication is complete
+    // (server URL + username + a stored app password), and updates live as fields change.
+    let syncNowButton: ButtonComponent | null = null;
+    const isReadyToSync = (): boolean =>
+      this.plugin.settings.serverUrl.trim().length > 0
+      && this.plugin.settings.username.trim().length > 0
+      && loadAppPassword(this.app, this.plugin.settings.passwordSecretId) != null;
+    const refreshSyncNow = (): void => { syncNowButton?.setDisabled(!isReadyToSync()); };
+
+    new Setting(containerEl)
+      .setName('Sync now')
+      .setDesc('Sync this vault with Nextcloud. Available once the server URL, username and app password are set.')
+      .addButton(btn => {
+        syncNowButton = btn;
+        btn.setButtonText('Sync now')
+          .setCta()
+          .setDisabled(!isReadyToSync())
+          .onClick(async () => { await this.plugin.runSyncNow(); });
+      });
+
     new Setting(containerEl)
       .setName('Server URL')
       .setDesc('Nextcloud WebDAV endpoint (e.g. https://cloud.example.com/remote.php/dav/files/alice/)')
@@ -58,6 +78,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
           this.plugin.settings.serverUrl = value.trim();
           loginButton?.setDisabled(this.plugin.settings.serverUrl.length === 0);
           targetSetting?.setDesc(this.syncTargetUrl());
+          refreshSyncNow();
           await this.plugin.saveSettings();
         }));
 
@@ -68,6 +89,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         .setValue(this.plugin.settings.username)
         .onChange(async (value) => {
           this.plugin.settings.username = value.trim();
+          refreshSyncNow();
           await this.plugin.saveSettings();
         }));
 
@@ -79,6 +101,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         .onChange(async (secretId) => {
           // SecretComponent returns the secret's reference ID (the actual value stays in secretStorage).
           this.plugin.settings.passwordSecretId = secretId;
+          refreshSyncNow();
           await this.plugin.saveSettings();
         }));
 
@@ -278,15 +301,6 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         }));
 
     new Setting(containerEl).setName('Actions').setHeading();
-
-    new Setting(containerEl)
-      .setName('Sync now')
-      .addButton(btn => btn
-        .setButtonText('Sync now')
-        .setCta()
-        .onClick(async () => {
-          await this.plugin.runSyncNow();
-        }));
 
     new Setting(containerEl)
       .setName('Last session summary')
