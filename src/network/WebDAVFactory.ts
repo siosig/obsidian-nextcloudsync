@@ -11,6 +11,8 @@ export class WebDAVFactory {
     private readonly app: App,
     private readonly settings: DavSyncSettings,
     private readonly appPassword: string | null,
+    /** Optional diagnostic sink (Debug-mode file log) passed down to the Nextcloud client. */
+    private readonly diag?: (msg: string) => void,
   ) {}
 
   async createClient(): Promise<{ client: IWebDAVClient; features: NextcloudFeatures }> {
@@ -19,7 +21,7 @@ export class WebDAVFactory {
     // Fix the remote sync target's base folder to the Vault name (isolating each Vault on the server).
     const remoteBase = normalizeBase(this.app.vault.getName());
 
-    const nextcloudClient = new NextcloudClient(this.settings, this.appPassword, remoteBase);
+    const nextcloudClient = new NextcloudClient(this.settings, this.appPassword, remoteBase, this.diag);
     let features: NextcloudFeatures;
 
     try {

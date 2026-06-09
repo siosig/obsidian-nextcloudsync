@@ -764,7 +764,7 @@ export class SyncEngine {
     const baseContent = '';
 
     const resolver = new ConflictResolver(this.opts.app, this.opts.localAdapter, this.opts.settings);
-    await resolver.resolve(path, baseContent, localContent, remoteContent);
+    const clean = await resolver.resolve(path, baseContent, localContent, remoteContent);
     summary.conflictCount++;
 
     // Apply max(local, remote) mtime to the local file.
@@ -773,13 +773,39 @@ export class SyncEngine {
     const maxMtime = Math.max(localMtimeBefore, remote.lastModified || 0) || Date.now();
     await this.opts.localAdapter.setMtime(path, maxMtime);
 
+    // Push the merged result back to the server so BOTH sides converge. Without this the merge stays
+    // local-only: the server keeps the old remote copy, every later sync re-detects the same conflict,
+    // and the merge never reaches other devices.
+    const mergedData = await this.opts.localAdapter.readBinary(path);
+    const mergedHash = await sha256(mergedData);
+    let uploaded = false;
+    try {
+      const lockToken = await this.acquireLock(path);
+      try {
+        const outcome = await this.uploadStrategy!.upload(this.client!, path, mergedData, maxMtime);
+        if (outcome !== 'skipped') { summary.uploadedCount++; uploaded = true; }
+      } finally {
+        await this.releaseLock(path, lockToken);
+      }
+    } catch (err) {
+      // Locked by someone else or a transient failure → keep the conflict and retry next sync.
+      this.retryQueue.push(path);
+      if (!(err instanceof FileLockedError)) {
+        void this.opts.logger?.log(`conflict: merge upload failed (${(err as Error).message}); queued retry → ${path}`);
+      }
+    }
+
     const stat = await this.opts.localAdapter.stat(path);
-    const localHash = await sha256(await this.opts.localAdapter.readBinary(path));
     this.opts.stateDB.setFile({
-      path, localHash, remoteId, idType,
+      path, localHash: mergedHash,
+      // When the merged content is on the server, record it as the synced remote id so the next sync
+      // sees both sides as identical (converged) instead of re-detecting the conflict.
+      remoteId: uploaded ? mergedHash : remoteId,
+      idType: uploaded ? 'sha256' : idType,
       size: stat?.size ?? 0, mtime: maxMtime,
-      remoteFileId: remote.fileId, isConflicted: true,
+      remoteFileId: remote.fileId, isConflicted: !clean,
     });
+    void this.opts.logger?.log(`conflict: ${clean ? 'auto-merged clean' : 'merged with markers'}, uploaded=${uploaded} → ${path}`);
     void base;
   }
 
