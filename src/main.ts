@@ -6,6 +6,7 @@ import { VersionHistoryModal } from './ui/VersionHistoryModal';
 import { DebugPreviewModal } from './ui/DebugPreviewModal';
 import { DiffModal } from './ui/DiffModal';
 import { SyncStatusModal } from './ui/SyncStatusModal';
+import { FileLogger } from './util/FileLogger';
 import { v4 as uuidv4 } from './util/uuid';
 
 const MIN_OBSIDIAN_VERSION = '1.12.7';
@@ -13,6 +14,8 @@ const MIN_OBSIDIAN_VERSION = '1.12.7';
 export default class ObsidianNextcloudsync extends Plugin {
   settings!: DavSyncSettings;
   syncEngine?: SyncEngine;
+  /** Diagnostic file logger (writes nextcloud-sync-debug.md while Debug mode is on). */
+  logger!: FileLogger;
 
   /** Debug/dry-run is desktop-only; on mobile it is always off regardless of the saved value. */
   private get debugEnabled(): boolean {
@@ -31,6 +34,10 @@ export default class ObsidianNextcloudsync extends Plugin {
     }
 
     await this.loadSettings();
+
+    // Diagnostic logger: appends to nextcloud-sync-debug.md while Debug mode is on (all platforms).
+    this.logger = new FileLogger(this.app.vault.adapter, () => this.settings.debugMode, this.manifest.version);
+    void this.logger.log(`plugin loaded (platform=${Platform.isMobile ? 'mobile' : 'desktop'}, obsidian=${currentVersion})`);
 
     // Generate deviceId if not set
     if (!this.settings.deviceId) {
@@ -109,11 +116,13 @@ export default class ObsidianNextcloudsync extends Plugin {
    * Shared by the command and the settings button.
    */
   async runSyncNow(): Promise<void> {
+    void this.logger.log('sync: "Sync now" clicked');
     // Initialize lazily if credentials were entered after startup (e.g. first-time setup).
     if (!this.syncEngine && this.settings.serverUrl && this.settings.username) {
       await this.initSyncEngine();
     }
     if (!this.syncEngine) {
+      void this.logger.log('sync: aborted — server settings incomplete');
       new Notice('Configure the server settings first.');
       return;
     }
@@ -224,6 +233,7 @@ export default class ObsidianNextcloudsync extends Plugin {
       webdavFactory,
       pluginDir,
       configDir: this.app.vault.configDir,
+      logger: this.logger,
       onFeatures: (features) => {
         // Record the server version so the settings screen can recommend an upgrade
         // when it is below the supported minimum. Persist only on change.

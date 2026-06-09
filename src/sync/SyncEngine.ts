@@ -24,6 +24,7 @@ import { DiffModal } from '../ui/DiffModal';
 import { RenameTracker } from './RenameTracker';
 import { ConflictResolver } from './ConflictResolver';
 import { sha256 } from '../util/hash';
+import { FileLogger, DEBUG_LOG_PATH } from '../util/FileLogger';
 import { isCellularBlocked } from '../util/limits';
 import { isSafeVaultRelativePath } from '../network/remotePath';
 import { IUploadStrategy } from './upload/IUploadStrategy';
@@ -40,6 +41,8 @@ export interface SyncEngineOptions {
   pluginDir: string;
   /** Obsidian's configuration folder (Vault#configDir), e.g. `.obsidian`. User-configurable. */
   configDir: string;
+  /** Diagnostic logger (writes nextcloud-sync-debug.md while Debug mode is on). Optional. */
+  logger?: FileLogger;
   /**
    * Invoked once per established connection with the detected server features.
    * Lets the host persist the server version (for the settings recommendation banner)
@@ -109,17 +112,21 @@ export class SyncEngine {
     // Mobile has no status bar, so on an explicit "Sync now" tap we surface the outcome as a
     // notice. Automatic/startup/interval runs stay silent; desktop keeps using the status bar.
     const announce = opts.manual === true && Platform.isMobile;
+    void this.opts.logger?.log(`sync: start (manual=${opts.manual === true})`);
     // Prevent concurrent runs (avoid clashing with watch mode or scheduled sync).
     if (this.running) {
+      void this.opts.logger?.log('sync: skipped — already running');
       if (announce) new Notice('⏳ A sync is already in progress.');
       return;
     }
     if (this.isBlockedByWifiOnly()) { // "Wi-Fi only" enabled and on cellular
+      void this.opts.logger?.log('sync: skipped — Wi-Fi-only and on cellular');
       // eslint-disable-next-line obsidianmd/ui/sentence-case -- references the "Wi-Fi" proper noun; the rule mis-flags it as title case
       if (announce) new Notice('⏸️ Sync skipped — you are on cellular and Wi-Fi-only sync is on.', 6000);
       return;
     }
     this.running = true;
+    void this.opts.logger?.log('sync: connecting (ensureClient)');
     await this.ensureClient();
     this.syncProgress = { processed: 0, total: 0 };
     this.opts.statusBar.setStatus('syncing');
@@ -136,9 +143,14 @@ export class SyncEngine {
       }
     } catch (err) {
       console.error('[SyncEngine] Sync failed:', err);
+      void this.opts.logger?.log(`sync: FAILED — ${(err as Error).message}`);
       new Notice(`❌ Sync failed: ${(err as Error).message}`, 6000);
       summary.errorCount++;
     } finally {
+      void this.opts.logger?.log(
+        `sync: done up=${summary.uploadedCount} down=${summary.downloadedCount} ` +
+        `del=${summary.deletedCount} conflicts=${summary.conflictCount} err=${summary.errorCount} cancelled=${cancelled}`,
+      );
       summary.completedAt = Date.now();
       this.lastSummary = summary;
       this.opts.stateDB.setLastSyncTime(Date.now());
@@ -976,6 +988,8 @@ export class SyncEngine {
   }
 
   private isSystemExcluded(path: string): boolean {
+    // The diagnostic log is local-only debug output; never sync it to the server.
+    if (path === DEBUG_LOG_PATH) return true;
     // Bookmarks are synced only when enabled in settings (an exception to the config-folder exclusion).
     if (path === this.bookmarksPath) return !this.opts.settings.syncBookmarks;
     // Everything under the config folder (settings, themes, other plugins, state DB, etc.) is always excluded.
