@@ -303,8 +303,9 @@ export class SyncEngine {
       after = remote; // download as-is
     } else {
       // Both sides present: compute exactly what ConflictResolver would write (base unknown → '').
+      // Pass the path so the preview honors the mergeable-extension and failure-policy settings.
       const resolver = new ConflictResolver(this.opts.app, this.opts.localAdapter, this.opts.settings);
-      const res = resolver.computeResolution('', local, remote);
+      const res = resolver.computeResolution(path, '', local, remote);
       after = res.content;
       clean = res.clean;
     }
@@ -320,14 +321,31 @@ export class SyncEngine {
    */
   private describeConflictOutcome(): string {
     const s = this.opts.settings;
-    if (s.autoMergeEnabled) {
-      return 'Each conflicting file is auto-merged where the two sides changed different parts '
-        + '(frontmatter included). Anything that cannot be merged is kept as BOTH versions with '
-        + '<<<<<<< / >>>>>>> markers and a #conflict tag — nothing is discarded. '
-        + 'Select a file to preview the exact merged result.';
+    const exts = (s.mergeableExtensions ?? []).map((e) => `.${e}`).join(', ') || '(none)';
+    const mergePrefix = s.autoMergeEnabled
+      ? `Mergeable files (${exts}) are auto-merged where the two sides changed different parts `
+        + '(frontmatter included). '
+      : `Auto-merge is OFF. `;
+    const tail = 'Select a file to preview the exact result.';
+
+    // What happens when a merge does not cleanly resolve (failure / non-mergeable file).
+    switch (s.conflictFailurePolicy) {
+      case 'local-wins':
+        return mergePrefix
+          + 'When a merge does not cleanly resolve, the LOCAL copy overwrites the remote. ' + tail;
+      case 'remote-wins':
+        return mergePrefix
+          + 'When a merge does not cleanly resolve, the REMOTE copy overwrites the local. ' + tail;
+      case 'conflict-markers':
+        return mergePrefix
+          + 'When a merge does not cleanly resolve, both versions are kept with <<<<<<< / >>>>>>> '
+          + 'markers and a #conflict tag (text files only; other files are skipped). ' + tail;
+      case 'error':
+      default:
+        return mergePrefix
+          + 'When a merge does not cleanly resolve, the file is left untouched on BOTH sides and '
+          + 'reported as an error to retry next sync — nothing is overwritten. ' + tail;
     }
-    return 'Both versions are kept in the file with <<<<<<< / >>>>>>> conflict markers and a '
-      + '#conflict tag — nothing is overwritten. Select a file to preview the exact result.';
   }
 
   private initSummary(): SyncSessionSummary {
@@ -698,11 +716,42 @@ export class SyncEngine {
     await this.client!.downloadFile(remote.path, '');
     const remoteData = this.client!.getLastDownloadBuffer();
     const remoteContent = new TextDecoder().decode(remoteData);
-    const baseContent = '';
 
     const resolver = new ConflictResolver(this.opts.app, this.opts.localAdapter, this.opts.settings);
-    const clean = await resolver.resolve(path, baseContent, localContent, remoteContent);
+    const decision = resolver.decide(path, '', localContent, remoteContent);
     summary.conflictCount++;
+
+    switch (decision.action) {
+      case 'skip':
+        // Failure policy 'error' (or non-text × conflict-markers fallback): touch NEITHER side.
+        // Leave the StateDB hashes untouched so the next sync re-detects the divergence; only flag
+        // the entry as conflicted (for the UI). Count as an error and retry within this session.
+        summary.errorCount++;
+        this.retryQueue.push(path);
+        if (base) this.opts.stateDB.setFile({ ...base, isConflicted: true });
+        void this.opts.logger?.log(`conflict: skipped (policy=error), left both sides untouched → ${path}`);
+        return;
+
+      case 'prefer-local':
+        await this.resolveByPreferLocal(path, remote, summary);
+        return;
+
+      case 'prefer-remote':
+        await this.resolveByPreferRemote(path, remote, remoteData, remoteId, idType, summary);
+        return;
+
+      case 'write':
+        await this.resolveByWrite(path, decision.content, decision.clean, remote, remoteId, idType, localMtimeBefore, summary);
+        return;
+    }
+  }
+
+  /** 'write' action: write merged/marker content locally, then push it to the server to converge. */
+  private async resolveByWrite(
+    path: string, content: string, clean: boolean, remote: RemoteFileInfo,
+    remoteId: string, idType: FileState['idType'], localMtimeBefore: number, summary: SyncSessionSummary,
+  ): Promise<void> {
+    await this.opts.localAdapter.atomicWrite(path, content);
 
     // Apply max(local, remote) mtime to the local file.
     // Remote mtime update via PROPPATCH is not supported on Nextcloud (live property, silently ignored);
@@ -742,8 +791,73 @@ export class SyncEngine {
       size: stat?.size ?? 0, mtime: maxMtime,
       remoteFileId: remote.fileId, isConflicted: !clean,
     });
-    void this.opts.logger?.log(`conflict: ${clean ? 'auto-merged clean' : 'merged with markers'}, uploaded=${uploaded} → ${path}`);
-    void base;
+    void this.opts.logger?.log(`conflict: ${clean ? 'auto-merged clean' : 'wrote conflict markers'}, uploaded=${uploaded} → ${path}`);
+  }
+
+  /** 'local-wins' action: overwrite the remote with the local copy. On failure, do NOT mark resolved. */
+  private async resolveByPreferLocal(
+    path: string, remote: RemoteFileInfo, summary: SyncSessionSummary,
+  ): Promise<void> {
+    const stat = await this.opts.localAdapter.stat(path);
+    const mtime = stat?.mtime ?? Date.now();
+    const localData = await this.opts.localAdapter.readBinary(path);
+    const localHash = await sha256(localData);
+    try {
+      const lockToken = await this.acquireLock(path);
+      try {
+        const outcome = await this.uploadStrategy!.upload(this.client!, path, localData, mtime);
+        if (outcome === 'skipped') {
+          // Size limit etc.: leave the conflict for the user; do not mark resolved.
+          this.retryQueue.push(path);
+          return;
+        }
+      } finally {
+        await this.releaseLock(path, lockToken);
+      }
+    } catch (err) {
+      // Upload failed → keep the conflict unresolved and retry next sync (never mark converged).
+      summary.errorCount++;
+      this.retryQueue.push(path);
+      if (!(err instanceof FileLockedError)) {
+        void this.opts.logger?.log(`conflict: prefer-local upload failed (${(err as Error).message}); queued retry → ${path}`);
+      }
+      return;
+    }
+    summary.uploadedCount++;
+    this.opts.stateDB.setFile({
+      path, localHash, remoteId: localHash, idType: 'sha256',
+      size: stat?.size ?? localData.byteLength, mtime,
+      remoteFileId: remote.fileId, isConflicted: false,
+    });
+    void this.opts.logger?.log(`conflict: resolved by prefer-local (remote overwritten) → ${path}`);
+  }
+
+  /** 'remote-wins' action: overwrite the local with the remote copy. */
+  private async resolveByPreferRemote(
+    path: string, remote: RemoteFileInfo, remoteData: ArrayBuffer,
+    remoteId: string, idType: FileState['idType'], summary: SyncSessionSummary,
+  ): Promise<void> {
+    try {
+      await this.opts.localAdapter.atomicWriteBinary(path, remoteData);
+      if (remote.lastModified) {
+        await this.opts.localAdapter.setMtime(path, remote.lastModified);
+      }
+    } catch (err) {
+      // Local write failed → keep the conflict unresolved and retry next sync.
+      summary.errorCount++;
+      this.retryQueue.push(path);
+      void this.opts.logger?.log(`conflict: prefer-remote write failed (${(err as Error).message}); queued retry → ${path}`);
+      return;
+    }
+    const localHash = await sha256(remoteData);
+    const mtime = remote.lastModified || (await this.opts.localAdapter.stat(path))?.mtime || Date.now();
+    summary.downloadedCount++;
+    this.opts.stateDB.setFile({
+      path, localHash, remoteId, idType,
+      size: remote.size, mtime,
+      remoteFileId: remote.fileId, isConflicted: false,
+    });
+    void this.opts.logger?.log(`conflict: resolved by prefer-remote (local overwritten) → ${path}`);
   }
 
   private async processRemoteDeletion(path: string, summary: SyncSessionSummary): Promise<void> {

@@ -186,6 +186,15 @@ export default class ObsidianNextcloudsync extends Plugin {
       if (saved.maxFileSizeMB === undefined) this.settings.maxFileSizeMB = 20; // OOM-safe cap
       if (saved.syncOnWifiOnly === undefined) this.settings.syncOnWifiOnly = true;
     }
+
+    // Defensive normalization for the conflict-resolution settings (backward compat / corrupt data).
+    if (!Array.isArray(this.settings.mergeableExtensions)) {
+      this.settings.mergeableExtensions = [...DEFAULT_SETTINGS.mergeableExtensions];
+    }
+    const validPolicies = ['error', 'local-wins', 'remote-wins', 'conflict-markers'];
+    if (!validPolicies.includes(this.settings.conflictFailurePolicy)) {
+      this.settings.conflictFailurePolicy = DEFAULT_SETTINGS.conflictFailurePolicy;
+    }
   }
 
   async saveSettings(): Promise<void> {
