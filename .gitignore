@@ -37,3 +37,4 @@ CLAUDE.md
 
 # Playwright MCP snapshot output
 .playwright-mcp/
+/report/

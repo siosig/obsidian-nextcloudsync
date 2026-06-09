@@ -8,6 +8,18 @@ Most "WebDAV sync" plugins treat the server as a dumb file store: they compare m
 
 ---
 
+## What's new in this release (0.2.0)
+
+- **Mobile (iOS / Android) support** — the plugin now runs on mobile, with platform-aware behavior so desktop is unchanged (details in the Mobile section below).
+- **Clickable status bar → sync-status dialog** — click the status bar item to open a dialog summarizing the current sync state, the last sync, and any unresolved conflicts.
+- **"Sync now" promoted to the top of settings** and gated on authentication, so you can trigger a sync the moment you're signed in.
+- **Platform-aware default settings** — defaults are tuned per platform (e.g. network concurrency, sync-on-startup, maximum file size).
+- **YAML frontmatter is now auto-merged** — non-overlapping frontmatter edits merge cleanly (via diff3), falling back to conflict markers only when both sides change the same lines.
+- **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
+- **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
+
+---
+
 ## Why Nextcloud-specific? (vs. generic WebDAV)
 
 | Concern | Generic WebDAV plugin | **Nextcloud Sync** |
@@ -31,7 +43,7 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 ### Core sync
 - **Bidirectional sync** between Obsidian and Nextcloud.
 - **Hash-based differential sync** — only changed files are transferred (no full rescans), so a 1,000-file Vault settles in seconds.
-- **Dry-run preview** — see exactly what will upload / download *before* the first sync runs, and approve it.
+- **Dry-run preview** — see exactly what will upload / download *before* the first sync runs, and approve it. Conflicted files explain how they'll be resolved, and clicking one opens a read-only before/after preview of the merged result.
 - **Atomic writes** — a download interrupted mid-transfer never leaves a half-written or 0-byte file in your Vault.
 - **Rename / move tracking** via Nextcloud file IDs — moving a note doesn't re-upload it everywhere.
 - **Trashbin deletes** — remote deletions use the Nextcloud trashbin (recoverable). When a deletion is applied to your local Vault, it follows **your Obsidian "Deleted files" setting** (system trash / move to `.trash` / permanently delete) rather than forcing one behavior; folders and files outside the Vault's tracked notes (e.g. config-folder files) are handled too.
@@ -45,7 +57,7 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 ### Conflict safety (never lose content)
 - **Content is never discarded** on conflict.
 - **Inline conflict markers** (Git-style `<<<<<<< LOCAL` / `=======` / `>>>>>>> REMOTE`) written directly into the file.
-- **Optional auto-merge** (`reconcile-text` / diff3) for edits in different regions — off by default; YAML frontmatter is never auto-merged.
+- **Auto-merge** (`reconcile-text` / diff3) for edits in different regions, including YAML frontmatter when the two sides changed non-overlapping lines; anything that can't be merged falls back to conflict markers (on by default).
 - **Conflict badge** in the status bar showing the count of unresolved conflicts (clears to normal at zero; pairs well with a `#conflict` tag search).
 
 ### Nextcloud power features
@@ -56,9 +68,21 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 
 ---
 
+## Mobile (iOS / Android)
+
+Mobile is supported, with a few platform-aware differences (desktop behaviour is unchanged):
+
+- **Automatic sync is off by default on mobile.** The OS suspends background timers, so periodic auto-sync and "sync on file change" are disabled (greyed out). Use **Sync now**, or enable **Sync on startup** (off by default on mobile) to sync once a few seconds after the app opens.
+- **Sync on startup** is a new setting on both platforms (desktop: on, 5 s; mobile: off).
+- **Large files are skipped on mobile** above the "Maximum file size" limit (set `0` for unlimited) to avoid out-of-memory crashes; skips are reported.
+- **No progress UI on mobile** — only error notices are shown.
+- **Network concurrency** is configurable (desktop default 8, mobile default 2).
+- **Sync on Wi-Fi only** skips on cellular (Android/desktop). **Not available on iOS** (no network-type API), where the toggle is disabled.
+- Debug mode is disabled on mobile.
+
 ## Requirements
 
-- **Obsidian** `1.12.7` or later (desktop / Electron). Mobile is out of scope for now.
+- **Obsidian** `1.12.7` or later. Desktop (Electron) and mobile (iOS / Android) are supported.
 - **Nextcloud** Hub 26 "Winter" (server `33`) or later is **recommended** for the Nextcloud-specific features. Older Nextcloud servers are no longer blocked — they still connect and sync, but the settings screen shows a recommendation banner and some features may degrade. Plain WebDAV servers fall back to core sync.
 - A Nextcloud account. You can authenticate with **Login Flow v2** (recommended) or a manually issued **app password** (never your main password).
 
@@ -150,7 +174,7 @@ On connect, the plugin probes `/status.php` (maintenance mode) and `/ocs/v1.php/
 
 ## Limitations
 
-- Desktop (Electron) only; **mobile** and **end-to-end encryption (E2EE)** are out of scope for this version.
+- **End-to-end encryption (E2EE)** is out of scope for this version.
 - Designed primarily for Markdown / text Vaults; single files in the hundreds-of-MB range are beyond the v1 design target.
 - Keep the Vault on local storage — don't double-manage it with another cloud sync (e.g. iCloud Drive) at the same time.
 - Nextcloud-specific features require a compatible server version; older or non-Nextcloud servers transparently fall back to core WebDAV sync.
