@@ -16,10 +16,27 @@ export interface DavSyncSettings {
    * (Meaning changed from the old "skip when exceeded" to "start chunking". 002 spec.)
    */
   uploadChunkThresholdMB: number;
-  /** Absolute limit (MB). Only files exceeding this are skipped with a warning. */
+  /** Absolute limit (MB). Files exceeding this are skipped with a warning. `0` = unlimited. */
   maxFileSizeMB: number;
-  /** Detect local Markdown edits and sync immediately (watch mode). */
+  /** Detect local Markdown edits and sync immediately (watch mode). Disabled on mobile. */
   watchOnChangeEnabled: boolean;
+  /**
+   * Sync once on startup. Default is platform-dependent (desktop ON / mobile OFF),
+   * resolved on first run in loadSettings().
+   */
+  syncOnStartupEnabled: boolean;
+  /** Seconds to wait after startup before the startup sync (when syncOnStartupEnabled). `>= 0`. */
+  startupSyncDelaySeconds: number;
+  /**
+   * Number of concurrent WebDAV requests. Default is platform-dependent
+   * (desktop 8 / mobile 2), resolved on first run. No clamping (user value is used as-is).
+   */
+  networkConcurrency: number;
+  /**
+   * Sync only on Wi-Fi (non-cellular). Not supported on iOS (no network-type API);
+   * the toggle is disabled there and the setting is ignored.
+   */
+  syncOnWifiOnly: boolean;
   /** Include Obsidian bookmarks (.obsidian/bookmarks.json) in the sync. */
   syncBookmarks: boolean;
   /** Debug mode: "Sync Now" shows a dry-run plan instead of executing the sync. */
@@ -53,13 +70,20 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   networkTimeoutSeconds: 30,
   deviceId: '',
   uploadChunkThresholdMB: 50,
-  maxFileSizeMB: 1024,
-  watchOnChangeEnabled: false,
-  syncBookmarks: false,
+  maxFileSizeMB: 0, // 0 = unlimited (desktop default). Mobile gets a safe cap in loadSettings().
+  watchOnChangeEnabled: true,
+  // These are DESKTOP defaults. Mobile-specific overrides are applied on first run in
+  // loadSettings(): syncOnStartupEnabled→false, networkConcurrency→2, maxFileSizeMB→20,
+  // syncOnWifiOnly→true.
+  syncOnStartupEnabled: true,
+  startupSyncDelaySeconds: 1,
+  networkConcurrency: 16,
+  syncOnWifiOnly: false,
+  syncBookmarks: true,
   debugMode: false,
   chunkedUploadEnabled: true,
-  fileLockingEnabled: false,
-  autoMergeEnabled: false,
+  fileLockingEnabled: true,
+  autoMergeEnabled: true,
   maxConflictRegions: 3,
   frontmatterConflictStrategy: 'conflict',
   lastKnownServerVersion: '',

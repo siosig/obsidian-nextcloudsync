@@ -35,3 +35,4 @@ report/
 
 # Playwright MCP snapshot output
 .playwright-mcp/
+/report/

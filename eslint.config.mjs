@@ -24,7 +24,7 @@ export default defineConfig([
       "obsidianmd/ui/sentence-case": [
         "error",
         {
-          ignoreWords: ["Nextcloud", "WebDAV", "Obsidian", "URL", "JSON", "YAML", "ID", "v2"],
+          ignoreWords: ["Nextcloud", "WebDAV", "Obsidian", "URL", "JSON", "YAML", "ID", "v2", "Wi-Fi"],
           ignoreRegex: ["https?://", "\\.obsidian", "data\\.json", "bookmarks\\.json"],
         },
       ],

@@ -1,5 +1,14 @@
 import { SyncStatus } from '../types';
 
+/** Status-bar surface used by the sync engine. Implemented by StatusBarItem and NullStatusBar. */
+export interface IStatusBar {
+  setStatus(status: SyncStatus): void;
+  setProgress(processed: number, total: number): void;
+  setConflictCount(count: number): void;
+  setErrorCount(count: number): void;
+  setSyncComplete(uploadedCount: number, downloadedCount: number, conflictCount: number, errorCount: number): void;
+}
+
 const STATUS_ICONS: Record<SyncStatus, string> = {
   idle: '🟢',
   syncing: '🔄',
@@ -7,14 +16,18 @@ const STATUS_ICONS: Record<SyncStatus, string> = {
   conflict: '🟡',
 };
 
-export class StatusBarItem {
+export class StatusBarItem implements IStatusBar {
   private conflictCount = 0;
   private errorCount = 0;
   private status: SyncStatus = 'idle';
   private lastSyncTime: number | null = null;
   private progressText = '';
 
-  constructor(private readonly el: HTMLElement) {
+  constructor(private readonly el: HTMLElement, onClick?: () => void) {
+    if (onClick) {
+      this.el.addClass('mod-clickable'); // built-in status-bar clickable styling (cursor/hover)
+      this.el.addEventListener('click', onClick);
+    }
     this.render();
   }
 
