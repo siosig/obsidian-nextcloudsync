@@ -39,10 +39,8 @@ export interface DavSyncSettings {
   syncOnWifiOnly: boolean;
   /** Include Obsidian bookmarks (.obsidian/bookmarks.json) in the sync. */
   syncBookmarks: boolean;
-  /** Debug mode: "Sync Now" shows a dry-run plan instead of executing the sync (desktop only). */
+  /** Debug mode: write a diagnostic log to nextcloud-sync-debug.md (real syncing still runs). */
   debugMode: boolean;
-  /** Diagnostic logging: append a timestamped action log to nextcloud-sync-debug.md (all platforms). */
-  diagnosticLogEnabled: boolean;
   /** Enable chunked uploads (default ON; Nextcloud only). */
   chunkedUploadEnabled: boolean;
   /** Enable Files Locking (experimental; default OFF; only on servers that support files_lock). */
@@ -83,7 +81,6 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   syncOnWifiOnly: false,
   syncBookmarks: true,
   debugMode: false,
-  diagnosticLogEnabled: false,
   chunkedUploadEnabled: true,
   fileLockingEnabled: true,
   autoMergeEnabled: true,
