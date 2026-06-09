@@ -52,6 +52,8 @@ export class NextcloudClient implements IWebDAVClient {
     private readonly appPassword: string,
     /** Base folder for the remote sync target (usually the Vault name). Empty string means directly under the files root. */
     private readonly remoteBase: string = '',
+    /** Optional diagnostic sink (wired to the Debug-mode file log) for network-level troubleshooting. */
+    private readonly diag?: (msg: string) => void,
   ) {}
 
   private get baseUrl(): string {
@@ -236,13 +238,17 @@ export class NextcloudClient implements IWebDAVClient {
       body: `<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:sync-token/></d:prop></d:propfind>`,
       throw: false,
     });
-    if (res.status !== 207) return null;
     // Match regardless of the XML namespace prefix the server uses (d:, D:, none, nc:, …).
-    // A previous `<d:sync-token>`-only regex returned null on servers that used a different
-    // prefix, which stranded sync in permanent full-scan mode (no incremental deletions).
     const match = res.text.match(/<(?:\w+:)?sync-token>([^<]*)<\/(?:\w+:)?sync-token>/);
-    const token = match ? match[1].trim() : '';
-    return token.length > 0 ? token : null;
+    const token = match && res.status === 207 ? match[1].trim() : '';
+    if (token.length === 0) {
+      // Diagnose why the token is missing: log the status and a short, sanitised body snippet so
+      // a captured debug log reveals the actual server response (the cause of permanent full-scans).
+      const snippet = (res.text ?? '').replace(/\s+/g, ' ').slice(0, 400);
+      this.diag?.(`getSyncToken: NO TOKEN (status=${res.status}) body[0:400]=${snippet}`);
+      return null;
+    }
+    return token;
   }
 
   async remoteExists(remotePath: string): Promise<boolean> {
