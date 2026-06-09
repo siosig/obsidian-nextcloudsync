@@ -164,16 +164,14 @@ export default class ObsidianNextcloudsync extends Plugin {
     const saved = (await this.loadData() ?? {}) as Partial<DavSyncSettings>;
     this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
 
-    // Platform-dependent defaults: applied only on first run (key absent from saved data),
-    // so existing users keep their values (backward compatible).
-    if (saved.syncOnStartupEnabled === undefined) {
-      this.settings.syncOnStartupEnabled = !Platform.isMobile; // desktop ON / mobile OFF
-    }
-    if (saved.networkConcurrency === undefined) {
-      this.settings.networkConcurrency = Platform.isMobile ? 2 : 8;
-    }
-    if (saved.maxFileSizeMB === undefined && Platform.isMobile) {
-      this.settings.maxFileSizeMB = 20; // mobile-safe default; protects against OOM
+    // DEFAULT_SETTINGS holds the desktop defaults. On mobile, apply mobile-specific
+    // overrides only on first run (key absent from saved data) so existing users keep
+    // their values (backward compatible).
+    if (Platform.isMobile) {
+      if (saved.syncOnStartupEnabled === undefined) this.settings.syncOnStartupEnabled = false;
+      if (saved.networkConcurrency === undefined) this.settings.networkConcurrency = 2;
+      if (saved.maxFileSizeMB === undefined) this.settings.maxFileSizeMB = 20; // OOM-safe cap
+      if (saved.syncOnWifiOnly === undefined) this.settings.syncOnWifiOnly = true;
     }
   }
 
