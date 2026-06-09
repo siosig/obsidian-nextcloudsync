@@ -70,20 +70,20 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   networkTimeoutSeconds: 30,
   deviceId: '',
   uploadChunkThresholdMB: 50,
-  maxFileSizeMB: 1024,
-  watchOnChangeEnabled: false,
-  // Platform-dependent defaults below are finalized on first run in loadSettings():
-  //   syncOnStartupEnabled: desktop true / mobile false
-  //   networkConcurrency:   desktop 8 / mobile 2
+  maxFileSizeMB: 0, // 0 = unlimited (desktop default). Mobile gets a safe cap in loadSettings().
+  watchOnChangeEnabled: true,
+  // These are DESKTOP defaults. Mobile-specific overrides are applied on first run in
+  // loadSettings(): syncOnStartupEnabled→false, networkConcurrency→2, maxFileSizeMB→20,
+  // syncOnWifiOnly→true.
   syncOnStartupEnabled: true,
-  startupSyncDelaySeconds: 5,
-  networkConcurrency: 8,
+  startupSyncDelaySeconds: 1,
+  networkConcurrency: 16,
   syncOnWifiOnly: false,
-  syncBookmarks: false,
+  syncBookmarks: true,
   debugMode: false,
   chunkedUploadEnabled: true,
-  fileLockingEnabled: false,
-  autoMergeEnabled: false,
+  fileLockingEnabled: true,
+  autoMergeEnabled: true,
   maxConflictRegions: 3,
   frontmatterConflictStrategy: 'conflict',
   lastKnownServerVersion: '',
