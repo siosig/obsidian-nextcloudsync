@@ -5,6 +5,7 @@ import { SyncEngine } from './sync/SyncEngine';
 import { VersionHistoryModal } from './ui/VersionHistoryModal';
 import { DebugPreviewModal } from './ui/DebugPreviewModal';
 import { DiffModal } from './ui/DiffModal';
+import { SyncStatusModal } from './ui/SyncStatusModal';
 import { v4 as uuidv4 } from './util/uuid';
 
 const MIN_OBSIDIAN_VERSION = '1.12.7';
@@ -135,6 +136,15 @@ export default class ObsidianNextcloudsync extends Plugin {
     await this.syncEngine.syncManual();
   }
 
+  /** Open the sync-status dialog (conflicts / retry queue) from a status-bar click. */
+  private showSyncStatus(): void {
+    if (!this.syncEngine) {
+      new Notice('Configure the server settings first.');
+      return;
+    }
+    new SyncStatusModal(this.app, this.syncEngine.getStatusReport()).open();
+  }
+
   /** Fetch the server-side version history of the active note and show the modal (US2). */
   private async showVersionHistory(file: TFile): Promise<void> {
     const engine = this.syncEngine;
@@ -194,9 +204,10 @@ export default class ObsidianNextcloudsync extends Plugin {
 
     // Mobile has no visible status bar and the spec requires no progress display:
     // inject a no-op status bar so the sync engine needs no platform branching.
+    // On desktop, clicking the status bar opens the sync-status dialog (conflicts / retries).
     const statusBar = Platform.isMobile
       ? new NullStatusBar()
-      : new StatusBarItem(this.addStatusBarItem());
+      : new StatusBarItem(this.addStatusBarItem(), () => this.showSyncStatus());
     const password = loadAppPassword(this.app, this.settings.passwordSecretId);
     const webdavFactory = new WebDAVFactory(this.app, this.settings, password);
 

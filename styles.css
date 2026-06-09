@@ -49,6 +49,27 @@
   background: var(--background-modifier-hover);
 }
 
+/* ── Sync status dialog (status-bar click) ───────────────────────────────── */
+.ncs-status-list {
+  max-height: 50vh;
+  overflow: auto;
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  margin: 4px 0 8px;
+}
+
+.ncs-status-row {
+  padding: 3px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.ncs-status-row:hover {
+  background: var(--background-modifier-hover);
+}
+
 /* ── Diff / merge preview modal ──────────────────────────────────────────── */
 .ncs-diff-modal {
   width: min(1100px, 95vw);
