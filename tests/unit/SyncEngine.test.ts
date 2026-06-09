@@ -1,5 +1,6 @@
 import { StateDB } from '../../src/data/StateDB';
-import { FileState } from '../../src/types';
+import { DavSyncSettings, FileState, RemoteFileInfo, SyncSessionSummary } from '../../src/types';
+import { SyncEngine } from '../../src/sync/SyncEngine';
 
 // Simplified 3-point comparison logic extracted for unit testing
 function classify(
@@ -77,5 +78,130 @@ describe('StateDB integration with SyncEngine logic', () => {
     const f = db.getFile('a.md')!;
     db.setFile({ ...f, isConflicted: false });
     expect(db.countConflicted()).toBe(0);
+  });
+});
+
+describe('SyncEngine.handleConflict — failure-policy actions', () => {
+  const enc = new TextEncoder();
+  const toBuf = (s: string): ArrayBuffer => enc.encode(s).buffer;
+
+  function makeSettings(policy: DavSyncSettings['conflictFailurePolicy']): DavSyncSettings {
+    return {
+      serverUrl: '', username: '', passwordSecretId: '', syncIntervalMinutes: 0,
+      networkTimeoutSeconds: 30, deviceId: 'dev-abcd', uploadChunkThresholdMB: 50,
+      maxFileSizeMB: 1024, watchOnChangeEnabled: false, syncOnStartupEnabled: true,
+      startupSyncDelaySeconds: 5, networkConcurrency: 8, syncOnWifiOnly: false, syncBookmarks: false,
+      debugMode: false, chunkedUploadEnabled: true, fileLockingEnabled: false,
+      autoMergeEnabled: true, maxConflictRegions: 10, frontmatterConflictStrategy: 'conflict',
+      mergeableExtensions: ['md', 'txt'], conflictFailurePolicy: policy,
+    };
+  }
+
+  function makeSummary(): SyncSessionSummary {
+    return {
+      startedAt: 0, completedAt: null, uploadedCount: 0, downloadedCount: 0,
+      deletedCount: 0, conflictCount: 0, errorCount: 0, retriedFiles: [],
+    };
+  }
+
+  const remote: RemoteFileInfo = {
+    path: 'image.png', fileId: 'fid-1', checksum: 'rem-checksum', etag: 'etag-1',
+    size: 6, lastModified: 2000,
+  };
+
+  function buildHarness(policy: DavSyncSettings['conflictFailurePolicy'], localContent: string, remoteContent: string) {
+    const setFile = jest.fn();
+    const atomicWrite = jest.fn(async () => undefined);
+    const atomicWriteBinary = jest.fn(async () => undefined);
+    const setMtime = jest.fn(async () => undefined);
+    const upload = jest.fn(async () => 'uploaded' as const);
+
+    const localAdapter = {
+      stat: jest.fn(async () => ({ size: localContent.length, mtime: 1000 })),
+      read: jest.fn(async () => localContent),
+      readBinary: jest.fn(async () => toBuf(localContent)),
+      atomicWrite,
+      atomicWriteBinary,
+      setMtime,
+    };
+    const stateDB = { setFile, getFile: jest.fn(() => undefined) };
+    const client = {
+      downloadFile: jest.fn(async () => undefined),
+      getLastDownloadBuffer: jest.fn(() => toBuf(remoteContent)),
+    };
+
+    const opts = {
+      app: {}, settings: makeSettings(policy), localAdapter, stateDB,
+      statusBar: {}, webdavFactory: {}, pluginDir: '', configDir: '.obsidian',
+    };
+    const engine = new SyncEngine(opts as never);
+    (engine as unknown as { client: unknown }).client = client;
+    (engine as unknown as { uploadStrategy: unknown }).uploadStrategy = { upload };
+
+    const invoke = (base: FileState | undefined, summary: SyncSessionSummary) =>
+      (engine as unknown as {
+        handleConflict(p: string, b: FileState | undefined, r: RemoteFileInfo, id: string, t: FileState['idType'], s: SyncSessionSummary): Promise<void>;
+      }).handleConflict('image.png', base, remote, 'rem-checksum', 'sha256', summary);
+
+    return { engine, invoke, setFile, atomicWrite, atomicWriteBinary, upload, client, localAdapter };
+  }
+
+  it('error policy → skip: touches neither side, counts error, leaves StateDB hashes intact', async () => {
+    const h = buildHarness('error', 'local-text', 'remote-text');
+    const base: FileState = {
+      path: 'image.png', localHash: 'lh', remoteId: 'rh', idType: 'sha256',
+      size: 10, mtime: 1000, remoteFileId: 'fid-1', isConflicted: false,
+    };
+    const summary = makeSummary();
+    await h.invoke(base, summary);
+
+    expect(h.upload).not.toHaveBeenCalled();
+    expect(h.atomicWrite).not.toHaveBeenCalled();
+    expect(h.atomicWriteBinary).not.toHaveBeenCalled();
+    expect(summary.errorCount).toBe(1);
+    expect(summary.conflictCount).toBe(1);
+    // StateDB entry only flagged conflicted; hashes unchanged so the next sync re-detects.
+    expect(h.setFile).toHaveBeenCalledWith(expect.objectContaining({
+      path: 'image.png', localHash: 'lh', remoteId: 'rh', isConflicted: true,
+    }));
+  });
+
+  it('local-wins → prefer-local: uploads local, marks both sides converged (localHash)', async () => {
+    const h = buildHarness('local-wins', 'local-text', 'remote-text');
+    const summary = makeSummary();
+    await h.invoke(undefined, summary);
+
+    expect(h.upload).toHaveBeenCalledTimes(1);
+    expect(h.atomicWriteBinary).not.toHaveBeenCalled();
+    expect(summary.uploadedCount).toBe(1);
+    const arg = h.setFile.mock.calls[0][0] as FileState;
+    expect(arg.isConflicted).toBe(false);
+    expect(arg.localHash).toBe(arg.remoteId); // converged on the local content hash
+    expect(arg.idType).toBe('sha256');
+  });
+
+  it('remote-wins → prefer-remote: overwrites local with remote, marks converged', async () => {
+    const h = buildHarness('remote-wins', 'local-text', 'remote-text');
+    const summary = makeSummary();
+    await h.invoke(undefined, summary);
+
+    expect(h.atomicWriteBinary).toHaveBeenCalledTimes(1);
+    expect(h.upload).not.toHaveBeenCalled();
+    expect(summary.downloadedCount).toBe(1);
+    const arg = h.setFile.mock.calls[0][0] as FileState;
+    expect(arg.isConflicted).toBe(false);
+    expect(arg.remoteId).toBe('rem-checksum');
+  });
+
+  it('prefer-local upload failure → keeps conflict unresolved, counts error, no converged StateDB write', async () => {
+    const h = buildHarness('local-wins', 'local-text', 'remote-text');
+    h.upload.mockRejectedValueOnce(new Error('network down'));
+    const summary = makeSummary();
+    await h.invoke(undefined, summary);
+
+    expect(summary.errorCount).toBe(1);
+    expect(summary.uploadedCount).toBe(0);
+    // Must NOT record a converged (isConflicted:false) entry on failure.
+    expect(h.setFile).not.toHaveBeenCalled();
   });
 });
