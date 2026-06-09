@@ -49,6 +49,24 @@
   background: var(--background-modifier-hover);
 }
 
+/* ── Dry-run preview modal (initial sync approval) ───────────────────────── */
+.ncs-dryrun-note {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin: 2px 0 6px;
+}
+
+.ncs-dryrun-conflict {
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+.ncs-dryrun-conflict:hover {
+  background: var(--background-modifier-hover);
+  text-decoration: underline;
+}
+
 /* ── Sync status dialog (status-bar click) ───────────────────────────────── */
 .ncs-status-list {
   max-height: 50vh;

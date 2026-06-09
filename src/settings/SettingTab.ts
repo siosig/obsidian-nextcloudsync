@@ -51,10 +51,15 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     // "Sync now" lives at the top. It stays disabled until authentication is complete
     // (server URL + username + a stored app password), and updates live as fields change.
     let syncNowButton: ButtonComponent | null = null;
-    const isReadyToSync = (): boolean =>
-      this.plugin.settings.serverUrl.trim().length > 0
-      && this.plugin.settings.username.trim().length > 0
-      && loadAppPassword(this.app, this.plugin.settings.passwordSecretId) != null;
+    const isReadyToSync = (): boolean => {
+      const s = this.plugin.settings;
+      // Require a non-empty password string. (loadLocalStorage can return '' for a missing
+      // key, and '' != null is true — so a bare null check would wrongly report "ready".)
+      const pw = loadAppPassword(this.app, s.passwordSecretId);
+      return s.serverUrl.trim().length > 0
+        && s.username.trim().length > 0
+        && typeof pw === 'string' && pw.length > 0;
+    };
     const refreshSyncNow = (): void => { syncNowButton?.setDisabled(!isReadyToSync()); };
 
     new Setting(containerEl)
