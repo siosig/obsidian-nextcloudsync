@@ -8,7 +8,13 @@ Most "WebDAV sync" plugins treat the server as a dumb file store: they compare m
 
 ---
 
-## What's new in this release (0.2.0)
+## What's new in this release (0.2.1)
+
+- **Reliable cross-device deletions** — deleting a file on one device now propagates correctly instead of the file reappearing on the next sync (sync-token handling fixed, with content-verified, recoverable deletions and a mass-deletion safety guard).
+- **Auto-merged conflicts now reach the server** — a merged conflict is uploaded so all devices converge, instead of the same conflict re-appearing every sync.
+- **Mobile diagnostics** — Debug mode writes a per-device `nextcloud-sync-debug.md` log on mobile too, and "Sync now" shows a result notice.
+
+Earlier in the 0.2.x line:
 
 - **Mobile (iOS / Android) support** — the plugin now runs on mobile, with platform-aware behavior so desktop is unchanged (details in the Mobile section below).
 - **Clickable status bar → sync-status dialog** — click the status bar item to open a dialog summarizing the current sync state, the last sync, and any unresolved conflicts.
@@ -52,7 +58,7 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 - **Sync on file change (watch mode)** — optionally sync immediately after you edit a local Markdown file (debounced ~2s after you stop typing). Toggle on/off in settings; works alongside the periodic interval.
 - **Resilient retries** — failed files are skipped, queued, and retried next sync with exponential backoff; a dropped Wi-Fi connection resumes automatically.
 - **Standard WebDAV fallback** — works against any WebDAV server (recursive), Nextcloud features auto-disabled.
-- **Debug mode (dry-run inspector)** — a settings toggle that turns **Sync Now** into a *preview only*: it lists every file with its local/remote paths and the action a real sync would take (upload / download / merge / delete), **without changing anything**. Click a file row to open a read-only before/after merge preview for that file. Watch mode is suspended while Debug mode is on. Turn it off to run real syncs again.
+- **Debug mode (diagnostic log)** — a settings toggle (available on desktop **and** mobile) that appends a timestamped, per-device action log to `nextcloud-sync-debug.md` at the vault root while syncing normally. Useful for troubleshooting on mobile where there's no console. The log file syncs like any other note, so multiple devices' actions are collected together; turn it off and delete the file when finished.
 
 ### Conflict safety (never lose content)
 - **Content is never discarded** on conflict.
@@ -78,7 +84,8 @@ Mobile is supported, with a few platform-aware differences (desktop behaviour is
 - **No progress UI on mobile** — only error notices are shown.
 - **Network concurrency** is configurable (desktop default 8, mobile default 2).
 - **Sync on Wi-Fi only** skips on cellular (Android/desktop). **Not available on iOS** (no network-type API), where the toggle is disabled.
-- Debug mode is disabled on mobile.
+- **Sync now shows a result notice on mobile** (uploads / downloads / conflicts, or "already up to date") since there's no status bar. Tapping it while not signed in stays disabled, and the settings screen shows a clear "not signed in yet" banner.
+- Debug mode (diagnostic log) is available on mobile and does not change syncing.
 
 ## Requirements
 

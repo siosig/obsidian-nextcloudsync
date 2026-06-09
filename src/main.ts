@@ -3,9 +3,8 @@ import { DavSyncSettings, DEFAULT_SETTINGS, FeatureUnsupportedError } from './ty
 import { NextcloudSyncSettingTab } from './settings/SettingTab';
 import { SyncEngine } from './sync/SyncEngine';
 import { VersionHistoryModal } from './ui/VersionHistoryModal';
-import { DebugPreviewModal } from './ui/DebugPreviewModal';
-import { DiffModal } from './ui/DiffModal';
 import { SyncStatusModal } from './ui/SyncStatusModal';
+import { FileLogger } from './util/FileLogger';
 import { v4 as uuidv4 } from './util/uuid';
 
 const MIN_OBSIDIAN_VERSION = '1.12.7';
@@ -13,11 +12,8 @@ const MIN_OBSIDIAN_VERSION = '1.12.7';
 export default class ObsidianNextcloudsync extends Plugin {
   settings!: DavSyncSettings;
   syncEngine?: SyncEngine;
-
-  /** Debug/dry-run is desktop-only; on mobile it is always off regardless of the saved value. */
-  private get debugEnabled(): boolean {
-    return this.settings.debugMode && !Platform.isMobile;
-  }
+  /** Diagnostic file logger (writes nextcloud-sync-debug.md while Debug mode is on). */
+  logger!: FileLogger;
 
   async onload(): Promise<void> {
     // Obsidian version check
@@ -32,11 +28,17 @@ export default class ObsidianNextcloudsync extends Plugin {
 
     await this.loadSettings();
 
-    // Generate deviceId if not set
+    // Generate deviceId if not set (also used to label diagnostic-log lines per device).
     if (!this.settings.deviceId) {
       this.settings.deviceId = uuidv4();
       await this.saveSettings();
     }
+
+    // Diagnostic logger: appends to nextcloud-sync-debug.md while Debug mode is on (all platforms).
+    // Debug mode logs and still performs a real sync — identical behavior on desktop and mobile.
+    // Each line is tagged with a device label so a synced log from multiple devices is readable.
+    this.logger = new FileLogger(this.app.vault.adapter, () => this.settings.debugMode, this.manifest.version, this.deviceLabel());
+    void this.logger.log(`plugin loaded (obsidian=${currentVersion})`);
 
     // Initialize SyncEngine (lazy — only when settings are complete)
     if (this.settings.serverUrl && this.settings.username) {
@@ -67,9 +69,9 @@ export default class ObsidianNextcloudsync extends Plugin {
 
     // Watch mode: react to individual file events with lightweight single-file operations.
     // Full vault sync is reserved for manual Sync Now and the periodic interval.
-    // Watch mode is disabled on mobile (OS suspends background work) and in debug mode.
+    // Watch mode is disabled on mobile (OS suspends background work).
     const guard = (file: TAbstractFile): file is TFile =>
-      this.settings.watchOnChangeEnabled && !this.debugEnabled && !Platform.isMobile && file instanceof TFile;
+      this.settings.watchOnChangeEnabled && !Platform.isMobile && file instanceof TFile;
 
     // Accumulate paths changed during rapid editing and flush them together after the
     // debounce window so each keystroke does not trigger a separate network request.
@@ -109,35 +111,17 @@ export default class ObsidianNextcloudsync extends Plugin {
    * Shared by the command and the settings button.
    */
   async runSyncNow(): Promise<void> {
+    void this.logger.log('sync: "Sync now" clicked');
     // Initialize lazily if credentials were entered after startup (e.g. first-time setup).
     if (!this.syncEngine && this.settings.serverUrl && this.settings.username) {
       await this.initSyncEngine();
     }
     if (!this.syncEngine) {
+      void this.logger.log('sync: aborted — server settings incomplete');
       new Notice('Configure the server settings first.');
       return;
     }
-    if (this.debugEnabled) {
-      try {
-        const engine = this.syncEngine;
-        const entries = await engine.previewSync();
-        new DebugPreviewModal(this.app, this.app.vault.getName(), entries, (entry) => {
-          // On click: compute the merge preview (read-only) and show the before/after diff.
-          void (async () => {
-            try {
-              const preview = await engine.previewMerge(entry.path);
-              new DiffModal(this.app, preview).open();
-            } catch (err) {
-              new Notice(`❌ Merge preview failed: ${(err as Error).message}`, 6000);
-            }
-          })();
-        }).open();
-      } catch (err) {
-        new Notice(`❌ Debug preview failed: ${(err as Error).message}`, 6000);
-      }
-      return;
-    }
-    await this.syncEngine.syncManual();
+    await this.syncEngine.syncManual({ manual: true });
   }
 
   /** Open the sync-status dialog (conflicts / retry queue) from a status-bar click. */
@@ -168,6 +152,21 @@ export default class ObsidianNextcloudsync extends Plugin {
         new Notice(`❌ Failed to load version history: ${(err as Error).message}`, 6000);
       }
     }
+  }
+
+  /** Short, stable per-device label for diagnostic-log lines (platform + hostname, or deviceId). */
+  private deviceLabel(): string {
+    const platform = Platform.isIosApp ? 'ios' : Platform.isAndroidApp ? 'android' : 'desktop';
+    let host = '';
+    if (Platform.isDesktopApp) {
+      try {
+        // os is a desktop-only Node builtin; this branch never runs on mobile (Platform.isDesktopApp guard).
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, no-undef, import/no-nodejs-modules
+        host = (require('os') as { hostname(): string }).hostname();
+      } catch { /* hostname unavailable */ }
+    }
+    const id = (this.settings.deviceId ?? '').replace(/-/g, '').slice(0, 6);
+    return host ? `${platform}/${host}` : `${platform}/${id}`;
   }
 
   onunload(): void {
@@ -213,7 +212,7 @@ export default class ObsidianNextcloudsync extends Plugin {
       ? new NullStatusBar()
       : new StatusBarItem(this.addStatusBarItem(), () => this.showSyncStatus());
     const password = loadAppPassword(this.app, this.settings.passwordSecretId);
-    const webdavFactory = new WebDAVFactory(this.app, this.settings, password);
+    const webdavFactory = new WebDAVFactory(this.app, this.settings, password, (m) => void this.logger.log(`net: ${m}`));
 
     this.syncEngine = new SyncEngine({
       app: this.app,
@@ -224,6 +223,7 @@ export default class ObsidianNextcloudsync extends Plugin {
       webdavFactory,
       pluginDir,
       configDir: this.app.vault.configDir,
+      logger: this.logger,
       onFeatures: (features) => {
         // Record the server version so the settings screen can recommend an upgrade
         // when it is below the supported minimum. Persist only on change.
@@ -240,8 +240,7 @@ export default class ObsidianNextcloudsync extends Plugin {
     }
 
     // Startup sync: configurable on both platforms. Default ON (desktop) / OFF (mobile).
-    // Skipped in debug mode to avoid accidental data changes during development.
-    if (this.settings.syncOnStartupEnabled && !this.debugEnabled) {
+    if (this.settings.syncOnStartupEnabled) {
       const delayMs = Math.max(0, this.settings.startupSyncDelaySeconds) * 1000;
       window.setTimeout(() => { void this.syncEngine?.syncManual(); }, delayMs);
     }
