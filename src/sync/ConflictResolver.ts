@@ -1,5 +1,5 @@
 import { App } from 'obsidian';
-import { DavSyncSettings } from '../types';
+import { ConflictResolution, DavSyncSettings } from '../types';
 import { LocalAdapter } from '../data/LocalAdapter';
 import { MergeEngine } from './merge/MergeEngine';
 
@@ -21,47 +21,123 @@ export class ConflictResolver {
   }
 
   /**
-   * Compute the content a resolution would write, WITHOUT touching disk (pure).
-   * Mirrors resolve()'s decision exactly so callers (e.g. the debug merge preview) see
-   * the same result a real sync would produce.
-   * `clean` is true only when auto-merge fully resolved with no markers remaining.
+   * True when `path`'s extension is configured as mergeable (case-insensitive).
+   * Files without an extension, or whose extension is not in `mergeableExtensions`,
+   * are never merged.
    */
-  computeResolution(base: string, local: string, remote: string): { content: string; clean: boolean; conflictRegions: number } {
-    if (this.settings.autoMergeEnabled) {
+  isMergeable(path: string): boolean {
+    const dot = path.lastIndexOf('.');
+    const slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+    if (dot <= slash || dot === path.length - 1) return false; // no extension
+    const ext = path.slice(dot + 1).toLowerCase();
+    return this.normalizedExtensions().includes(ext);
+  }
+
+  /** Normalize the configured extensions (lowercase, strip leading dots/whitespace, drop empties). */
+  private normalizedExtensions(): string[] {
+    const list = this.settings.mergeableExtensions ?? [];
+    return list
+      .map((e) => e.trim().replace(/^\.+/, '').toLowerCase())
+      .filter((e) => e.length > 0);
+  }
+
+  /**
+   * Decide what to do with a conflicting file. PURE: performs no disk or network I/O.
+   * SyncEngine.handleConflict executes the corresponding operations for the returned action.
+   *
+   * Flow:
+   *   1. mergeable && autoMerge → attempt merge; clean result → { write, clean:true }.
+   *   2. Otherwise apply conflictFailurePolicy:
+   *      'error' → skip; 'local-wins' → prefer-local; 'remote-wins' → prefer-remote;
+   *      'conflict-markers' → write markers for mergeable text, else skip (error fallback).
+   */
+  decide(path: string, base: string, local: string, remote: string): ConflictResolution {
+    const mergeable = this.isMergeable(path);
+    const policy = this.settings.conflictFailurePolicy;
+
+    if (mergeable && this.settings.autoMergeEnabled) {
       const result = this.mergeEngine.merge(base, local, remote);
       if (result.success && !result.hadConflicts) {
-        return { content: result.mergedContent, clean: true, conflictRegions: result.conflictRegions };
+        return { action: 'write', content: result.mergedContent, clean: true };
       }
-      if (result.success && result.hadConflicts) {
-        // Partial merge with markers remaining; tag for the user to finish.
-        const tagged = result.mergedContent.trimEnd() + '\n' + CONFLICT_TAG + '\n';
-        return { content: tagged, clean: false, conflictRegions: result.conflictRegions };
+      if (policy === 'conflict-markers') {
+        if (result.success && result.hadConflicts) {
+          // Partial merge: keep the merged body and tag it for the user to finish.
+          const tagged = result.mergedContent.trimEnd() + '\n' + CONFLICT_TAG + '\n';
+          return { action: 'write', content: tagged, clean: false };
+        }
+        // Merge refused (e.g. diverging frontmatter): embed full-file conflict markers.
+        return { action: 'write', content: this.buildMarkerContent(local, remote), clean: false };
       }
+      // Other policies are resolved by the switch below.
     }
 
-    // No auto-merge or merge refused (e.g. diverging frontmatter): embed section-level conflict markers.
+    switch (policy) {
+      case 'local-wins':
+        return { action: 'prefer-local' };
+      case 'remote-wins':
+        return { action: 'prefer-remote' };
+      case 'conflict-markers':
+        // Reached when not (mergeable && autoMerge): mergeable-but-autoMerge-off, or non-mergeable.
+        if (!mergeable) return { action: 'skip' }; // never embed markers into binary → error fallback
+        return { action: 'write', content: this.buildMarkerContent(local, remote), clean: false };
+      case 'error':
+      default:
+        return { action: 'skip' };
+    }
+  }
+
+  /**
+   * Compute the content a resolution would write, WITHOUT touching disk (pure), for the dry-run
+   * preview. Mirrors decide()'s decision so the preview matches a real sync.
+   * For skip → keep local (no change); prefer-local → local; prefer-remote → remote.
+   * `clean` is true only when the outcome leaves no markers / unresolved state.
+   */
+  computeResolution(
+    path: string, base: string, local: string, remote: string,
+  ): { content: string; clean: boolean; conflictRegions: number } {
+    const decision = this.decide(path, base, local, remote);
+    switch (decision.action) {
+      case 'write':
+        return { content: decision.content, clean: decision.clean, conflictRegions: decision.clean ? 0 : -1 };
+      case 'prefer-local':
+        return { content: local, clean: true, conflictRegions: 0 };
+      case 'prefer-remote':
+        return { content: remote, clean: true, conflictRegions: 0 };
+      case 'skip':
+      default:
+        return { content: local, clean: false, conflictRegions: -1 };
+    }
+  }
+
+  /** Build full-file conflict-marker content (both versions kept). */
+  private buildMarkerContent(local: string, remote: string): string {
     const deviceSuffix = this.settings.deviceId.slice(-4);
     const dateStr = new Date().toISOString().slice(0, 10);
     const markerLocal = `<<<<<<< LOCAL (${deviceSuffix}, ${dateStr})`;
     const markerRemote = `>>>>>>> REMOTE (${dateStr})`;
-    const conflictContent =
+    return (
       markerLocal + '\n' +
       local.trimEnd() + '\n' +
       '=======\n' +
       remote.trimEnd() + '\n' +
-      markerRemote + '\n';
-    return { content: conflictContent, clean: false, conflictRegions: -1 };
+      markerRemote + '\n'
+    );
   }
 
   /**
-   * Attempt auto-merge if enabled; otherwise embed conflict markers.
-   * Returns true if the file was successfully resolved (no markers remaining).
+   * Resolve the LOCAL side of a conflict to disk for the `write` action (clean merge or markers).
+   * For skip / prefer-local / prefer-remote, the resolution involves network I/O and is performed
+   * by SyncEngine.handleConflict; this method does nothing and returns false for those.
+   * Returns true only when auto-merge fully resolved with no markers remaining.
    */
   async resolve(path: string, base: string, local: string, remote: string): Promise<boolean> {
-    const { content, clean } = this.computeResolution(base, local, remote);
-    await this.localAdapter.atomicWrite(path, content);
-    // Per-file notices are suppressed here; the caller (SyncEngine) shows a single summary notice.
-    return clean;
+    const decision = this.decide(path, base, local, remote);
+    if (decision.action === 'write') {
+      await this.localAdapter.atomicWrite(path, decision.content);
+      return decision.clean;
+    }
+    return false;
   }
 
   /** Returns true if the file still contains unresolved conflict markers. */

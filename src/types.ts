@@ -55,6 +55,23 @@ export interface DavSyncSettings {
    */
   frontmatterConflictStrategy: 'local-wins' | 'remote-wins' | 'conflict';
   /**
+   * File extensions (lowercase, no leading dot) that are eligible for text merge.
+   * Files whose extension is NOT in this list are never merged; on conflict the
+   * `conflictFailurePolicy` is applied directly (never embeds markers into them).
+   * Default: ['md', 'txt'].
+   */
+  mergeableExtensions: string[];
+  /**
+   * What to do when a merge does not cleanly resolve — i.e. the file is not mergeable,
+   * auto-merge is off, or the merge failed / left conflicts:
+   *   'error'           — leave BOTH sides untouched, count as an error, retry next sync (default / safe)
+   *   'local-wins'      — overwrite the remote with the local copy
+   *   'remote-wins'     — overwrite the local with the remote copy
+   *   'conflict-markers'— embed <<<<<<< / ======= / >>>>>>> markers (mergeable text only;
+   *                       non-mergeable files fall back to 'error')
+   */
+  conflictFailurePolicy: 'error' | 'local-wins' | 'remote-wins' | 'conflict-markers';
+  /**
    * Last Nextcloud server version observed at connect time. Used only to show a
    * recommendation banner in settings when it is below the recommended minimum.
    * Empty/undefined until the first successful connection.
@@ -86,6 +103,8 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   autoMergeEnabled: true,
   maxConflictRegions: 3,
   frontmatterConflictStrategy: 'conflict',
+  mergeableExtensions: ['md', 'txt'],
+  conflictFailurePolicy: 'error',
   lastKnownServerVersion: '',
 };
 
@@ -138,6 +157,20 @@ export interface MergeResult {
   hadConflicts: boolean;
   conflictRegions: number;
 }
+
+/**
+ * The action a ConflictResolver decides on for a conflicting file. The decision is pure
+ * (no I/O); SyncEngine.handleConflict executes the corresponding network/disk operations.
+ *   write         — write `content` locally (clean merge or marker-embedded text), then converge to server
+ *   skip          — leave BOTH sides untouched (error policy, or non-text × conflict-markers fallback)
+ *   prefer-local  — overwrite the remote with the local copy
+ *   prefer-remote — overwrite the local with the remote copy
+ */
+export type ConflictResolution =
+  | { action: 'write'; content: string; clean: boolean }
+  | { action: 'skip' }
+  | { action: 'prefer-local' }
+  | { action: 'prefer-remote' };
 
 export interface SyncSessionSummary {
   startedAt: number;

@@ -320,6 +320,37 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
+    new Setting(containerEl)
+      .setName('Mergeable file extensions')
+      .setDesc('Comma-separated list of extensions eligible for text merge (e.g. "md, txt"). Files with other extensions are never merged; on conflict the failure policy below is applied directly. Leave the dot off.')
+      .addText(text => text
+        .setPlaceholder('Extensions separated by commas')
+        .setValue((this.plugin.settings.mergeableExtensions ?? []).join(', '))
+        .onChange(async (value) => {
+          // Normalize: split on comma, trim, strip leading dots, lowercase, drop empties, dedup.
+          const exts = value
+            .split(',')
+            .map(e => e.trim().replace(/^\.+/, '').toLowerCase())
+            .filter(e => e.length > 0);
+          this.plugin.settings.mergeableExtensions = [...new Set(exts)];
+          await this.plugin.saveSettings();
+        }));
+
+    new Setting(containerEl)
+      .setName('On merge failure')
+      .setDesc('What to do when a merge does not cleanly resolve (file not mergeable, auto-merge off, or merge failed). "error" leaves both sides untouched and retries next sync (safe default). "conflict markers" applies to text files only; other files fall back to error.')
+      .addDropdown(drop => drop
+        .addOption('error', 'Error — leave untouched, retry (safe default)')
+        .addOption('local-wins', 'Local wins — overwrite remote with local')
+        .addOption('remote-wins', 'Remote wins — overwrite local with remote')
+        .addOption('conflict-markers', 'Conflict markers — keep both versions (text only)')
+        .setValue(this.plugin.settings.conflictFailurePolicy)
+        .onChange(async (value) => {
+          this.plugin.settings.conflictFailurePolicy =
+            value as 'error' | 'local-wins' | 'remote-wins' | 'conflict-markers';
+          await this.plugin.saveSettings();
+        }));
+
     new Setting(containerEl).setName('Actions').setHeading();
 
     new Setting(containerEl)
