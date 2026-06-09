@@ -219,6 +219,17 @@ export class SyncEngine {
     return this.lastSummary;
   }
 
+  /**
+   * Snapshot for the status-bar dialog: last session summary plus the current lists of
+   * conflicted files and files queued for retry (the two things the status bar counts).
+   */
+  getStatusReport(): { summary: SyncSessionSummary | null; conflictedFiles: string[]; retryFiles: string[] } {
+    const conflictedFiles = this.opts.stateDB.getAllFiles()
+      .filter(f => f.isConflicted)
+      .map(f => f.path);
+    return { summary: this.lastSummary, conflictedFiles, retryFiles: [...this.retryQueue] };
+  }
+
   getUnresolvedConflictCount(): Promise<number> {
     return Promise.resolve(this.opts.stateDB.countConflicted());
   }
