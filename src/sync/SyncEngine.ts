@@ -105,21 +105,32 @@ export class SyncEngine {
     return isCellularBlocked(this.opts.settings.syncOnWifiOnly, Platform.isIosApp, conn?.type);
   }
 
-  async syncManual(): Promise<void> {
+  async syncManual(opts: { manual?: boolean } = {}): Promise<void> {
+    // Mobile has no status bar, so on an explicit "Sync now" tap we surface the outcome as a
+    // notice. Automatic/startup/interval runs stay silent; desktop keeps using the status bar.
+    const announce = opts.manual === true && Platform.isMobile;
     // Prevent concurrent runs (avoid clashing with watch mode or scheduled sync).
-    if (this.running) return;
-    if (this.isBlockedByWifiOnly()) return; // "Wi-Fi only" enabled and on cellular
+    if (this.running) {
+      if (announce) new Notice('⏳ A sync is already in progress.');
+      return;
+    }
+    if (this.isBlockedByWifiOnly()) { // "Wi-Fi only" enabled and on cellular
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- references the "Wi-Fi" proper noun; the rule mis-flags it as title case
+      if (announce) new Notice('⏸️ Sync skipped — you are on cellular and Wi-Fi-only sync is on.', 6000);
+      return;
+    }
     this.running = true;
     await this.ensureClient();
     this.syncProgress = { processed: 0, total: 0 };
     this.opts.statusBar.setStatus('syncing');
     const summary = this.initSummary();
 
+    let cancelled = false;
     try {
       const isFirstSync = !this.opts.stateDB.getSyncToken() && this.opts.stateDB.getAllFiles().length === 0;
 
       if (isFirstSync) {
-        await this.initialSync(summary);
+        cancelled = !(await this.initialSync(summary));
       } else {
         await this.incrementalSync(summary);
       }
@@ -137,10 +148,28 @@ export class SyncEngine {
         summary.uploadedCount, summary.downloadedCount,
         conflictCount, summary.errorCount,
       );
-      // Sync results are reflected in the status bar only (no completion popup).
+      // Desktop reflects the result in the status bar (no completion popup). On mobile there is
+      // no status bar, so an explicit "Sync now" gets a one-line result notice instead.
       // Genuine failures still surface via the catch-block notice / NextcloudErrorParser.
+      // A cancelled dry-run already showed "Sync cancelled.", so suppress the result line there.
+      if (announce && !cancelled) new Notice(this.formatSyncResult(summary), 6000);
       this.running = false;
     }
+  }
+
+  /** One-line, human-readable summary of a sync session (used for the mobile "Sync now" notice). */
+  private formatSyncResult(s: SyncSessionSummary): string {
+    if (s.errorCount > 0) {
+      const errs = `${s.errorCount} error${s.errorCount > 1 ? 's' : ''}`;
+      const tail = `↑${s.uploadedCount} ↓${s.downloadedCount}${s.conflictCount ? ` ⚠️${s.conflictCount}` : ''}`;
+      return `⚠️ Sync finished with ${errs} — ${tail}`;
+    }
+    const changed = s.uploadedCount + s.downloadedCount + s.deletedCount + s.conflictCount;
+    if (changed === 0) return '✅ Sync complete — already up to date';
+    const parts = [`↑${s.uploadedCount}`, `↓${s.downloadedCount}`];
+    if (s.deletedCount) parts.push(`🗑${s.deletedCount}`);
+    if (s.conflictCount) parts.push(`⚠️${s.conflictCount}`);
+    return `✅ Sync complete — ${parts.join(' ')}`;
   }
 
   // ── Single-file lightweight operations (used by watch mode) ─────────────────
@@ -360,8 +389,8 @@ export class SyncEngine {
     };
   }
 
-  /** First-ever sync: full scan → Dry Run → user approval → execute */
-  private async initialSync(summary: SyncSessionSummary): Promise<void> {
+  /** First-ever sync: full scan → Dry Run → user approval → execute. Returns false if cancelled. */
+  private async initialSync(summary: SyncSessionSummary): Promise<boolean> {
     const client = this.client!;
     const remoteFiles = await client.getFiles('');
     const localFiles = await this.scanLocalFiles();
@@ -389,7 +418,7 @@ export class SyncEngine {
     const approved = await modal.waitForDecision();
     if (!approved) {
       new Notice('Sync cancelled.');
-      return;
+      return false;
     }
 
     await this.executePlan(plan, remoteFiles, summary);
@@ -397,6 +426,7 @@ export class SyncEngine {
     // Save sync-token
     const token = await client.getSyncToken();
     this.opts.stateDB.setSyncToken(token);
+    return true;
   }
 
   /** Incremental sync using sync-token (falls back to full PROPFIND on 410) */

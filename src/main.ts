@@ -137,7 +137,7 @@ export default class ObsidianNextcloudsync extends Plugin {
       }
       return;
     }
-    await this.syncEngine.syncManual();
+    await this.syncEngine.syncManual({ manual: true });
   }
 
   /** Open the sync-status dialog (conflicts / retry queue) from a status-bar click. */
