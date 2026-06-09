@@ -8,14 +8,17 @@ Most "WebDAV sync" plugins treat the server as a dumb file store: they compare m
 
 ---
 
-## What's new in this release (0.2.1)
+## What's new in this release (0.2.2)
+
+- **Conflict-resolution policy** — choose what happens when a conflict can't be cleanly auto-merged: leave both sides untouched and retry (**Error**, the new default), keep **Local**, keep **Remote**, or embed **conflict markers**. Configurable in settings.
+- **Merge limited to text files** — only configurable extensions (default `md`, `txt`) are ever text-merged. Other files (images, PDFs, binaries) are never merged, so conflict markers can no longer corrupt them.
+- **Behavior change:** the default conflict outcome is now **Error** (skip and retry on the next sync) instead of automatically embedding `<<<<<<<` markers. Choose the **Conflict markers** policy to restore the previous behavior (text files only).
+
+Earlier in the 0.2.x line:
 
 - **Reliable cross-device deletions** — deleting a file on one device now propagates correctly instead of the file reappearing on the next sync (sync-token handling fixed, with content-verified, recoverable deletions and a mass-deletion safety guard).
 - **Auto-merged conflicts now reach the server** — a merged conflict is uploaded so all devices converge, instead of the same conflict re-appearing every sync.
 - **Mobile diagnostics** — Debug mode writes a per-device `nextcloud-sync-debug.md` log on mobile too, and "Sync now" shows a result notice.
-
-Earlier in the 0.2.x line:
-
 - **Mobile (iOS / Android) support** — the plugin now runs on mobile, with platform-aware behavior so desktop is unchanged (details in the Mobile section below).
 - **Clickable status bar → sync-status dialog** — click the status bar item to open a dialog summarizing the current sync state, the last sync, and any unresolved conflicts.
 - **"Sync now" promoted to the top of settings** and gated on authentication, so you can trigger a sync the moment you're signed in.
@@ -61,9 +64,9 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 - **Debug mode (diagnostic log)** — a settings toggle (available on desktop **and** mobile) that appends a timestamped, per-device action log to `nextcloud-sync-debug.md` at the vault root while syncing normally. Useful for troubleshooting on mobile where there's no console. The log file syncs like any other note, so multiple devices' actions are collected together; turn it off and delete the file when finished.
 
 ### Conflict safety (never lose content)
-- **Content is never discarded** on conflict.
-- **Inline conflict markers** (Git-style `<<<<<<< LOCAL` / `=======` / `>>>>>>> REMOTE`) written directly into the file.
-- **Auto-merge** (`reconcile-text` / diff3) for edits in different regions, including YAML frontmatter when the two sides changed non-overlapping lines; anything that can't be merged falls back to conflict markers (on by default).
+- **Auto-merge** (`reconcile-text` / diff3) for edits in different regions, including YAML frontmatter when the two sides changed non-overlapping lines (on by default).
+- **Merge scope by extension** — only files with a configurable extension (default `md`, `txt`) are text-merged; other files (images, PDFs, binaries) are never merged and never get markers written into them.
+- **Conflict-resolution policy** for anything that can't be cleanly merged: **Error** (leave both sides untouched, report it, and retry next sync — the default), **Local wins** (overwrite remote with local), **Remote wins** (overwrite local with remote), or **Conflict markers** (Git-style `<<<<<<< LOCAL` / `=======` / `>>>>>>> REMOTE` written into the file; text files only — other files fall back to Error).
 - **Conflict badge** in the status bar showing the count of unresolved conflicts (clears to normal at zero; pairs well with a `#conflict` tag search).
 
 ### Nextcloud power features
