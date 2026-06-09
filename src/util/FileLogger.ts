@@ -1,6 +1,6 @@
 import { DataAdapter, normalizePath } from 'obsidian';
 
-/** Vault-root file the diagnostic log is appended to. Excluded from sync. */
+/** Vault-root file the diagnostic log is appended to. Synced like any other note. */
 export const DEBUG_LOG_PATH = 'nextcloud-sync-debug.md';
 
 /**

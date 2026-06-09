@@ -24,7 +24,7 @@ import { DiffModal } from '../ui/DiffModal';
 import { RenameTracker } from './RenameTracker';
 import { ConflictResolver } from './ConflictResolver';
 import { sha256 } from '../util/hash';
-import { FileLogger, DEBUG_LOG_PATH } from '../util/FileLogger';
+import { FileLogger } from '../util/FileLogger';
 import { isCellularBlocked } from '../util/limits';
 import { isSafeVaultRelativePath } from '../network/remotePath';
 import { IUploadStrategy } from './upload/IUploadStrategy';
@@ -1005,8 +1005,6 @@ export class SyncEngine {
   }
 
   private isSystemExcluded(path: string): boolean {
-    // The diagnostic log is local-only debug output; never sync it to the server.
-    if (path === DEBUG_LOG_PATH) return true;
     // Bookmarks are synced only when enabled in settings (an exception to the config-folder exclusion).
     if (path === this.bookmarksPath) return !this.opts.settings.syncBookmarks;
     // Everything under the config folder (settings, themes, other plugins, state DB, etc.) is always excluded.

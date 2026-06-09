@@ -35,8 +35,9 @@ export default class ObsidianNextcloudsync extends Plugin {
 
     await this.loadSettings();
 
-    // Diagnostic logger: appends to nextcloud-sync-debug.md while Debug mode is on (all platforms).
-    this.logger = new FileLogger(this.app.vault.adapter, () => this.settings.debugMode, this.manifest.version);
+    // Diagnostic logger: appends to nextcloud-sync-debug.md while "Diagnostic logging" is on
+    // (all platforms; independent of Debug mode so logging never disables real syncing).
+    this.logger = new FileLogger(this.app.vault.adapter, () => this.settings.diagnosticLogEnabled, this.manifest.version);
     void this.logger.log(`plugin loaded (platform=${Platform.isMobile ? 'mobile' : 'desktop'}, obsidian=${currentVersion})`);
 
     // Generate deviceId if not set
