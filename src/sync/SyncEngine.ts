@@ -1,4 +1,4 @@
-import { App, Notice, TFile, TFolder, normalizePath } from 'obsidian';
+import { App, Notice, Platform, TFile, TFolder, normalizePath } from 'obsidian';
 import {
   DavSyncSettings,
   FileState,
@@ -16,13 +16,15 @@ import {
 } from '../types';
 import { LocalAdapter } from '../data/LocalAdapter';
 import { StateDB } from '../data/StateDB';
-import { StatusBarItem } from '../ui/StatusBarItem';
+import { IStatusBar } from '../ui/StatusBarItem';
 import { WebDAVFactory } from '../network/WebDAVFactory';
 import { IWebDAVClient } from '../network/IWebDAVClient';
 import { DryRunModal, DryRunPlan } from '../ui/DryRunModal';
+import { DiffModal } from '../ui/DiffModal';
 import { RenameTracker } from './RenameTracker';
 import { ConflictResolver } from './ConflictResolver';
 import { sha256 } from '../util/hash';
+import { isCellularBlocked } from '../util/limits';
 import { isSafeVaultRelativePath } from '../network/remotePath';
 import { IUploadStrategy } from './upload/IUploadStrategy';
 import { SimpleUploadStrategy } from './upload/SimpleUploadStrategy';
@@ -33,7 +35,7 @@ export interface SyncEngineOptions {
   settings: DavSyncSettings;
   localAdapter: LocalAdapter;
   stateDB: StateDB;
-  statusBar: StatusBarItem;
+  statusBar: IStatusBar;
   webdavFactory: WebDAVFactory;
   pluginDir: string;
   /** Obsidian's configuration folder (Vault#configDir), e.g. `.obsidian`. User-configurable. */
@@ -86,16 +88,27 @@ export class SyncEngine {
       this.features = features;
       this.uploadStrategy = (this.opts.settings.chunkedUploadEnabled && features.isNextcloud)
         ? new ChunkedUploadStrategy(this.opts.settings)
-        : new SimpleUploadStrategy();
+        : new SimpleUploadStrategy(this.opts.settings);
       this.opts.onFeatures?.(features);
     }
     return { client: this.client, features: this.features };
   }
 
   /** Manual sync: Dry Run → user approval → execute */
+  /**
+   * "Wi-Fi only" gate. Skips when enabled and on a cellular connection.
+   * Network type is only detectable on Chromium (desktop / Android); iOS (WebKit) has no
+   * `navigator.connection`, so the setting is ignored there (and its toggle is disabled).
+   */
+  private isBlockedByWifiOnly(): boolean {
+    const conn = (navigator as Navigator & { connection?: { type?: string } }).connection;
+    return isCellularBlocked(this.opts.settings.syncOnWifiOnly, Platform.isIosApp, conn?.type);
+  }
+
   async syncManual(): Promise<void> {
     // Prevent concurrent runs (avoid clashing with watch mode or scheduled sync).
     if (this.running) return;
+    if (this.isBlockedByWifiOnly()) return; // "Wi-Fi only" enabled and on cellular
     this.running = true;
     await this.ensureClient();
     this.syncProgress = { processed: 0, total: 0 };
@@ -207,6 +220,17 @@ export class SyncEngine {
     return this.lastSummary;
   }
 
+  /**
+   * Snapshot for the status-bar dialog: last session summary plus the current lists of
+   * conflicted files and files queued for retry (the two things the status bar counts).
+   */
+  getStatusReport(): { summary: SyncSessionSummary | null; conflictedFiles: string[]; retryFiles: string[] } {
+    const conflictedFiles = this.opts.stateDB.getAllFiles()
+      .filter(f => f.isConflicted)
+      .map(f => f.path);
+    return { summary: this.lastSummary, conflictedFiles, retryFiles: [...this.retryQueue] };
+  }
+
   getUnresolvedConflictCount(): Promise<number> {
     return Promise.resolve(this.opts.stateDB.countConflicted());
   }
@@ -312,6 +336,22 @@ export class SyncEngine {
 
   // ── Private ──────────────────────────────────────────────────────────────
 
+  /**
+   * One-line, settings-aware description of what a conflict resolution will produce.
+   * Shown in the dry-run preview so the user knows the outcome before approving.
+   */
+  private describeConflictOutcome(): string {
+    const s = this.opts.settings;
+    if (s.autoMergeEnabled) {
+      return 'Each conflicting file is auto-merged where the two sides changed different parts '
+        + '(frontmatter included). Anything that cannot be merged is kept as BOTH versions with '
+        + '<<<<<<< / >>>>>>> markers and a #conflict tag — nothing is discarded. '
+        + 'Select a file to preview the exact merged result.';
+    }
+    return 'Both versions are kept in the file with <<<<<<< / >>>>>>> conflict markers and a '
+      + '#conflict tag — nothing is overwritten. Select a file to preview the exact result.';
+  }
+
   private initSummary(): SyncSessionSummary {
     return {
       startedAt: Date.now(), completedAt: null,
@@ -332,7 +372,20 @@ export class SyncEngine {
 
     const plan = this.buildInitialPlan(localFiles, remoteFiles);
 
-    const modal = new DryRunModal(this.opts.app, plan);
+    const modal = new DryRunModal(this.opts.app, plan, {
+      conflictNote: this.describeConflictOutcome(),
+      onSelectConflict: (path) => {
+        // Read-only preview of the exact content the resolution will write for this file.
+        void (async () => {
+          try {
+            const preview = await this.previewMerge(path);
+            new DiffModal(this.opts.app, preview).open();
+          } catch (err) {
+            new Notice(`❌ Merge preview failed: ${(err as Error).message}`, 6000);
+          }
+        })();
+      },
+    });
     const approved = await modal.waitForDecision();
     if (!approved) {
       new Notice('Sync cancelled.');
@@ -831,9 +884,9 @@ export class SyncEngine {
     localFiles: Map<string, { hash: string; size: number; mtime: number }>,
   ): Promise<void> {
     const targets = remoteFiles.filter(rf => !rf.checksum && localFiles.has(rf.path));
-    const CONCURRENCY = 8;
-    for (let i = 0; i < targets.length; i += CONCURRENCY) {
-      const batch = targets.slice(i, i + CONCURRENCY);
+    const concurrency = Math.max(1, this.opts.settings.networkConcurrency);
+    for (let i = 0; i < targets.length; i += concurrency) {
+      const batch = targets.slice(i, i + concurrency);
       await Promise.all(batch.map(async (rf) => {
         try {
           const sum = await this.client!.recalcChecksum(rf.path);
