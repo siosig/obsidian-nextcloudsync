@@ -237,8 +237,12 @@ export class NextcloudClient implements IWebDAVClient {
       throw: false,
     });
     if (res.status !== 207) return null;
-    const match = res.text.match(/<d:sync-token>([^<]+)<\/d:sync-token>/);
-    return match ? match[1] : null;
+    // Match regardless of the XML namespace prefix the server uses (d:, D:, none, nc:, …).
+    // A previous `<d:sync-token>`-only regex returned null on servers that used a different
+    // prefix, which stranded sync in permanent full-scan mode (no incremental deletions).
+    const match = res.text.match(/<(?:\w+:)?sync-token>([^<]*)<\/(?:\w+:)?sync-token>/);
+    const token = match ? match[1].trim() : '';
+    return token.length > 0 ? token : null;
   }
 
   // ── US2: Version history ────────────────────────────────────────────────────

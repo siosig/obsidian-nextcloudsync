@@ -65,3 +65,30 @@ describe('NextcloudClient.recalcChecksum', () => {
     expect(sum).toBeNull();
   });
 });
+
+describe('NextcloudClient.getSyncToken', () => {
+  beforeEach(() => mockRequestUrl.mockReset());
+
+  // Regression: a `<d:sync-token>`-only regex returned null when the server used another XML
+  // namespace prefix, which stranded sync in permanent full-scan mode (deletions never propagated).
+  it.each([
+    ['d:', '<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:sync-token>http://nc/ns/sync/42</d:sync-token></d:multistatus>'],
+    ['D:', '<?xml version="1.0"?><D:multistatus xmlns:D="DAV:"><D:sync-token>http://nc/ns/sync/42</D:sync-token></D:multistatus>'],
+    ['none', '<?xml version="1.0"?><multistatus xmlns="DAV:"><sync-token>http://nc/ns/sync/42</sync-token></multistatus>'],
+    ['nc:', '<?xml version="1.0"?><nc:multistatus xmlns:nc="DAV:"><nc:sync-token> http://nc/ns/sync/42 </nc:sync-token></nc:multistatus>'],
+  ])('extracts the sync-token regardless of namespace prefix (%s)', async (_label, body) => {
+    mockRequestUrl.mockResolvedValue({ status: 207, text: body, json: {}, arrayBuffer: new ArrayBuffer(0), headers: {} });
+    const token = await new NextcloudClient(settings, 'pw', 'Vault').getSyncToken();
+    expect(token).toBe('http://nc/ns/sync/42');
+  });
+
+  it('returns null when no token is present', async () => {
+    mockRequestUrl.mockResolvedValue({ status: 207, text: '<d:multistatus xmlns:d="DAV:"></d:multistatus>', json: {}, arrayBuffer: new ArrayBuffer(0), headers: {} });
+    expect(await new NextcloudClient(settings, 'pw', 'Vault').getSyncToken()).toBeNull();
+  });
+
+  it('returns null on a non-207 response', async () => {
+    mockRequestUrl.mockResolvedValue({ status: 500, text: '', json: {}, arrayBuffer: new ArrayBuffer(0), headers: {} });
+    expect(await new NextcloudClient(settings, 'pw', 'Vault').getSyncToken()).toBeNull();
+  });
+});

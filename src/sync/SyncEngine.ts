@@ -453,6 +453,9 @@ export class SyncEngine {
   private async incrementalSync(summary: SyncSessionSummary): Promise<void> {
     const client = this.client!;
     let remoteFiles: RemoteFileInfo[];
+    // True when remoteFiles is the COMPLETE remote listing (so absence implies a remote deletion).
+    // False in the token path, where remoteFiles is only the partial set of changed files.
+    let isFullScan = false;
 
     const existingToken = this.opts.stateDB.getSyncToken();
     if (existingToken) {
@@ -478,18 +481,20 @@ export class SyncEngine {
         if (err instanceof SyncTokenExpiredError) {
           // Fallback to full scan
           remoteFiles = await client.getFiles('');
+          isFullScan = true;
           const token = await client.getSyncToken();
           this.opts.stateDB.setSyncToken(token);
-          void this.opts.logger?.log(`sync: sync-token expired → FULL SCAN (remote=${remoteFiles.length}). NOTE: remote deletions are detected only via the token, NOT by absence in a full scan`);
+          void this.opts.logger?.log(`sync: sync-token expired → FULL SCAN (remote=${remoteFiles.length}, nextToken=${token ? 'obtained' : 'NULL'}). Remote deletions detected by absence (full-scan reconciliation)`);
         } else {
           throw err;
         }
       }
     } else {
       remoteFiles = await client.getFiles('');
+      isFullScan = true;
       const token = await client.getSyncToken();
       this.opts.stateDB.setSyncToken(token);
-      void this.opts.logger?.log(`sync: FULL SCAN, no prior token (remote=${remoteFiles.length}). NOTE: remote deletions are detected only via the token, NOT by absence in a full scan`);
+      void this.opts.logger?.log(`sync: FULL SCAN, no prior token (remote=${remoteFiles.length}, nextToken=${token ? 'obtained' : 'NULL'}). Remote deletions detected by absence (full-scan reconciliation)`);
     }
 
     // Retry queue files
@@ -506,7 +511,7 @@ export class SyncEngine {
     }
 
     // Process local modifications (files in stateDB not covered by remote changes)
-    await this.processLocalModifications(remoteFiles, summary);
+    await this.processLocalModifications(remoteFiles, summary, isFullScan);
   }
 
   private async processFileWithRetry(remote: RemoteFileInfo, summary: SyncSessionSummary): Promise<void> {
@@ -545,6 +550,13 @@ export class SyncEngine {
       localChanged = false; // new from remote
     }
 
+    // Previously synced (base exists) but now gone locally → this device deleted it. Propagate the
+    // deletion instead of re-downloading it (which resurrects the file) or stranding it on the server.
+    if (!localStat && base) {
+      await this.applyLocalDeletion(remote, base, remoteId, idType, summary);
+      return;
+    }
+
     if (!remoteChanged && !localChanged) return; // Unchanged
 
     if (localChanged && !remoteChanged) {
@@ -554,6 +566,39 @@ export class SyncEngine {
     } else {
       // Both changed: Conflicted
       await this.handleConflict(remote.path, base, remote, remoteId, idType, summary);
+    }
+  }
+
+  /**
+   * A previously-synced file is gone locally → propagate the local deletion to the server, unless
+   * the server copy diverged from what we last synced (then restore it so a remote edit is not lost).
+   * The decision uses the server-side checksum (recalc, no download) for reliability; deletions go
+   * to the Nextcloud trashbin (recoverable).
+   */
+  private async applyLocalDeletion(
+    remote: RemoteFileInfo, base: FileState, remoteId: string, idType: FileState['idType'],
+    summary: SyncSessionSummary,
+  ): Promise<void> {
+    let serverHash = remote.checksum ?? null;
+    if (!serverHash) {
+      try { serverHash = await this.client!.recalcChecksum(remote.path); } catch { serverHash = null; }
+    }
+    // Server content unchanged since our last sync → this is a genuine local deletion.
+    // Fall back to the recorded remote id when the server cannot compute a checksum.
+    const remoteMatchesBase = serverHash ? serverHash === base.localHash : base.remoteId === remoteId;
+    if (remoteMatchesBase) {
+      void this.opts.logger?.log(`delete-remote: local deletion of previously-synced file → ${remote.path}`);
+      try {
+        await this.client!.deleteFile(remote.path, base.remoteId);
+        summary.deletedCount++;
+      } catch (err) {
+        if (!(err instanceof NetworkError && err.status === 404)) throw err;
+      }
+      this.opts.stateDB.deleteFile(remote.path);
+    } else {
+      // Deleted locally but the server copy changed after our base → restore it (never drop a remote edit).
+      void this.opts.logger?.log(`conflict(local-delete vs remote-edit): restoring remote → ${remote.path}`);
+      await this.downloadFile(remote, remoteId, idType, summary);
     }
   }
 
@@ -760,7 +805,9 @@ export class SyncEngine {
     this.opts.stateDB.deleteFile(path);
   }
 
-  private async processLocalModifications(remoteFiles: RemoteFileInfo[], summary: SyncSessionSummary): Promise<void> {
+  private async processLocalModifications(
+    remoteFiles: RemoteFileInfo[], summary: SyncSessionSummary, isFullScan = false,
+  ): Promise<void> {
     const remotePathSet = new Set(remoteFiles.map(f => f.path));
 
     // Scan local files in scope for sync (both new and modified).
@@ -783,10 +830,7 @@ export class SyncEngine {
       // For new files, use the local hash as remoteId (= the server checksum after upload).
       const remoteId = base?.remoteId ?? localHash;
       const idType: FileState['idType'] = base?.idType ?? 'sha256';
-      // A previously-synced file (base known) being re-uploaded here is the classic "resurrection"
-      // signature: it was deleted on another device but this device still has it locally and pushes
-      // it back to the server. Logged distinctly so the captured log makes the cause obvious.
-      void this.opts.logger?.log(`upload: ${path} (${base ? 're-upload of previously-synced file (resurrection candidate)' : 'new local file'})`);
+      void this.opts.logger?.log(`upload: ${path} (${base ? 'modified, re-upload' : 'new local file'})`);
       await this.uploadFile(
         path, localHash, remoteId, idType,
         { path, fileId: base?.remoteFileId ?? null, checksum: null, etag: null, size: st.size, lastModified: st.mtime },
@@ -839,6 +883,25 @@ export class SyncEngine {
         }
       }
       this.opts.stateDB.deleteFile(path);
+    }
+
+    // Full-scan only: detect REMOTE deletions by absence. A previously-synced file that is still
+    // present locally but missing from the COMPLETE remote listing was deleted on the server →
+    // remove it locally (via the user's "Deleted files" setting; recoverable). Guarded against an
+    // empty/failed listing so a transient error cannot trigger a mass local delete.
+    if (isFullScan && remotePathSet.size > 0) {
+      for (const fileState of this.opts.stateDB.getAllFiles()) {
+        const path = fileState.path;
+        if (this.isSystemExcluded(path) || remotePathSet.has(path)) continue;
+        const st = localStats.get(path);
+        if (!st) continue; // absent locally too — handled by the missing-paths loop above
+        // Only act when the local copy is unchanged since our last sync. A file edited locally
+        // after a remote delete is preserved (and re-uploaded above), so no local edit is lost.
+        if (st.mtime <= fileState.mtime) {
+          void this.opts.logger?.log(`delete-local: remote deletion detected by absence (full scan) → ${path}`);
+          await this.processRemoteDeletion(path, summary);
+        }
+      }
     }
   }
 
