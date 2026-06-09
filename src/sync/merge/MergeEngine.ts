@@ -26,53 +26,59 @@ export class MergeEngine {
    * Returns success=false if frontmatter conflicts or circuit breakers trigger.
    */
   merge(base: string, local: string, remote: string): MergeResult {
-    // 1. Separate frontmatter
+    // 1. Separate frontmatter from body on all three sides.
     const { frontmatter: localFm, body: localBody } = this.splitFrontmatter(local);
     const { frontmatter: remoteFm, body: remoteBody } = this.splitFrontmatter(remote);
-    const { body: baseBody } = this.splitFrontmatter(base);
+    const { frontmatter: baseFm, body: baseBody } = this.splitFrontmatter(base);
 
-    // 2. If frontmatter differs, apply the configured strategy.
-    if (localFm !== remoteFm) {
-      const strategy = this.opts.frontmatterConflictStrategy ?? 'conflict';
-      if (strategy === 'conflict') {
-        return { success: false, mergedContent: local, hadConflicts: true, conflictRegions: -1 };
+    // 2. Resolve the frontmatter.
+    let mergedFm: string;
+    if (localFm === remoteFm) {
+      mergedFm = localFm; // identical on both sides
+    } else {
+      // Merge the frontmatter line-by-line with diff3 (NOT reconcile-text, which would silently
+      // concatenate and could duplicate YAML keys). Accept it only when it merges cleanly (no
+      // conflicting regions — i.e. the two sides changed different lines); otherwise fall back
+      // to the configured strategy.
+      const fmResult = this.fallbackStrategy.merge(baseFm, localFm, remoteFm);
+      if (fmResult.success && fmResult.conflictRegions === 0) {
+        mergedFm = fmResult.mergedContent;
+      } else {
+        const strategy = this.opts.frontmatterConflictStrategy ?? 'conflict';
+        if (strategy === 'conflict') {
+          // Cannot reconcile frontmatter → mark the whole file (caller embeds conflict markers).
+          return { success: false, mergedContent: local, hadConflicts: true, conflictRegions: -1 };
+        }
+        mergedFm = strategy === 'local-wins' ? localFm : remoteFm;
       }
-      // local-wins / remote-wins: pick frontmatter from the chosen side, then merge bodies.
-      const chosenFm = strategy === 'local-wins' ? localFm : remoteFm;
-      let result = this.primaryStrategy.merge(baseBody, localBody, remoteBody);
-      if (!result.success || result.conflictRegions < 0) {
-        result = this.fallbackStrategy.merge(baseBody, localBody, remoteBody);
-      }
-      if (result.conflictRegions > this.opts.maxConflictRegions) {
-        return { success: false, mergedContent: local, hadConflicts: true, conflictRegions: result.conflictRegions };
-      }
-      const mergedBody = typeof result.mergedContent === 'string' ? result.mergedContent : (result.mergedContent as unknown as { text: string })?.text ?? '';
-      const merged = chosenFm ? `${chosenFm}\n${mergedBody}` : mergedBody;
-      return { ...result, mergedContent: merged };
     }
 
-    // 3. Try reconcile-text first
-    let result = this.primaryStrategy.merge(baseBody, localBody, remoteBody);
+    // 3. Merge the body (reconcile-text → diff3 fallback).
+    const result = this.mergeText(baseBody, localBody, remoteBody);
 
-    // 4. If reconcile-text failed, fall back to diff3
-    if (!result.success || result.conflictRegions < 0) {
-      result = this.fallbackStrategy.merge(baseBody, localBody, remoteBody);
-    }
-
-    // 5. Circuit breaker: too many conflict regions
+    // 4. Circuit breaker: too many conflict regions in the body.
     if (result.conflictRegions > this.opts.maxConflictRegions) {
       return { success: false, mergedContent: local, hadConflicts: true, conflictRegions: result.conflictRegions };
     }
 
-    // 6. Circuit breaker: content loss detection (< 50% of longer original)
+    // 5. Circuit breaker: content loss detection (< 50% of the longer original body).
     const maxOriginal = Math.max(localBody.length, remoteBody.length);
     if (maxOriginal > 0 && result.mergedContent.length < maxOriginal * 0.5) {
       return { success: false, mergedContent: local, hadConflicts: true, conflictRegions: result.conflictRegions };
     }
 
-    // 7. Re-attach frontmatter (use local's frontmatter since they're identical)
-    const merged = localFm ? `${localFm}\n${result.mergedContent}` : result.mergedContent;
+    // 6. Re-attach the resolved frontmatter.
+    const merged = mergedFm ? `${mergedFm}\n${result.mergedContent}` : result.mergedContent;
     return { ...result, mergedContent: merged };
+  }
+
+  /** Merge with the primary strategy, falling back to diff3 when it cannot produce a result. */
+  private mergeText(base: string, local: string, remote: string): MergeResult {
+    let result = this.primaryStrategy.merge(base, local, remote);
+    if (!result.success || result.conflictRegions < 0) {
+      result = this.fallbackStrategy.merge(base, local, remote);
+    }
+    return result;
   }
 
   private splitFrontmatter(content: string): { frontmatter: string; body: string } {

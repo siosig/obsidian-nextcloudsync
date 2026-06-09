@@ -9,11 +9,18 @@ export interface DryRunPlan {
   unchanged: string[];
 }
 
+export interface DryRunModalOptions {
+  /** One-line explanation of what conflict resolution will produce (derived from settings). */
+  conflictNote?: string;
+  /** Called when a conflicted file row is selected, to open a read-only merge preview. */
+  onSelectConflict?: (path: string) => void;
+}
+
 export class DryRunModal extends Modal {
   private approved = false;
   private resolve!: (approved: boolean) => void;
 
-  constructor(app: App, private readonly plan: DryRunPlan) {
+  constructor(app: App, private readonly plan: DryRunPlan, private readonly options: DryRunModalOptions = {}) {
     super(app);
   }
 
@@ -36,8 +43,19 @@ export class DryRunModal extends Modal {
 
     if (plan.conflicts.length > 0) {
       contentEl.createEl('h3', { text: 'Conflicts' });
+      if (this.options.conflictNote) {
+        contentEl.createEl('p', { text: this.options.conflictNote, cls: 'ncs-dryrun-note' });
+      }
+      const onSelect = this.options.onSelectConflict;
       const ul = contentEl.createEl('ul');
-      plan.conflicts.slice(0, 20).forEach(p => ul.createEl('li', { text: p }));
+      plan.conflicts.slice(0, 20).forEach(p => {
+        const li = ul.createEl('li', { text: p });
+        if (onSelect) {
+          li.addClass('ncs-dryrun-conflict');
+          li.setAttribute('title', 'Preview the merged result');
+          li.addEventListener('click', () => onSelect(p));
+        }
+      });
       if (plan.conflicts.length > 20) ul.createEl('li', { text: `…and ${plan.conflicts.length - 20} more` });
     }
 
