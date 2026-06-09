@@ -8,6 +8,16 @@ Most "WebDAV sync" plugins treat the server as a dumb file store: they compare m
 
 ---
 
+## What's new in this release (0.2.0)
+
+- **Mobile (iOS / Android) support** — the plugin now runs on mobile, with platform-aware behavior so desktop is unchanged (details in the Mobile section below).
+- **Clickable status bar → sync-status dialog** — click the status bar item to open a dialog summarizing the current sync state, the last sync, and any unresolved conflicts.
+- **"Sync now" promoted to the top of settings** and gated on authentication, so you can trigger a sync the moment you're signed in.
+- **Platform-aware default settings** — defaults are tuned per platform (e.g. network concurrency, sync-on-startup, maximum file size).
+- **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
+
+---
+
 ## Why Nextcloud-specific? (vs. generic WebDAV)
 
 | Concern | Generic WebDAV plugin | **Nextcloud Sync** |
@@ -45,7 +55,7 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 ### Conflict safety (never lose content)
 - **Content is never discarded** on conflict.
 - **Inline conflict markers** (Git-style `<<<<<<< LOCAL` / `=======` / `>>>>>>> REMOTE`) written directly into the file.
-- **Optional auto-merge** (`reconcile-text` / diff3) for edits in different regions — off by default; YAML frontmatter is never auto-merged.
+- **Auto-merge** (`reconcile-text` / diff3) for edits in different regions, including YAML frontmatter when the two sides changed non-overlapping lines; anything that can't be merged falls back to conflict markers (on by default).
 - **Conflict badge** in the status bar showing the count of unresolved conflicts (clears to normal at zero; pairs well with a `#conflict` tag search).
 
 ### Nextcloud power features
@@ -162,7 +172,7 @@ On connect, the plugin probes `/status.php` (maintenance mode) and `/ocs/v1.php/
 
 ## Limitations
 
-- Desktop (Electron) only; **mobile** and **end-to-end encryption (E2EE)** are out of scope for this version.
+- **End-to-end encryption (E2EE)** is out of scope for this version.
 - Designed primarily for Markdown / text Vaults; single files in the hundreds-of-MB range are beyond the v1 design target.
 - Keep the Vault on local storage — don't double-manage it with another cloud sync (e.g. iCloud Drive) at the same time.
 - Nextcloud-specific features require a compatible server version; older or non-Nextcloud servers transparently fall back to core WebDAV sync.

@@ -20,6 +20,7 @@ import { IStatusBar } from '../ui/StatusBarItem';
 import { WebDAVFactory } from '../network/WebDAVFactory';
 import { IWebDAVClient } from '../network/IWebDAVClient';
 import { DryRunModal, DryRunPlan } from '../ui/DryRunModal';
+import { DiffModal } from '../ui/DiffModal';
 import { RenameTracker } from './RenameTracker';
 import { ConflictResolver } from './ConflictResolver';
 import { sha256 } from '../util/hash';
@@ -335,6 +336,22 @@ export class SyncEngine {
 
   // ── Private ──────────────────────────────────────────────────────────────
 
+  /**
+   * One-line, settings-aware description of what a conflict resolution will produce.
+   * Shown in the dry-run preview so the user knows the outcome before approving.
+   */
+  private describeConflictOutcome(): string {
+    const s = this.opts.settings;
+    if (s.autoMergeEnabled) {
+      return 'Each conflicting file is auto-merged where the two sides changed different parts '
+        + '(frontmatter included). Anything that cannot be merged is kept as BOTH versions with '
+        + '<<<<<<< / >>>>>>> markers and a #conflict tag — nothing is discarded. '
+        + 'Select a file to preview the exact merged result.';
+    }
+    return 'Both versions are kept in the file with <<<<<<< / >>>>>>> conflict markers and a '
+      + '#conflict tag — nothing is overwritten. Select a file to preview the exact result.';
+  }
+
   private initSummary(): SyncSessionSummary {
     return {
       startedAt: Date.now(), completedAt: null,
@@ -355,7 +372,20 @@ export class SyncEngine {
 
     const plan = this.buildInitialPlan(localFiles, remoteFiles);
 
-    const modal = new DryRunModal(this.opts.app, plan);
+    const modal = new DryRunModal(this.opts.app, plan, {
+      conflictNote: this.describeConflictOutcome(),
+      onSelectConflict: (path) => {
+        // Read-only preview of the exact content the resolution will write for this file.
+        void (async () => {
+          try {
+            const preview = await this.previewMerge(path);
+            new DiffModal(this.opts.app, preview).open();
+          } catch (err) {
+            new Notice(`❌ Merge preview failed: ${(err as Error).message}`, 6000);
+          }
+        })();
+      },
+    });
     const approved = await modal.waitForDecision();
     if (!approved) {
       new Notice('Sync cancelled.');
