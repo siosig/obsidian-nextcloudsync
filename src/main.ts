@@ -212,7 +212,7 @@ export default class ObsidianNextcloudsync extends Plugin {
       ? new NullStatusBar()
       : new StatusBarItem(this.addStatusBarItem(), () => this.showSyncStatus());
     const password = loadAppPassword(this.app, this.settings.passwordSecretId);
-    const webdavFactory = new WebDAVFactory(this.app, this.settings, password);
+    const webdavFactory = new WebDAVFactory(this.app, this.settings, password, (m) => void this.logger.log(`net: ${m}`));
 
     this.syncEngine = new SyncEngine({
       app: this.app,
