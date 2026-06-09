@@ -3,6 +3,23 @@
    through `.is-*` modifier classes rather than inline styles. */
 
 /* ── Settings tab ───────────────────────────────────────────────────────── */
+.ncs-auth-warning {
+  border: 1px solid var(--text-error, #e93147);
+  border-left: 4px solid var(--text-error, #e93147);
+  background: rgba(233, 49, 71, 0.10);
+  color: var(--text-error, #e93147);
+  padding: 10px 12px;
+  margin: 4px 0 16px;
+  border-radius: 4px;
+  font-weight: 700;
+}
+
+.ncs-auth-warning div {
+  margin-top: 4px;
+  font-weight: 400;
+  color: var(--text-normal);
+}
+
 .ncs-setting-warning {
   border-left: 3px solid var(--text-warning, #d08770);
   background: var(--background-secondary);

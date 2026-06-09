@@ -39,7 +39,7 @@ export interface DavSyncSettings {
   syncOnWifiOnly: boolean;
   /** Include Obsidian bookmarks (.obsidian/bookmarks.json) in the sync. */
   syncBookmarks: boolean;
-  /** Debug mode: "Sync Now" shows a dry-run plan instead of executing the sync. */
+  /** Debug mode: write a diagnostic log to nextcloud-sync-debug.md (real syncing still runs). */
   debugMode: boolean;
   /** Enable chunked uploads (default ON; Nextcloud only). */
   chunkedUploadEnabled: boolean;
@@ -151,25 +151,6 @@ export interface SyncSessionSummary {
 }
 
 export type SyncStatus = 'idle' | 'syncing' | 'error' | 'conflict';
-
-/** Planned action for a single file in a dry-run (debug) sync preview. */
-export type SyncAction =
-  | 'upload'
-  | 'download'
-  | 'merge'
-  | 'conflict'
-  | 'unchanged'
-  | 'delete-local'
-  | 'delete-remote';
-
-/** One entry in the debug dry-run plan. */
-export interface SyncPlanEntry {
-  /** Vault-relative path. */
-  path: string;
-  action: SyncAction;
-  localExists: boolean;
-  remoteExists: boolean;
-}
 
 /** Debug merge preview for a single file: the two sides and the content a sync would write. */
 export interface MergePreview {
