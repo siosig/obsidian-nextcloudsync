@@ -27,6 +27,10 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     const configDir = this.app.vault.configDir;
     containerEl.empty();
 
+    // Prominent "not signed in" banner, pinned to the very top. Populated/cleared by
+    // refreshAuthWarning() below and kept in sync live as the credential fields change.
+    const authWarningEl = containerEl.createDiv();
+
     // Recommendation banner: shown when the last-connected server is below the recommended
     // Nextcloud version. This no longer blocks syncing — it only advises an upgrade.
     const serverVersion = this.plugin.settings.lastKnownServerVersion;
@@ -61,6 +65,17 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         && typeof pw === 'string' && pw.length > 0;
     };
     const refreshSyncNow = (): void => { syncNowButton?.setDisabled(!isReadyToSync()); };
+    const refreshAuthWarning = (): void => {
+      authWarningEl.empty();
+      if (isReadyToSync()) { authWarningEl.removeClass('ncs-auth-warning'); return; }
+      authWarningEl.addClass('ncs-auth-warning');
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- emphasis heading after the ⚠️ emoji; the rule mis-parses the emoji prefix
+      authWarningEl.createEl('strong', { text: '⚠️ Not signed in yet' });
+      authWarningEl.createEl('div', {
+        text: 'Enter the server URL below, then log in (or fill in a username and app password). Syncing stays disabled until you do.',
+      });
+    };
+    refreshAuthWarning();
 
     new Setting(containerEl)
       .setName('Sync now')
@@ -84,6 +99,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
           loginButton?.setDisabled(this.plugin.settings.serverUrl.length === 0);
           targetSetting?.setDesc(this.syncTargetUrl());
           refreshSyncNow();
+          refreshAuthWarning();
           await this.plugin.saveSettings();
         }));
 
@@ -95,6 +111,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         .onChange(async (value) => {
           this.plugin.settings.username = value.trim();
           refreshSyncNow();
+          refreshAuthWarning();
           await this.plugin.saveSettings();
         }));
 
@@ -107,6 +124,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
           // SecretComponent returns the secret's reference ID (the actual value stays in secretStorage).
           this.plugin.settings.passwordSecretId = secretId;
           refreshSyncNow();
+          refreshAuthWarning();
           await this.plugin.saveSettings();
         }));
 
@@ -250,12 +268,9 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Debug mode')
-      .setDesc(Platform.isMobile
-        ? 'Not available on mobile.'
-        : 'When enabled, "sync now" shows a dry-run plan (per-file local/remote paths and the action: upload, download, merge, etc.) instead of actually syncing.')
+      .setDesc('When enabled, a timestamped action log (with the plugin version) is appended to nextcloud-sync-debug.md at the vault root. Syncing runs normally — identical behavior on desktop and mobile. The log file is synced like any other note, so each device\'s actions are collected together (it may itself show as a conflict when two devices append at once). Turn this off and delete the file when finished.')
       .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.debugMode && !Platform.isMobile)
-        .setDisabled(Platform.isMobile)
+        .setValue(this.plugin.settings.debugMode)
         .onChange(async (value) => {
           this.plugin.settings.debugMode = value;
           await this.plugin.saveSettings();
@@ -377,19 +392,26 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
    * The password is stored in SecretStorage and never saved in plaintext in data.json (FR-002).
    */
   private async runLoginFlow(): Promise<void> {
+    void this.plugin.logger.log('login: "Log in via browser" clicked');
     const serverUrl = this.plugin.settings.serverUrl.trim();
     if (!serverUrl) {
+      void this.plugin.logger.log('login: aborted — server URL empty');
       new Notice('Please enter the server URL first.');
       return;
     }
     const serverBaseUrl = serverUrl.replace(/\/remote\.php.*$/, '').replace(/\/$/, '');
 
     try {
+      void this.plugin.logger.log('login: start() POST →');
       const init = await LoginFlowV2.start(serverBaseUrl);
-      window.open(init.loginUrl, '_blank');
+      void this.plugin.logger.log('login: start() ok (loginUrl received)');
+      const opened = window.open(init.loginUrl, '_blank');
+      void this.plugin.logger.log(`login: window.open → ${opened ? 'opened' : 'BLOCKED (returned null)'}`);
       new Notice('Waiting for browser approval… (up to 3 minutes)', 8000);
 
+      void this.plugin.logger.log('login: polling started');
       const result = await LoginFlowV2.poll(init);
+      void this.plugin.logger.log(`login: poll finished — status=${result.status}`);
       if (result.status === 'success') {
         this.plugin.settings.username = result.loginName;
         saveAppPassword(this.app, DEFAULT_PASSWORD_SECRET_ID, result.appPassword);
@@ -404,6 +426,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         new Notice('This server does not support login flow. Please enter an app password manually.', 8000);
       }
     } catch (err) {
+      void this.plugin.logger.log(`login: ERROR — ${(err as Error).message}`);
       if (err instanceof LoginFlowError && err.reason === 'unsupported') {
         new Notice('This server does not support login flow. Please enter an app password manually.', 8000);
       } else {

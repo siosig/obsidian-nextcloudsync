@@ -52,6 +52,8 @@ export class NextcloudClient implements IWebDAVClient {
     private readonly appPassword: string,
     /** Base folder for the remote sync target (usually the Vault name). Empty string means directly under the files root. */
     private readonly remoteBase: string = '',
+    /** Optional diagnostic sink (wired to the Debug-mode file log) for network-level troubleshooting. */
+    private readonly diag?: (msg: string) => void,
   ) {}
 
   private get baseUrl(): string {
@@ -228,17 +230,44 @@ export class NextcloudClient implements IWebDAVClient {
   }
 
   async getSyncToken(): Promise<string | null> {
-    // Fetch the sync-token from the same collection (the base folder) used by REPORT.
+    // sabre/dav (Nextcloud) returns an EMPTY self-closing <d:sync-token/> for a plain PROPFIND, which
+    // left sync stuck in permanent full-scan mode. Bootstrap the token the RFC 6578 way instead: a
+    // sync-collection REPORT with an EMPTY token ("initial sync") whose multistatus always carries the
+    // current, populated <d:sync-token>. We read only the token here; the member list is ignored.
     const res = await requestUrl({
       url: this.remoteUrl(''),
-      method: 'PROPFIND',
-      headers: { Authorization: this.authHeader, Depth: '0', 'Content-Type': 'application/xml; charset=utf-8' },
-      body: `<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:sync-token/></d:prop></d:propfind>`,
+      method: 'REPORT',
+      headers: { Authorization: this.authHeader, 'Content-Type': 'application/xml; charset=utf-8' },
+      body: REPORT_BODY(''),
       throw: false,
     });
-    if (res.status !== 207) return null;
-    const match = res.text.match(/<d:sync-token>([^<]+)<\/d:sync-token>/);
-    return match ? match[1] : null;
+    // Match regardless of the XML namespace prefix; require a non-empty value (skip <…sync-token/>).
+    const match = res.status === 207 ? res.text.match(/<(?:\w+:)?sync-token>([^<]+)<\/(?:\w+:)?sync-token>/) : null;
+    const token = match ? match[1].trim() : '';
+    if (token.length === 0) {
+      // Diagnose: log the status and a short, sanitised body snippet so a captured debug log reveals
+      // the actual server response if a token still cannot be obtained.
+      const snippet = (res.text ?? '').replace(/\s+/g, ' ').slice(0, 400);
+      this.diag?.(`getSyncToken(REPORT): NO TOKEN (status=${res.status}) body[0:400]=${snippet}`);
+      return null;
+    }
+    return token;
+  }
+
+  async remoteExists(remotePath: string): Promise<boolean> {
+    // Targeted existence probe (PROPFIND Depth 0). Only a definitive 404 means "gone"; any other
+    // status (incl. transient errors) is treated as "present" so callers never delete on ambiguity.
+    try {
+      const res = await requestUrl({
+        url: this.remoteUrl(remotePath),
+        method: 'PROPFIND',
+        headers: { Authorization: this.authHeader, Depth: '0' },
+        throw: false,
+      });
+      return res.status !== 404;
+    } catch {
+      return true; // conservative: never report "gone" on a failed check
+    }
   }
 
   // ── US2: Version history ────────────────────────────────────────────────────
