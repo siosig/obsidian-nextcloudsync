@@ -269,12 +269,23 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Debug mode')
       .setDesc(Platform.isMobile
-        ? 'Writes a diagnostic log to nextcloud-sync-debug.md (vault root) recording each action with its time and the plugin version. Real syncing is unchanged on mobile (the desktop dry-run preview does not apply).'
-        : 'When enabled, "sync now" shows a dry-run plan (per-file local/remote paths and the action: upload, download, merge, etc.) instead of actually syncing, and writes a diagnostic log to nextcloud-sync-debug.md (vault root).')
+        ? 'Not available on mobile.'
+        : 'When enabled, "sync now" shows a dry-run plan (per-file local/remote paths and the action: upload, download, merge, etc.) instead of actually syncing. Does not affect logging.')
       .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.debugMode)
+        .setValue(this.plugin.settings.debugMode && !Platform.isMobile)
+        .setDisabled(Platform.isMobile)
         .onChange(async (value) => {
           this.plugin.settings.debugMode = value;
+          await this.plugin.saveSettings();
+        }));
+
+    new Setting(containerEl)
+      .setName('Diagnostic logging')
+      .setDesc('Append a timestamped action log (with the plugin version) to nextcloud-sync-debug.md at the vault root. Works on desktop and mobile and does NOT change syncing. The log file is synced like any other note, so each device\'s actions are collected together (it may itself show as a conflict when two devices append at once). Turn this off and delete the file when finished.')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.diagnosticLogEnabled)
+        .onChange(async (value) => {
+          this.plugin.settings.diagnosticLogEnabled = value;
           await this.plugin.saveSettings();
         }));
 
