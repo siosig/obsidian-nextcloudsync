@@ -1,4 +1,4 @@
-import { App, Plugin, Notice, TFile, TAbstractFile, debounce } from 'obsidian';
+import { App, Plugin, Notice, Platform, TFile, TAbstractFile, debounce } from 'obsidian';
 import { DavSyncSettings, DEFAULT_SETTINGS, FeatureUnsupportedError } from './types';
 import { NextcloudSyncSettingTab } from './settings/SettingTab';
 import { SyncEngine } from './sync/SyncEngine';
@@ -12,6 +12,11 @@ const MIN_OBSIDIAN_VERSION = '1.12.7';
 export default class ObsidianNextcloudsync extends Plugin {
   settings!: DavSyncSettings;
   syncEngine?: SyncEngine;
+
+  /** Debug/dry-run is desktop-only; on mobile it is always off regardless of the saved value. */
+  private get debugEnabled(): boolean {
+    return this.settings.debugMode && !Platform.isMobile;
+  }
 
   async onload(): Promise<void> {
     // Obsidian version check
@@ -61,8 +66,9 @@ export default class ObsidianNextcloudsync extends Plugin {
 
     // Watch mode: react to individual file events with lightweight single-file operations.
     // Full vault sync is reserved for manual Sync Now and the periodic interval.
+    // Watch mode is disabled on mobile (OS suspends background work) and in debug mode.
     const guard = (file: TAbstractFile): file is TFile =>
-      this.settings.watchOnChangeEnabled && !this.settings.debugMode && file instanceof TFile;
+      this.settings.watchOnChangeEnabled && !this.debugEnabled && !Platform.isMobile && file instanceof TFile;
 
     // Accumulate paths changed during rapid editing and flush them together after the
     // debounce window so each keystroke does not trigger a separate network request.
@@ -106,7 +112,7 @@ export default class ObsidianNextcloudsync extends Plugin {
       new Notice('Configure the server settings first.');
       return;
     }
-    if (this.settings.debugMode) {
+    if (this.debugEnabled) {
       try {
         const engine = this.syncEngine;
         const entries = await engine.previewSync();
@@ -155,7 +161,20 @@ export default class ObsidianNextcloudsync extends Plugin {
   }
 
   async loadSettings(): Promise<void> {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<DavSyncSettings>);
+    const saved = (await this.loadData() ?? {}) as Partial<DavSyncSettings>;
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
+
+    // Platform-dependent defaults: applied only on first run (key absent from saved data),
+    // so existing users keep their values (backward compatible).
+    if (saved.syncOnStartupEnabled === undefined) {
+      this.settings.syncOnStartupEnabled = !Platform.isMobile; // desktop ON / mobile OFF
+    }
+    if (saved.networkConcurrency === undefined) {
+      this.settings.networkConcurrency = Platform.isMobile ? 2 : 8;
+    }
+    if (saved.maxFileSizeMB === undefined && Platform.isMobile) {
+      this.settings.maxFileSizeMB = 20; // mobile-safe default; protects against OOM
+    }
   }
 
   async saveSettings(): Promise<void> {
@@ -166,6 +185,7 @@ export default class ObsidianNextcloudsync extends Plugin {
     const { LocalAdapter } = await import('./data/LocalAdapter');
     const { StateDB } = await import('./data/StateDB');
     const { StatusBarItem } = await import('./ui/StatusBarItem');
+    const { NullStatusBar } = await import('./ui/NullStatusBar');
     const { WebDAVFactory } = await import('./network/WebDAVFactory');
     const { loadAppPassword } = await import('./settings/SettingTab');
 
@@ -174,7 +194,11 @@ export default class ObsidianNextcloudsync extends Plugin {
     const stateDB = new StateDB(this.app.vault.adapter, pluginDir, this.settings.deviceId);
     await stateDB.load();
 
-    const statusBar = new StatusBarItem(this.addStatusBarItem());
+    // Mobile has no visible status bar and the spec requires no progress display:
+    // inject a no-op status bar so the sync engine needs no platform branching.
+    const statusBar = Platform.isMobile
+      ? new NullStatusBar()
+      : new StatusBarItem(this.addStatusBarItem());
     const password = loadAppPassword(this.app, this.settings.passwordSecretId);
     const webdavFactory = new WebDAVFactory(this.app, this.settings, password);
 
@@ -197,14 +221,16 @@ export default class ObsidianNextcloudsync extends Plugin {
       },
     });
 
-    if (this.settings.syncIntervalMinutes > 0) {
+    // Periodic auto-sync is desktop-only (mobile OS suspends background timers).
+    if (!Platform.isMobile && this.settings.syncIntervalMinutes > 0) {
       this.syncEngine.startAutoSync(this.settings.syncIntervalMinutes);
     }
 
-    // Fire an initial sync 1 second after startup so the vault is up-to-date immediately.
+    // Startup sync: configurable on both platforms. Default ON (desktop) / OFF (mobile).
     // Skipped in debug mode to avoid accidental data changes during development.
-    if (!this.settings.debugMode) {
-      window.setTimeout(() => { void this.syncEngine?.syncManual(); }, 1000);
+    if (this.settings.syncOnStartupEnabled && !this.debugEnabled) {
+      const delayMs = Math.max(0, this.settings.startupSyncDelaySeconds) * 1000;
+      window.setTimeout(() => { void this.syncEngine?.syncManual(); }, delayMs);
     }
   }
 

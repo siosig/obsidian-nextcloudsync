@@ -56,9 +56,21 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 
 ---
 
+## Mobile (iOS / Android)
+
+Mobile is supported, with a few platform-aware differences (desktop behaviour is unchanged):
+
+- **Automatic sync is off by default on mobile.** The OS suspends background timers, so periodic auto-sync and "sync on file change" are disabled (greyed out). Use **Sync now**, or enable **Sync on startup** (off by default on mobile) to sync once a few seconds after the app opens.
+- **Sync on startup** is a new setting on both platforms (desktop: on, 5 s; mobile: off).
+- **Large files are skipped on mobile** above the "Maximum file size" limit (set `0` for unlimited) to avoid out-of-memory crashes; skips are reported.
+- **No progress UI on mobile** — only error notices are shown.
+- **Network concurrency** is configurable (desktop default 8, mobile default 2).
+- **Sync on Wi-Fi only** skips on cellular (Android/desktop). **Not available on iOS** (no network-type API), where the toggle is disabled.
+- Debug mode is disabled on mobile.
+
 ## Requirements
 
-- **Obsidian** `1.12.7` or later (desktop / Electron). Mobile is out of scope for now.
+- **Obsidian** `1.12.7` or later. Desktop (Electron) and mobile (iOS / Android) are supported.
 - **Nextcloud** Hub 26 "Winter" (server `33`) or later is **recommended** for the Nextcloud-specific features. Older Nextcloud servers are no longer blocked — they still connect and sync, but the settings screen shows a recommendation banner and some features may degrade. Plain WebDAV servers fall back to core sync.
 - A Nextcloud account. You can authenticate with **Login Flow v2** (recommended) or a manually issued **app password** (never your main password).
 
