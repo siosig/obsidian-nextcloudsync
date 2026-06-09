@@ -14,6 +14,8 @@ Most "WebDAV sync" plugins treat the server as a dumb file store: they compare m
 - **Clickable status bar → sync-status dialog** — click the status bar item to open a dialog summarizing the current sync state, the last sync, and any unresolved conflicts.
 - **"Sync now" promoted to the top of settings** and gated on authentication, so you can trigger a sync the moment you're signed in.
 - **Platform-aware default settings** — defaults are tuned per platform (e.g. network concurrency, sync-on-startup, maximum file size).
+- **YAML frontmatter is now auto-merged** — non-overlapping frontmatter edits merge cleanly (via diff3), falling back to conflict markers only when both sides change the same lines.
+- **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
 ---
@@ -41,7 +43,7 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 ### Core sync
 - **Bidirectional sync** between Obsidian and Nextcloud.
 - **Hash-based differential sync** — only changed files are transferred (no full rescans), so a 1,000-file Vault settles in seconds.
-- **Dry-run preview** — see exactly what will upload / download *before* the first sync runs, and approve it.
+- **Dry-run preview** — see exactly what will upload / download *before* the first sync runs, and approve it. Conflicted files explain how they'll be resolved, and clicking one opens a read-only before/after preview of the merged result.
 - **Atomic writes** — a download interrupted mid-transfer never leaves a half-written or 0-byte file in your Vault.
 - **Rename / move tracking** via Nextcloud file IDs — moving a note doesn't re-upload it everywhere.
 - **Trashbin deletes** — remote deletions use the Nextcloud trashbin (recoverable). When a deletion is applied to your local Vault, it follows **your Obsidian "Deleted files" setting** (system trash / move to `.trash` / permanently delete) rather than forcing one behavior; folders and files outside the Vault's tracked notes (e.g. config-folder files) are handled too.
