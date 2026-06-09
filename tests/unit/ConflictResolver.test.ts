@@ -30,7 +30,9 @@ function makeSettings(autoMerge = false) {
   return {
     serverUrl: '', username: '', passwordSecretId: '', syncIntervalMinutes: 0,
     networkTimeoutSeconds: 30, deviceId: 'test-dev-abcd', uploadChunkThresholdMB: 50,
-    maxFileSizeMB: 1024, watchOnChangeEnabled: false, syncBookmarks: false, debugMode: false, chunkedUploadEnabled: true, fileLockingEnabled: false,
+    maxFileSizeMB: 1024, watchOnChangeEnabled: false,
+    syncOnStartupEnabled: true, startupSyncDelaySeconds: 5, networkConcurrency: 8, syncOnWifiOnly: false,
+    syncBookmarks: false, debugMode: false, chunkedUploadEnabled: true, fileLockingEnabled: false,
     autoMergeEnabled: autoMerge, maxConflictRegions: 3,
     frontmatterConflictStrategy: 'conflict' as const,
   };

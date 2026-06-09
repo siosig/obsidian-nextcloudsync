@@ -64,7 +64,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Tags containing a hyphen (e.g. 0.2.0-beta.1) are published as pre-releases
+          # so BRAT beta testers can opt in without affecting the stable community listing.
+          PRERELEASE=""
+          case "${GITHUB_REF_NAME}" in *-*) PRERELEASE="--prerelease" ;; esac
           gh release create "${GITHUB_REF_NAME}" \
             --title "${GITHUB_REF_NAME}" \
             --generate-notes \
+            $PRERELEASE \
             ${{ steps.assets.outputs.files }}

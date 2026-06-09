@@ -1,4 +1,4 @@
-import { App, PluginSettingTab, Setting, Notice, SecretComponent, ButtonComponent } from 'obsidian';
+import { App, Platform, PluginSettingTab, Setting, Notice, SecretComponent, ButtonComponent } from 'obsidian';
 import type ObsidianNextcloudsync from '../main';
 import { LoginFlowError } from '../types';
 import { LoginFlowV2 } from '../auth/LoginFlowV2';
@@ -108,9 +108,33 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
       .setDesc(this.syncTargetUrl());
     targetSetting.descEl.addClass('ncs-break-all');
 
+    // Startup sync (both platforms). Default ON desktop / OFF mobile (resolved at first run).
+    new Setting(containerEl)
+      .setName('Sync on startup')
+      .setDesc('Run one sync shortly after Obsidian starts. On mobile this is off by default.')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.syncOnStartupEnabled)
+        .onChange(async (value) => {
+          this.plugin.settings.syncOnStartupEnabled = value;
+          await this.plugin.saveSettings();
+        }));
+
     this.addNumberSlider(containerEl, {
-      name: 'Sync interval (minutes)', desc: '0 = manual sync only',
+      name: 'Startup sync delay (seconds)',
+      desc: 'Wait this many seconds after startup before the startup sync.',
       min: 0, max: 60, step: 1,
+      get: () => this.plugin.settings.startupSyncDelaySeconds,
+      set: (v) => { this.plugin.settings.startupSyncDelaySeconds = v; },
+    });
+
+    // Periodic auto-sync is disabled on mobile (OS suspends background timers).
+    this.addNumberSlider(containerEl, {
+      name: 'Sync interval (minutes)',
+      desc: Platform.isMobile
+        ? 'Disabled on mobile (the OS suspends background timers). Use "Sync on startup" or "Sync now".'
+        : '0 = manual sync only',
+      min: 0, max: 60, step: 1,
+      disabled: Platform.isMobile,
       get: () => this.plugin.settings.syncIntervalMinutes,
       set: (v) => { this.plugin.settings.syncIntervalMinutes = v; },
     });
@@ -122,11 +146,37 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
       set: (v) => { this.plugin.settings.networkTimeoutSeconds = v; },
     });
 
+    this.addNumberSlider(containerEl, {
+      name: 'Network concurrency',
+      desc: 'Number of simultaneous WebDAV requests. Higher is faster but uses more memory/connections. Mobile defaults to a lower value.',
+      min: 1, max: 16, step: 1,
+      get: () => this.plugin.settings.networkConcurrency,
+      set: (v) => { this.plugin.settings.networkConcurrency = v; },
+    });
+
+    // Wi-Fi only. Network type is undetectable on iOS (no navigator.connection), so disable there.
+    new Setting(containerEl)
+      .setName('Sync on Wi-Fi only')
+      .setDesc(Platform.isIosApp
+        ? 'Not available on iOS (no network-type API). The app cannot tell Wi-Fi from cellular here.'
+        : 'Skip syncing while on a cellular connection (Wi-Fi and wired are allowed).')
+      .then(s => { if (Platform.isIosApp) s.setDisabled(true); })
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.syncOnWifiOnly && !Platform.isIosApp)
+        .setDisabled(Platform.isIosApp)
+        .onChange(async (value) => {
+          this.plugin.settings.syncOnWifiOnly = value;
+          await this.plugin.saveSettings();
+        }));
+
     new Setting(containerEl)
       .setName('Sync on file change')
-      .setDesc('Immediately sync when a local Markdown file is modified (a short delay after you stop editing). Works alongside the periodic sync interval.')
+      .setDesc(Platform.isMobile
+        ? 'Disabled on mobile (the OS suspends background work). Use "Sync on startup" or "Sync now".'
+        : 'Immediately sync when a local Markdown file is modified (a short delay after you stop editing). Works alongside the periodic sync interval.')
       .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.watchOnChangeEnabled)
+        .setValue(this.plugin.settings.watchOnChangeEnabled && !Platform.isMobile)
+        .setDisabled(Platform.isMobile)
         .onChange(async (value) => {
           this.plugin.settings.watchOnChangeEnabled = value;
           await this.plugin.saveSettings();
@@ -152,8 +202,8 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
 
     this.addNumberSlider(containerEl, {
       name: 'Maximum file size (MB)',
-      desc: 'Absolute limit. Files larger than this are skipped with a warning.',
-      min: 50, max: 4096, step: 50,
+      desc: 'Files larger than this are skipped with a warning. 0 = unlimited. On mobile a low limit avoids out-of-memory crashes.',
+      min: 0, max: 4096, step: 10,
       get: () => this.plugin.settings.maxFileSizeMB,
       set: (v) => { this.plugin.settings.maxFileSizeMB = v; },
     });
@@ -172,9 +222,12 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Debug mode')
-      .setDesc('When enabled, "sync now" shows a dry-run plan (per-file local/remote paths and the action: upload, download, merge, etc.) instead of actually syncing.')
+      .setDesc(Platform.isMobile
+        ? 'Not available on mobile.'
+        : 'When enabled, "sync now" shows a dry-run plan (per-file local/remote paths and the action: upload, download, merge, etc.) instead of actually syncing.')
       .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.debugMode)
+        .setValue(this.plugin.settings.debugMode && !Platform.isMobile)
+        .setDisabled(Platform.isMobile)
         .onChange(async (value) => {
           this.plugin.settings.debugMode = value;
           await this.plugin.saveSettings();
@@ -276,6 +329,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
       min: number;
       max: number;
       step: number;
+      disabled?: boolean;
       get: () => number;
       set: (value: number) => void;
     },
@@ -291,6 +345,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
       .setLimits(opts.min, opts.max, opts.step)
       .setValue(opts.get())
       .setDynamicTooltip()
+      .setDisabled(opts.disabled ?? false)
       .onChange(async (value) => {
         opts.set(value);
         valueLabel.setText(String(value));

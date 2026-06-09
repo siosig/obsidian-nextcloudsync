@@ -1,4 +1,4 @@
-import { DataAdapter, Notice } from 'obsidian';
+import { DataAdapter, Notice, Platform } from 'obsidian';
 
 const TMP_SUFFIX = '.nextcloudsync.tmp';
 const IGNORE_TIMEOUT_MS = 5000;
@@ -89,6 +89,9 @@ export class LocalAdapter {
    * Desktop (Electron/Node.js): calls fs.utimes. Mobile or unavailable: silently skips.
    */
   async setMtime(path: string, mtime: number): Promise<void> {
+    // Node's fs is desktop-only (Electron). On mobile this is a no-op; change detection is
+    // hash-based, so a missing mtime does not affect sync correctness.
+    if (!Platform.isDesktopApp) return;
     try {
       const nodefs = (window as Window & { require?: (m: string) => { utimes: (p: string, a: number, m: number, cb: (e: Error | null) => void) => void } }).require?.('fs');
       const getFullPath = (this.adapter as unknown as { getFullPath?: (p: string) => string }).getFullPath?.bind(this.adapter);
