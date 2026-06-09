@@ -10,6 +10,12 @@ export interface IWebDAVClient {
   moveFile(oldPath: string, newPath: string): Promise<void>;
   deleteFile(path: string, expectedRemoteId: string): Promise<void>;
   getSyncToken(): Promise<string | null>;
+  /**
+   * Targeted existence check for a single remote path (PROPFIND Depth 0).
+   * Returns true if present, false only on a definitive 404. On any other/uncertain outcome it
+   * returns true (conservative) so callers never treat an ambiguous result as "deleted".
+   */
+  remoteExists(remotePath: string): Promise<boolean>;
   /** Returns the ArrayBuffer from the most recent downloadFile() call. */
   getLastDownloadBuffer(): ArrayBuffer;
 
