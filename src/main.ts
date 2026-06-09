@@ -157,16 +157,8 @@ export default class ObsidianNextcloudsync extends Plugin {
   /** Short, stable per-device label for diagnostic-log lines (platform + hostname, or deviceId). */
   private deviceLabel(): string {
     const platform = Platform.isIosApp ? 'ios' : Platform.isAndroidApp ? 'android' : 'desktop';
-    let host = '';
-    if (Platform.isDesktopApp) {
-      try {
-        // os is a desktop-only Node builtin; this branch never runs on mobile (Platform.isDesktopApp guard).
-        // eslint-disable-next-line @typescript-eslint/no-require-imports, no-undef, import/no-nodejs-modules
-        host = (require('os') as { hostname(): string }).hostname();
-      } catch { /* hostname unavailable */ }
-    }
     const id = (this.settings.deviceId ?? '').replace(/-/g, '').slice(0, 6);
-    return host ? `${platform}/${host}` : `${platform}/${id}`;
+    return `${platform}/${id}`;
   }
 
   onunload(): void {
