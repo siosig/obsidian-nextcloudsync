@@ -69,8 +69,8 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
       authWarningEl.empty();
       if (isReadyToSync()) { authWarningEl.removeClass('ncs-auth-warning'); return; }
       authWarningEl.addClass('ncs-auth-warning');
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- emphasis heading after the ⚠️ emoji; the rule mis-parses the emoji prefix
-      authWarningEl.createEl('strong', { text: '⚠️ Not signed in yet' });
+      authWarningEl.createSpan({ text: '⚠️ ' });
+      authWarningEl.createEl('strong', { text: 'Not signed in yet' });
       authWarningEl.createEl('div', {
         text: 'Enter the server URL below, then log in (or fill in a username and app password). Syncing stays disabled until you do.',
       });

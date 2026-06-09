@@ -119,8 +119,7 @@ export class SyncEngine {
     }
     if (this.isBlockedByWifiOnly()) { // "Wi-Fi only" enabled and on cellular
       void this.opts.logger?.log('sync: skipped — Wi-Fi-only and on cellular');
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- references the "Wi-Fi" proper noun; the rule mis-flags it as title case
-      if (announce) new Notice('⏸️ Sync skipped — you are on cellular and Wi-Fi-only sync is on.', 6000);
+      if (announce) new Notice('Sync skipped — you are on cellular and Wi-Fi only sync is on.', 6000);
       return;
     }
     this.running = true;
