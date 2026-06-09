@@ -1,4 +1,4 @@
-import { App, Notice, TFile, TFolder, normalizePath } from 'obsidian';
+import { App, Notice, Platform, TFile, TFolder, normalizePath } from 'obsidian';
 import {
   DavSyncSettings,
   FileState,
@@ -16,13 +16,14 @@ import {
 } from '../types';
 import { LocalAdapter } from '../data/LocalAdapter';
 import { StateDB } from '../data/StateDB';
-import { StatusBarItem } from '../ui/StatusBarItem';
+import { IStatusBar } from '../ui/StatusBarItem';
 import { WebDAVFactory } from '../network/WebDAVFactory';
 import { IWebDAVClient } from '../network/IWebDAVClient';
 import { DryRunModal, DryRunPlan } from '../ui/DryRunModal';
 import { RenameTracker } from './RenameTracker';
 import { ConflictResolver } from './ConflictResolver';
 import { sha256 } from '../util/hash';
+import { isCellularBlocked } from '../util/limits';
 import { isSafeVaultRelativePath } from '../network/remotePath';
 import { IUploadStrategy } from './upload/IUploadStrategy';
 import { SimpleUploadStrategy } from './upload/SimpleUploadStrategy';
@@ -33,7 +34,7 @@ export interface SyncEngineOptions {
   settings: DavSyncSettings;
   localAdapter: LocalAdapter;
   stateDB: StateDB;
-  statusBar: StatusBarItem;
+  statusBar: IStatusBar;
   webdavFactory: WebDAVFactory;
   pluginDir: string;
   /** Obsidian's configuration folder (Vault#configDir), e.g. `.obsidian`. User-configurable. */
@@ -86,16 +87,27 @@ export class SyncEngine {
       this.features = features;
       this.uploadStrategy = (this.opts.settings.chunkedUploadEnabled && features.isNextcloud)
         ? new ChunkedUploadStrategy(this.opts.settings)
-        : new SimpleUploadStrategy();
+        : new SimpleUploadStrategy(this.opts.settings);
       this.opts.onFeatures?.(features);
     }
     return { client: this.client, features: this.features };
   }
 
   /** Manual sync: Dry Run → user approval → execute */
+  /**
+   * "Wi-Fi only" gate. Skips when enabled and on a cellular connection.
+   * Network type is only detectable on Chromium (desktop / Android); iOS (WebKit) has no
+   * `navigator.connection`, so the setting is ignored there (and its toggle is disabled).
+   */
+  private isBlockedByWifiOnly(): boolean {
+    const conn = (navigator as Navigator & { connection?: { type?: string } }).connection;
+    return isCellularBlocked(this.opts.settings.syncOnWifiOnly, Platform.isIosApp, conn?.type);
+  }
+
   async syncManual(): Promise<void> {
     // Prevent concurrent runs (avoid clashing with watch mode or scheduled sync).
     if (this.running) return;
+    if (this.isBlockedByWifiOnly()) return; // "Wi-Fi only" enabled and on cellular
     this.running = true;
     await this.ensureClient();
     this.syncProgress = { processed: 0, total: 0 };
@@ -831,9 +843,9 @@ export class SyncEngine {
     localFiles: Map<string, { hash: string; size: number; mtime: number }>,
   ): Promise<void> {
     const targets = remoteFiles.filter(rf => !rf.checksum && localFiles.has(rf.path));
-    const CONCURRENCY = 8;
-    for (let i = 0; i < targets.length; i += CONCURRENCY) {
-      const batch = targets.slice(i, i + CONCURRENCY);
+    const concurrency = Math.max(1, this.opts.settings.networkConcurrency);
+    for (let i = 0; i < targets.length; i += concurrency) {
+      const batch = targets.slice(i, i + concurrency);
       await Promise.all(batch.map(async (rf) => {
         try {
           const sum = await this.client!.recalcChecksum(rf.path);

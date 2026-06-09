@@ -164,3 +164,12 @@ export interface ButtonComponent {
 export function normalizePath(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+/g, '/');
 }
+
+// Mutable platform flags so tests can simulate desktop / iOS / Android.
+export const Platform = {
+  isMobile: false,
+  isDesktop: true,
+  isDesktopApp: true,
+  isIosApp: false,
+  isAndroidApp: false,
+};
