@@ -10,8 +10,6 @@ import {
   NetworkError,
   FileLockedError,
   FeatureUnsupportedError,
-  SyncAction,
-  SyncPlanEntry,
   MergePreview,
 } from '../types';
 import { LocalAdapter } from '../data/LocalAdapter';
@@ -277,68 +275,7 @@ export class SyncEngine {
   }
 
   /**
-   * Compute a dry-run plan (debug mode): classify each file by what a sync would do,
-   * without making any change. Best-effort approximation of the real sync decisions.
-   */
-  async previewSync(): Promise<SyncPlanEntry[]> {
-    const { client } = await this.ensureClient();
-    const remoteFiles = await client.getFiles('');
-    const remoteList = remoteFiles.filter(f => !this.isSystemExcluded(f.path));
-    const localFiles = await this.scanLocalFiles();
-    // Resolve missing server-side checksums (computed by the server, no download) so the preview
-    // matches what a real first sync would decide. Without this, files that are byte-identical on
-    // both sides but have no recorded base state are all mis-reported as merges.
-    await this.resolveRemoteChecksums(remoteList, localFiles);
-    const remoteMap = new Map(remoteList.map(f => [f.path, f]));
-
-    // First sync (no recorded base): the decision is purely content identity (mirrors buildInitialPlan).
-    const firstSyncBoth = (identical: boolean): SyncAction =>
-      identical ? 'unchanged' : (this.opts.settings.autoMergeEnabled ? 'merge' : 'conflict');
-
-    const entries: SyncPlanEntry[] = [];
-    // Include StateDB paths so locally-deleted files (in StateDB but not local/remote) are shown.
-    const allPaths = new Set<string>([
-      ...localFiles.keys(),
-      ...remoteMap.keys(),
-      ...this.opts.stateDB.getAllFiles().map(f => f.path),
-    ]);
-    for (const path of allPaths) {
-      const lf = localFiles.get(path);
-      const rf = remoteMap.get(path);
-      const base = this.opts.stateDB.getFile(path);
-      const localExists = lf !== undefined;
-      const remoteExists = rf !== undefined;
-      const remoteId = rf ? (rf.checksum ?? rf.etag ?? String(rf.size)) : null;
-
-      let action: SyncAction;
-      if (localExists && remoteExists) {
-        if (!base) {
-          action = firstSyncBoth(rf.checksum != null && rf.checksum === lf.hash);
-        } else {
-          const localChanged = base.localHash !== lf.hash;
-          const remoteChanged = base.remoteId !== remoteId;
-          if (!localChanged && !remoteChanged) action = 'unchanged';
-          else if (localChanged && !remoteChanged) action = 'upload';
-          else if (!localChanged && remoteChanged) action = 'download';
-          else action = firstSyncBoth(false);
-        }
-      } else if (localExists && !remoteExists) {
-        // Remote missing: new local file → upload; previously synced → remote was deleted.
-        action = !base ? 'upload' : (base.localHash !== lf.hash ? 'upload' : 'delete-local');
-      } else {
-        // Local missing: new remote file → download; previously synced → local was deleted.
-        action = !base ? 'download' : (base.remoteId !== remoteId ? 'download' : 'delete-remote');
-      }
-
-      entries.push({ path, action, localExists, remoteExists });
-    }
-
-    entries.sort((a, b) => a.path.localeCompare(b.path));
-    return entries;
-  }
-
-  /**
-   * Debug-mode merge preview for one file: read the local content, fetch the remote content,
+   * Read-only merge preview for one file: read the local content, fetch the remote content,
    * and compute what a real sync would write — all WITHOUT modifying anything. For files that
    * exist only on one side, the "after" side is simply that side's content (upload/download as-is).
    */
