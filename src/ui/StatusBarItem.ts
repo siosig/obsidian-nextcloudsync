@@ -23,7 +23,11 @@ export class StatusBarItem implements IStatusBar {
   private lastSyncTime: number | null = null;
   private progressText = '';
 
-  constructor(private readonly el: HTMLElement) {
+  constructor(private readonly el: HTMLElement, onClick?: () => void) {
+    if (onClick) {
+      this.el.addClass('mod-clickable'); // built-in status-bar clickable styling (cursor/hover)
+      this.el.addEventListener('click', onClick);
+    }
     this.render();
   }
 
