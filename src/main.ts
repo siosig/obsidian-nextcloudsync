@@ -28,16 +28,17 @@ export default class ObsidianNextcloudsync extends Plugin {
 
     await this.loadSettings();
 
-    // Diagnostic logger: appends to nextcloud-sync-debug.md while Debug mode is on (all platforms).
-    // Debug mode logs and still performs a real sync — identical behavior on desktop and mobile.
-    this.logger = new FileLogger(this.app.vault.adapter, () => this.settings.debugMode, this.manifest.version);
-    void this.logger.log(`plugin loaded (platform=${Platform.isMobile ? 'mobile' : 'desktop'}, obsidian=${currentVersion})`);
-
-    // Generate deviceId if not set
+    // Generate deviceId if not set (also used to label diagnostic-log lines per device).
     if (!this.settings.deviceId) {
       this.settings.deviceId = uuidv4();
       await this.saveSettings();
     }
+
+    // Diagnostic logger: appends to nextcloud-sync-debug.md while Debug mode is on (all platforms).
+    // Debug mode logs and still performs a real sync — identical behavior on desktop and mobile.
+    // Each line is tagged with a device label so a synced log from multiple devices is readable.
+    this.logger = new FileLogger(this.app.vault.adapter, () => this.settings.debugMode, this.manifest.version, this.deviceLabel());
+    void this.logger.log(`plugin loaded (obsidian=${currentVersion})`);
 
     // Initialize SyncEngine (lazy — only when settings are complete)
     if (this.settings.serverUrl && this.settings.username) {
@@ -151,6 +152,21 @@ export default class ObsidianNextcloudsync extends Plugin {
         new Notice(`❌ Failed to load version history: ${(err as Error).message}`, 6000);
       }
     }
+  }
+
+  /** Short, stable per-device label for diagnostic-log lines (platform + hostname, or deviceId). */
+  private deviceLabel(): string {
+    const platform = Platform.isIosApp ? 'ios' : Platform.isAndroidApp ? 'android' : 'desktop';
+    let host = '';
+    if (Platform.isDesktopApp) {
+      try {
+        // os is a desktop-only Node builtin; this branch never runs on mobile (Platform.isDesktopApp guard).
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, no-undef, import/no-nodejs-modules
+        host = (require('os') as { hostname(): string }).hostname();
+      } catch { /* hostname unavailable */ }
+    }
+    const id = (this.settings.deviceId ?? '').replace(/-/g, '').slice(0, 6);
+    return host ? `${platform}/${host}` : `${platform}/${id}`;
   }
 
   onunload(): void {
