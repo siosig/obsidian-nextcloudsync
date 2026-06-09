@@ -412,6 +412,14 @@ export class SyncEngine {
     await this.resolveRemoteChecksums(remoteFiles, localFiles);
 
     const plan = this.buildInitialPlan(localFiles, remoteFiles);
+    // No recorded state yet, so every local file the server lacks is planned as an UPLOAD —
+    // including files that were deleted on another device. This is a resurrection path; log the
+    // plan (and the would-be uploads) so a captured log shows whether a "deleted" file is pushed back.
+    void this.opts.logger?.log(
+      `sync: INITIAL sync (empty state) plan — up=${plan.uploads.length} down=${plan.downloads.length} ` +
+      `unchanged=${plan.unchanged.length} conflicts=${plan.conflicts.length}. ` +
+      `uploads(resurrection candidates)=[${plan.uploads.slice(0, 30).join(', ')}${plan.uploads.length > 30 ? ', …' : ''}]`,
+    );
 
     const modal = new DryRunModal(this.opts.app, plan, {
       conflictNote: this.describeConflictOutcome(),
@@ -452,6 +460,7 @@ export class SyncEngine {
         const changes = await client.getChanges(existingToken);
         this.opts.stateDB.setSyncToken(changes.newSyncToken);
         remoteFiles = changes.modified;
+        void this.opts.logger?.log(`sync: incremental via token (modified=${changes.modified.length}, remote-deleted=${changes.deleted.length})`);
 
         // Detect and apply remote renames (fileId-based) before processing deletions,
         // so a rename is not misidentified as delete + new-upload.
@@ -471,6 +480,7 @@ export class SyncEngine {
           remoteFiles = await client.getFiles('');
           const token = await client.getSyncToken();
           this.opts.stateDB.setSyncToken(token);
+          void this.opts.logger?.log(`sync: sync-token expired → FULL SCAN (remote=${remoteFiles.length}). NOTE: remote deletions are detected only via the token, NOT by absence in a full scan`);
         } else {
           throw err;
         }
@@ -479,6 +489,7 @@ export class SyncEngine {
       remoteFiles = await client.getFiles('');
       const token = await client.getSyncToken();
       this.opts.stateDB.setSyncToken(token);
+      void this.opts.logger?.log(`sync: FULL SCAN, no prior token (remote=${remoteFiles.length}). NOTE: remote deletions are detected only via the token, NOT by absence in a full scan`);
     }
 
     // Retry queue files
@@ -722,6 +733,7 @@ export class SyncEngine {
   }
 
   private async processRemoteDeletion(path: string, summary: SyncSessionSummary): Promise<void> {
+    void this.opts.logger?.log(`delete-local: applying remote deletion → ${path}`);
     const file = this.opts.app.vault.getAbstractFileByPath(path);
     const normalized = normalizePath(path);
     try {
@@ -771,6 +783,10 @@ export class SyncEngine {
       // For new files, use the local hash as remoteId (= the server checksum after upload).
       const remoteId = base?.remoteId ?? localHash;
       const idType: FileState['idType'] = base?.idType ?? 'sha256';
+      // A previously-synced file (base known) being re-uploaded here is the classic "resurrection"
+      // signature: it was deleted on another device but this device still has it locally and pushes
+      // it back to the server. Logged distinctly so the captured log makes the cause obvious.
+      void this.opts.logger?.log(`upload: ${path} (${base ? 're-upload of previously-synced file (resurrection candidate)' : 'new local file'})`);
       await this.uploadFile(
         path, localHash, remoteId, idType,
         { path, fileId: base?.remoteFileId ?? null, checksum: null, etag: null, size: st.size, lastModified: st.mtime },
@@ -810,6 +826,7 @@ export class SyncEngine {
       if (localRenames.has(path)) continue; // handled as rename above
       const fileState = this.opts.stateDB.getFile(path);
       if (!fileState) continue;
+      void this.opts.logger?.log(`delete-remote: locally deleted, propagating to server → ${path}`);
       try {
         await this.client!.deleteFile(path, fileState.remoteId);
         summary.deletedCount++;

@@ -27,6 +27,10 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     const configDir = this.app.vault.configDir;
     containerEl.empty();
 
+    // Prominent "not signed in" banner, pinned to the very top. Populated/cleared by
+    // refreshAuthWarning() below and kept in sync live as the credential fields change.
+    const authWarningEl = containerEl.createDiv();
+
     // Recommendation banner: shown when the last-connected server is below the recommended
     // Nextcloud version. This no longer blocks syncing — it only advises an upgrade.
     const serverVersion = this.plugin.settings.lastKnownServerVersion;
@@ -61,6 +65,17 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         && typeof pw === 'string' && pw.length > 0;
     };
     const refreshSyncNow = (): void => { syncNowButton?.setDisabled(!isReadyToSync()); };
+    const refreshAuthWarning = (): void => {
+      authWarningEl.empty();
+      if (isReadyToSync()) { authWarningEl.removeClass('ncs-auth-warning'); return; }
+      authWarningEl.addClass('ncs-auth-warning');
+      // eslint-disable-next-line obsidianmd/ui/sentence-case -- emphasis heading after the ⚠️ emoji; the rule mis-parses the emoji prefix
+      authWarningEl.createEl('strong', { text: '⚠️ Not signed in yet' });
+      authWarningEl.createEl('div', {
+        text: 'Enter the server URL below, then log in (or fill in a username and app password). Syncing stays disabled until you do.',
+      });
+    };
+    refreshAuthWarning();
 
     new Setting(containerEl)
       .setName('Sync now')
@@ -84,6 +99,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
           loginButton?.setDisabled(this.plugin.settings.serverUrl.length === 0);
           targetSetting?.setDesc(this.syncTargetUrl());
           refreshSyncNow();
+          refreshAuthWarning();
           await this.plugin.saveSettings();
         }));
 
@@ -95,6 +111,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         .onChange(async (value) => {
           this.plugin.settings.username = value.trim();
           refreshSyncNow();
+          refreshAuthWarning();
           await this.plugin.saveSettings();
         }));
 
@@ -107,6 +124,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
           // SecretComponent returns the secret's reference ID (the actual value stays in secretStorage).
           this.plugin.settings.passwordSecretId = secretId;
           refreshSyncNow();
+          refreshAuthWarning();
           await this.plugin.saveSettings();
         }));
 
