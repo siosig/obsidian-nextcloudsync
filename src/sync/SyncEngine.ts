@@ -579,15 +579,16 @@ export class SyncEngine {
     remote: RemoteFileInfo, base: FileState, remoteId: string, idType: FileState['idType'],
     summary: SyncSessionSummary,
   ): Promise<void> {
+    // Decide ONLY from a real content hash of the server copy. A SHA-256 match against what we last
+    // synced is the only proof that the server copy is unchanged and the deletion is genuinely local.
     let serverHash = remote.checksum ?? null;
     if (!serverHash) {
       try { serverHash = await this.client!.recalcChecksum(remote.path); } catch { serverHash = null; }
     }
-    // Server content unchanged since our last sync → this is a genuine local deletion.
-    // Fall back to the recorded remote id when the server cannot compute a checksum.
-    const remoteMatchesBase = serverHash ? serverHash === base.localHash : base.remoteId === remoteId;
-    if (remoteMatchesBase) {
-      void this.opts.logger?.log(`delete-remote: local deletion of previously-synced file → ${remote.path}`);
+
+    if (serverHash && serverHash === base.localHash) {
+      // Server copy is byte-identical to our base → genuine local deletion → propagate (trashbin).
+      void this.opts.logger?.log(`delete-remote: local deletion (server checksum matches base) → ${remote.path}`);
       try {
         await this.client!.deleteFile(remote.path, base.remoteId);
         summary.deletedCount++;
@@ -595,10 +596,15 @@ export class SyncEngine {
         if (!(err instanceof NetworkError && err.status === 404)) throw err;
       }
       this.opts.stateDB.deleteFile(remote.path);
-    } else {
-      // Deleted locally but the server copy changed after our base → restore it (never drop a remote edit).
+    } else if (serverHash && serverHash !== base.localHash) {
+      // Server copy diverged after our base → restore it locally so a remote edit is never dropped.
       void this.opts.logger?.log(`conflict(local-delete vs remote-edit): restoring remote → ${remote.path}`);
       await this.downloadFile(remote, remoteId, idType, summary);
+    } else {
+      // No reliable server checksum (e.g. plain WebDAV, or recalc failed) → do NOT delete. The
+      // etag/size are not proof of unchanged content, so deleting here could discard a remote edit.
+      // Leave both sides as-is; the deletion still propagates via the incremental token path.
+      void this.opts.logger?.log(`delete-remote: SKIPPED — no reliable server checksum to confirm unchanged → ${remote.path}`);
     }
   }
 
@@ -885,22 +891,44 @@ export class SyncEngine {
       this.opts.stateDB.deleteFile(path);
     }
 
-    // Full-scan only: detect REMOTE deletions by absence. A previously-synced file that is still
-    // present locally but missing from the COMPLETE remote listing was deleted on the server →
-    // remove it locally (via the user's "Deleted files" setting; recoverable). Guarded against an
-    // empty/failed listing so a transient error cannot trigger a mass local delete.
+    // Full-scan only: detect REMOTE deletions by absence. A previously-synced file still present
+    // locally but missing from the COMPLETE remote listing was deleted on the server → remove it
+    // locally (via the user's "Deleted files" setting; recoverable). This path is defended against
+    // bad inputs (a truncated/partial listing) because acting on it would silently destroy data.
     if (isFullScan && remotePathSet.size > 0) {
+      // 1) Build candidates, comparing real content (NOT mtime) so a local edit that did not bump
+      //    mtime is never silently lost — same content-vs-base check the upload loop uses.
+      const candidates: string[] = [];
       for (const fileState of this.opts.stateDB.getAllFiles()) {
         const path = fileState.path;
         if (this.isSystemExcluded(path) || remotePathSet.has(path)) continue;
-        const st = localStats.get(path);
-        if (!st) continue; // absent locally too — handled by the missing-paths loop above
-        // Only act when the local copy is unchanged since our last sync. A file edited locally
-        // after a remote delete is preserved (and re-uploaded above), so no local edit is lost.
-        if (st.mtime <= fileState.mtime) {
-          void this.opts.logger?.log(`delete-local: remote deletion detected by absence (full scan) → ${path}`);
-          await this.processRemoteDeletion(path, summary);
+        if (!localStats.has(path)) continue; // absent locally too — handled by the missing-paths loop
+        const data = await this.opts.localAdapter.readBinary(path);
+        if (await sha256(data) !== fileState.localHash) continue; // modified locally → preserve & re-upload
+        candidates.push(path);
+      }
+
+      // 2) Circuit breaker: a healthy full listing rarely loses a large fraction of the vault at once.
+      //    If too many files look "remotely deleted", assume a partial/failed listing and refuse.
+      const tracked = this.opts.stateDB.getAllFiles().length;
+      const limit = Math.max(20, Math.floor(tracked * 0.2));
+      if (candidates.length > limit) {
+        void this.opts.logger?.log(`delete-local: SKIPPED ${candidates.length} absence-deletions — exceeds safety limit (${limit}); likely a partial remote listing`);
+        new Notice(`⚠️ ${candidates.length} files look deleted on the server — skipped to avoid mass deletion. Re-sync to retry.`, 10000);
+        return;
+      }
+
+      // 3) Re-verify each candidate is really gone (targeted PROPFIND 404), so a file merely missing
+      //    from the bulk listing is never deleted locally on a false negative.
+      for (const path of candidates) {
+        let goneOnServer = false;
+        try { goneOnServer = !(await this.client!.remoteExists(path)); } catch { goneOnServer = false; }
+        if (!goneOnServer) {
+          void this.opts.logger?.log(`delete-local: re-check found it still on server — keeping → ${path}`);
+          continue;
         }
+        void this.opts.logger?.log(`delete-local: remote deletion confirmed (absence + 404 re-check) → ${path}`);
+        await this.processRemoteDeletion(path, summary);
       }
     }
   }

@@ -126,6 +126,21 @@ export class StandardWebDAVClient implements IWebDAVClient {
     return null;
   }
 
+  async remoteExists(remotePath: string): Promise<boolean> {
+    // Only a definitive 404 means "gone"; any other status is treated as "present" (conservative).
+    try {
+      const res = await requestUrl({
+        url: this.remoteUrl(remotePath),
+        method: 'PROPFIND',
+        headers: { Authorization: this.authHeader, Depth: '0' },
+        throw: false,
+      });
+      return res.status !== 404;
+    } catch {
+      return true;
+    }
+  }
+
   // ── Nextcloud-specific features are not supported on standard WebDAV ──
 
   async listVersions(_fileId: string): Promise<FileVersion[]> {

@@ -245,6 +245,22 @@ export class NextcloudClient implements IWebDAVClient {
     return token.length > 0 ? token : null;
   }
 
+  async remoteExists(remotePath: string): Promise<boolean> {
+    // Targeted existence probe (PROPFIND Depth 0). Only a definitive 404 means "gone"; any other
+    // status (incl. transient errors) is treated as "present" so callers never delete on ambiguity.
+    try {
+      const res = await requestUrl({
+        url: this.remoteUrl(remotePath),
+        method: 'PROPFIND',
+        headers: { Authorization: this.authHeader, Depth: '0' },
+        throw: false,
+      });
+      return res.status !== 404;
+    } catch {
+      return true; // conservative: never report "gone" on a failed check
+    }
+  }
+
   // ── US2: Version history ────────────────────────────────────────────────────
 
   async listVersions(fileId: string): Promise<FileVersion[]> {
