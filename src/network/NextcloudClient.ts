@@ -230,22 +230,25 @@ export class NextcloudClient implements IWebDAVClient {
   }
 
   async getSyncToken(): Promise<string | null> {
-    // Fetch the sync-token from the same collection (the base folder) used by REPORT.
+    // sabre/dav (Nextcloud) returns an EMPTY self-closing <d:sync-token/> for a plain PROPFIND, which
+    // left sync stuck in permanent full-scan mode. Bootstrap the token the RFC 6578 way instead: a
+    // sync-collection REPORT with an EMPTY token ("initial sync") whose multistatus always carries the
+    // current, populated <d:sync-token>. We read only the token here; the member list is ignored.
     const res = await requestUrl({
       url: this.remoteUrl(''),
-      method: 'PROPFIND',
-      headers: { Authorization: this.authHeader, Depth: '0', 'Content-Type': 'application/xml; charset=utf-8' },
-      body: `<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:sync-token/></d:prop></d:propfind>`,
+      method: 'REPORT',
+      headers: { Authorization: this.authHeader, 'Content-Type': 'application/xml; charset=utf-8' },
+      body: REPORT_BODY(''),
       throw: false,
     });
-    // Match regardless of the XML namespace prefix the server uses (d:, D:, none, nc:, …).
-    const match = res.text.match(/<(?:\w+:)?sync-token>([^<]*)<\/(?:\w+:)?sync-token>/);
-    const token = match && res.status === 207 ? match[1].trim() : '';
+    // Match regardless of the XML namespace prefix; require a non-empty value (skip <…sync-token/>).
+    const match = res.status === 207 ? res.text.match(/<(?:\w+:)?sync-token>([^<]+)<\/(?:\w+:)?sync-token>/) : null;
+    const token = match ? match[1].trim() : '';
     if (token.length === 0) {
-      // Diagnose why the token is missing: log the status and a short, sanitised body snippet so
-      // a captured debug log reveals the actual server response (the cause of permanent full-scans).
+      // Diagnose: log the status and a short, sanitised body snippet so a captured debug log reveals
+      // the actual server response if a token still cannot be obtained.
       const snippet = (res.text ?? '').replace(/\s+/g, ' ').slice(0, 400);
-      this.diag?.(`getSyncToken: NO TOKEN (status=${res.status}) body[0:400]=${snippet}`);
+      this.diag?.(`getSyncToken(REPORT): NO TOKEN (status=${res.status}) body[0:400]=${snippet}`);
       return null;
     }
     return token;
