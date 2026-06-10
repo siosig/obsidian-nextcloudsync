@@ -863,6 +863,16 @@ export class SyncEngine {
   }
 
   private async processRemoteDeletion(path: string, summary: SyncSessionSummary): Promise<void> {
+    // Security boundary (centralized at the delete sink): never act on a server-reported deletion
+    // for a path the engine treats as out of scope (the Obsidian config folder, other plugins, etc.).
+    // A malicious/compromised server could fabricate a REPORT deletion for `.obsidian/...`; without
+    // this guard it would reach the raw fs remove below and permanently destroy config the sync
+    // engine otherwise never touches. Every other server-driven sink already filters with
+    // isSystemExcluded; enforcing it here covers all callers (incremental + full-scan).
+    if (this.isSystemExcluded(path)) {
+      void this.opts.logger?.log(`delete-local: ignored out-of-scope remote deletion → ${path}`);
+      return;
+    }
     void this.opts.logger?.log(`delete-local: applying remote deletion → ${path}`);
     const file = this.opts.app.vault.getAbstractFileByPath(path);
     const normalized = normalizePath(path);
