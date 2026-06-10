@@ -478,7 +478,10 @@ export class SyncEngine {
         summary.errorCount++;
         // Continue with next file (FR-015)
       } else {
-        throw err;
+        // Local I/O errors (ENOENT, EACCES, etc.) must not abort the entire session.
+        console.warn(`[SyncEngine] Error syncing ${remote.path}:`, err);
+        void this.opts.logger?.log(`sync: error on ${remote.path} — ${(err as Error).message}`);
+        summary.errorCount++;
       }
     }
   }
