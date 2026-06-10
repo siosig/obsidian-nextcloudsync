@@ -26,12 +26,18 @@ export class LocalAdapter {
     return false;
   }
 
+  private async ensureParentDir(filePath: string): Promise<void> {
+    const lastSlash = filePath.lastIndexOf('/');
+    if (lastSlash > 0) await this.adapter.mkdir(filePath.slice(0, lastSlash));
+  }
+
   /** Atomically write text content: write to tmp → remove existing → rename. */
   async atomicWrite(targetPath: string, content: string): Promise<void> {
     const tmpPath = targetPath + TMP_SUFFIX;
     this.ignore(tmpPath);
     this.ignore(targetPath);
     try {
+      await this.ensureParentDir(targetPath);
       await this.adapter.write(tmpPath, content);
       if (await this.adapter.exists(targetPath)) {
         await this.adapter.remove(targetPath);
@@ -51,6 +57,7 @@ export class LocalAdapter {
     this.ignore(tmpPath);
     this.ignore(targetPath);
     try {
+      await this.ensureParentDir(targetPath);
       await this.adapter.writeBinary(tmpPath, data);
       if (await this.adapter.exists(targetPath)) {
         await this.adapter.remove(targetPath);
