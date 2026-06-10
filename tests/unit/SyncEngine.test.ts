@@ -205,3 +205,84 @@ describe('SyncEngine.handleConflict — failure-policy actions', () => {
     expect(h.setFile).not.toHaveBeenCalled();
   });
 });
+
+describe('SyncEngine.processRemoteDeletion — out-of-scope safety', () => {
+  function makeSummary(): SyncSessionSummary {
+    return {
+      startedAt: 0, completedAt: null, uploadedCount: 0, downloadedCount: 0,
+      deletedCount: 0, conflictCount: 0, errorCount: 0, retriedFiles: [],
+    };
+  }
+
+  function buildHarness(getAbstractFile: (p: string) => unknown, opts: { syncBookmarks?: boolean } = {}) {
+    const remove = jest.fn(async () => undefined);
+    const trashFile = jest.fn(async () => undefined);
+    const exists = jest.fn(async () => true);
+    const getAbstractFileByPath = jest.fn((p: string) => getAbstractFile(p));
+    const deleteFile = jest.fn();
+
+    const app = {
+      vault: { adapter: { exists, remove }, getAbstractFileByPath },
+      fileManager: { trashFile },
+    };
+    const stateDB = { deleteFile };
+    const settings = { configDir: '.obsidian', syncBookmarks: opts.syncBookmarks ?? false } as unknown;
+    const engineOpts = {
+      app, settings, stateDB, configDir: '.obsidian',
+      localAdapter: {}, statusBar: {}, webdavFactory: {}, pluginDir: '',
+    };
+    const engine = new SyncEngine(engineOpts as never);
+    const invoke = (path: string, summary: SyncSessionSummary) =>
+      (engine as unknown as {
+        processRemoteDeletion(p: string, s: SyncSessionSummary): Promise<void>;
+      }).processRemoteDeletion(path, summary);
+
+    return { invoke, remove, trashFile, exists, getAbstractFileByPath, deleteFile };
+  }
+
+  it('IGNORES a server-reported deletion that targets the Obsidian config folder (.obsidian/plugins/...)', async () => {
+    // A malicious/compromised server could fabricate this deletion to destroy other plugins' code.
+    const h = buildHarness(() => null);
+    const summary = makeSummary();
+    await h.invoke('.obsidian/plugins/some-plugin/main.js', summary);
+
+    // The destructive sinks must never be reached for an out-of-scope path.
+    expect(h.remove).not.toHaveBeenCalled();
+    expect(h.trashFile).not.toHaveBeenCalled();
+    expect(h.getAbstractFileByPath).not.toHaveBeenCalled();
+    expect(summary.downloadedCount).toBe(0);
+  });
+
+  it('also ignores deletion of the config folder root itself', async () => {
+    const h = buildHarness(() => null);
+    const summary = makeSummary();
+    await h.invoke('.obsidian', summary);
+    expect(h.remove).not.toHaveBeenCalled();
+    expect(h.trashFile).not.toHaveBeenCalled();
+  });
+
+  it('still deletes an in-scope file that reaches the raw sink (regression: legitimate deletions work)', async () => {
+    // Untracked file (getAbstractFileByPath → null) in a non-excluded location → raw remove proceeds.
+    const h = buildHarness(() => null);
+    const summary = makeSummary();
+    await h.invoke('notes.md', summary);
+
+    expect(h.remove).toHaveBeenCalledWith('notes.md');
+    expect(h.deleteFile).toHaveBeenCalledWith('notes.md');
+    expect(summary.downloadedCount).toBe(1);
+  });
+
+  it('processes bookmarks deletion only when bookmark sync is enabled', async () => {
+    // syncBookmarks ON → bookmarks.json is in scope → deletion proceeds (raw sink, untracked dotfile).
+    const on = buildHarness(() => null, { syncBookmarks: true });
+    const summaryOn = makeSummary();
+    await on.invoke('.obsidian/bookmarks.json', summaryOn);
+    expect(on.remove).toHaveBeenCalledTimes(1);
+
+    // syncBookmarks OFF → excluded → ignored.
+    const off = buildHarness(() => null, { syncBookmarks: false });
+    const summaryOff = makeSummary();
+    await off.invoke('.obsidian/bookmarks.json', summaryOff);
+    expect(off.remove).not.toHaveBeenCalled();
+  });
+});
