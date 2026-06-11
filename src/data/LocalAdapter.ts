@@ -3,6 +3,11 @@ import { DataAdapter, Notice, Platform } from 'obsidian';
 const TMP_SUFFIX = '.nextcloudsync.tmp';
 const IGNORE_TIMEOUT_MS = 5000;
 
+/** True for this plugin's own atomic-write temp files (never user content). */
+export function isSyncTmpPath(path: string): boolean {
+  return path.endsWith(TMP_SUFFIX);
+}
+
 export class LocalAdapter {
   private ignoreList: Map<string, number> = new Map();
 
@@ -16,14 +21,14 @@ export class LocalAdapter {
     this.ignoreList.set(path, timer);
   }
 
-  /** Check and consume an ignore entry. Returns true if the path should be skipped. */
+  /**
+   * Returns true while the path is inside its ignore window. NOT consumed on read: one
+   * atomicWrite fires several Vault events for the same path (create/delete/rename), so a
+   * consume-on-first-event entry would let the later events leak through as user edits.
+   * Entries expire via the timeout instead.
+   */
   shouldIgnore(path: string): boolean {
-    if (this.ignoreList.has(path)) {
-      window.clearTimeout(this.ignoreList.get(path));
-      this.ignoreList.delete(path);
-      return true;
-    }
-    return false;
+    return this.ignoreList.has(path);
   }
 
   private async ensureParentDir(filePath: string): Promise<void> {

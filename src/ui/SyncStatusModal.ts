@@ -1,5 +1,5 @@
 import { App, Modal, Setting } from 'obsidian';
-import { SyncSessionSummary } from '../types';
+import { SyncErrorDetail, SyncSessionSummary } from '../types';
 
 export interface SyncStatusReport {
   summary: SyncSessionSummary | null;
@@ -38,9 +38,35 @@ export class SyncStatusModal extends Modal {
       'Files with unresolved conflict markers. Open one to resolve it (search #conflict too).');
     this.addFileSection('✗ Queued for retry', report.retryFiles,
       'Files that failed and will be retried on the next sync.');
+    this.addErrorSection(s?.errors ?? []);
 
-    if (report.conflictedFiles.length === 0 && report.retryFiles.length === 0) {
+    if (report.conflictedFiles.length === 0 && report.retryFiles.length === 0
+        && (s?.errors.length ?? 0) === 0) {
       contentEl.createEl('p', { text: '🟢 No conflicts or pending retries.' });
+    }
+  }
+
+  /** What went wrong in the last session: one row per error, with the file (clickable) and reason. */
+  private addErrorSection(errors: SyncErrorDetail[]): void {
+    if (errors.length === 0) return;
+    const { contentEl } = this;
+    new Setting(contentEl).setName(`✗ Errors in last sync (${errors.length})`).setHeading();
+    contentEl.createEl('p', {
+      text: 'What failed during the last sync and why. These reset on the next sync.',
+      cls: 'setting-item-description',
+    });
+
+    const list = contentEl.createEl('div', { cls: 'ncs-status-list' });
+    for (const e of errors) {
+      const row = list.createEl('div', { cls: 'ncs-status-row' });
+      row.createEl('div', { text: e.path || '(entire sync session)' });
+      row.createEl('div', { text: e.message, cls: 'setting-item-description' });
+      if (e.path) {
+        row.addEventListener('click', () => {
+          void this.app.workspace.openLinkText(e.path, '', false);
+          this.close();
+        });
+      }
     }
   }
 

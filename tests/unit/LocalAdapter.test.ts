@@ -19,11 +19,22 @@ function makeAdapter(files: Record<string, string> = {}): DataAdapter {
 
 describe('LocalAdapter', () => {
   describe('IgnoreList', () => {
-    it('registers and consumes ignore entry', () => {
+    it('keeps the entry across repeated checks within the window (one write fires several events)', () => {
+      jest.useFakeTimers();
       const adapter = new LocalAdapter(makeAdapter());
       adapter.ignore('Notes/test.md');
       expect(adapter.shouldIgnore('Notes/test.md')).toBe(true);
-      expect(adapter.shouldIgnore('Notes/test.md')).toBe(false); // consumed
+      expect(adapter.shouldIgnore('Notes/test.md')).toBe(true); // NOT consumed: create/delete/rename all check it
+      jest.useRealTimers();
+    });
+
+    it('expires the entry after the ignore window', () => {
+      jest.useFakeTimers();
+      const adapter = new LocalAdapter(makeAdapter());
+      adapter.ignore('Notes/test.md');
+      jest.advanceTimersByTime(5001);
+      expect(adapter.shouldIgnore('Notes/test.md')).toBe(false);
+      jest.useRealTimers();
     });
 
     it('returns false for paths not in ignore list', () => {

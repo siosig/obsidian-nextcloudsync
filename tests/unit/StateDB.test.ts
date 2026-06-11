@@ -87,6 +87,41 @@ describe('StateDB', () => {
     expect(db.countConflicted()).toBe(1);
   });
 
+  it('serializes concurrent saves (no ENOENT from the exists→remove→rename race)', async () => {
+    // Strict adapter: remove/rename throw ENOENT like the real filesystem when the
+    // target is missing — this is what interleaved saves used to trip over.
+    const store: Record<string, string> = {};
+    const strictAdapter = {
+      read: jest.fn(async (p: string) => store[p] ?? ''),
+      write: jest.fn(async (p: string, d: string) => {
+        await Promise.resolve(); // yield so concurrent saves can interleave
+        store[p] = d;
+      }),
+      exists: jest.fn(async (p: string) => p in store),
+      remove: jest.fn(async (p: string) => {
+        await Promise.resolve();
+        if (!(p in store)) throw new Error(`ENOENT: no such file or directory, unlink '${p}'`);
+        delete store[p];
+      }),
+      rename: jest.fn(async (from: string, to: string) => {
+        await Promise.resolve();
+        if (!(from in store)) throw new Error(`ENOENT: no such file or directory, rename '${from}'`);
+        store[to] = store[from];
+        delete store[from];
+      }),
+    } as unknown as DataAdapter;
+
+    const db = new StateDB(strictAdapter, PLUGIN_DIR, DEVICE_ID);
+    await db.load();
+    db.setSyncToken('tok');
+
+    // Watch-mode storm: many single-file ops saving at once alongside a full sync.
+    await expect(Promise.all([db.save(), db.save(), db.save(), db.save(), db.save()]))
+      .resolves.not.toThrow();
+    expect(store[`${PLUGIN_DIR}/state-${DEVICE_ID}.json`]).toContain('tok');
+    expect(`${PLUGIN_DIR}/state-${DEVICE_ID}.json.tmp` in store).toBe(false);
+  });
+
   it('finds file by remoteFileId', async () => {
     const db = new StateDB(makeAdapter(), PLUGIN_DIR, DEVICE_ID);
     await db.load();

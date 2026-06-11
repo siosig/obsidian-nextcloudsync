@@ -12,7 +12,7 @@ import {
   FeatureUnsupportedError,
   MergePreview,
 } from '../types';
-import { LocalAdapter } from '../data/LocalAdapter';
+import { isSyncTmpPath, LocalAdapter } from '../data/LocalAdapter';
 import { StateDB } from '../data/StateDB';
 import { IStatusBar } from '../ui/StatusBarItem';
 import { WebDAVFactory } from '../network/WebDAVFactory';
@@ -142,7 +142,7 @@ export class SyncEngine {
       console.error('[SyncEngine] Sync failed:', err);
       void this.opts.logger?.log(`sync: FAILED — ${(err as Error).message}`);
       new Notice(`❌ Sync failed: ${(err as Error).message}`, 6000);
-      summary.errorCount++;
+      this.recordError(summary, '', err);
     } finally {
       void this.opts.logger?.log(
         `sync: done up=${summary.uploadedCount} down=${summary.downloadedCount} ` +
@@ -351,8 +351,14 @@ export class SyncEngine {
     return {
       startedAt: Date.now(), completedAt: null,
       uploadedCount: 0, downloadedCount: 0, deletedCount: 0, conflictCount: 0,
-      errorCount: 0, retriedFiles: [],
+      errorCount: 0, retriedFiles: [], errors: [],
     };
+  }
+
+  /** Count an error and keep its detail for the sync-status dialog. Empty path = session-level. */
+  private recordError(summary: SyncSessionSummary, path: string, err: unknown): void {
+    summary.errorCount++;
+    summary.errors.push({ path, message: err instanceof Error ? err.message : String(err) });
   }
 
   /** First-ever sync: full scan → Dry Run → user approval → execute. Returns false if cancelled. */
@@ -475,13 +481,13 @@ export class SyncEngine {
       if (err instanceof NetworkError) {
         console.warn(`[SyncEngine] Error syncing ${remote.path}, queuing retry:`, err);
         this.retryQueue.push(remote.path);
-        summary.errorCount++;
+        this.recordError(summary, remote.path, err);
         // Continue with next file (FR-015)
       } else {
         // Local I/O errors (ENOENT, EACCES, etc.) must not abort the entire session.
         console.warn(`[SyncEngine] Error syncing ${remote.path}:`, err);
         void this.opts.logger?.log(`sync: error on ${remote.path} — ${(err as Error).message}`);
-        summary.errorCount++;
+        this.recordError(summary, remote.path, err);
       }
     }
   }
@@ -728,7 +734,7 @@ export class SyncEngine {
         // Failure policy 'error' (or non-text × conflict-markers fallback): touch NEITHER side.
         // Leave the StateDB hashes untouched so the next sync re-detects the divergence; only flag
         // the entry as conflicted (for the UI). Count as an error and retry within this session.
-        summary.errorCount++;
+        this.recordError(summary, path, new Error('Unresolved conflict — both sides left untouched (failure policy: error)'));
         this.retryQueue.push(path);
         if (base) this.opts.stateDB.setFile({ ...base, isConflicted: true });
         void this.opts.logger?.log(`conflict: skipped (policy=error), left both sides untouched → ${path}`);
@@ -818,7 +824,7 @@ export class SyncEngine {
       }
     } catch (err) {
       // Upload failed → keep the conflict unresolved and retry next sync (never mark converged).
-      summary.errorCount++;
+      this.recordError(summary, path, err);
       this.retryQueue.push(path);
       if (!(err instanceof FileLockedError)) {
         void this.opts.logger?.log(`conflict: prefer-local upload failed (${(err as Error).message}); queued retry → ${path}`);
@@ -846,7 +852,7 @@ export class SyncEngine {
       }
     } catch (err) {
       // Local write failed → keep the conflict unresolved and retry next sync.
-      summary.errorCount++;
+      this.recordError(summary, path, err);
       this.retryQueue.push(path);
       void this.opts.logger?.log(`conflict: prefer-remote write failed (${(err as Error).message}); queued retry → ${path}`);
       return;
@@ -926,11 +932,19 @@ export class SyncEngine {
       const remoteId = base?.remoteId ?? localHash;
       const idType: FileState['idType'] = base?.idType ?? 'sha256';
       void this.opts.logger?.log(`upload: ${path} (${base ? 'modified, re-upload' : 'new local file'})`);
-      await this.uploadFile(
-        path, localHash, remoteId, idType,
-        { path, fileId: base?.remoteFileId ?? null, checksum: null, etag: null, size: st.size, lastModified: st.mtime },
-        summary,
-      );
+      try {
+        await this.uploadFile(
+          path, localHash, remoteId, idType,
+          { path, fileId: base?.remoteFileId ?? null, checksum: null, etag: null, size: st.size, lastModified: st.mtime },
+          summary,
+        );
+      } catch (err) {
+        // One failing file (e.g. a server-side 403) must not abort the whole session.
+        console.warn(`[SyncEngine] Upload failed for ${path}:`, err);
+        void this.opts.logger?.log(`upload: FAILED ${path} — ${(err as Error).message}`);
+        this.recordError(summary, path, err);
+        if (err instanceof NetworkError) this.retryQueue.push(path);
+      }
     }
 
     // Detect local renames and deletions: files in StateDB that are no longer in localStats.
@@ -956,7 +970,7 @@ export class SyncEngine {
         await rt.applyLocalRename(oldPath, newPath);
       } catch (err) {
         console.warn(`[SyncEngine] Local rename ${oldPath} → ${newPath} failed:`, err);
-        summary.errorCount++;
+        this.recordError(summary, newPath, err);
       }
     }
 
@@ -974,7 +988,7 @@ export class SyncEngine {
           // Already gone from remote — StateDB cleanup is sufficient.
         } else {
           console.warn(`[SyncEngine] Failed to delete ${path} from remote:`, err);
-          summary.errorCount++;
+          this.recordError(summary, path, err);
         }
       }
       this.opts.stateDB.deleteFile(path);
@@ -1064,7 +1078,7 @@ export class SyncEngine {
         summary.uploadedCount++;
         const stat = await this.opts.localAdapter.stat(path);
         this.opts.stateDB.setFile({ path, localHash: lf.hash, remoteId: lf.hash, idType: 'sha256', size: lf.size, mtime: stat?.mtime ?? 0, remoteFileId: null, isConflicted: false });
-      } catch { summary.errorCount++; this.retryQueue.push(path); }
+      } catch (err) { this.recordError(summary, path, err); this.retryQueue.push(path); }
       this.tickProgress();
     }
 
@@ -1072,7 +1086,7 @@ export class SyncEngine {
       try {
         const remote = remoteMap.get(path)!;
         await this.downloadFile(remote, remote.checksum ?? remote.etag ?? String(remote.size), remote.checksum ? 'sha256' : 'etag', summary);
-      } catch { summary.errorCount++; this.retryQueue.push(path); }
+      } catch (err) { this.recordError(summary, path, err); this.retryQueue.push(path); }
       this.tickProgress();
     }
 
@@ -1099,7 +1113,7 @@ export class SyncEngine {
         const remoteId = remote.checksum ?? remote.etag ?? String(remote.size);
         const idType: FileState['idType'] = remote.checksum ? 'sha256' : (remote.etag ? 'etag' : 'size');
         await this.handleConflict(path, undefined, remote, remoteId, idType, summary);
-      } catch { summary.errorCount++; this.retryQueue.push(path); }
+      } catch (err) { this.recordError(summary, path, err); this.retryQueue.push(path); }
       this.tickProgress();
     }
   }
@@ -1185,6 +1199,9 @@ export class SyncEngine {
   }
 
   private isSystemExcluded(path: string): boolean {
+    // The plugin's own atomic-write temp files are never sync content (defense in depth:
+    // the vault watchers already filter them, but a leftover tmp must not be uploaded either).
+    if (isSyncTmpPath(path)) return true;
     // Bookmarks are synced only when enabled in settings (an exception to the config-folder exclusion).
     if (path === this.bookmarksPath) return !this.opts.settings.syncBookmarks;
     // Everything under the config folder (settings, themes, other plugins, state DB, etc.) is always excluded.
