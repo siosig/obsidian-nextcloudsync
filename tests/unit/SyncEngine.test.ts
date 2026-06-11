@@ -100,7 +100,7 @@ describe('SyncEngine.handleConflict — failure-policy actions', () => {
   function makeSummary(): SyncSessionSummary {
     return {
       startedAt: 0, completedAt: null, uploadedCount: 0, downloadedCount: 0,
-      deletedCount: 0, conflictCount: 0, errorCount: 0, retriedFiles: [],
+      deletedCount: 0, conflictCount: 0, errorCount: 0, retriedFiles: [], errors: [],
     };
   }
 
@@ -160,6 +160,9 @@ describe('SyncEngine.handleConflict — failure-policy actions', () => {
     expect(h.atomicWriteBinary).not.toHaveBeenCalled();
     expect(summary.errorCount).toBe(1);
     expect(summary.conflictCount).toBe(1);
+    // The error detail is recorded for the sync-status dialog.
+    expect(summary.errors).toHaveLength(1);
+    expect(summary.errors[0].path).toBe('image.png');
     // StateDB entry only flagged conflicted; hashes unchanged so the next sync re-detects.
     expect(h.setFile).toHaveBeenCalledWith(expect.objectContaining({
       path: 'image.png', localHash: 'lh', remoteId: 'rh', isConflicted: true,
@@ -201,6 +204,7 @@ describe('SyncEngine.handleConflict — failure-policy actions', () => {
 
     expect(summary.errorCount).toBe(1);
     expect(summary.uploadedCount).toBe(0);
+    expect(summary.errors[0]).toEqual({ path: 'image.png', message: 'network down' });
     // Must NOT record a converged (isConflicted:false) entry on failure.
     expect(h.setFile).not.toHaveBeenCalled();
   });
@@ -210,7 +214,7 @@ describe('SyncEngine.processRemoteDeletion — out-of-scope safety', () => {
   function makeSummary(): SyncSessionSummary {
     return {
       startedAt: 0, completedAt: null, uploadedCount: 0, downloadedCount: 0,
-      deletedCount: 0, conflictCount: 0, errorCount: 0, retriedFiles: [],
+      deletedCount: 0, conflictCount: 0, errorCount: 0, retriedFiles: [], errors: [],
     };
   }
 
