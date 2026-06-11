@@ -7,6 +7,8 @@ export class StateDB {
   private state: SyncState;
   private readonly statePath: string;
   private readonly tmpPath: string;
+  /** Serializes save() calls: watch-mode single-file ops and full syncs save concurrently. */
+  private saveChain: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly adapter: DataAdapter,
@@ -30,8 +32,19 @@ export class StateDB {
     }
   }
 
-  /** Atomically persist state to disk (tmp → rename). */
-  async save(): Promise<void> {
+  /**
+   * Atomically persist state to disk (tmp → rename). Concurrent callers are serialized:
+   * the exists → remove → rename sequence is not atomic, so two interleaved saves used to
+   * race each other into ENOENT on the unlink step.
+   */
+  save(): Promise<void> {
+    const run = this.saveChain.then(() => this.doSave());
+    // Keep the chain usable after a failure so later saves still run.
+    this.saveChain = run.catch(() => {});
+    return run;
+  }
+
+  private async doSave(): Promise<void> {
     const json = JSON.stringify(this.state, null, 2);
     await this.adapter.write(this.tmpPath, json);
     if (await this.adapter.exists(this.statePath)) {

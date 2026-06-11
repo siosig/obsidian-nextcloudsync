@@ -172,6 +172,12 @@ export type ConflictResolution =
   | { action: 'prefer-local' }
   | { action: 'prefer-remote' };
 
+/** One recorded sync error: the file it happened on (empty for session-level errors) and why. */
+export interface SyncErrorDetail {
+  path: string;
+  message: string;
+}
+
 export interface SyncSessionSummary {
   startedAt: number;
   completedAt: number | null;
@@ -181,6 +187,8 @@ export interface SyncSessionSummary {
   conflictCount: number;
   errorCount: number;
   retriedFiles: string[];
+  /** Per-error details behind errorCount, shown in the sync status dialog. */
+  errors: SyncErrorDetail[];
 }
 
 export type SyncStatus = 'idle' | 'syncing' | 'error' | 'conflict';

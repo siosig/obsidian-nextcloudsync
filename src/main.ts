@@ -5,6 +5,7 @@ import { SyncEngine } from './sync/SyncEngine';
 import { VersionHistoryModal } from './ui/VersionHistoryModal';
 import { SyncStatusModal } from './ui/SyncStatusModal';
 import { FileLogger } from './util/FileLogger';
+import { isSyncTmpPath, LocalAdapter } from './data/LocalAdapter';
 import { v4 as uuidv4 } from './util/uuid';
 
 const MIN_OBSIDIAN_VERSION = '1.12.7';
@@ -12,6 +13,8 @@ const MIN_OBSIDIAN_VERSION = '1.12.7';
 export default class ObsidianNextcloudsync extends Plugin {
   settings!: DavSyncSettings;
   syncEngine?: SyncEngine;
+  /** Shared with SyncEngine; its ignore list marks the plugin's own writes for the watchers. */
+  localAdapter?: LocalAdapter;
   /** Diagnostic file logger (writes nextcloud-sync-debug.md while Debug mode is on). */
   logger!: FileLogger;
 
@@ -73,6 +76,13 @@ export default class ObsidianNextcloudsync extends Plugin {
     const guard = (file: TAbstractFile): file is TFile =>
       this.settings.watchOnChangeEnabled && !Platform.isMobile && file instanceof TFile;
 
+    // Vault events caused by the plugin itself (downloads / conflict writes use atomic
+    // tmp-write → rename) must not be propagated back to the server, or every download
+    // turns into a spurious upload/MOVE/DELETE storm. SyncEngine marks its own writes in
+    // the LocalAdapter ignore list; tmp paths are filtered unconditionally.
+    const isOwnSyncEvent = (path: string): boolean =>
+      isSyncTmpPath(path) || (this.localAdapter?.shouldIgnore(path) ?? false);
+
     // Accumulate paths changed during rapid editing and flush them together after the
     // debounce window so each keystroke does not trigger a separate network request.
     const pendingUploads = new Set<string>();
@@ -85,23 +95,26 @@ export default class ObsidianNextcloudsync extends Plugin {
     }, 2000, true);
 
     this.registerEvent(this.app.vault.on('modify', (file: TAbstractFile) => {
-      if (!guard(file)) return;
+      if (!guard(file) || isOwnSyncEvent(file.path)) return;
       pendingUploads.add(file.path);
       debouncedUpload();
     }));
     this.registerEvent(this.app.vault.on('create', (file: TAbstractFile) => {
-      if (!guard(file)) return;
+      if (!guard(file) || isOwnSyncEvent(file.path)) return;
       pendingUploads.add(file.path);
       debouncedUpload();
     }));
     this.registerEvent(this.app.vault.on('delete', (file: TAbstractFile) => {
       if (!guard(file)) return;
       pendingUploads.delete(file.path); // cancel any pending upload for this path
+      if (isOwnSyncEvent(file.path)) return; // e.g. atomic write replacing the old copy
       void this.syncEngine?.deleteSingleFile(file.path);
     }));
     this.registerEvent(this.app.vault.on('rename', (file: TAbstractFile, oldPath: string) => {
       if (!guard(file)) return;
       pendingUploads.delete(oldPath);
+      // tmp → target renames are the tail of the plugin's own atomic writes.
+      if (isOwnSyncEvent(oldPath) || isOwnSyncEvent(file.path)) return;
       void this.syncEngine?.renameSingleFile(oldPath, file.path);
     }));
   }
@@ -194,7 +207,6 @@ export default class ObsidianNextcloudsync extends Plugin {
   }
 
   async initSyncEngine(): Promise<void> {
-    const { LocalAdapter } = await import('./data/LocalAdapter');
     const { StateDB } = await import('./data/StateDB');
     const { StatusBarItem } = await import('./ui/StatusBarItem');
     const { NullStatusBar } = await import('./ui/NullStatusBar');
@@ -202,6 +214,7 @@ export default class ObsidianNextcloudsync extends Plugin {
     const { loadAppPassword } = await import('./settings/SettingTab');
 
     const localAdapter = new LocalAdapter(this.app.vault.adapter);
+    this.localAdapter = localAdapter;
     const pluginDir = `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
     const stateDB = new StateDB(this.app.vault.adapter, pluginDir, this.settings.deviceId);
     await stateDB.load();
