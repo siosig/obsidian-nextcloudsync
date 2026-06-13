@@ -1,5 +1,15 @@
 # Nextcloud Sync for Obsidian
 
+**Good news for anyone working across multiple desktops and mobile devices.**
+
+The only cost you pay is waiting for the initial Vault index to complete on first install. From that moment on, you get:
+
+- **Your writing is never lost** — the merge logic keeps your Vault in a clean, consistent state even when the same note is edited on multiple devices at once.
+- **Sync fades into the background** — Nextcloud's fast differential sync means you'll stop noticing sync time altogether.
+- **Works beyond Nextcloud too** — with slightly reduced features, it works against any standard WebDAV server as well.
+
+---
+
 Bidirectional sync between your Obsidian Vault and Nextcloud — built **specifically for Nextcloud**, not just generic WebDAV.
 
 Most "WebDAV sync" plugins treat the server as a dumb file store: they compare modification times, copy files, and hope for the best. **Nextcloud Sync** instead talks to Nextcloud's own APIs (Capabilities, file IDs, checksums, versions, locking, Login Flow v2) to make syncing *safe*, *fast*, and *frictionless* — while still degrading gracefully to plain WebDAV when those APIs aren't available.
@@ -8,19 +18,24 @@ Most "WebDAV sync" plugins treat the server as a dumb file store: they compare m
 
 ---
 
-## What's new in this release (0.2.2)
+## What's new in this release (0.2.6)
 
-- **Conflict-resolution policy** — choose what happens when a conflict can't be cleanly auto-merged: leave both sides untouched and retry (**Error**, the new default), keep **Local**, keep **Remote**, or embed **conflict markers**. Configurable in settings.
-- **Merge limited to text files** — only configurable extensions (default `md`, `txt`) are ever text-merged. Other files (images, PDFs, binaries) are never merged, so conflict markers can no longer corrupt them.
-- **Behavior change:** the default conflict outcome is now **Error** (skip and retry on the next sync) instead of automatically embedding `<<<<<<<` markers. Choose the **Conflict markers** policy to restore the previous behavior (text files only).
+- **Watch-mode self-feedback loop fixed** — the plugin's own writes (downloads, merged conflicts) are no longer re-detected as user edits, eliminating spurious re-uploads, error storms, and unintended remote deletes when "Sync on file change" is enabled.
+- **One failing file no longer aborts the sync** — a per-file error (e.g. a server-side 403) is recorded and the rest of the session continues; network errors are still queued for retry with backoff.
+- **Error details in the sync-status dialog** — clicking the status bar now also shows an "Errors in last sync" list (one row per failed file, clickable to open it) instead of only an opaque error count.
+- **State database saves are serialized** — concurrent watch-mode syncs can no longer race each other into a corrupted or missing sync-state file.
 
 Earlier in the 0.2.x line:
 
+- **Remote-deletion scope guard (security hardening, 0.2.5)** — server-reported deletions are validated against the sync scope before being applied, so a malicious or compromised server can no longer make the client delete files outside the synced folder (e.g. under `.obsidian/`).
+- **Sturdier downloads (0.2.4)** — the parent folder is created before each atomic write, and per-file non-network errors no longer stop the remaining files from syncing.
+- **Conflict-resolution policy (0.2.2)** — choose what happens when a conflict can't be cleanly auto-merged: leave both sides untouched and retry (**Error**, the default), keep **Local**, keep **Remote**, or embed **conflict markers**. Configurable in settings.
+- **Merge limited to text files (0.2.2)** — only configurable extensions (default `md`, `txt`) are ever text-merged. Other files (images, PDFs, binaries) are never merged, so conflict markers can no longer corrupt them. The default conflict outcome changed from embedding `<<<<<<<` markers to **Error** (skip and retry on the next sync).
 - **Reliable cross-device deletions** — deleting a file on one device now propagates correctly instead of the file reappearing on the next sync (sync-token handling fixed, with content-verified, recoverable deletions and a mass-deletion safety guard).
 - **Auto-merged conflicts now reach the server** — a merged conflict is uploaded so all devices converge, instead of the same conflict re-appearing every sync.
 - **Mobile diagnostics** — Debug mode writes a per-device `nextcloud-sync-debug.md` log on mobile too, and "Sync now" shows a result notice.
 - **Mobile (iOS / Android) support** — the plugin now runs on mobile, with platform-aware behavior so desktop is unchanged (details in the Mobile section below).
-- **Clickable status bar → sync-status dialog** — click the status bar item to open a dialog summarizing the current sync state, the last sync, and any unresolved conflicts.
+- **Clickable status bar → sync-status dialog** — click the status bar item to open a dialog summarizing the current sync state, the last sync, any unresolved conflicts, and (since 0.2.6) any per-file errors from the last sync.
 - **"Sync now" promoted to the top of settings** and gated on authentication, so you can trigger a sync the moment you're signed in.
 - **Platform-aware default settings** — defaults are tuned per platform (e.g. network concurrency, sync-on-startup, maximum file size).
 - **YAML frontmatter is now auto-merged** — non-overlapping frontmatter edits merge cleanly (via diff3), falling back to conflict markers only when both sides change the same lines.
