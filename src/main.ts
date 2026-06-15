@@ -209,7 +209,7 @@ export default class ObsidianNextcloudsync extends Plugin {
   async initSyncEngine(): Promise<void> {
     const { StateDB } = await import('./data/StateDB');
     const { StatusBarItem } = await import('./ui/StatusBarItem');
-    const { NullStatusBar } = await import('./ui/NullStatusBar');
+    const { NoticeStatusBar } = await import('./ui/NoticeStatusBar');
     const { WebDAVFactory } = await import('./network/WebDAVFactory');
     const { loadAppPassword } = await import('./settings/SettingTab');
 
@@ -219,11 +219,12 @@ export default class ObsidianNextcloudsync extends Plugin {
     const stateDB = new StateDB(this.app.vault.adapter, pluginDir, this.settings.deviceId);
     await stateDB.load();
 
-    // Mobile has no visible status bar and the spec requires no progress display:
-    // inject a no-op status bar so the sync engine needs no platform branching.
+    // Mobile has no visible status bar (addStatusBarItem is unavailable there), so feedback is
+    // surfaced as a single reused Notice toast via NoticeStatusBar. Both implement IStatusBar, so
+    // the sync engine needs no platform branching.
     // On desktop, clicking the status bar opens the sync-status dialog (conflicts / retries).
     const statusBar = Platform.isMobile
-      ? new NullStatusBar()
+      ? new NoticeStatusBar()
       : new StatusBarItem(this.addStatusBarItem(), () => this.showSyncStatus());
     const password = loadAppPassword(this.app, this.settings.passwordSecretId);
     const webdavFactory = new WebDAVFactory(this.app, this.settings, password, (m) => void this.logger.log(`net: ${m}`));
