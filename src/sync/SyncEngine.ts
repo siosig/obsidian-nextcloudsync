@@ -107,19 +107,20 @@ export class SyncEngine {
   }
 
   async syncManual(opts: { manual?: boolean } = {}): Promise<void> {
-    // Mobile has no status bar, so on an explicit "Sync now" tap we surface the outcome as a
-    // notice. Automatic/startup/interval runs stay silent; desktop keeps using the status bar.
-    const announce = opts.manual === true && Platform.isMobile;
+    // Mobile has no status bar; sync state (progress + result) is surfaced via NoticeStatusBar,
+    // which implements IStatusBar and is driven uniformly for every run. The two early-return
+    // guidance notices below still need an explicit mobile notice because those paths return
+    // before any syncing toast is created. Desktop keeps using the status bar (no popups).
     void this.opts.logger?.log(`sync: start (manual=${opts.manual === true})`);
     // Prevent concurrent runs (avoid clashing with watch mode or scheduled sync).
     if (this.running) {
       void this.opts.logger?.log('sync: skipped — already running');
-      if (announce) new Notice('⏳ A sync is already in progress.');
+      if (Platform.isMobile) new Notice('⏳ A sync is already in progress.');
       return;
     }
     if (this.isBlockedByWifiOnly()) { // "Wi-Fi only" enabled and on cellular
       void this.opts.logger?.log('sync: skipped — Wi-Fi-only and on cellular');
-      if (announce) new Notice('Sync skipped — you are on cellular and Wi-Fi only sync is on.', 6000);
+      if (Platform.isMobile) new Notice('Sync skipped — you are on cellular and Wi-Fi only sync is on.', 6000);
       return;
     }
     this.running = true;
@@ -157,28 +158,11 @@ export class SyncEngine {
         summary.uploadedCount, summary.downloadedCount,
         conflictCount, summary.errorCount,
       );
-      // Desktop reflects the result in the status bar (no completion popup). On mobile there is
-      // no status bar, so an explicit "Sync now" gets a one-line result notice instead.
-      // Genuine failures still surface via the catch-block notice / NextcloudErrorParser.
-      // A cancelled dry-run already showed "Sync cancelled.", so suppress the result line there.
-      if (announce && !cancelled) new Notice(this.formatSyncResult(summary), 6000);
+      // Result display is owned by the status bar surface: StatusBarItem on desktop, and
+      // NoticeStatusBar (a result toast) on mobile, both via setSyncComplete above. Genuine
+      // failures still surface via the catch-block notice / NextcloudErrorParser.
       this.running = false;
     }
-  }
-
-  /** One-line, human-readable summary of a sync session (used for the mobile "Sync now" notice). */
-  private formatSyncResult(s: SyncSessionSummary): string {
-    if (s.errorCount > 0) {
-      const errs = `${s.errorCount} error${s.errorCount > 1 ? 's' : ''}`;
-      const tail = `↑${s.uploadedCount} ↓${s.downloadedCount}${s.conflictCount ? ` ⚠️${s.conflictCount}` : ''}`;
-      return `⚠️ Sync finished with ${errs} — ${tail}`;
-    }
-    const changed = s.uploadedCount + s.downloadedCount + s.deletedCount + s.conflictCount;
-    if (changed === 0) return '✅ Sync complete — already up to date';
-    const parts = [`↑${s.uploadedCount}`, `↓${s.downloadedCount}`];
-    if (s.deletedCount) parts.push(`🗑${s.deletedCount}`);
-    if (s.conflictCount) parts.push(`⚠️${s.conflictCount}`);
-    return `✅ Sync complete — ${parts.join(' ')}`;
   }
 
   // ── Single-file lightweight operations (used by watch mode) ─────────────────
