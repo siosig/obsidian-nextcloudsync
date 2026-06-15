@@ -25,8 +25,32 @@ export class PluginSettingTab {
   display(): void {}
 }
 
+/**
+ * Test double for Obsidian's Notice. Captures the latest message, the construction
+ * timeout, and dismissal so unit tests can assert message transitions and lifecycle.
+ * `Notice.instances` records every constructed toast (newest last) to verify the
+ * single-toast invariant.
+ */
 export class Notice {
-  constructor(_message: string, _timeout?: number) {}
+  static instances: Notice[] = [];
+  message: string;
+  timeout: number | undefined;
+  hidden = false;
+
+  constructor(message: string, timeout?: number) {
+    this.message = message;
+    this.timeout = timeout;
+    Notice.instances.push(this);
+  }
+
+  setMessage(message: string): this {
+    this.message = message;
+    return this;
+  }
+
+  hide(): void {
+    this.hidden = true;
+  }
 }
 
 export class Modal {
