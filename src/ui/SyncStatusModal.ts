@@ -57,7 +57,7 @@ export class SyncStatusModal extends Modal {
 
     // Top action: run a manual sync, then re-render with the new session's report.
     new Setting(contentEl).addButton(btn => btn
-      .setButtonText('Sync Now')
+      .setButtonText('Sync now')
       .setCta()
       .onClick(async () => {
         await this.onSyncNow();
@@ -126,7 +126,7 @@ export class SyncStatusModal extends Modal {
       }
       // Deleted files no longer exist locally — don't make them clickable (would recreate the note).
       if (e.op === 'deleted') {
-        row.style.cursor = 'default';
+        row.addClass('ncs-status-row-static');
       } else {
         row.addEventListener('click', () => {
           void this.app.workspace.openLinkText(e.path, '', false);
