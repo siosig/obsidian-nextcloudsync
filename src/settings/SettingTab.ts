@@ -183,6 +183,9 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
       disabled: Platform.isMobile,
       get: () => this.plugin.settings.syncIntervalMinutes,
       set: (v) => { this.plugin.settings.syncIntervalMinutes = v; },
+      // Apply immediately so a new interval (or enabling/disabling from 0) takes effect without
+      // a plugin reload — previously the timer kept the value from load time.
+      apply: () => this.plugin.applyAutoSyncInterval(),
     });
 
     this.addNumberSlider(containerEl, {
@@ -397,6 +400,8 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
       disabled?: boolean;
       get: () => number;
       set: (value: number) => void;
+      /** Optional side-effect run after the value is persisted (e.g. re-apply a live timer). */
+      apply?: () => void | Promise<void>;
     },
   ): void {
     const setting = new Setting(containerEl).setName(opts.name);
@@ -415,6 +420,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         opts.set(value);
         valueLabel.setText(String(value));
         await this.plugin.saveSettings();
+        await opts.apply?.();
       }));
   }
 

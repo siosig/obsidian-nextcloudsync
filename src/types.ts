@@ -178,6 +178,19 @@ export interface SyncErrorDetail {
   message: string;
 }
 
+/** The outcome recorded for a single file during a sync, shown in the status dialog's history. */
+export type SyncFileOp = 'uploaded' | 'downloaded' | 'deleted' | 'conflict' | 'error';
+
+/** One per-file sync-history entry, persisted across restarts and pruned to a rolling window. */
+export interface SyncHistoryEntry {
+  path: string;
+  op: SyncFileOp;
+  /** Epoch milliseconds when the operation was recorded. */
+  at: number;
+  /** Failure reason — present only for `op: 'error'`. */
+  message?: string;
+}
+
 export interface SyncSessionSummary {
   startedAt: number;
   completedAt: number | null;
