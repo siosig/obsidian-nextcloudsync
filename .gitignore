@@ -3,6 +3,10 @@
 # 依存
 node_modules/
 
+# pnpm 専用プロジェクト: npm / yarn のロックファイルは混在禁止（jest ツリー汚染の原因になる）
+package-lock.json
+yarn.lock
+
 # ビルド成果物（main.js は GitHub Release に添付するため Git では管理しない）
 main.js
 *.js.map
