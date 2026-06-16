@@ -1,25 +1,70 @@
 import { App, Modal, Setting } from 'obsidian';
-import { SyncErrorDetail, SyncSessionSummary } from '../types';
+import { SyncErrorDetail, SyncFileOp, SyncHistoryEntry, SyncSessionSummary } from '../types';
 
 export interface SyncStatusReport {
   summary: SyncSessionSummary | null;
   conflictedFiles: string[];
   retryFiles: string[];
+  /** Per-file sync outcomes within the last 24h, newest first. */
+  history: SyncHistoryEntry[];
+}
+
+/** Status glyph + accessible label for each recorded file outcome. */
+const OP_LABEL: Record<SyncFileOp, { icon: string; text: string }> = {
+  uploaded: { icon: '↑', text: 'Uploaded' },
+  downloaded: { icon: '↓', text: 'Downloaded' },
+  deleted: { icon: '🗑', text: 'Deleted' },
+  conflict: { icon: '⚠️', text: 'Conflict' },
+  error: { icon: '✗', text: 'Error' },
+};
+
+/** Compact "5m ago" / "2h ago" / "just now" label for a past timestamp. */
+function formatAgo(at: number, now: number): string {
+  const sec = Math.max(0, Math.floor((now - at) / 1000));
+  if (sec < 60) return 'just now';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  return `${hr}h ${min % 60}m ago`;
 }
 
 /**
- * Opened by clicking the status bar item. Shows the last sync summary and the files that
- * currently need attention: conflicts and the retry queue. Clicking a file opens it.
+ * Opened by clicking the status bar item (desktop only). Shows the last sync summary and the
+ * files that currently need attention: conflicts and the retry queue. Clicking a file opens it.
+ *
+ * A "Sync Now" button at the top triggers a manual sync via the injected `onSyncNow` callback
+ * (wired to the plugin's runSyncNow). The dialog stays open and re-renders from a fresh report
+ * when the sync completes, so the report provider — not a one-shot snapshot — is injected.
  */
 export class SyncStatusModal extends Modal {
-  constructor(app: App, private readonly report: SyncStatusReport) {
+  constructor(
+    app: App,
+    private readonly getReport: () => SyncStatusReport,
+    private readonly onSyncNow: () => Promise<void>,
+  ) {
     super(app);
   }
 
   onOpen(): void {
-    const { contentEl, report } = this;
+    this.render();
+  }
+
+  /** Build (or rebuild) the dialog body from a freshly queried report. Safe to call repeatedly. */
+  private render(): void {
+    const { contentEl } = this;
     contentEl.empty();
     this.setTitle('Sync status');
+
+    // Top action: run a manual sync, then re-render with the new session's report.
+    new Setting(contentEl).addButton(btn => btn
+      .setButtonText('Sync Now')
+      .setCta()
+      .onClick(async () => {
+        await this.onSyncNow();
+        this.render();
+      }));
+
+    const report = this.getReport();
 
     // Last session summary
     const s = report.summary;
@@ -34,6 +79,8 @@ export class SyncStatusModal extends Modal {
       contentEl.createEl('p', { text: 'No sync has run yet in this session.', cls: 'setting-item-description' });
     }
 
+    this.addHistorySection(report.history);
+
     this.addFileSection('⚠️ Conflicts', report.conflictedFiles,
       'Files with unresolved conflict markers. Open one to resolve it (search #conflict too).');
     this.addFileSection('✗ Queued for retry', report.retryFiles,
@@ -43,6 +90,46 @@ export class SyncStatusModal extends Modal {
     if (report.conflictedFiles.length === 0 && report.retryFiles.length === 0
         && (s?.errors.length ?? 0) === 0) {
       contentEl.createEl('p', { text: '🟢 No conflicts or pending retries.' });
+    }
+  }
+
+  /**
+   * Per-file sync activity in the last 24 hours (successes included), newest first. The list is
+   * scrollable (capped height with a vertical scrollbar) so a busy sync session stays compact.
+   */
+  private addHistorySection(history: SyncHistoryEntry[]): void {
+    const { contentEl } = this;
+    new Setting(contentEl).setName(`🕒 Recent activity · last 24h (${history.length})`).setHeading();
+
+    if (history.length === 0) {
+      contentEl.createEl('p', {
+        text: 'No files synced in the last 24 hours.',
+        cls: 'setting-item-description',
+      });
+      return;
+    }
+
+    const now = Date.now();
+    const list = contentEl.createEl('div', { cls: 'ncs-status-list ncs-history-list' });
+    for (const e of history) {
+      const op = OP_LABEL[e.op];
+      const row = list.createEl('div', { cls: 'ncs-status-row' });
+      const head = row.createEl('div');
+      head.createSpan({ text: `${op.icon} `, attr: { 'aria-label': op.text, title: op.text } });
+      head.createSpan({ text: e.path });
+      const meta = e.op === 'error' && e.message
+        ? `${op.text} · ${formatAgo(e.at, now)} · ${e.message}`
+        : `${op.text} · ${formatAgo(e.at, now)}`;
+      row.createEl('div', { text: meta, cls: 'setting-item-description' });
+      // Deleted files no longer exist locally — don't make them clickable (would recreate the note).
+      if (e.op === 'deleted') {
+        row.style.cursor = 'default';
+      } else {
+        row.addEventListener('click', () => {
+          void this.app.workspace.openLinkText(e.path, '', false);
+          this.close();
+        });
+      }
     }
   }
 

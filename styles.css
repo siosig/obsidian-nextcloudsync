@@ -105,6 +105,14 @@
   background: var(--background-modifier-hover);
 }
 
+/* Recent-activity (24h) history: bounded height with an always-visible vertical scrollbar
+   so a long list stays compact and its scroll position is obvious. */
+.ncs-history-list {
+  max-height: 240px;
+  overflow-y: scroll;
+  overflow-x: auto;
+}
+
 /* ── Diff / merge preview modal ──────────────────────────────────────────── */
 .ncs-diff-modal {
   width: min(1100px, 95vw);
