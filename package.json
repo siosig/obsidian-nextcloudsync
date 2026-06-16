@@ -5,6 +5,7 @@
   "main": "main.js",
   "packageManager": "pnpm@11.4.0",
   "scripts": {
+    "prepare": "git config core.hooksPath .githooks || true",
     "dev": "node esbuild.config.mjs",
     "build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production",
     "lint": "eslint src",

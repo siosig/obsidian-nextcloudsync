@@ -18,14 +18,18 @@ Most "WebDAV sync" plugins treat the server as a dumb file store: they compare m
 
 ---
 
-## What's new in this release (0.2.6)
+## What's new in this release (0.2.9)
 
-- **Watch-mode self-feedback loop fixed** — the plugin's own writes (downloads, merged conflicts) are no longer re-detected as user edits, eliminating spurious re-uploads, error storms, and unintended remote deletes when "Sync on file change" is enabled.
-- **One failing file no longer aborts the sync** — a per-file error (e.g. a server-side 403) is recorded and the rest of the session continues; network errors are still queued for retry with backoff.
-- **Error details in the sync-status dialog** — clicking the status bar now also shows an "Errors in last sync" list (one row per failed file, clickable to open it) instead of only an opaque error count.
-- **State database saves are serialized** — concurrent watch-mode syncs can no longer race each other into a corrupted or missing sync-state file.
+- **Manual "Sync now" button and live 24-hour activity (0.2.7)** — the sync-status dialog gained a **Sync now** button at the top, a scrollable **last-24h activity history** (one compact, icon-led line per file), and now applies a changed auto-sync interval immediately without needing a reload.
+- **Installs on more setups (0.2.8)** — the minimum required Obsidian version was corrected down to `1.11.4` (the true minimum the plugin needs), instead of effectively requiring only the very latest release.
+- **Passes Obsidian's automated store review (0.2.9)** — inline styling moved to CSS classes and UI text to sentence case, clearing the Community-plugins automated checks that had delisted the entry.
 
 Earlier in the 0.2.x line:
+
+- **Watch-mode self-feedback loop fixed (0.2.6)** — the plugin's own writes (downloads, merged conflicts) are no longer re-detected as user edits, eliminating spurious re-uploads, error storms, and unintended remote deletes when "Sync on file change" is enabled.
+- **One failing file no longer aborts the sync (0.2.6)** — a per-file error (e.g. a server-side 403) is recorded and the rest of the session continues; network errors are still queued for retry with backoff.
+- **Error details in the sync-status dialog (0.2.6)** — clicking the status bar now also shows an "Errors in last sync" list (one row per failed file, clickable to open it) instead of only an opaque error count.
+- **State database saves are serialized (0.2.6)** — concurrent watch-mode syncs can no longer race each other into a corrupted or missing sync-state file.
 
 - **Remote-deletion scope guard (security hardening, 0.2.5)** — server-reported deletions are validated against the sync scope before being applied, so a malicious or compromised server can no longer make the client delete files outside the synced folder (e.g. under `.obsidian/`).
 - **Sturdier downloads (0.2.4)** — the parent folder is created before each atomic write, and per-file non-network errors no longer stop the remaining files from syncing.
@@ -72,7 +76,7 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 - **Rename / move tracking** via Nextcloud file IDs — moving a note doesn't re-upload it everywhere.
 - **Trashbin deletes** — remote deletions use the Nextcloud trashbin (recoverable). When a deletion is applied to your local Vault, it follows **your Obsidian "Deleted files" setting** (system trash / move to `.trash` / permanently delete) rather than forcing one behavior; folders and files outside the Vault's tracked notes (e.g. config-folder files) are handled too.
 - **Per-Vault configuration** — each Vault can target a different Nextcloud server / account without state bleeding between them.
-- **Periodic auto-sync** with a configurable interval (set to `0` for manual-only), plus a **Sync Now** command.
+- **Periodic auto-sync** with a configurable interval (set to `0` for manual-only), plus a **Sync now** command.
 - **Sync on file change (watch mode)** — optionally sync immediately after you edit a local Markdown file (debounced ~2s after you stop typing). Toggle on/off in settings; works alongside the periodic interval.
 - **Resilient retries** — failed files are skipped, queued, and retried next sync with exponential backoff; a dropped Wi-Fi connection resumes automatically.
 - **Standard WebDAV fallback** — works against any WebDAV server (recursive), Nextcloud features auto-disabled.
@@ -107,7 +111,7 @@ Mobile is supported, with a few platform-aware differences (desktop behaviour is
 
 ## Requirements
 
-- **Obsidian** `1.12.7` or later. Desktop (Electron) and mobile (iOS / Android) are supported.
+- **Obsidian** `1.11.4` or later (the plugin uses the secret-storage API introduced in `1.11.4`). Desktop (Electron) and mobile (iOS / Android) are supported.
 - **Nextcloud** Hub 26 "Winter" (server `33`) or later is **recommended** for the Nextcloud-specific features. Older Nextcloud servers are no longer blocked — they still connect and sync, but the settings screen shows a recommendation banner and some features may degrade. Plain WebDAV servers fall back to core sync.
 - A Nextcloud account. You can authenticate with **Login Flow v2** (recommended) or a manually issued **app password** (never your main password).
 
@@ -135,7 +139,7 @@ Mobile is supported, with a few platform-aware differences (desktop behaviour is
    - **Recommended:** click **Login with browser** (Login Flow v2), approve in the browser, and credentials are filled in and stored automatically; **or**
    - enter your **username** and a manually issued **app password**.
 4. (Optional) Adjust the auto-sync interval, **Sync on file change** (watch mode), auto-merge, chunk threshold, and locking options.
-5. Run the **Sync Now** command (or wait for the periodic sync). On the first run you'll get a **dry-run preview** (`N uploads / M downloads`) to approve.
+5. Run the **Sync now** command (or wait for the periodic sync). On the first run you'll get a **dry-run preview** (`N uploads / M downloads`) to approve.
 
 Your Vault is synced into a folder named after the Vault on the Nextcloud side, keeping multiple Vaults cleanly separated.
 
@@ -209,11 +213,19 @@ On connect, the plugin probes `/status.php` (maintenance mode) and `/ocs/v1.php/
 ## Contributing & development
 
 ```bash
-npm install      # install dependencies
-npm run dev      # development build (watches and rebuilds main.js)
-npm run build    # type-check + production build
-npm test         # run the test suite
+pnpm install     # install dependencies (also wires up the git pre-push hook)
+pnpm dev         # development build (watches and rebuilds main.js)
+pnpm build       # type-check + production build
+pnpm lint        # run the Obsidian community-store linter (eslint-plugin-obsidianmd)
+pnpm test        # run the test suite
 ```
+
+> **Release hygiene is enforced by a git pre-push hook** (`.githooks/pre-push`, activated
+> automatically by the `prepare` script on `pnpm install`). Before every push it runs the
+> linter and production build and checks that `README.md` matches the current
+> `manifest.json` version (the "What's new in this release" heading) and `minAppVersion`,
+> so a release can't ship with a lint error or stale docs. Bypass in an emergency with
+> `git push --no-verify`.
 
 **Commit messages must be written in English.** Keep the subject in the imperative mood and explain the *why* in the body when it isn't obvious.
 
