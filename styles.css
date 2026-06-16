@@ -113,6 +113,33 @@
   overflow-x: auto;
 }
 
+/* One compact line per entry: leading status icon + path (grows) + muted time (right). The
+   icon alone encodes the outcome, so the status word no longer takes a separate line. */
+.ncs-history-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.ncs-history-icon {
+  flex: 0 0 auto;
+}
+
+.ncs-history-path {
+  flex: 1 1 auto;
+  word-break: break-all;
+}
+
+.ncs-history-time {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.ncs-history-errmsg {
+  margin-left: 22px; /* align under the path, past the icon */
+}
+
 /* ── Diff / merge preview modal ──────────────────────────────────────────── */
 .ncs-diff-modal {
   width: min(1100px, 95vw);

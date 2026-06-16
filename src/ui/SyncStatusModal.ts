@@ -114,13 +114,16 @@ export class SyncStatusModal extends Modal {
     for (const e of history) {
       const op = OP_LABEL[e.op];
       const row = list.createEl('div', { cls: 'ncs-status-row' });
-      const head = row.createEl('div');
-      head.createSpan({ text: `${op.icon} `, attr: { 'aria-label': op.text, title: op.text } });
-      head.createSpan({ text: e.path });
-      const meta = e.op === 'error' && e.message
-        ? `${op.text} · ${formatAgo(e.at, now)} · ${e.message}`
-        : `${op.text} · ${formatAgo(e.at, now)}`;
-      row.createEl('div', { text: meta, cls: 'setting-item-description' });
+      // One compact line per entry: a leading status icon (hover shows the word) conveys the
+      // outcome, then the path, then a muted relative time — no separate status-word line.
+      const line = row.createEl('div', { cls: 'ncs-history-line' });
+      line.createSpan({ cls: 'ncs-history-icon', text: op.icon, attr: { 'aria-label': op.text, title: op.text } });
+      line.createSpan({ cls: 'ncs-history-path', text: e.path });
+      line.createSpan({ cls: 'ncs-history-time', text: formatAgo(e.at, now) });
+      // Errors keep their reason on a second, muted line; the icon already encodes the status.
+      if (e.op === 'error' && e.message) {
+        row.createEl('div', { text: e.message, cls: 'setting-item-description ncs-history-errmsg' });
+      }
       // Deleted files no longer exist locally — don't make them clickable (would recreate the note).
       if (e.op === 'deleted') {
         row.style.cursor = 'default';
