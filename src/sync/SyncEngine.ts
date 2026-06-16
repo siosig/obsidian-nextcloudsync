@@ -6,6 +6,8 @@ import {
   NextcloudFeatures,
   RemoteFileInfo,
   SyncSessionSummary,
+  SyncFileOp,
+  SyncHistoryEntry,
   SyncTokenExpiredError,
   NetworkError,
   FileLockedError,
@@ -14,6 +16,7 @@ import {
 } from '../types';
 import { isSyncTmpPath, LocalAdapter } from '../data/LocalAdapter';
 import { StateDB } from '../data/StateDB';
+import { SyncHistoryStore } from '../data/SyncHistoryStore';
 import { IStatusBar } from '../ui/StatusBarItem';
 import { WebDAVFactory } from '../network/WebDAVFactory';
 import { IWebDAVClient } from '../network/IWebDAVClient';
@@ -35,6 +38,8 @@ export interface SyncEngineOptions {
   localAdapter: LocalAdapter;
   stateDB: StateDB;
   statusBar: IStatusBar;
+  /** Persisted per-file sync-history log for the status dialog. Optional (absent in some tests). */
+  historyStore?: SyncHistoryStore;
   webdavFactory: WebDAVFactory;
   pluginDir: string;
   /** Obsidian's configuration folder (Vault#configDir), e.g. `.obsidian`. User-configurable. */
@@ -153,6 +158,7 @@ export class SyncEngine {
       this.lastSummary = summary;
       this.opts.stateDB.setLastSyncTime(Date.now());
       await this.opts.stateDB.save();
+      await this.opts.historyStore?.save(); // persist this session's per-file outcomes (pruned to 24h)
       const conflictCount = this.opts.stateDB.countConflicted();
       this.opts.statusBar.setSyncComplete(
         summary.uploadedCount, summary.downloadedCount,
@@ -188,6 +194,7 @@ export class SyncEngine {
         dummySummary,
       );
       await this.opts.stateDB.save();
+      await this.opts.historyStore?.save(); // persist any 'uploaded' entry recorded by uploadFile
     } catch (err) {
       console.warn(`[SyncEngine] Single-file upload failed for ${path}:`, err);
     }
@@ -201,6 +208,7 @@ export class SyncEngine {
     if (!base) return; // not tracked — nothing to do on remote
     try {
       await this.client!.deleteFile(path, base.remoteId);
+      this.recordHistory(path, 'deleted');
     } catch (err) {
       if (!(err instanceof NetworkError && err.status === 404)) {
         console.warn(`[SyncEngine] Single-file delete failed for ${path}:`, err);
@@ -208,6 +216,7 @@ export class SyncEngine {
     }
     this.opts.stateDB.deleteFile(path);
     await this.opts.stateDB.save();
+    await this.opts.historyStore?.save();
   }
 
   /** MOVE a single file on the remote when it was renamed/moved locally. */
@@ -246,11 +255,21 @@ export class SyncEngine {
    * Snapshot for the status-bar dialog: last session summary plus the current lists of
    * conflicted files and files queued for retry (the two things the status bar counts).
    */
-  getStatusReport(): { summary: SyncSessionSummary | null; conflictedFiles: string[]; retryFiles: string[] } {
+  getStatusReport(): {
+    summary: SyncSessionSummary | null;
+    conflictedFiles: string[];
+    retryFiles: string[];
+    history: SyncHistoryEntry[];
+  } {
     const conflictedFiles = this.opts.stateDB.getAllFiles()
       .filter(f => f.isConflicted)
       .map(f => f.path);
-    return { summary: this.lastSummary, conflictedFiles, retryFiles: [...this.retryQueue] };
+    return {
+      summary: this.lastSummary,
+      conflictedFiles,
+      retryFiles: [...this.retryQueue],
+      history: this.opts.historyStore?.recent() ?? [],
+    };
   }
 
   getUnresolvedConflictCount(): Promise<number> {
@@ -342,7 +361,14 @@ export class SyncEngine {
   /** Count an error and keep its detail for the sync-status dialog. Empty path = session-level. */
   private recordError(summary: SyncSessionSummary, path: string, err: unknown): void {
     summary.errorCount++;
-    summary.errors.push({ path, message: err instanceof Error ? err.message : String(err) });
+    const message = err instanceof Error ? err.message : String(err);
+    summary.errors.push({ path, message });
+    if (path) this.recordHistory(path, 'error', message); // session-level errors aren't file history
+  }
+
+  /** Append one per-file outcome to the persisted 24h history (no-op when no store is injected). */
+  private recordHistory(path: string, op: SyncFileOp, message?: string): void {
+    this.opts.historyStore?.record(path, op, Date.now(), message);
   }
 
   /** First-ever sync: full scan → Dry Run → user approval → execute. Returns false if cancelled. */
@@ -539,6 +565,7 @@ export class SyncEngine {
       try {
         await this.client!.deleteFile(remote.path, base.remoteId);
         summary.deletedCount++;
+        this.recordHistory(remote.path, 'deleted');
       } catch (err) {
         if (!(err instanceof NetworkError && err.status === 404)) throw err;
       }
@@ -587,6 +614,7 @@ export class SyncEngine {
 
     if (outcome === 'skipped') return; // Size limit exceeded. Already warned by the strategy (no retry needed).
     summary.uploadedCount++;
+    this.recordHistory(path, 'uploaded');
 
     this.opts.stateDB.setFile({
       path, localHash, remoteId, idType,
@@ -681,6 +709,7 @@ export class SyncEngine {
     const data = this.client!.getLastDownloadBuffer();
     await this.opts.localAdapter.atomicWriteBinary(remote.path, data);
     summary.downloadedCount++;
+    this.recordHistory(remote.path, 'downloaded');
 
     // Preserve remote mtime on the local file so the two stay in sync.
     if (remote.lastModified) {
@@ -712,6 +741,7 @@ export class SyncEngine {
     const resolver = new ConflictResolver(this.opts.app, this.opts.localAdapter, this.opts.settings);
     const decision = resolver.decide(path, '', localContent, remoteContent);
     summary.conflictCount++;
+    this.recordHistory(path, 'conflict');
 
     switch (decision.action) {
       case 'skip':
@@ -761,7 +791,7 @@ export class SyncEngine {
       const lockToken = await this.acquireLock(path);
       try {
         const outcome = await this.uploadStrategy!.upload(this.client!, path, mergedData, maxMtime);
-        if (outcome !== 'skipped') { summary.uploadedCount++; uploaded = true; }
+        if (outcome !== 'skipped') { summary.uploadedCount++; uploaded = true; this.recordHistory(path, 'uploaded'); }
       } finally {
         await this.releaseLock(path, lockToken);
       }
@@ -816,6 +846,7 @@ export class SyncEngine {
       return;
     }
     summary.uploadedCount++;
+    this.recordHistory(path, 'uploaded');
     this.opts.stateDB.setFile({
       path, localHash, remoteId: localHash, idType: 'sha256',
       size: stat?.size ?? localData.byteLength, mtime,
@@ -844,6 +875,7 @@ export class SyncEngine {
     const localHash = await sha256(remoteData);
     const mtime = remote.lastModified || (await this.opts.localAdapter.stat(path))?.mtime || Date.now();
     summary.downloadedCount++;
+    this.recordHistory(path, 'downloaded');
     this.opts.stateDB.setFile({
       path, localHash, remoteId, idType,
       size: remote.size, mtime,
@@ -872,6 +904,7 @@ export class SyncEngine {
         // delete) instead of forcing one behavior. trashFile handles both files and folders.
         await this.opts.app.fileManager.trashFile(file);
         summary.downloadedCount++;
+        this.recordHistory(path, 'deleted'); // remote deletion applied locally
       } else if (isSafeVaultRelativePath(path) && await this.opts.app.vault.adapter.exists(normalized)) {
         // Not a vault-tracked abstract file (e.g. dotfiles under a config folder): delete it
         // directly so the deletion is never silently skipped. Defense-in-depth: only when the
@@ -879,6 +912,7 @@ export class SyncEngine {
         // never reach this raw fs sink even if the boundary guard is ever bypassed.
         await this.opts.app.vault.adapter.remove(normalized);
         summary.downloadedCount++;
+        this.recordHistory(path, 'deleted'); // remote deletion applied locally (config dotfile)
       }
       // else: already gone locally — nothing to delete, fall through to state cleanup.
     } catch (err) {
@@ -967,6 +1001,7 @@ export class SyncEngine {
       try {
         await this.client!.deleteFile(path, fileState.remoteId);
         summary.deletedCount++;
+        this.recordHistory(path, 'deleted');
       } catch (err) {
         if (err instanceof NetworkError && err.status === 404) {
           // Already gone from remote — StateDB cleanup is sufficient.
@@ -1060,6 +1095,7 @@ export class SyncEngine {
         const outcome = await this.uploadStrategy!.upload(this.client!, path, data, lf.mtime);
         if (outcome === 'skipped') continue;
         summary.uploadedCount++;
+        this.recordHistory(path, 'uploaded');
         const stat = await this.opts.localAdapter.stat(path);
         this.opts.stateDB.setFile({ path, localHash: lf.hash, remoteId: lf.hash, idType: 'sha256', size: lf.size, mtime: stat?.mtime ?? 0, remoteFileId: null, isConflicted: false });
       } catch (err) { this.recordError(summary, path, err); this.retryQueue.push(path); }

@@ -137,13 +137,32 @@ export default class ObsidianNextcloudsync extends Plugin {
     await this.syncEngine.syncManual({ manual: true });
   }
 
+  /**
+   * (Re)start or stop periodic auto-sync to match the current settings. Called at engine init
+   * and whenever the "Sync interval" setting changes, so a new interval takes effect immediately
+   * without a plugin reload. Desktop-only — on mobile the OS suspends background timers, so this
+   * always stops the timer there.
+   */
+  applyAutoSyncInterval(): void {
+    if (!this.syncEngine) return;
+    if (!Platform.isMobile && this.settings.syncIntervalMinutes > 0) {
+      this.syncEngine.startAutoSync(this.settings.syncIntervalMinutes);
+    } else {
+      this.syncEngine.stopAutoSync();
+    }
+  }
+
   /** Open the sync-status dialog (conflicts / retry queue) from a status-bar click. */
   private showSyncStatus(): void {
     if (!this.syncEngine) {
       new Notice('Configure the server settings first.');
       return;
     }
-    new SyncStatusModal(this.app, this.syncEngine.getStatusReport()).open();
+    new SyncStatusModal(
+      this.app,
+      () => this.syncEngine!.getStatusReport(),
+      () => this.runSyncNow(),
+    ).open();
   }
 
   /** Fetch the server-side version history of the active note and show the modal (US2). */
@@ -208,6 +227,7 @@ export default class ObsidianNextcloudsync extends Plugin {
 
   async initSyncEngine(): Promise<void> {
     const { StateDB } = await import('./data/StateDB');
+    const { SyncHistoryStore } = await import('./data/SyncHistoryStore');
     const { StatusBarItem } = await import('./ui/StatusBarItem');
     const { NoticeStatusBar } = await import('./ui/NoticeStatusBar');
     const { WebDAVFactory } = await import('./network/WebDAVFactory');
@@ -218,6 +238,8 @@ export default class ObsidianNextcloudsync extends Plugin {
     const pluginDir = `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
     const stateDB = new StateDB(this.app.vault.adapter, pluginDir, this.settings.deviceId);
     await stateDB.load();
+    const historyStore = new SyncHistoryStore(this.app.vault.adapter, pluginDir);
+    await historyStore.load();
 
     // Mobile has no visible status bar (addStatusBarItem is unavailable there), so feedback is
     // surfaced as a single reused Notice toast via NoticeStatusBar. Both implement IStatusBar, so
@@ -235,6 +257,7 @@ export default class ObsidianNextcloudsync extends Plugin {
       localAdapter,
       stateDB,
       statusBar,
+      historyStore,
       webdavFactory,
       pluginDir,
       configDir: this.app.vault.configDir,
@@ -250,9 +273,7 @@ export default class ObsidianNextcloudsync extends Plugin {
     });
 
     // Periodic auto-sync is desktop-only (mobile OS suspends background timers).
-    if (!Platform.isMobile && this.settings.syncIntervalMinutes > 0) {
-      this.syncEngine.startAutoSync(this.settings.syncIntervalMinutes);
-    }
+    this.applyAutoSyncInterval();
 
     // Startup sync: configurable on both platforms. Default ON (desktop) / OFF (mobile).
     if (this.settings.syncOnStartupEnabled) {
