@@ -222,9 +222,10 @@ pnpm test        # run the test suite
 
 > **Release hygiene is enforced by a git pre-push hook** (`.githooks/pre-push`, activated
 > automatically by the `prepare` script on `pnpm install`). Before every push it runs the
-> linter and production build and checks that `README.md` matches the current
-> `manifest.json` version (the "What's new in this release" heading) and `minAppVersion`,
-> so a release can't ship with a lint error or stale docs. Bypass in an emergency with
+> linter and production build and checks that **both `README.md` and `README.ja.md`** match
+> the current `manifest.json` version (the "What's new in this release" heading) and
+> `minAppVersion`, so a release can't ship with a lint error, stale docs, or an out-of-sync
+> translation. Keep the two READMEs updated together. Bypass in an emergency with
 > `git push --no-verify`.
 
 **Commit messages must be written in English.** Keep the subject in the imperative mood and explain the *why* in the body when it isn't obvious.
