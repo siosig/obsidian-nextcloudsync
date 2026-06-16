@@ -105,6 +105,12 @@
   background: var(--background-modifier-hover);
 }
 
+/* Deleted entries are not clickable (clicking would recreate the note), so they keep the
+   default cursor instead of the pointer applied to interactive rows above. */
+.ncs-status-row-static {
+  cursor: default;
+}
+
 /* Recent-activity (24h) history: bounded height with an always-visible vertical scrollbar
    so a long list stays compact and its scroll position is obvious. */
 .ncs-history-list {
