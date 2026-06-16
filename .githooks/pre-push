@@ -1,0 +1,39 @@
+#!/bin/sh
+# Release-hygiene gate for the Nextcloud Sync Obsidian plugin.
+#
+# Runs before every `git push` (wired up via core.hooksPath, set by the package.json
+# "prepare" script on `pnpm install`). It blocks a push when:
+#   1. the Obsidian community-store linter reports errors (eslint-plugin-obsidianmd) —
+#      this is exactly what delisted the plugin from the store before;
+#   2. the type-check + production build fails;
+#   3. README.md is out of sync with manifest.json — its "What's new in this release"
+#      heading must name the current version, and it must mention the current minAppVersion.
+#
+# Bypass in an emergency with: git push --no-verify
+set -e
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+echo "pre-push: Obsidian community-store lint…"
+pnpm lint
+
+echo "pre-push: type-check + production build…"
+pnpm build
+
+VERSION="$(node -p "require('./manifest.json').version")"
+MIN_APP="$(node -p "require('./manifest.json').minAppVersion")"
+
+if ! grep -qF "What's new in this release ($VERSION)" README.md; then
+  echo "pre-push: README.md has no \"What's new in this release ($VERSION)\" section." >&2
+  echo "          Update the release notes to match manifest.json version $VERSION (or push with --no-verify)." >&2
+  exit 1
+fi
+
+if ! grep -qF "$MIN_APP" README.md; then
+  echo "pre-push: README.md does not mention minAppVersion $MIN_APP from manifest.json." >&2
+  echo "          Update the Requirements section (or push with --no-verify)." >&2
+  exit 1
+fi
+
+echo "pre-push: lint, build, and README/manifest sync checks passed."
