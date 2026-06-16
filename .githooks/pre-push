@@ -6,8 +6,9 @@
 #   1. the Obsidian community-store linter reports errors (eslint-plugin-obsidianmd) —
 #      this is exactly what delisted the plugin from the store before;
 #   2. the type-check + production build fails;
-#   3. README.md is out of sync with manifest.json — its "What's new in this release"
-#      heading must name the current version, and it must mention the current minAppVersion.
+#   3. either README is out of sync with manifest.json — README.md AND README.ja.md must
+#      each name the current version in their "What's new" heading and mention the current
+#      minAppVersion, so a release can't ship with stale docs or an out-of-sync translation.
 #
 # Bypass in an emergency with: git push --no-verify
 set -e
@@ -24,16 +25,23 @@ pnpm build
 VERSION="$(node -p "require('./manifest.json').version")"
 MIN_APP="$(node -p "require('./manifest.json').minAppVersion")"
 
-if ! grep -qF "What's new in this release ($VERSION)" README.md; then
-  echo "pre-push: README.md has no \"What's new in this release ($VERSION)\" section." >&2
-  echo "          Update the release notes to match manifest.json version $VERSION (or push with --no-verify)." >&2
-  exit 1
-fi
+# The version appears in the "What's new" heading with ASCII parens in README.md and
+# full-width parens in README.ja.md, so accept either form.
+check_readme() {
+  file="$1"
+  if ! { grep -qF "($VERSION)" "$file" || grep -qF "（$VERSION）" "$file"; }; then
+    echo "pre-push: $file has no \"What's new\" heading for version $VERSION." >&2
+    echo "          Update its release notes to match manifest.json version $VERSION (or push with --no-verify)." >&2
+    exit 1
+  fi
+  if ! grep -qF "$MIN_APP" "$file"; then
+    echo "pre-push: $file does not mention minAppVersion $MIN_APP from manifest.json." >&2
+    echo "          Update its Requirements section (or push with --no-verify)." >&2
+    exit 1
+  fi
+}
 
-if ! grep -qF "$MIN_APP" README.md; then
-  echo "pre-push: README.md does not mention minAppVersion $MIN_APP from manifest.json." >&2
-  echo "          Update the Requirements section (or push with --no-verify)." >&2
-  exit 1
-fi
+check_readme README.md
+check_readme README.ja.md
 
-echo "pre-push: lint, build, and README/manifest sync checks passed."
+echo "pre-push: lint, build, and README/README.ja sync checks passed."
