@@ -1,8 +1,8 @@
 {
   "id": "nextcloud-sync",
   "name": "Nextcloud Sync",
-  "version": "0.2.7",
-  "minAppVersion": "1.12.7",
+  "version": "0.2.8",
+  "minAppVersion": "1.11.4",
   "description": "Bidirectional sync between your vault and Nextcloud using hash-based change detection.",
   "author": "Daisuke ITO",
   "authorUrl": "",
