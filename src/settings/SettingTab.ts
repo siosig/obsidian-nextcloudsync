@@ -414,7 +414,6 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     setting.addSlider(slider => slider
       .setLimits(opts.min, opts.max, opts.step)
       .setValue(opts.get())
-      .setDynamicTooltip()
       .setDisabled(opts.disabled ?? false)
       .onChange(async (value) => {
         opts.set(value);
