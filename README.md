@@ -18,8 +18,9 @@ Most "WebDAV sync" plugins treat the server as a dumb file store: they compare m
 
 ---
 
-## What's new in this release (0.2.9)
+## What's new in this release (0.2.10)
 
+- **Clearer conflict reporting (0.2.10)** — the sync-status dialog and summary now distinguish between two outcomes: **merged** (the file was auto-merged cleanly) and **conflicted** (conflict markers were left in the file). Previously both were lumped under a single "conflict" count, making it hard to tell whether action was needed.
 - **Manual "Sync now" button and live 24-hour activity (0.2.7)** — the sync-status dialog gained a **Sync now** button at the top, a scrollable **last-24h activity history** (one compact, icon-led line per file), and now applies a changed auto-sync interval immediately without needing a reload.
 - **Installs on more setups (0.2.8)** — the minimum required Obsidian version was corrected down to `1.11.4` (the true minimum the plugin needs), instead of effectively requiring only the very latest release.
 - **Passes Obsidian's automated store review (0.2.9)** — inline styling moved to CSS classes and UI text to sentence case, clearing the Community-plugins automated checks that had delisted the entry.
