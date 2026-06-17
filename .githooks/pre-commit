@@ -1,0 +1,38 @@
+#!/bin/sh
+# Secret-scan gate for the Nextcloud Sync Obsidian plugin.
+#
+# Runs before every `git commit` (wired up via core.hooksPath, set by the package.json
+# "prepare" script on `pnpm install`). It blocks a commit when secretlint finds, in the
+# STAGED changes, any of:
+#   1. credentials / API keys / tokens / private keys (preset-recommend rules);
+#   2. the private denylist of company/personal identifiers kept out of the public repo.
+#      Those patterns live only in .secretlintrc.local.json (gitignored), so the terms are
+#      never committed -- not even as a scanner rule. This hook prefers that file when present
+#      and otherwise falls back to the committed .secretlintrc.json (preset only).
+#
+# Why pre-commit (not pre-push): a secret is in history the moment it is committed, so it
+# must be caught before the commit object is written. The heavier lint/build/test gate
+# stays in pre-push. Only staged files are scanned here, for sub-second feedback.
+#
+# Bypass in an emergency with: git commit --no-verify
+set -e
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+# Added/Copied/Modified staged paths only (deletions can't introduce a secret).
+if [ -z "$(git diff --cached --name-only --diff-filter=ACM)" ]; then
+  exit 0
+fi
+
+RC=".secretlintrc.json"
+if [ -f ".secretlintrc.local.json" ]; then
+  RC=".secretlintrc.local.json"
+fi
+
+echo "pre-commit: secretlint scanning staged files (config: $RC)…"
+# NUL-separated to stay safe for paths with spaces; piped straight to xargs so no shell
+# variable strips the NULs. secretlint exits non-zero on a finding, failing the commit.
+git diff --cached --name-only --diff-filter=ACM -z \
+  | xargs -0 pnpm exec secretlint --no-glob --secretlintrc "$RC"
+echo "pre-commit: no secrets detected."
