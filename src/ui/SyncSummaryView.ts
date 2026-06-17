@@ -34,7 +34,8 @@ export class SyncSummaryView extends Modal {
     addRow('Duration', duration);
     addRow('↑ Uploaded', String(summary.uploadedCount));
     addRow('↓ Downloaded', String(summary.downloadedCount));
-    addRow('⚠️ Conflicts', String(summary.conflictCount));
+    addRow('⟷ Merged', String(summary.mergedCount));
+    addRow('⚠️ Conflicted', String(summary.conflictedCount));
     addRow('✗ Errors', String(summary.errorCount));
 
     if (summary.retriedFiles.length > 0) {

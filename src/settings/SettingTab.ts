@@ -369,7 +369,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
           const date = new Date(summary.startedAt).toLocaleString();
           new Notice(
             `Last sync: ${date}\n` +
-            `↑ ${summary.uploadedCount}  ↓ ${summary.downloadedCount}  ⚠️ ${summary.conflictCount}  ✗ ${summary.errorCount}`,
+            `↑ ${summary.uploadedCount}  ↓ ${summary.downloadedCount}  ⟷ ${summary.mergedCount}  ⚠️ ${summary.conflictedCount}  ✗ ${summary.errorCount}`,
             8000,
           );
         }));
