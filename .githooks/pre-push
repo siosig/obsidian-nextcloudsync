@@ -8,7 +8,8 @@
 #   2. the type-check + production build fails;
 #   3. either README is out of sync with manifest.json — README.md AND README.ja.md must
 #      each name the current version in their "What's new" heading and mention the current
-#      minAppVersion, so a release can't ship with stale docs or an out-of-sync translation.
+#      minAppVersion, so a release can't ship with stale docs or an out-of-sync translation;
+#   4. the test suite fails.
 #
 # Bypass in an emergency with: git push --no-verify
 set -e
@@ -44,4 +45,7 @@ check_readme() {
 check_readme README.md
 check_readme README.ja.md
 
-echo "pre-push: lint, build, and README/README.ja sync checks passed."
+echo "pre-push: test suite…"
+pnpm test
+
+echo "pre-push: lint, build, README/README.ja sync, and tests passed."
