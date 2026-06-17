@@ -14,7 +14,8 @@ const OP_LABEL: Record<SyncFileOp, { icon: string; text: string }> = {
   uploaded: { icon: '↑', text: 'Uploaded' },
   downloaded: { icon: '↓', text: 'Downloaded' },
   deleted: { icon: '🗑', text: 'Deleted' },
-  conflict: { icon: '⚠️', text: 'Conflict' },
+  merged: { icon: '⟷', text: 'Merged' },
+  conflicted: { icon: '⚠️', text: 'Conflicted' },
   error: { icon: '✗', text: 'Error' },
 };
 
@@ -73,7 +74,7 @@ export class SyncStatusModal extends Modal {
       contentEl.createEl('p', {
         cls: 'setting-item-description',
         text: `Last sync: ${when}  ·  ↑ ${s.uploadedCount}  ↓ ${s.downloadedCount}  `
-          + `⚠️ ${s.conflictCount}  ✗ ${s.errorCount}`,
+          + `⟷ ${s.mergedCount}  ⚠️ ${s.conflictedCount}  ✗ ${s.errorCount}`,
       });
     } else {
       contentEl.createEl('p', { text: 'No sync has run yet in this session.', cls: 'setting-item-description' });

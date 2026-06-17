@@ -100,7 +100,7 @@ describe('SyncEngine.handleConflict — failure-policy actions', () => {
   function makeSummary(): SyncSessionSummary {
     return {
       startedAt: 0, completedAt: null, uploadedCount: 0, downloadedCount: 0,
-      deletedCount: 0, conflictCount: 0, errorCount: 0, retriedFiles: [], errors: [],
+      deletedCount: 0, mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], errors: [],
     };
   }
 
@@ -159,7 +159,8 @@ describe('SyncEngine.handleConflict — failure-policy actions', () => {
     expect(h.atomicWrite).not.toHaveBeenCalled();
     expect(h.atomicWriteBinary).not.toHaveBeenCalled();
     expect(summary.errorCount).toBe(1);
-    expect(summary.conflictCount).toBe(1);
+    expect(summary.mergedCount).toBe(0);
+    expect(summary.conflictedCount).toBe(0);
     // The error detail is recorded for the sync-status dialog.
     expect(summary.errors).toHaveLength(1);
     expect(summary.errors[0].path).toBe('image.png');
@@ -214,7 +215,7 @@ describe('SyncEngine.processRemoteDeletion — out-of-scope safety', () => {
   function makeSummary(): SyncSessionSummary {
     return {
       startedAt: 0, completedAt: null, uploadedCount: 0, downloadedCount: 0,
-      deletedCount: 0, conflictCount: 0, errorCount: 0, retriedFiles: [], errors: [],
+      deletedCount: 0, mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], errors: [],
     };
   }
 

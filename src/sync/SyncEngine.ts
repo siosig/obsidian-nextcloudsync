@@ -152,7 +152,7 @@ export class SyncEngine {
     } finally {
       void this.opts.logger?.log(
         `sync: done up=${summary.uploadedCount} down=${summary.downloadedCount} ` +
-        `del=${summary.deletedCount} conflicts=${summary.conflictCount} err=${summary.errorCount} cancelled=${cancelled}`,
+        `del=${summary.deletedCount} merged=${summary.mergedCount} conflicted=${summary.conflictedCount} err=${summary.errorCount} cancelled=${cancelled}`,
       );
       summary.completedAt = Date.now();
       this.lastSummary = summary;
@@ -353,7 +353,8 @@ export class SyncEngine {
   private initSummary(): SyncSessionSummary {
     return {
       startedAt: Date.now(), completedAt: null,
-      uploadedCount: 0, downloadedCount: 0, deletedCount: 0, conflictCount: 0,
+      uploadedCount: 0, downloadedCount: 0, deletedCount: 0,
+      mergedCount: 0, conflictedCount: 0,
       errorCount: 0, retriedFiles: [], errors: [],
     };
   }
@@ -740,8 +741,6 @@ export class SyncEngine {
 
     const resolver = new ConflictResolver(this.opts.app, this.opts.localAdapter, this.opts.settings);
     const decision = resolver.decide(path, '', localContent, remoteContent);
-    summary.conflictCount++;
-    this.recordHistory(path, 'conflict');
 
     switch (decision.action) {
       case 'skip':
@@ -813,6 +812,13 @@ export class SyncEngine {
       size: stat?.size ?? 0, mtime: maxMtime,
       remoteFileId: remote.fileId, isConflicted: !clean,
     });
+    if (clean) {
+      summary.mergedCount++;
+      this.recordHistory(path, 'merged');
+    } else {
+      summary.conflictedCount++;
+      this.recordHistory(path, 'conflicted');
+    }
     void this.opts.logger?.log(`conflict: ${clean ? 'auto-merged clean' : 'wrote conflict markers'}, uploaded=${uploaded} → ${path}`);
   }
 

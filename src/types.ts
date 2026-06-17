@@ -179,7 +179,7 @@ export interface SyncErrorDetail {
 }
 
 /** The outcome recorded for a single file during a sync, shown in the status dialog's history. */
-export type SyncFileOp = 'uploaded' | 'downloaded' | 'deleted' | 'conflict' | 'error';
+export type SyncFileOp = 'uploaded' | 'downloaded' | 'deleted' | 'merged' | 'conflicted' | 'error';
 
 /** One per-file sync-history entry, persisted across restarts and pruned to a rolling window. */
 export interface SyncHistoryEntry {
@@ -197,7 +197,10 @@ export interface SyncSessionSummary {
   uploadedCount: number;
   downloadedCount: number;
   deletedCount: number;
-  conflictCount: number;
+  /** Files where both sides existed and auto-merge produced a clean result (no markers). */
+  mergedCount: number;
+  /** Files where both sides existed and merge left `>>>>` conflict markers for the user. */
+  conflictedCount: number;
   errorCount: number;
   retriedFiles: string[];
   /** Per-error details behind errorCount, shown in the sync status dialog. */
