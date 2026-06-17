@@ -210,29 +210,9 @@ On connect, the plugin probes `/status.php` (maintenance mode) and `/ocs/v1.php/
 
 ---
 
-## Contributing & development
+## Contributing
 
-```bash
-pnpm install     # install dependencies (also wires up the git pre-push hook)
-pnpm dev         # development build (watches and rebuilds main.js)
-pnpm build       # type-check + production build
-pnpm lint        # run the Obsidian community-store linter (eslint-plugin-obsidianmd)
-pnpm test        # run the test suite
-```
-
-> **Release hygiene is enforced by a git pre-push hook** (`.githooks/pre-push`, activated
-> automatically by the `prepare` script on `pnpm install`). Before every push it runs the
-> linter and production build and checks that **both `README.md` and `README.ja.md`** match
-> the current `manifest.json` version (the "What's new in this release" heading) and
-> `minAppVersion`, so a release can't ship with a lint error, stale docs, or an out-of-sync
-> translation. Keep the two READMEs updated together. Bypass in an emergency with
-> `git push --no-verify`.
-
-**Commit messages must be written in English.** Keep the subject in the imperative mood and explain the *why* in the body when it isn't obvious.
-
-**Commits must be authored as `Daisuke ITO <siosig@gmail.com>`.** This author identity is fixed for the project; configure your local Git accordingly (e.g. `git commit --author="Daisuke ITO <siosig@gmail.com>"`).
-
-Issues and pull requests are welcome.
+Issues and pull requests are welcome on [GitHub](https://github.com/siosig/obsidian-nextcloudsync).
 
 ---
 
