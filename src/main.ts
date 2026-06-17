@@ -195,6 +195,7 @@ export default class ObsidianNextcloudsync extends Plugin {
 
   onunload(): void {
     this.syncEngine?.stopAutoSync();
+    this.localAdapter?.dispose();
   }
 
   async loadSettings(): Promise<void> {

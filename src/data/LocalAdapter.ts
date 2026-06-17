@@ -18,6 +18,10 @@ export class LocalAdapter {
     const existing = this.ignoreList.get(path);
     if (existing) window.clearTimeout(existing);
     const timer = window.setTimeout(() => this.ignoreList.delete(path), IGNORE_TIMEOUT_MS);
+    // In Node-based tests setTimeout returns a Timeout handle that keeps the process alive;
+    // unref it so a pending ignore window can't block exit. No-op in Electron/the browser,
+    // where window.setTimeout returns a number.
+    (timer as unknown as { unref?: () => void }).unref?.();
     this.ignoreList.set(path, timer);
   }
 
@@ -29,6 +33,15 @@ export class LocalAdapter {
    */
   shouldIgnore(path: string): boolean {
     return this.ignoreList.has(path);
+  }
+
+  /**
+   * Clear all pending ignore timers. Call from the plugin's onunload so a pending timer
+   * can't fire after teardown and so timers don't leak across plugin reloads.
+   */
+  dispose(): void {
+    for (const timer of this.ignoreList.values()) window.clearTimeout(timer);
+    this.ignoreList.clear();
   }
 
   private async ensureParentDir(filePath: string): Promise<void> {

@@ -50,6 +50,17 @@ describe('LocalAdapter', () => {
       expect(adapter.shouldIgnore('file.md')).toBe(true);
       jest.useRealTimers();
     });
+
+    it('dispose clears all pending entries and their timers', () => {
+      jest.useFakeTimers();
+      const adapter = new LocalAdapter(makeAdapter());
+      adapter.ignore('a.md');
+      adapter.ignore('b.md');
+      adapter.dispose();
+      expect(adapter.shouldIgnore('a.md')).toBe(false);
+      expect(adapter.shouldIgnore('b.md')).toBe(false);
+      jest.useRealTimers();
+    });
   });
 
   describe('atomicWrite', () => {
