@@ -10,6 +10,7 @@
     "dev": "node esbuild.config.mjs",
     "build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production",
     "lint": "eslint src",
+    "secretlint": "secretlint \"**/*\"",
     "test": "jest --passWithNoTests",
     "test:watch": "jest --watch"
   },
@@ -22,6 +23,8 @@
   "author": "Daisuke ITO",
   "license": "MIT",
   "devDependencies": {
+    "@secretlint/secretlint-rule-pattern": "^13.0.2",
+    "@secretlint/secretlint-rule-preset-recommend": "^13.0.2",
     "@types/jest": "^30.0.0",
     "@types/node": "^25.9.2",
     "esbuild": "0.28.0",
@@ -29,6 +32,7 @@
     "eslint-plugin-obsidianmd": "^0.3.0",
     "jest": "^30.4.2",
     "obsidian": "latest",
+    "secretlint": "^13.0.2",
     "ts-jest": "^29.4.11",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.60.1"

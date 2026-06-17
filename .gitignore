@@ -21,6 +21,9 @@ coverage/
 .env.*
 *.log
 
+# secretlint のローカル専用デニーリスト（社名・個人ホスト名など。公開リポに残さない）
+.secretlintrc.local.json
+
 # OS / エディタ
 .DS_Store
 Thumbs.db
