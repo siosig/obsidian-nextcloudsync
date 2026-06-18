@@ -1,6 +1,7 @@
-import { App, Platform, PluginSettingTab, Setting, Notice, SecretComponent, ButtonComponent } from 'obsidian';
+import { App, Platform, PluginSettingTab, Setting, Notice, SecretComponent, ButtonComponent, TextComponent } from 'obsidian';
 import type ObsidianNextcloudsync from '../main';
 import { LoginFlowError } from '../types';
+import { FolderSuggestModal } from '../ui/FolderSuggestModal';
 import { LoginFlowV2 } from '../auth/LoginFlowV2';
 import { MIN_NEXTCLOUD_VERSION, isSupportedNextcloudVersion } from '../util/version';
 
@@ -88,6 +89,8 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
           .onClick(async () => { await this.plugin.runSyncNow(); });
       });
 
+    new Setting(containerEl).setName('Nextcloud').setHeading();
+
     new Setting(containerEl)
       .setName('Server URL')
       .setDesc('Nextcloud WebDAV endpoint (e.g. https://cloud.example.com/remote.php/dav/files/alice/)')
@@ -153,6 +156,18 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
       .setName('Sync target (WebDAV)')
       .setDesc(this.syncTargetUrl());
     targetSetting.descEl.addClass('ncs-break-all');
+
+    new Setting(containerEl)
+      .setName('File locking (experimental)')
+      .setDesc('⚠️ when enabled, files are locked on the server during updates to prevent concurrent-edit conflicts. Requires the Nextcloud files locking app. Default off.')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.fileLockingEnabled)
+        .onChange(async (value) => {
+          this.plugin.settings.fileLockingEnabled = value;
+          await this.plugin.saveSettings();
+        }));
+
+    new Setting(containerEl).setName('Sync').setHeading();
 
     // Startup sync (both platforms). Default ON desktop / OFF mobile (resolved at first run).
     new Setting(containerEl)
@@ -267,27 +282,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
-    new Setting(containerEl).setName('Experimental features').setHeading();
-
-    new Setting(containerEl)
-      .setName('Debug mode')
-      .setDesc('When enabled, a timestamped action log (with the plugin version) is appended to nextcloud-sync-debug.md at the vault root. Syncing runs normally — identical behavior on desktop and mobile. The log file is synced like any other note, so each device\'s actions are collected together (it may itself show as a conflict when two devices append at once). Turn this off and delete the file when finished.')
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.debugMode)
-        .onChange(async (value) => {
-          this.plugin.settings.debugMode = value;
-          await this.plugin.saveSettings();
-        }));
-
-    new Setting(containerEl)
-      .setName('File locking (experimental)')
-      .setDesc('⚠️ when enabled, files are locked on the server during updates to prevent concurrent-edit conflicts. Requires the Nextcloud files locking app. Default off.')
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.fileLockingEnabled)
-        .onChange(async (value) => {
-          this.plugin.settings.fileLockingEnabled = value;
-          await this.plugin.saveSettings();
-        }));
+    new Setting(containerEl).setName('Merge').setHeading();
 
     new Setting(containerEl)
       .setName('Auto merge (experimental)')
@@ -312,16 +307,13 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
-    new Setting(containerEl)
-      .setName('Max conflict regions (auto merge)')
-      .setDesc('If more regions conflict than this threshold, fall back to inline markers')
-      .addSlider(slider => slider
-        .setLimits(0, 20, 1)
-        .setValue(this.plugin.settings.maxConflictRegions)
-        .onChange(async (value) => {
-          this.plugin.settings.maxConflictRegions = value;
-          await this.plugin.saveSettings();
-        }));
+    this.addNumberSlider(containerEl, {
+      name: 'Max conflict regions (auto merge)',
+      desc: 'If more regions conflict than this threshold, fall back to inline markers. 0 = unlimited (never fall back on region count).',
+      min: 0, max: 20, step: 1,
+      get: () => this.plugin.settings.maxConflictRegions,
+      set: (v) => { this.plugin.settings.maxConflictRegions = v; },
+    });
 
     new Setting(containerEl)
       .setName('Mergeable file extensions')
@@ -354,7 +346,90 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
-    new Setting(containerEl).setName('Actions').setHeading();
+    new Setting(containerEl).setName('Debug').setHeading();
+
+    new Setting(containerEl)
+      .setName('Device name')
+      .setDesc('Names this device in log filenames (nextcloud-sync_sync_<device>.md). Leave blank to use a platform + id default. Filesystem-unsafe characters are replaced automatically.')
+      .addText(text => text
+        .setPlaceholder(this.plugin.defaultHostToken())
+        .setValue(this.plugin.settings.deviceName)
+        .onChange(async (value) => {
+          this.plugin.settings.deviceName = value;
+          await this.plugin.saveSettings();
+        }));
+
+    let logFolderText: TextComponent | null = null;
+    new Setting(containerEl)
+      .setName('Log folder')
+      .setDesc('Vault folder where the sync log and debug log are written. Leave blank for the vault root.')
+      .addText(text => {
+        logFolderText = text;
+        text
+          .setPlaceholder('Vault root')
+          .setValue(this.plugin.settings.logsFolder)
+          .onChange(async (value) => {
+            this.plugin.settings.logsFolder = value.replace(/\/+$/, '').trim();
+            await this.plugin.saveSettings();
+          });
+      })
+      // "Browse…" opens a fuzzy folder picker (Templater-style) that fills the field.
+      .addButton(btn => btn
+        .setButtonText('Browse…')
+        .onClick(() => {
+          new FolderSuggestModal(this.app, (path) => {
+            this.plugin.settings.logsFolder = path;
+            logFolderText?.setValue(path);
+            void this.plugin.saveSettings();
+          }).open();
+        }));
+
+    new Setting(containerEl)
+      .setName('Sync log')
+      .setDesc('Append a per-device log of sync operations (with the plugin version and conflict-resolution settings) to nextcloud-sync_sync_<device>.md.')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.syncLogEnabled)
+        .onChange(async (value) => {
+          this.plugin.settings.syncLogEnabled = value;
+          await this.plugin.saveSettings();
+        }));
+
+    new Setting(containerEl)
+      .setName('Sync log level')
+      .setDesc('Choose how much the sync log records. Important events only covers conflicts, merges, side-wins and errors; all operations also records routine uploads, downloads and deletions.')
+      .addDropdown(drop => drop
+        .addOption('important', 'Important events only (conflicts, merges, errors)')
+        .addOption('all', 'All operations')
+        .setValue(this.plugin.settings.syncLogLevel)
+        .onChange(async (value) => {
+          this.plugin.settings.syncLogLevel = value as 'important' | 'all';
+          await this.plugin.saveSettings();
+        }));
+
+    new Setting(containerEl)
+      .setName('Debug log')
+      .setDesc('Append a per-device diagnostic log (with the plugin version and a snapshot of all settings) to nextcloud-sync_debug_<device>.md. Syncing runs normally. Turn this off and delete the file when finished.')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.debugLogEnabled)
+        .onChange(async (value) => {
+          this.plugin.settings.debugLogEnabled = value;
+          await this.plugin.saveSettings();
+          // Dump a fresh settings snapshot as soon as the debug log is turned on.
+          if (value) void this.plugin.logSettingsSnapshot();
+        }));
+
+    new Setting(containerEl)
+      .setName('Debug log level')
+      .setDesc('Verbosity of the debug log: "error" records only failures; "debug" adds normal flow; "verbose" adds the most detail.')
+      .addDropdown(drop => drop
+        .addOption('error', 'Error (failures only)')
+        .addOption('debug', 'Debug (normal flow)')
+        .addOption('verbose', 'Verbose (most detail)')
+        .setValue(this.plugin.settings.debugLogLevel)
+        .onChange(async (value) => {
+          this.plugin.settings.debugLogLevel = value as 'error' | 'debug' | 'verbose';
+          await this.plugin.saveSettings();
+        }));
 
     new Setting(containerEl)
       .setName('Last session summary')
@@ -462,7 +537,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         new Notice('This server does not support login flow. Please enter an app password manually.', 8000);
       }
     } catch (err) {
-      void this.plugin.logger.log(`login: ERROR — ${(err as Error).message}`);
+      void this.plugin.logger.log(`login: ERROR — ${(err as Error).message}`, 'error');
       if (err instanceof LoginFlowError && err.reason === 'unsupported') {
         new Notice('This server does not support login flow. Please enter an app password manually.', 8000);
       } else {

@@ -1,5 +1,5 @@
 import { App, Plugin, Notice, Platform, TFile, TAbstractFile, debounce } from 'obsidian';
-import { DavSyncSettings, DEFAULT_SETTINGS, FeatureUnsupportedError } from './types';
+import { DavSyncSettings, DEFAULT_SETTINGS, FeatureUnsupportedError, SyncHistoryEntry, SyncSessionSummary } from './types';
 import { NextcloudSyncSettingTab } from './settings/SettingTab';
 import { SyncEngine } from './sync/SyncEngine';
 import { VersionHistoryModal } from './ui/VersionHistoryModal';
@@ -7,6 +7,10 @@ import { SyncStatusModal } from './ui/SyncStatusModal';
 import { FileLogger } from './util/FileLogger';
 import { isSyncTmpPath, LocalAdapter } from './data/LocalAdapter';
 import { v4 as uuidv4 } from './util/uuid';
+import { hostToken, LogPlatform } from './util/hostToken';
+import { migrateLegacyDebugMode } from './util/settingsMigration';
+import { debugLogPath, syncLogPath } from './util/logPaths';
+import { SyncLogWriter, formatResolution } from './log/SyncLogWriter';
 
 const MIN_OBSIDIAN_VERSION = '1.12.7';
 
@@ -15,8 +19,10 @@ export default class ObsidianNextcloudsync extends Plugin {
   syncEngine?: SyncEngine;
   /** Shared with SyncEngine; its ignore list marks the plugin's own writes for the watchers. */
   localAdapter?: LocalAdapter;
-  /** Diagnostic file logger (writes nextcloud-sync-debug.md while Debug mode is on). */
+  /** Diagnostic file logger (writes a per-device debug log while the debug log is enabled). */
   logger!: FileLogger;
+  /** Per-device sync-log writer (appends one block per sync when the sync log is enabled). */
+  syncLogWriter!: SyncLogWriter;
 
   async onload(): Promise<void> {
     // Obsidian version check
@@ -37,11 +43,29 @@ export default class ObsidianNextcloudsync extends Plugin {
       await this.saveSettings();
     }
 
-    // Diagnostic logger: appends to nextcloud-sync-debug.md while Debug mode is on (all platforms).
-    // Debug mode logs and still performs a real sync — identical behavior on desktop and mobile.
-    // Each line is tagged with a device label so a synced log from multiple devices is readable.
-    this.logger = new FileLogger(this.app.vault.adapter, () => this.settings.debugMode, this.manifest.version, this.deviceLabel());
+    // Diagnostic logger: appends to a per-device debug log while the debug log is enabled (all
+    // platforms). Logging still performs a real sync — identical behavior on desktop and mobile.
+    // The file is named with this device's host token so multiple devices never collide, and each
+    // line is gated by the configured verbosity level.
+    this.logger = new FileLogger(
+      this.app.vault.adapter,
+      () => this.settings.debugLogEnabled,
+      () => this.settings.debugLogLevel,
+      this.manifest.version,
+      this.hostToken(),
+      () => debugLogPath(this.settings.logsFolder, this.hostToken()),
+    );
     void this.logger.log(`plugin loaded (obsidian=${currentVersion})`);
+    // Record a full settings snapshot at the top of each debug-log session.
+    void this.logSettingsSnapshot();
+
+    // Per-device sync log: appends one block per sync (binary version + conflict-resolution
+    // settings header, then one line per qualifying operation) while the sync log is enabled.
+    this.syncLogWriter = new SyncLogWriter(
+      this.app.vault.adapter,
+      () => this.settings.syncLogEnabled,
+      () => syncLogPath(this.settings.logsFolder, this.hostToken()),
+    );
 
     // Initialize SyncEngine (lazy — only when settings are complete)
     if (this.settings.serverUrl && this.settings.username) {
@@ -186,11 +210,53 @@ export default class ObsidianNextcloudsync extends Plugin {
     }
   }
 
-  /** Short, stable per-device label for diagnostic-log lines (platform + hostname, or deviceId). */
-  private deviceLabel(): string {
-    const platform = Platform.isIosApp ? 'ios' : Platform.isAndroidApp ? 'android' : 'desktop';
-    const id = (this.settings.deviceId ?? '').replace(/-/g, '').slice(0, 6);
-    return `${platform}/${id}`;
+  /** The platform bucket used in the default host token and log labels. */
+  private logPlatform(): LogPlatform {
+    return Platform.isIosApp ? 'ios' : Platform.isAndroidApp ? 'android' : 'desktop';
+  }
+
+  /**
+   * Stable, filename-safe per-device host token used to name both log files and label debug-log
+   * lines. Derived from the user-facing Device name, defaulting to `<platform>-<deviceId6>`.
+   */
+  private hostToken(): string {
+    return hostToken(this.settings.deviceName, this.logPlatform(), this.settings.deviceId);
+  }
+
+  /** The default host token (Device name blank) — shown as the settings placeholder. */
+  defaultHostToken(): string {
+    return hostToken('', this.logPlatform(), this.settings.deviceId);
+  }
+
+  /**
+   * Append this session's outcomes to the per-device sync log. The session header carries the
+   * binary version and all merge-related settings; each line carries the per-file marker,
+   * checksums and sizes. No-op when the sync log is disabled.
+   */
+  private async appendSyncLog(entries: SyncHistoryEntry[], summary: SyncSessionSummary): Promise<void> {
+    const resolution = formatResolution({
+      failurePolicy: this.settings.conflictFailurePolicy,
+      frontmatterStrategy: this.settings.frontmatterConflictStrategy,
+      maxConflictRegions: this.settings.maxConflictRegions,
+      autoMergeEnabled: this.settings.autoMergeEnabled,
+      mergeableExtensions: this.settings.mergeableExtensions,
+    });
+    await this.syncLogWriter.append(entries, {
+      at: summary.startedAt,
+      version: this.manifest.version,
+      resolution,
+      level: this.settings.syncLogLevel,
+    });
+  }
+
+  /**
+   * Write a snapshot of every setting value to the debug log (US4 request). Logged at `error`
+   * level so it always appears while the debug log is enabled, regardless of the verbosity level.
+   * The actual app password is never stored here — `passwordSecretId` is only a SecretStorage key.
+   */
+  async logSettingsSnapshot(): Promise<void> {
+    const snapshot = JSON.stringify(this.settings);
+    await this.logger.log(`settings snapshot: ${snapshot}`, 'error');
   }
 
   onunload(): void {
@@ -201,6 +267,9 @@ export default class ObsidianNextcloudsync extends Plugin {
   async loadSettings(): Promise<void> {
     const saved = (await this.loadData() ?? {}) as Partial<DavSyncSettings>;
     this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
+
+    // Migrate the removed `debugMode` boolean to the new per-device debug-log fields.
+    migrateLegacyDebugMode(saved, this.settings);
 
     // DEFAULT_SETTINGS holds the desktop defaults. On mobile, apply mobile-specific
     // overrides only on first run (key absent from saved data) so existing users keep
@@ -271,6 +340,7 @@ export default class ObsidianNextcloudsync extends Plugin {
           void this.saveSettings();
         }
       },
+      onSessionComplete: (entries, summary) => this.appendSyncLog(entries, summary),
     });
 
     // Periodic auto-sync is desktop-only (mobile OS suspends background timers).

@@ -57,7 +57,9 @@ export class MergeEngine {
     const result = this.mergeText(baseBody, localBody, remoteBody);
 
     // 4. Circuit breaker: too many conflict regions in the body.
-    if (result.conflictRegions > this.opts.maxConflictRegions) {
+    // `maxConflictRegions === 0` means unlimited — never cap on region count (the content-loss
+    // breaker below still applies). A positive value caps as before.
+    if (this.opts.maxConflictRegions !== 0 && result.conflictRegions > this.opts.maxConflictRegions) {
       return { success: false, mergedContent: local, hadConflicts: true, conflictRegions: result.conflictRegions };
     }
 

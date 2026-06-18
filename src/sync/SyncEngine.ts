@@ -7,6 +7,7 @@ import {
   RemoteFileInfo,
   SyncSessionSummary,
   SyncFileOp,
+  SyncHistoryDetail,
   SyncHistoryEntry,
   SyncTokenExpiredError,
   NetworkError,
@@ -52,6 +53,11 @@ export interface SyncEngineOptions {
    * without coupling the sync engine to plugin settings persistence.
    */
   onFeatures?: (features: NextcloudFeatures) => void;
+  /**
+   * Called once at the end of each sync session, after history is persisted, with that session's
+   * per-file outcomes (chronological). Used to append the per-device sync log. Best-effort.
+   */
+  onSessionComplete?: (entries: SyncHistoryEntry[], summary: SyncSessionSummary) => void | Promise<void>;
 }
 
 export class SyncEngine {
@@ -146,7 +152,7 @@ export class SyncEngine {
       }
     } catch (err) {
       console.error('[SyncEngine] Sync failed:', err);
-      void this.opts.logger?.log(`sync: FAILED — ${(err as Error).message}`);
+      void this.opts.logger?.log(`sync: FAILED — ${(err as Error).message}`, 'error');
       new Notice(`❌ Sync failed: ${(err as Error).message}`, 6000);
       this.recordError(summary, '', err);
     } finally {
@@ -159,6 +165,9 @@ export class SyncEngine {
       this.opts.stateDB.setLastSyncTime(Date.now());
       await this.opts.stateDB.save();
       await this.opts.historyStore?.save(); // persist this session's per-file outcomes (pruned to 24h)
+      // Append the per-device sync log (best-effort; the writer no-ops when disabled).
+      const sessionEntries = this.opts.historyStore?.since(summary.startedAt) ?? [];
+      try { await this.opts.onSessionComplete?.(sessionEntries, summary); } catch { /* never break sync */ }
       const conflictCount = this.opts.stateDB.countConflicted();
       this.opts.statusBar.setSyncComplete(
         summary.uploadedCount, summary.downloadedCount,
@@ -368,8 +377,8 @@ export class SyncEngine {
   }
 
   /** Append one per-file outcome to the persisted 24h history (no-op when no store is injected). */
-  private recordHistory(path: string, op: SyncFileOp, message?: string): void {
-    this.opts.historyStore?.record(path, op, Date.now(), message);
+  private recordHistory(path: string, op: SyncFileOp, message?: string, detail?: SyncHistoryDetail): void {
+    this.opts.historyStore?.record(path, op, Date.now(), message, detail);
   }
 
   /** First-ever sync: full scan → Dry Run → user approval → execute. Returns false if cancelled. */
@@ -390,6 +399,7 @@ export class SyncEngine {
       `sync: INITIAL sync (empty state) plan — up=${plan.uploads.length} down=${plan.downloads.length} ` +
       `unchanged=${plan.unchanged.length} conflicts=${plan.conflicts.length}. ` +
       `uploads(resurrection candidates)=[${plan.uploads.slice(0, 30).join(', ')}${plan.uploads.length > 30 ? ', …' : ''}]`,
+      'verbose',
     );
 
     const modal = new DryRunModal(this.opts.app, plan, {
@@ -497,7 +507,7 @@ export class SyncEngine {
       } else {
         // Local I/O errors (ENOENT, EACCES, etc.) must not abort the entire session.
         console.warn(`[SyncEngine] Error syncing ${remote.path}:`, err);
-        void this.opts.logger?.log(`sync: error on ${remote.path} — ${(err as Error).message}`);
+        void this.opts.logger?.log(`sync: error on ${remote.path} — ${(err as Error).message}`, 'error');
         this.recordError(summary, remote.path, err);
       }
     }
@@ -566,7 +576,10 @@ export class SyncEngine {
       try {
         await this.client!.deleteFile(remote.path, base.remoteId);
         summary.deletedCount++;
-        this.recordHistory(remote.path, 'deleted');
+        this.recordHistory(remote.path, 'deleted', undefined, {
+          localHash: base.localHash, remoteId, remoteIdType: idType,
+          localSize: base.size, remoteSize: remote.size,
+        });
       } catch (err) {
         if (!(err instanceof NetworkError && err.status === 404)) throw err;
       }
@@ -615,7 +628,10 @@ export class SyncEngine {
 
     if (outcome === 'skipped') return; // Size limit exceeded. Already warned by the strategy (no retry needed).
     summary.uploadedCount++;
-    this.recordHistory(path, 'uploaded');
+    this.recordHistory(path, 'uploaded', undefined, {
+      localHash, remoteId, remoteIdType: idType,
+      localSize: stat.size, remoteSize: remote.size,
+    });
 
     this.opts.stateDB.setFile({
       path, localHash, remoteId, idType,
@@ -710,7 +726,6 @@ export class SyncEngine {
     const data = this.client!.getLastDownloadBuffer();
     await this.opts.localAdapter.atomicWriteBinary(remote.path, data);
     summary.downloadedCount++;
-    this.recordHistory(remote.path, 'downloaded');
 
     // Preserve remote mtime on the local file so the two stay in sync.
     if (remote.lastModified) {
@@ -718,6 +733,10 @@ export class SyncEngine {
     }
 
     const localHash = await sha256(data);
+    this.recordHistory(remote.path, 'downloaded', undefined, {
+      localHash, remoteId, remoteIdType: idType,
+      localSize: data.byteLength, remoteSize: remote.size,
+    });
     const mtime = remote.lastModified || (await this.opts.localAdapter.stat(remote.path))?.mtime || Date.now();
     this.opts.stateDB.setFile({
       path: remote.path, localHash, remoteId, idType,
@@ -812,12 +831,19 @@ export class SyncEngine {
       size: stat?.size ?? 0, mtime: maxMtime,
       remoteFileId: remote.fileId, isConflicted: !clean,
     });
+    const mergeDetail: SyncHistoryDetail = {
+      localHash: mergedHash,
+      remoteId: uploaded ? mergedHash : remoteId,
+      remoteIdType: uploaded ? 'sha256' : idType,
+      localSize: stat?.size ?? 0,
+      remoteSize: remote.size,
+    };
     if (clean) {
       summary.mergedCount++;
-      this.recordHistory(path, 'merged');
+      this.recordHistory(path, 'merged', undefined, mergeDetail);
     } else {
       summary.conflictedCount++;
-      this.recordHistory(path, 'conflicted');
+      this.recordHistory(path, 'conflicted', undefined, mergeDetail);
     }
     void this.opts.logger?.log(`conflict: ${clean ? 'auto-merged clean' : 'wrote conflict markers'}, uploaded=${uploaded} → ${path}`);
   }
@@ -852,7 +878,10 @@ export class SyncEngine {
       return;
     }
     summary.uploadedCount++;
-    this.recordHistory(path, 'uploaded');
+    this.recordHistory(path, 'local-wins', undefined, {
+      localHash, remoteId: localHash, remoteIdType: 'sha256',
+      localSize: stat?.size ?? localData.byteLength, remoteSize: remote.size,
+    });
     this.opts.stateDB.setFile({
       path, localHash, remoteId: localHash, idType: 'sha256',
       size: stat?.size ?? localData.byteLength, mtime,
@@ -881,7 +910,10 @@ export class SyncEngine {
     const localHash = await sha256(remoteData);
     const mtime = remote.lastModified || (await this.opts.localAdapter.stat(path))?.mtime || Date.now();
     summary.downloadedCount++;
-    this.recordHistory(path, 'downloaded');
+    this.recordHistory(path, 'remote-wins', undefined, {
+      localHash, remoteId, remoteIdType: idType,
+      localSize: remoteData.byteLength, remoteSize: remote.size,
+    });
     this.opts.stateDB.setFile({
       path, localHash, remoteId, idType,
       size: remote.size, mtime,

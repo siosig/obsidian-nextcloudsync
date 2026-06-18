@@ -38,7 +38,7 @@ Earlier in the 0.2.x line:
 - **Merge limited to text files (0.2.2)** — only configurable extensions (default `md`, `txt`) are ever text-merged. Other files (images, PDFs, binaries) are never merged, so conflict markers can no longer corrupt them. The default conflict outcome changed from embedding `<<<<<<<` markers to **Error** (skip and retry on the next sync).
 - **Reliable cross-device deletions** — deleting a file on one device now propagates correctly instead of the file reappearing on the next sync (sync-token handling fixed, with content-verified, recoverable deletions and a mass-deletion safety guard).
 - **Auto-merged conflicts now reach the server** — a merged conflict is uploaded so all devices converge, instead of the same conflict re-appearing every sync.
-- **Mobile diagnostics** — Debug mode writes a per-device `nextcloud-sync-debug.md` log on mobile too, and "Sync now" shows a result notice.
+- **Mobile diagnostics** — the debug log writes a per-device `nextcloud-sync_debug_<device>.md` on mobile too, and "Sync now" shows a result notice.
 - **Mobile (iOS / Android) support** — the plugin now runs on mobile, with platform-aware behavior so desktop is unchanged (details in the Mobile section below).
 - **Clickable status bar → sync-status dialog** — click the status bar item to open a dialog summarizing the current sync state, the last sync, any unresolved conflicts, and (since 0.2.6) any per-file errors from the last sync.
 - **"Sync now" promoted to the top of settings** and gated on authentication, so you can trigger a sync the moment you're signed in.
@@ -81,7 +81,9 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 - **Sync on file change (watch mode)** — optionally sync immediately after you edit a local Markdown file (debounced ~2s after you stop typing). Toggle on/off in settings; works alongside the periodic interval.
 - **Resilient retries** — failed files are skipped, queued, and retried next sync with exponential backoff; a dropped Wi-Fi connection resumes automatically.
 - **Standard WebDAV fallback** — works against any WebDAV server (recursive), Nextcloud features auto-disabled.
-- **Debug mode (diagnostic log)** — a settings toggle (available on desktop **and** mobile) that appends a timestamped, per-device action log to `nextcloud-sync-debug.md` at the vault root while syncing normally. Useful for troubleshooting on mobile where there's no console. The log file syncs like any other note, so multiple devices' actions are collected together; turn it off and delete the file when finished.
+- **Per-device logging** — two opt-in logs, written to a folder you pick (a Templater-style folder picker; defaults to the vault root) and named per device so multiple devices never overwrite one another:
+  - **Sync log** (`nextcloud-sync_sync_<device>.md`) — one appended block per sync with the plugin version and all merge-related settings in the header, then one line per operation showing the marker, path, local/remote checksums and sizes. A level switch records *important events only* (conflicts, merges, side-wins, errors) or *all operations*.
+  - **Debug log** (`nextcloud-sync_debug_<device>.md`) — a timestamped diagnostic log with selectable verbosity (error / debug / verbose), the plugin version, and a snapshot of all settings. Useful for troubleshooting on mobile where there's no console. Turn it off and delete the file when finished.
 
 ### Conflict safety (never lose content)
 - **Auto-merge** (`reconcile-text` / diff3) for edits in different regions, including YAML frontmatter when the two sides changed non-overlapping lines (on by default).
