@@ -18,6 +18,15 @@ Most "WebDAV sync" plugins treat the server as a dumb file store: they compare m
 
 ---
 
+## 💬 Your feedback shapes this plugin
+
+This plugin is still young and some behaviour can be rough around the edges. **Please tell me what you run into — it genuinely helps.** Whether something broke, something's missing, or you just have a thought after using it, I'd love to hear from you (impressions especially make my day!):
+
+- 🐛 **Report a bug** → [GitHub Issues](https://github.com/siosig/obsidian-nextcloudsync/issues)
+- 🙋‍♂️ **Request a feature / share your impressions** → [GitHub Discussions](https://github.com/siosig/obsidian-nextcloudsync/discussions)
+
+---
+
 ## What's new in this release (0.2.10)
 
 - **Clearer conflict reporting (0.2.10)** — the sync-status dialog and summary now distinguish between two outcomes: **merged** (the file was auto-merged cleanly) and **conflicted** (conflict markers were left in the file). Previously both were lumped under a single "conflict" count, making it hard to tell whether action was needed.
@@ -213,9 +222,12 @@ On connect, the plugin probes `/status.php` (maintenance mode) and `/ocs/v1.php/
 
 ---
 
-## Contributing
+## Contributing & feedback
 
-Issues and pull requests are welcome on [GitHub](https://github.com/siosig/obsidian-nextcloudsync).
+Issues and pull requests are welcome on [GitHub](https://github.com/siosig/obsidian-nextcloudsync). The plugin is still maturing, so feedback of any kind is especially valuable:
+
+- 🐛 **Report a bug** → [GitHub Issues](https://github.com/siosig/obsidian-nextcloudsync/issues)
+- 🙋‍♂️ **Request a feature / share your impressions** → [GitHub Discussions](https://github.com/siosig/obsidian-nextcloudsync/discussions)
 
 ---
 
