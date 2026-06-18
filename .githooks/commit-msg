@@ -1,0 +1,27 @@
+#!/bin/sh
+# commit-msg: enforce English-only commit messages (no Japanese / CJK).
+#
+# Project rule: commit messages, source-code comments, and public docs (except *.ja.*) are
+# written in English. This hook checks the COMMIT MESSAGE only. File/comment language is a
+# code-review concern, and functional test data (e.g. Japanese path fixtures) is intentionally
+# allowed, so it is not enforced here.
+#
+# Wired via core.hooksPath = .githooks (set by the package.json "prepare" script on install).
+# Bypass in an emergency with: git commit --no-verify
+set -e
+
+MSG_FILE="$1"
+[ -n "$MSG_FILE" ] && [ -f "$MSG_FILE" ] || exit 0
+
+# Keep only the author-written message: drop the verbose-diff section (from the "# ... >8 ..."
+# scissors line onward) and every comment line, so a CJK path in a diff never trips the check.
+CONTENT="$(sed -e '/^#.*>8/,$d' "$MSG_FILE" | sed -e '/^#/d')"
+
+# CJK ranges: CJK punctuation, Hiragana, Katakana, ideographs (+ ext A), compatibility, fullwidth.
+if printf '%s' "$CONTENT" | grep -qP '[\x{3000}-\x{303f}\x{3040}-\x{30ff}\x{3400}-\x{4dbf}\x{4e00}-\x{9fff}\x{f900}-\x{faff}\x{ff00}-\x{ffef}]'; then
+  echo "commit-msg: Japanese/CJK characters detected — commit messages must be in English." >&2
+  echo "            (Project rule: English for commit messages, code comments, and public docs except *.ja.)" >&2
+  echo "            Fix the message, or bypass with: git commit --no-verify" >&2
+  exit 1
+fi
+exit 0

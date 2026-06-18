@@ -1,36 +1,36 @@
-# --- Obsidian プラグイン公開用 .gitignore ---
+# --- .gitignore for the public Obsidian plugin repo ---
 
-# 依存
+# Dependencies
 node_modules/
 
-# pnpm 専用プロジェクト: npm / yarn のロックファイルは混在禁止（jest ツリー汚染の原因になる）
+# pnpm-only project: npm / yarn lockfiles must not be mixed in (they pollute the jest tree)
 package-lock.json
 yarn.lock
 
-# ビルド成果物（main.js は GitHub Release に添付するため Git では管理しない）
+# Build artifacts (main.js is attached to the GitHub Release, not tracked in Git)
 main.js
 *.js.map
 dist/
 build/
 
-# テスト
+# Tests
 coverage/
 
-# 環境変数・ログ
+# Environment variables / logs
 .env
 .env.*
 *.log
 
-# secretlint のローカル専用デニーリスト（社名・個人ホスト名など。公開リポに残さない）
+# secretlint local-only denylist (company/personal hostnames etc.; never kept in the public repo)
 .secretlintrc.local.json
 
-# OS / エディタ
+# OS / editor
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
 
-# --- 開発専用ファイル（プラグイン公開リポジトリには含めない） ---
+# --- Development-only files (excluded from the public plugin repository) ---
 refs/
 .specify/
 .claude/

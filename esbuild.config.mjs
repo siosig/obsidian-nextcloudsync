@@ -12,12 +12,12 @@ if you want to view the source visit the plugins github repository
 
 const prod = process.argv[2] === "production";
 
-// 出力先ディレクトリ（OUTDIR で上書き可能。未指定時はプロジェクトルート）。
-// Obsidian の plugins フォルダへ直接ビルドしたい場合に利用する。
+// Output directory (override with OUTDIR; defaults to the project root).
+// Useful for building directly into an Obsidian plugins folder.
 const outDir = process.env.OUTDIR ?? ".";
 const outfile = path.join(outDir, "main.js");
 
-// プラグイン配布に必要な静的ファイルを出力先へコピーする。
+// Copy the static files required for plugin distribution to the output directory.
 function copyAssets() {
   if (outDir === ".") return;
   fs.mkdirSync(outDir, { recursive: true });
