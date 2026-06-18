@@ -27,7 +27,14 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.2.10)
+## What's new in this release (0.3.0-beta.1)
+
+- **Reorganized settings into four sections (0.3.0-beta.1)** — settings are now grouped under **Nextcloud**, **Sync**, **Merge**, and **Debug** headings instead of one long flat list, so each option is easier to find. "Max conflict regions" now shows its numeric value beside the slider and defaults to **0 = unlimited** (the region-count circuit-breaker no longer forces conflict markers by default).
+- **Per-device logging (0.3.0-beta.1)** — two opt-in logs written to a folder you pick (a Templater-style folder picker; defaults to the vault root) and named per device so multiple devices never overwrite one another:
+  - **Sync log** (`nextcloud-sync_sync_<device>.md`) — one appended block per sync with the plugin version and all merge-related settings in the header, then one line per operation showing the marker, path, and local/remote checksums and sizes. A level switch records *important events only* (conflicts, merges, side-wins, errors) or *all operations*.
+  - **Debug log** (`nextcloud-sync_debug_<device>.md`) — a timestamped diagnostic log with selectable verbosity (error / debug / verbose), the plugin version, and a snapshot of all settings. Replaces the old single vault-root debug file; the legacy "Debug mode" toggle migrates automatically.
+
+## 0.2.10
 
 - **Clearer conflict reporting (0.2.10)** — the sync-status dialog and summary now distinguish between two outcomes: **merged** (the file was auto-merged cleanly) and **conflicted** (conflict markers were left in the file). Previously both were lumped under a single "conflict" count, making it hard to tell whether action was needed.
 - **Manual "Sync now" button and live 24-hour activity (0.2.7)** — the sync-status dialog gained a **Sync now** button at the top, a scrollable **last-24h activity history** (one compact, icon-led line per file), and now applies a changed auto-sync interval immediately without needing a reload.
