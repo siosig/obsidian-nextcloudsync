@@ -2,8 +2,8 @@ import { SyncEngine } from '../../src/sync/SyncEngine';
 import { TFile, TFolder } from 'obsidian';
 
 /**
- * processRemoteDeletion の振る舞い契約テスト。
- * 仕様: specs/003-trash-setting-respect/contracts/remote-deletion.md (T1〜T5)
+ * Behavior contract tests for processRemoteDeletion.
+ * Spec: specs/003-trash-setting-respect/contracts/remote-deletion.md (T1-T5)
  */
 function makeEngine(opts?: { resolved?: unknown; exists?: boolean; trashRejects?: boolean }) {
   const trashFile = jest.fn(() =>
@@ -31,9 +31,9 @@ function makeEngine(opts?: { resolved?: unknown; exists?: boolean; trashRejects?
 }
 
 describe('SyncEngine.processRemoteDeletion', () => {
-  // T1: 通常ノート(TFile)は trashFile で削除し、vault.trash は使わない (不変条件 C1 / FR-001)
-  it('T1: TFile を解決したら fileManager.trashFile を呼び、vault.trash は呼ばない', async () => {
-    // 実行時は moduleNameMapper でモックの TFile に解決される（型は実 obsidian のため as any でコンストラクタ引数を許可）。
+  // T1: a normal note (TFile) is removed via trashFile, not vault.trash (invariant C1 / FR-001)
+  it('T1: resolving a TFile calls fileManager.trashFile and never vault.trash', async () => {
+    // At runtime moduleNameMapper resolves this to the mocked TFile (the type is the real obsidian one, so `as any` allows the constructor argument).
     const file = new (TFile as unknown as new (p: string) => TFile)('Notes/a.md');
     const { run, trashFile, trash, deleteFile, summary } = makeEngine({ resolved: file });
 
@@ -46,8 +46,8 @@ describe('SyncEngine.processRemoteDeletion', () => {
     expect(summary.downloadedCount).toBe(1);
   });
 
-  // T2: フォルダ(TFolder)も trashFile で削除する (FR-003)
-  it('T2: TFolder を解決したら fileManager.trashFile をフォルダ引数で呼ぶ', async () => {
+  // T2: a folder (TFolder) is also removed via trashFile (FR-003)
+  it('T2: resolving a TFolder calls fileManager.trashFile with the folder', async () => {
     const folder = new (TFolder as unknown as new (p: string) => TFolder)('Notes/sub');
     const { run, trashFile, remove, deleteFile } = makeEngine({ resolved: folder });
 
@@ -58,8 +58,8 @@ describe('SyncEngine.processRemoteDeletion', () => {
     expect(deleteFile).toHaveBeenCalledWith('Notes/sub');
   });
 
-  // T3: 未追跡(null)かつ実在 → adapter.remove フォールバック (不変条件 C2 / FR-004)
-  it('T3: 抽象ファイル未解決かつ実在なら adapter.remove で削除する', async () => {
+  // T3: untracked (null) but present on disk -> adapter.remove fallback (invariant C2 / FR-004)
+  it('T3: an unresolved abstract file that exists is removed via adapter.remove', async () => {
     const { run, trashFile, remove, deleteFile } = makeEngine({ resolved: null, exists: true });
 
     await run('.obsidian/snippets/x.css');
@@ -69,8 +69,8 @@ describe('SyncEngine.processRemoteDeletion', () => {
     expect(deleteFile).toHaveBeenCalledWith('.obsidian/snippets/x.css');
   });
 
-  // T4: 未追跡(null)かつ不在 → 何も削除しないが StateDB は収束 (不変条件 C4 / FR-005)
-  it('T4: 既に存在しないパスは削除 API を呼ばず StateDB.deleteFile のみ行う', async () => {
+  // T4: untracked (null) and absent -> delete nothing, but StateDB still converges (invariant C4 / FR-005)
+  it('T4: an already-missing path calls no delete API and only StateDB.deleteFile', async () => {
     const { run, trashFile, remove, deleteFile } = makeEngine({ resolved: null, exists: false });
 
     await run('gone.md');
@@ -80,8 +80,8 @@ describe('SyncEngine.processRemoteDeletion', () => {
     expect(deleteFile).toHaveBeenCalledWith('gone.md');
   });
 
-  // T6 (security): 未追跡かつ traversal を含むパスは adapter.remove を呼ばない（多層防御）
-  it('T6: 抽象ファイル未解決でも traversal パスは adapter.remove で削除しない', async () => {
+  // T6 (security): an untracked path containing traversal must not reach adapter.remove (defense in depth)
+  it('T6: an unresolved abstract file with a traversal path is not removed via adapter.remove', async () => {
     const { run, remove } = makeEngine({ resolved: null, exists: true });
 
     await run('../../etc/passwd');
@@ -89,8 +89,8 @@ describe('SyncEngine.processRemoteDeletion', () => {
     expect(remove).not.toHaveBeenCalled();
   });
 
-  // T5: 削除失敗は例外を伝播させず、StateDB.deleteFile も呼ばない (不変条件 C3 / FR-006)
-  it('T5: trashFile が失敗しても例外を伝播させず、再試行余地のため deleteFile を呼ばない', async () => {
+  // T5: a delete failure does not propagate and does not call StateDB.deleteFile (invariant C3 / FR-006)
+  it('T5: when trashFile fails, the error is not propagated and deleteFile is not called (leaving room for retry)', async () => {
     const file = new (TFile as unknown as new (p: string) => TFile)('Notes/b.md');
     const { run, deleteFile } = makeEngine({ resolved: file, trashRejects: true });
 

@@ -1,7 +1,7 @@
 name: Release Obsidian plugin
 
-# バージョン番号そのもの（例: 1.0.0、v 接頭辞なし）のタグ push で発火する。
-# Obsidian コミュニティプラグインのリリース慣習に従い、タグ名 = manifest.json の version とする。
+# Triggered by pushing a bare version-number tag (e.g. 1.0.0, no "v" prefix).
+# Following the Obsidian community-plugin release convention, the tag name == manifest.json version.
 on:
   push:
     tags:
@@ -77,17 +77,18 @@ jobs:
             ${{ steps.assets.outputs.files }}
 
       - name: Clean up beta pre-releases superseded by this stable release
-        # 安定版リリース時のみ発火する。タグにハイフンを含む pre-release（例: 0.2.0-beta.1）では
-        # スキップし、ベータ自身が自分を消すことを防ぐ。
+        # Runs only for stable releases. Skips for pre-release tags containing a hyphen
+        # (e.g. 0.2.0-beta.1) so a beta never deletes itself.
         if: ${{ !contains(github.ref_name, '-') }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${GITHUB_REF_NAME}"
           echo "Cleaning up pre-releases superseded by ${VERSION}..."
-          # 同一バージョンの pre-release（X.Y.Z-beta.* / -rc.* など X.Y.Z- で始まるもの）を、
-          # GitHub Release と git タグの両方ごと削除する。安定版 Release は発行済みなので、
-          # 個々の削除失敗はジョブを失敗させず警告に留める（冪等・非致命）。
+          # Delete every same-version pre-release (those starting with "X.Y.Z-", e.g.
+          # X.Y.Z-beta.* / -rc.*), removing both the GitHub Release and its git tag. The stable
+          # Release is already published, so a single delete failure only warns and never fails
+          # the job (idempotent and non-fatal).
           gh release list --limit 200 --json tagName --jq '.[].tagName' | while read -r TAG; do
             case "$TAG" in
               "${VERSION}-"*)
