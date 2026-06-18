@@ -1,5 +1,5 @@
 import { DataAdapter } from 'obsidian';
-import { SyncFileOp, SyncHistoryEntry } from '../types';
+import { SyncFileOp, SyncHistoryDetail, SyncHistoryEntry } from '../types';
 
 const TMP_SUFFIX = '.tmp';
 /** Rolling retention window: entries older than this are dropped. */
@@ -44,10 +44,23 @@ export class SyncHistoryStore {
     }
   }
 
-  /** Record one file outcome. Held in memory until save(). `message` is for errors only. */
-  record(path: string, op: SyncFileOp, at: number = Date.now(), message?: string): void {
+  /**
+   * Record one file outcome. Held in memory until save(). `message` is for errors only.
+   * `detail` carries optional checksum/size data for the sync log; only defined fields are stored.
+   */
+  record(
+    path: string, op: SyncFileOp, at: number = Date.now(),
+    message?: string, detail?: SyncHistoryDetail,
+  ): void {
     const entry: SyncHistoryEntry = { path, op, at };
     if (message) entry.message = message;
+    if (detail) {
+      if (detail.localHash !== undefined) entry.localHash = detail.localHash;
+      if (detail.remoteId !== undefined) entry.remoteId = detail.remoteId;
+      if (detail.remoteIdType !== undefined) entry.remoteIdType = detail.remoteIdType;
+      if (detail.localSize !== undefined) entry.localSize = detail.localSize;
+      if (detail.remoteSize !== undefined) entry.remoteSize = detail.remoteSize;
+    }
     this.entries.push(entry);
   }
 
@@ -55,6 +68,11 @@ export class SyncHistoryStore {
   recent(now: number = Date.now()): SyncHistoryEntry[] {
     const cutoff = now - this.windowMs;
     return this.entries.filter(e => e.at >= cutoff).sort((a, b) => b.at - a.at);
+  }
+
+  /** Entries recorded at or after `startedAt`, in chronological (sync) order — one sync session. */
+  since(startedAt: number): SyncHistoryEntry[] {
+    return this.entries.filter(e => e.at >= startedAt).sort((a, b) => a.at - b.at);
   }
 
   /** Drop entries older than the window, then cap total count keeping the newest. */

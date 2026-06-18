@@ -16,6 +16,8 @@ const OP_LABEL: Record<SyncFileOp, { icon: string; text: string }> = {
   deleted: { icon: '🗑', text: 'Deleted' },
   merged: { icon: '⟷', text: 'Merged' },
   conflicted: { icon: '⚠️', text: 'Conflicted' },
+  'local-wins': { icon: '⬆', text: 'Local wins' },
+  'remote-wins': { icon: '⬇', text: 'Remote wins' },
   error: { icon: '✗', text: 'Error' },
 };
 

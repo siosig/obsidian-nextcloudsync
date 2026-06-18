@@ -39,8 +39,25 @@ export interface DavSyncSettings {
   syncOnWifiOnly: boolean;
   /** Include Obsidian bookmarks (.obsidian/bookmarks.json) in the sync. */
   syncBookmarks: boolean;
-  /** Debug mode: write a diagnostic log to nextcloud-sync-debug.md (real syncing still runs). */
-  debugMode: boolean;
+  /**
+   * User-facing device label. Source of the `<host>` token in per-device log filenames.
+   * Empty ⇒ derive `"<platform>-<deviceId6>"`. Sanitized for filenames at use sites.
+   */
+  deviceName: string;
+  /** Vault-relative folder holding both log files. Blank ⇒ vault root. */
+  logsFolder: string;
+  /** Master on/off for the per-device sync log. */
+  syncLogEnabled: boolean;
+  /**
+   * Which operations the sync log records:
+   *   'important' — conflicts, merges, side-wins resolutions, and errors
+   *   'all'       — the above plus routine uploads, downloads, and deletions
+   */
+  syncLogLevel: 'important' | 'all';
+  /** Master on/off for the per-device debug log (replaces the old `debugMode`). */
+  debugLogEnabled: boolean;
+  /** Verbosity threshold for the debug log (order: error < debug < verbose). */
+  debugLogLevel: 'error' | 'debug' | 'verbose';
   /** Enable chunked uploads (default ON; Nextcloud only). */
   chunkedUploadEnabled: boolean;
   /** Enable Files Locking (experimental; default OFF; only on servers that support files_lock). */
@@ -97,11 +114,16 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   networkConcurrency: 16,
   syncOnWifiOnly: false,
   syncBookmarks: true,
-  debugMode: false,
+  deviceName: '',
+  logsFolder: '',
+  syncLogEnabled: false,
+  syncLogLevel: 'important',
+  debugLogEnabled: false,
+  debugLogLevel: 'error',
   chunkedUploadEnabled: true,
   fileLockingEnabled: true,
   autoMergeEnabled: true,
-  maxConflictRegions: 3,
+  maxConflictRegions: 0,
   frontmatterConflictStrategy: 'conflict',
   mergeableExtensions: ['md', 'txt'],
   conflictFailurePolicy: 'error',
@@ -179,10 +201,26 @@ export interface SyncErrorDetail {
 }
 
 /** The outcome recorded for a single file during a sync, shown in the status dialog's history. */
-export type SyncFileOp = 'uploaded' | 'downloaded' | 'deleted' | 'merged' | 'conflicted' | 'error';
+export type SyncFileOp =
+  | 'uploaded' | 'downloaded' | 'deleted' | 'merged' | 'conflicted'
+  | 'local-wins' | 'remote-wins' | 'error';
+
+/** Optional checksum/size detail captured for a sync-history entry (for the sync log). */
+export interface SyncHistoryDetail {
+  /** Local content checksum (sha256) when known. */
+  localHash?: string;
+  /** Remote identifier (content hash / etag / size) when known. */
+  remoteId?: string;
+  /** Qualifies `remoteId` so an etag is not mistaken for a content hash. */
+  remoteIdType?: RemoteIdType;
+  /** Local file size in bytes when known. */
+  localSize?: number;
+  /** Remote file size in bytes when known. */
+  remoteSize?: number;
+}
 
 /** One per-file sync-history entry, persisted across restarts and pruned to a rolling window. */
-export interface SyncHistoryEntry {
+export interface SyncHistoryEntry extends SyncHistoryDetail {
   path: string;
   op: SyncFileOp;
   /** Epoch milliseconds when the operation was recorded. */

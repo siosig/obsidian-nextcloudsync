@@ -91,7 +91,9 @@ describe('SyncEngine.handleConflict — failure-policy actions', () => {
       networkTimeoutSeconds: 30, deviceId: 'dev-abcd', uploadChunkThresholdMB: 50,
       maxFileSizeMB: 1024, watchOnChangeEnabled: false, syncOnStartupEnabled: true,
       startupSyncDelaySeconds: 5, networkConcurrency: 8, syncOnWifiOnly: false, syncBookmarks: false,
-      debugMode: false, chunkedUploadEnabled: true, fileLockingEnabled: false,
+      deviceName: '', logsFolder: '', syncLogEnabled: false, syncLogLevel: 'important',
+      debugLogEnabled: false, debugLogLevel: 'error',
+      chunkedUploadEnabled: true, fileLockingEnabled: false,
       autoMergeEnabled: true, maxConflictRegions: 10, frontmatterConflictStrategy: 'conflict',
       mergeableExtensions: ['md', 'txt'], conflictFailurePolicy: policy,
     };
