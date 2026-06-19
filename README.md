@@ -27,7 +27,16 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.3.0-beta.2)
+## What's new in this release (0.3.0)
+
+- **Reorganized settings into four sections** — settings are grouped under **Nextcloud**, **Sync**, **Merge**, and **Debug** headings instead of one long flat list. "Max conflict regions" now shows its numeric value beside the slider and defaults to **0 = unlimited** (the region-count circuit-breaker no longer forces conflict markers by default).
+- **Per-device logging** — two opt-in logs written to a folder you pick (a fuzzy folder picker; defaults to the vault root) and named per device so multiple devices never overwrite one another:
+  - **Sync log** (`nextcloud-sync_sync_<device>.md`) — one appended block per sync with the plugin version and all merge-related settings in the header, then one line per operation showing the marker, path, and local/remote checksums and sizes. A level switch records *important events only* (conflicts, merges, side-wins, errors) or *all operations*.
+  - **Debug log** (`nextcloud-sync_debug_<device>.md`) — a timestamped diagnostic log with selectable verbosity (error / debug / verbose), the plugin version, and a snapshot of all settings. Replaces the old single vault-root debug file; the legacy "Debug mode" toggle migrates automatically.
+- **Stuck conflict count fixed** — a file that was once flagged as conflicted but has since converged (identical on both sides) now clears its flag on the next sync, so the conflict count no longer stays stuck at a non-zero number.
+- **No telemetry** — the plugin collects no usage data, analytics, or crash reports; the only network traffic is the sync with your own server. Obsolete settings from earlier builds are also pruned from `data.json` on load.
+
+## 0.3.0-beta.2
 
 - **Stuck conflict count fixed (0.3.0-beta.2)** — a file that was once flagged as conflicted but has since converged (identical on both sides) now clears its flag on the next sync, so the conflict count no longer stays stuck at a non-zero number.
 - **Settings cleanup on load (0.3.0-beta.2)** — obsolete settings left over from earlier builds are pruned from `data.json` automatically.
@@ -35,7 +44,7 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 ## 0.3.0-beta.1
 
 - **Reorganized settings into four sections (0.3.0-beta.1)** — settings are now grouped under **Nextcloud**, **Sync**, **Merge**, and **Debug** headings instead of one long flat list, so each option is easier to find. "Max conflict regions" now shows its numeric value beside the slider and defaults to **0 = unlimited** (the region-count circuit-breaker no longer forces conflict markers by default).
-- **Per-device logging (0.3.0-beta.1)** — two opt-in logs written to a folder you pick (a Templater-style folder picker; defaults to the vault root) and named per device so multiple devices never overwrite one another:
+- **Per-device logging (0.3.0-beta.1)** — two opt-in logs written to a folder you pick (a fuzzy folder picker; defaults to the vault root) and named per device so multiple devices never overwrite one another:
   - **Sync log** (`nextcloud-sync_sync_<device>.md`) — one appended block per sync with the plugin version and all merge-related settings in the header, then one line per operation showing the marker, path, and local/remote checksums and sizes. A level switch records *important events only* (conflicts, merges, side-wins, errors) or *all operations*.
   - **Debug log** (`nextcloud-sync_debug_<device>.md`) — a timestamped diagnostic log with selectable verbosity (error / debug / verbose), the plugin version, and a snapshot of all settings. Replaces the old single vault-root debug file; the legacy "Debug mode" toggle migrates automatically.
 
@@ -102,7 +111,7 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 - **Sync on file change (watch mode)** — optionally sync immediately after you edit a local Markdown file (debounced ~2s after you stop typing). Toggle on/off in settings; works alongside the periodic interval.
 - **Resilient retries** — failed files are skipped, queued, and retried next sync with exponential backoff; a dropped Wi-Fi connection resumes automatically.
 - **Standard WebDAV fallback** — works against any WebDAV server (recursive), Nextcloud features auto-disabled.
-- **Per-device logging** — two opt-in logs, written to a folder you pick (a Templater-style folder picker; defaults to the vault root) and named per device so multiple devices never overwrite one another:
+- **Per-device logging** — two opt-in logs, written to a folder you pick (a fuzzy folder picker; defaults to the vault root) and named per device so multiple devices never overwrite one another:
   - **Sync log** (`nextcloud-sync_sync_<device>.md`) — one appended block per sync with the plugin version and all merge-related settings in the header, then one line per operation showing the marker, path, local/remote checksums and sizes. A level switch records *important events only* (conflicts, merges, side-wins, errors) or *all operations*.
   - **Debug log** (`nextcloud-sync_debug_<device>.md`) — a timestamped diagnostic log with selectable verbosity (error / debug / verbose), the plugin version, and a snapshot of all settings. Useful for troubleshooting on mobile where there's no console. Turn it off and delete the file when finished.
 
