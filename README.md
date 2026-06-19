@@ -216,13 +216,14 @@ On connect, the plugin probes `/status.php` (maintenance mode) and `/ocs/v1.php/
 - App passwords / credentials are kept in Obsidian's **secret credentials store**, never written in plain text to `data.json`.
 - Your **main account password is never used or stored** — only app passwords (issued manually or via Login Flow v2).
 - All network traffic uses Obsidian's `requestUrl` API.
-- The plugin's own folder (`.obsidian/plugins/nextcloud-sync/`) is excluded from sync.
+- The entire Obsidian config folder (`.obsidian/` — settings, themes, community plugins, and the plugin's own sync-state database) is excluded from sync. Only your notes and other vault files are synced. The single exception is `.obsidian/bookmarks.json`, which is synced only when **Sync bookmarks** is enabled in settings.
 
 ---
 
 ## Limitations
 
 - **End-to-end encryption (E2EE)** is out of scope for this version.
+- **The Obsidian config folder (`.obsidian/`) is not synced** — settings, themes, snippets, and community plugins stay local to each device (the only exception is bookmarks, via the **Sync bookmarks** setting). Syncing the config folder is being tracked as a feature request.
 - Designed primarily for Markdown / text Vaults; single files in the hundreds-of-MB range are beyond the v1 design target.
 - Keep the Vault on local storage — don't double-manage it with another cloud sync (e.g. iCloud Drive) at the same time.
 - Nextcloud-specific features require a compatible server version; older or non-Nextcloud servers transparently fall back to core WebDAV sync.
