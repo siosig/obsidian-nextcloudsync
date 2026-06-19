@@ -27,7 +27,12 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.3.0-beta.1)
+## What's new in this release (0.3.0-beta.2)
+
+- **Stuck conflict count fixed (0.3.0-beta.2)** — a file that was once flagged as conflicted but has since converged (identical on both sides) now clears its flag on the next sync, so the conflict count no longer stays stuck at a non-zero number.
+- **Settings cleanup on load (0.3.0-beta.2)** — obsolete settings left over from earlier builds are pruned from `data.json` automatically.
+
+## 0.3.0-beta.1
 
 - **Reorganized settings into four sections (0.3.0-beta.1)** — settings are now grouped under **Nextcloud**, **Sync**, **Merge**, and **Debug** headings instead of one long flat list, so each option is easier to find. "Max conflict regions" now shows its numeric value beside the slider and defaults to **0 = unlimited** (the region-count circuit-breaker no longer forces conflict markers by default).
 - **Per-device logging (0.3.0-beta.1)** — two opt-in logs written to a folder you pick (a Templater-style folder picker; defaults to the vault root) and named per device so multiple devices never overwrite one another:
@@ -213,6 +218,7 @@ On connect, the plugin probes `/status.php` (maintenance mode) and `/ocs/v1.php/
 
 ## Privacy & security
 
+- **This plugin collects no telemetry whatsoever.** No usage data, analytics, or crash reports are gathered or sent anywhere; the only network traffic is the sync between your vault and your own Nextcloud/WebDAV server.
 - App passwords / credentials are kept in Obsidian's **secret credentials store**, never written in plain text to `data.json`.
 - Your **main account password is never used or stored** — only app passwords (issued manually or via Login Flow v2).
 - All network traffic uses Obsidian's `requestUrl` API.
