@@ -5,7 +5,6 @@
   "main": "main.js",
   "packageManager": "pnpm@11.4.0",
   "scripts": {
-    "preinstall": "npx --yes only-allow pnpm",
     "prepare": "git config core.hooksPath .githooks || true",
     "dev": "node esbuild.config.mjs",
     "build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production",
