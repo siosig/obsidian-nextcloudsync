@@ -1,4 +1,4 @@
-import { migrateLegacyDebugMode } from '../../src/util/settingsMigration';
+import { migrateLegacyDebugMode, pruneObsoleteSettings } from '../../src/util/settingsMigration';
 import { DEFAULT_SETTINGS, DavSyncSettings } from '../../src/types';
 
 function freshSettings(): DavSyncSettings {
@@ -33,5 +33,33 @@ describe('migrateLegacyDebugMode', () => {
     // User explicitly saved debugLogEnabled previously → legacy flag must not re-enable it.
     migrateLegacyDebugMode({ debugMode: true, debugLogEnabled: false }, settings);
     expect(settings.debugLogEnabled).toBe(false);
+  });
+});
+
+describe('pruneObsoleteSettings', () => {
+  it('removes keys not present in the current schema', () => {
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      // Leftovers from an earlier 0.3.0-beta / the removed debugMode field.
+      debugMode: false,
+      logLevel: 'verbose',
+      syncResultsEnabled: true,
+      syncResultsFolder: 'system/',
+    } as unknown as Record<string, unknown>;
+    const removed = pruneObsoleteSettings(settings);
+    expect(removed.sort()).toEqual(['debugMode', 'logLevel', 'syncResultsEnabled', 'syncResultsFolder'].sort());
+    expect(settings.debugMode).toBeUndefined();
+    expect(settings.logLevel).toBeUndefined();
+    expect(settings.syncResultsEnabled).toBeUndefined();
+    expect(settings.syncResultsFolder).toBeUndefined();
+  });
+
+  it('keeps every valid schema key (including optional lastKnownServerVersion)', () => {
+    const settings = { ...DEFAULT_SETTINGS } as unknown as Record<string, unknown>;
+    const removed = pruneObsoleteSettings(settings);
+    expect(removed).toEqual([]);
+    for (const key of Object.keys(DEFAULT_SETTINGS)) {
+      expect(Object.prototype.hasOwnProperty.call(settings, key)).toBe(true);
+    }
   });
 });

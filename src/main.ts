@@ -8,7 +8,7 @@ import { FileLogger } from './util/FileLogger';
 import { isSyncTmpPath, LocalAdapter } from './data/LocalAdapter';
 import { v4 as uuidv4 } from './util/uuid';
 import { hostToken, LogPlatform } from './util/hostToken';
-import { migrateLegacyDebugMode } from './util/settingsMigration';
+import { migrateLegacyDebugMode, pruneObsoleteSettings } from './util/settingsMigration';
 import { debugLogPath, syncLogPath } from './util/logPaths';
 import { SyncLogWriter, formatResolution } from './log/SyncLogWriter';
 
@@ -288,6 +288,14 @@ export default class ObsidianNextcloudsync extends Plugin {
     const validPolicies = ['error', 'local-wins', 'remote-wins', 'conflict-markers'];
     if (!validPolicies.includes(this.settings.conflictFailurePolicy)) {
       this.settings.conflictFailurePolicy = DEFAULT_SETTINGS.conflictFailurePolicy;
+    }
+
+    // Drop obsolete persisted keys (e.g. the removed `debugMode` and the leftover
+    // `logLevel` / `syncResults*` fields from an earlier 0.3.0-beta), then persist the cleaned
+    // settings so data.json no longer carries them.
+    const removed = pruneObsoleteSettings(this.settings as unknown as Record<string, unknown>);
+    if (removed.length > 0) {
+      await this.saveSettings();
     }
   }
 
