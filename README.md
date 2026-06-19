@@ -27,7 +27,11 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.3.0)
+## What's new in this release (0.3.1)
+
+- **Maintenance release (requires Obsidian 1.11.4+)** — no functional changes. Restores the community-directory listing by fixing an internal lint issue (an undescribed ESLint directive) that failed the 0.3.0 automated review, and re-enables the repository's git hooks so the pre-push gate mirrors the directory reviewer.
+
+## 0.3.0
 
 - **Reorganized settings into four sections** — settings are grouped under **Nextcloud**, **Sync**, **Merge**, and **Debug** headings instead of one long flat list. "Max conflict regions" now shows its numeric value beside the slider and defaults to **0 = unlimited** (the region-count circuit-breaker no longer forces conflict markers by default).
 - **Per-device logging** — two opt-in logs written to a folder you pick (a fuzzy folder picker; defaults to the vault root) and named per device so multiple devices never overwrite one another:
