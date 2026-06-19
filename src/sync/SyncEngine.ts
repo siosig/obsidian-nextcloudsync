@@ -541,7 +541,15 @@ export class SyncEngine {
       return;
     }
 
-    if (!remoteChanged && !localChanged) return; // Unchanged
+    if (!remoteChanged && !localChanged) {
+      // Both sides match what we last synced → the file has converged. If it was previously
+      // flagged as conflicted (e.g. an error-policy skip or a prior markers write that has since
+      // been resolved), clear that stale flag now so the conflict count does not stay stuck.
+      if (base?.isConflicted) {
+        this.opts.stateDB.setFile({ ...base, isConflicted: false });
+      }
+      return; // Unchanged
+    }
 
     if (localChanged && !remoteChanged) {
       await this.uploadFile(remote.path, localHash, remoteId, idType, remote, summary);

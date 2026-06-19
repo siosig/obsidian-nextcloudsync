@@ -293,3 +293,60 @@ describe('SyncEngine.processRemoteDeletion — out-of-scope safety', () => {
     expect(off.remove).not.toHaveBeenCalled();
   });
 });
+
+describe('SyncEngine.processRemoteFile — stale conflict-flag clearing', () => {
+  function makeSummary(): SyncSessionSummary {
+    return {
+      startedAt: 0, completedAt: null, uploadedCount: 0, downloadedCount: 0,
+      deletedCount: 0, mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], errors: [],
+    };
+  }
+
+  const remote: RemoteFileInfo = {
+    path: 'note.md', fileId: 'fid-1', checksum: 'same-checksum', etag: 'etag-1',
+    size: 12, lastModified: 1000,
+  };
+
+  function buildHarness(base: FileState) {
+    const setFile = jest.fn();
+    const localAdapter = {
+      // mtime <= base.mtime so the engine does NOT recompute the hash → localChanged stays false.
+      stat: jest.fn(async () => ({ size: base.size, mtime: base.mtime })),
+      readBinary: jest.fn(async () => new ArrayBuffer(0)),
+    };
+    const stateDB = { getFile: jest.fn(() => base), setFile };
+    const opts = {
+      app: {}, settings: {}, localAdapter, stateDB,
+      statusBar: {}, webdavFactory: {}, pluginDir: '', configDir: '.obsidian',
+    };
+    const engine = new SyncEngine(opts as never);
+    const invoke = (summary: SyncSessionSummary) =>
+      (engine as unknown as {
+        processRemoteFile(r: RemoteFileInfo, s: SyncSessionSummary): Promise<void>;
+      }).processRemoteFile(remote, summary);
+    return { invoke, setFile };
+  }
+
+  it('clears a stale isConflicted flag when an unchanged file has converged', async () => {
+    const base: FileState = {
+      path: 'note.md', localHash: 'lh', remoteId: 'same-checksum', idType: 'sha256',
+      size: 12, mtime: 1000, remoteFileId: 'fid-1', isConflicted: true,
+    };
+    const h = buildHarness(base);
+    await h.invoke(makeSummary());
+    // The unchanged path must rewrite the entry with the conflict flag cleared.
+    expect(h.setFile).toHaveBeenCalledWith(expect.objectContaining({
+      path: 'note.md', isConflicted: false,
+    }));
+  });
+
+  it('does not write when an unchanged file was never conflicted', async () => {
+    const base: FileState = {
+      path: 'note.md', localHash: 'lh', remoteId: 'same-checksum', idType: 'sha256',
+      size: 12, mtime: 1000, remoteFileId: 'fid-1', isConflicted: false,
+    };
+    const h = buildHarness(base);
+    await h.invoke(makeSummary());
+    expect(h.setFile).not.toHaveBeenCalled();
+  });
+});
