@@ -1,5 +1,6 @@
 import tseslint from "typescript-eslint";
 import obsidianmd from "eslint-plugin-obsidianmd";
+import eslintComments from "@eslint-community/eslint-plugin-eslint-comments";
 import { defineConfig } from "eslint/config";
 
 // Mirrors the Obsidian community-directory reviewer (eslint-plugin-obsidianmd
@@ -17,7 +18,12 @@ export default defineConfig([
         tsconfigRootDir: import.meta.dirname,
       },
     },
+    plugins: { "@eslint-community/eslint-comments": eslintComments },
     rules: {
+      // Mirror the directory reviewer: every eslint-disable directive must carry a
+      // `-- reason` description. The reviewer flags undescribed directives even though
+      // obsidianmd/recommended does not, so enforce it here to catch them pre-push.
+      "@eslint-community/eslint-comments/require-description": ["error", { ignore: [] }],
       // The sentence-case rule's autosuggest naively lowercases proper nouns
       // (Nextcloud, WebDAV) and mangles URLs. Allowlist them so the rule only
       // flags genuine Title Case. (The directory reviewer does not block on this.)
