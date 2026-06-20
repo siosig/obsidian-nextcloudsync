@@ -27,7 +27,11 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.4.0-beta.1)
+## What's new in this release (0.4.0-beta.2)
+
+- **Files that differ between local and remote now always reconcile (0.4.0-beta.2)** — fixes a case where, on servers that return no content checksum (so the plugin falls back to ETags), a note could differ between this device and the server yet never sync. The recorded sync state could become internally inconsistent and make the file look "unchanged" forever; such a file is now detected (by size) and reconciled through normal conflict resolution instead of being silently skipped.
+
+## 0.4.0-beta.1
 
 - **Filter the sync-status dialog by status (0.4.0-beta.1)** — the status dialog gained a checkbox row (Uploaded, Downloaded, Deleted, Merged, Conflicted, Local wins, Remote wins, Error) so you can focus on, say, only conflicts. All on by default; the choice is remembered until you restart Obsidian and applies to every section of the dialog.
 - **Compare a file with its remote version (0.4.0-beta.1)** — opt in via "Compare with remote (explorer menu)" in settings, then right-click any file in the explorer to open a popup comparing local vs remote modification time, checksum (with a match/mismatch badge), and a line diff. Resolve the difference there with **push** (overwrite remote with local) or **pull** (overwrite local with remote), each behind a confirmation. The toggle takes effect immediately — no restart.
