@@ -27,7 +27,15 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.5.0)
+## What's new in this release (0.6.0-beta.1)
+
+- **Much faster sync — mobile/Android no longer stalls (0.6.0-beta.1)** — change detection now records the file's modification time/size *as written* and compares against that, instead of relying on setting the modification time (which is a no-op on mobile). Previously every sync re-read and re-hashed the entire vault on mobile, eventually getting killed by the OS; now an unchanged file is skipped without being read. A same-size edit made within a 2-second window is still always detected (no lost edits).
+- **Faster first sync (0.6.0-beta.1)** — the initial sync no longer hashes the whole vault twice, decides "already in sync" by size first, and skips pre-hashing very large files.
+- **Parallel transfers with a memory guard (0.6.0-beta.1)** — uploads/downloads now run with bounded concurrency (configurable; mobile default raised to 3), capped by a total in-flight-bytes budget so large files can't exhaust memory, with same-folder uploads serialized to avoid server lock contention.
+- **Fewer network round trips (0.6.0-beta.1)** — file locking now defaults **off**, replaced by an `If-Match` precondition that turns a remote changed by another device into a conflict (no lost update) without the extra LOCK/UNLOCK requests; directory creation is now done only when needed, and deletes treat "already gone" as success.
+- **Snappier UI on large vaults (0.6.0-beta.1)** — parsing a large server file listing no longer freezes the interface.
+
+## 0.5.0
 
 - **Selective `.obsidian` config folder sync (0.5.0)** — opt in via **Sync config folder** in settings to sync chosen categories of the Obsidian config folder across devices: Appearance, Themes & snippets, Hotkeys, Core plugin settings, and Bookmarks (each its own toggle, modelled on Obsidian native Sync). Off by default — notes still sync as before. **Community plugins (`.obsidian/plugins/`) and the plugin's own sync-state database are never synced** (executable code / device-specific state). Config files conflict-resolve by newest-wins so they are never corrupted with conflict markers. The previous standalone **Sync bookmarks** setting migrates automatically into the Bookmarks category, so existing bookmark-sync users keep working with no change. Resolves [#1](https://github.com/siosig/obsidian-nextcloudsync/issues/1).
 
