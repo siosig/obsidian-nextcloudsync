@@ -10,7 +10,7 @@ import { FileLogger } from './util/FileLogger';
 import { isSyncTmpPath, LocalAdapter } from './data/LocalAdapter';
 import { v4 as uuidv4 } from './util/uuid';
 import { hostToken, LogPlatform } from './util/hostToken';
-import { migrateLegacyDebugMode, pruneObsoleteSettings } from './util/settingsMigration';
+import { migrateLegacyDebugMode, migrateBookmarksToConfigSync, pruneObsoleteSettings } from './util/settingsMigration';
 import { debugLogPath, syncLogPath } from './util/logPaths';
 import { SyncLogWriter, formatResolution } from './log/SyncLogWriter';
 
@@ -298,6 +298,13 @@ export default class ObsidianNextcloudsync extends Plugin {
 
     // Migrate the removed `debugMode` boolean to the new per-device debug-log fields.
     migrateLegacyDebugMode(saved, this.settings);
+
+    // Object.assign is shallow: if a partial `configSync` was persisted, complete missing keys
+    // from the defaults so every category flag is a real boolean. Do this BEFORE the bookmarks
+    // migration, which replaces `configSync` wholesale when it fires.
+    this.settings.configSync = { ...DEFAULT_SETTINGS.configSync, ...(saved.configSync ?? {}) };
+    // Migrate the removed standalone `syncBookmarks` flag into the config-folder sync model.
+    migrateBookmarksToConfigSync(saved, this.settings);
 
     // DEFAULT_SETTINGS holds the desktop defaults. On mobile, apply mobile-specific
     // overrides only on first run (key absent from saved data) so existing users keep

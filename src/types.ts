@@ -1,5 +1,24 @@
 // Shared type definitions for nextcloud-sync
 
+/**
+ * Per-category opt-in flags for `.obsidian` config-folder sync (issue #1), modelled on
+ * Obsidian native Sync's "Vault configuration sync". Each flag is only consulted when the
+ * master `syncConfigFolder` setting is on. Community plugins and the plugin's own sync-state
+ * DB are intentionally NOT representable here — they are permanent hard exclusions.
+ */
+export interface ConfigSyncCategories {
+  /** appearance.json, app.json */
+  appearance: boolean;
+  /** themes/**, snippets/** */
+  themesSnippets: boolean;
+  /** hotkeys.json */
+  hotkeys: boolean;
+  /** core-plugins.json, graph.json, and the bundled core-plugin config files (fixed allowlist) */
+  corePlugins: boolean;
+  /** bookmarks.json (migrated from the former standalone `syncBookmarks` setting) */
+  bookmarks: boolean;
+}
+
 export interface DavSyncSettings {
   serverUrl: string;
   username: string;
@@ -37,8 +56,16 @@ export interface DavSyncSettings {
    * the toggle is disabled there and the setting is ignored.
    */
   syncOnWifiOnly: boolean;
-  /** Include Obsidian bookmarks (.obsidian/bookmarks.json) in the sync. */
-  syncBookmarks: boolean;
+  /**
+   * Master opt-in for syncing parts of the Obsidian config folder (Vault#configDir, e.g. `.obsidian`).
+   * Default OFF. While off, nothing under the config folder is synced (notes-only behaviour).
+   * When on, the individual `configSync` categories below decide what is included.
+   * Community plugins (`<configDir>/plugins/`) and this plugin's own state DB are NEVER synced,
+   * regardless of these flags.
+   */
+  syncConfigFolder: boolean;
+  /** Per-category opt-in for config-folder sync. Only consulted when `syncConfigFolder` is true. */
+  configSync: ConfigSyncCategories;
   /**
    * User-facing device label. Source of the `<host>` token in per-device log filenames.
    * Empty ⇒ derive `"<platform>-<deviceId6>"`. Sanitized for filenames at use sites.
@@ -119,7 +146,18 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   startupSyncDelaySeconds: 1,
   networkConcurrency: 16,
   syncOnWifiOnly: false,
-  syncBookmarks: true,
+  // Config-folder sync is opt-in: master defaults OFF, so a fresh install syncs notes only.
+  // These category defaults take effect only once the user turns the master on (per the
+  // settings_v5.0.0 mock). Migrated `syncBookmarks: true` users get bookmarks-only instead
+  // (see migrateBookmarksToConfigSync); `syncBookmarks` itself is removed and pruned.
+  syncConfigFolder: false,
+  configSync: {
+    appearance: true,
+    themesSnippets: true,
+    hotkeys: true,
+    corePlugins: false,
+    bookmarks: true,
+  },
   deviceName: '',
   logsFolder: '',
   syncLogEnabled: false,
