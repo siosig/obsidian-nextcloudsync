@@ -1,6 +1,7 @@
 import { StateDB } from '../../src/data/StateDB';
 import { DavSyncSettings, FileState, RemoteFileInfo, SyncSessionSummary } from '../../src/types';
 import { SyncEngine } from '../../src/sync/SyncEngine';
+import { sha256 } from '../../src/util/hash';
 
 // Simplified 3-point comparison logic extracted for unit testing
 function classify(
@@ -349,5 +350,88 @@ describe('SyncEngine.processRemoteFile — stale conflict-flag clearing', () => 
     const h = buildHarness(base);
     await h.invoke(makeSummary());
     expect(h.setFile).not.toHaveBeenCalled();
+  });
+});
+
+describe('SyncEngine.processRemoteFile — divergent (corrupt) baseline detection', () => {
+  const enc = new TextEncoder();
+
+  function makeSummary(): SyncSessionSummary {
+    return {
+      startedAt: 0, completedAt: null, uploadedCount: 0, downloadedCount: 0,
+      deletedCount: 0, mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], errors: [],
+    };
+  }
+
+  // etag-only server (no content checksum) → idType resolves to 'etag'.
+  const remote: RemoteFileInfo = {
+    path: 'note.md', fileId: 'fid-1', checksum: null, etag: 'etag-1',
+    size: 10600, lastModified: 1000,
+  };
+
+  function buildHarness(base: FileState, localData: ArrayBuffer, localSize: number, localMtime: number) {
+    const setFile = jest.fn();
+    const handleConflict = jest.fn(async () => undefined);
+    const localAdapter = {
+      stat: jest.fn(async () => ({ size: localSize, mtime: localMtime })),
+      readBinary: jest.fn(async () => localData),
+    };
+    const stateDB = { getFile: jest.fn(() => base), setFile };
+    const opts = {
+      app: {}, settings: {}, localAdapter, stateDB,
+      statusBar: {}, webdavFactory: {}, pluginDir: '', configDir: '.obsidian',
+    };
+    const engine = new SyncEngine(opts as never);
+    (engine as unknown as { handleConflict: unknown }).handleConflict = handleConflict;
+    const invoke = (summary: SyncSessionSummary) =>
+      (engine as unknown as {
+        processRemoteFile(r: RemoteFileInfo, s: SyncSessionSummary): Promise<void>;
+      }).processRemoteFile(remote, summary);
+    return { invoke, setFile, handleConflict };
+  }
+
+  it('reconciles via handleConflict when an etag baseline is internally inconsistent (size disagrees with the recorded hash)', async () => {
+    // Reproduces the real bug: base.localHash matches the CURRENT local file,
+    // remote etag is unchanged (remoteChanged=false), yet base.size records the
+    // remote's size (10600) — so local(small) and remote(10600) genuinely differ.
+    // The old code classified this "unchanged" and skipped it forever.
+    const localData = enc.encode('short-local-content').buffer;
+    const localHash = await sha256(localData);
+    const base: FileState = {
+      path: 'note.md', localHash, remoteId: 'etag-1', idType: 'etag',
+      size: 10600, mtime: 1000, remoteFileId: 'fid-1', isConflicted: false,
+    };
+    // localStat.size (real local) != base.size; mtime not advanced.
+    const h = buildHarness(base, localData, localData.byteLength, 1000);
+    await h.invoke(makeSummary());
+
+    expect(h.handleConflict).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT reconcile a genuinely converged etag file (sizes agree)', async () => {
+    const localData = enc.encode('converged-content').buffer;
+    const localHash = await sha256(localData);
+    const base: FileState = {
+      path: 'note.md', localHash, remoteId: 'etag-1', idType: 'etag',
+      size: localData.byteLength, mtime: 1000, remoteFileId: 'fid-1', isConflicted: false,
+    };
+    const remoteConverged: RemoteFileInfo = { ...remote, size: localData.byteLength };
+    const setFile = jest.fn();
+    const handleConflict = jest.fn(async () => undefined);
+    const localAdapter = {
+      stat: jest.fn(async () => ({ size: localData.byteLength, mtime: 1000 })),
+      readBinary: jest.fn(async () => localData),
+    };
+    const stateDB = { getFile: jest.fn(() => base), setFile };
+    const engine = new SyncEngine({
+      app: {}, settings: {}, localAdapter, stateDB,
+      statusBar: {}, webdavFactory: {}, pluginDir: '', configDir: '.obsidian',
+    } as never);
+    (engine as unknown as { handleConflict: unknown }).handleConflict = handleConflict;
+    await (engine as unknown as {
+      processRemoteFile(r: RemoteFileInfo, s: SyncSessionSummary): Promise<void>;
+    }).processRemoteFile(remoteConverged, makeSummary());
+
+    expect(handleConflict).not.toHaveBeenCalled();
   });
 });
