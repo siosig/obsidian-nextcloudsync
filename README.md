@@ -27,7 +27,11 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.4.0-beta.3)
+## What's new in this release (0.4.0-beta.4)
+
+- **Internal refactor & documentation alignment (0.4.0-beta.4)** — a maintenance release with no user-facing behavior change. Brings the code in line with the official Obsidian developer guidelines: vault watchers and engine init are now deferred to `onLayoutReady` (avoiding the "create fires per file on startup" pitfall), local paths are normalized at the IO boundary, modal titles use the native title bar, and the diff/error styling now follows your theme's colors. Also fixes a few README details that had drifted from the actual behavior, and removes dead code.
+
+## 0.4.0-beta.3
 
 - **Plain-text log files now use a .txt extension (0.4.0-beta.3)** — the per-device sync and debug logs are plain text, not Markdown, so they now use a `.txt` extension to avoid being rendered as Markdown (which garbled the display). Existing `.md` log files are left untouched and can be deleted; new entries are written to the `.txt` files. `.txt` is in the default mergeable extensions, so cross-device log merging keeps working.
 
