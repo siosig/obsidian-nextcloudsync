@@ -670,7 +670,11 @@ export class SyncEngine {
     let localHash = base?.localHash ?? '';
 
     if (localStat && base) {
-      if (localStat.mtime > base.mtime) {
+      // mtime is a cheap first-pass filter, but it is not sufficient: a size
+      // change always means the content changed even when the mtime did not
+      // advance (restore-from-backup, content swapped in place, or a clock
+      // anomaly). Recompute the hash whenever EITHER signal indicates a change.
+      if (localStat.mtime > base.mtime || localStat.size !== base.size) {
         // Recompute hash
         const buf = await this.opts.localAdapter.readBinary(remote.path);
         localHash = await sha256(buf);
@@ -688,6 +692,22 @@ export class SyncEngine {
     }
 
     if (!remoteChanged && !localChanged) {
+      // A genuinely converged baseline records the SAME size on both sides. If the
+      // recorded base.size disagrees with the actual local size while the ids still
+      // "match", the baseline is internally inconsistent (e.g. a prior resolution
+      // recorded base.localHash from one side but base.size/remoteId from the other).
+      // This happens on servers that supply no content checksum (idType==='etag'),
+      // where convergence cannot be proven by hashing alone. Treating it as
+      // "unchanged" hides a real local/remote divergence forever, so reconcile it
+      // via conflict resolution (downloads remote, compares real content, honors the
+      // configured policy) instead of silently skipping.
+      if (base && localStat && localStat.size !== base.size) {
+        void this.opts.logger?.log(
+          `sync: divergent baseline detected (idType=${idType}, localSize=${localStat.size}, baseSize=${base.size}) → reconciling ${remote.path}`,
+        );
+        await this.handleConflict(remote.path, base, remote, remoteId, idType, summary);
+        return;
+      }
       // Both sides match what we last synced → the file has converged. If it was previously
       // flagged as conflicted (e.g. an error-policy skip or a prior markers write that has since
       // been resolved), clear that stale flag now so the conflict count does not stay stuck.
