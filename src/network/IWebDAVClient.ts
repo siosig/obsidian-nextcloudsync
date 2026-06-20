@@ -4,9 +4,23 @@ export interface IWebDAVClient {
   connect(): Promise<NextcloudFeatures>;
   getFiles(path: string): Promise<RemoteFileInfo[]>;
   getChanges(syncToken: string): Promise<SyncChanges>;
-  downloadFile(remotePath: string, localTmpPath: string): Promise<void>;
-  /** mtime (ms epoch): when provided, sent as X-OC-MTime so Nextcloud preserves the local timestamp. */
-  uploadFile(remotePath: string, data: ArrayBuffer, mtime?: number): Promise<void>;
+  /**
+   * Download a remote file and RETURN its bytes. Returning the buffer (rather than stashing it in a
+   * shared field) is required for correctness under concurrent downloads — a shared "last download"
+   * field would race and hand a worker another file's bytes.
+   */
+  downloadFile(remotePath: string): Promise<ArrayBuffer>;
+  /**
+   * Upload via single PUT.
+   * @param mtime ms epoch — when provided, sent as X-OC-MTime so Nextcloud preserves the timestamp.
+   * @param opts.precomputedSha256 reuse instead of re-hashing for the OC-Checksum header.
+   * @param opts.ifMatchEtag when set, sent as `If-Match` so a concurrently-changed remote yields 412
+   *        (mapped to PreconditionFailedError) — optimistic concurrency in place of locking.
+   */
+  uploadFile(
+    remotePath: string, data: ArrayBuffer, mtime?: number,
+    opts?: { precomputedSha256?: string; ifMatchEtag?: string | null },
+  ): Promise<void>;
   moveFile(oldPath: string, newPath: string): Promise<void>;
   deleteFile(path: string, expectedRemoteId: string): Promise<void>;
   getSyncToken(): Promise<string | null>;
@@ -16,8 +30,6 @@ export interface IWebDAVClient {
    * returns true (conservative) so callers never treat an ambiguous result as "deleted".
    */
   remoteExists(remotePath: string): Promise<boolean>;
-  /** Returns the ArrayBuffer from the most recent downloadFile() call. */
-  getLastDownloadBuffer(): ArrayBuffer;
 
   /**
    * Ask the server to compute and persist the SHA-256 checksum of an existing remote file

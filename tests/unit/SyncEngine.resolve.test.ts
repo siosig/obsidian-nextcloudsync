@@ -20,15 +20,12 @@ interface Cfg {
 }
 
 function makeEngine(cfg: Cfg) {
-  let lastDownload: ArrayBuffer = buf(cfg.remoteContent ?? 'remote');
-
   const client = {
     getFiles: jest.fn(async () => (cfg.remote === undefined ? [remoteInfo('a.md')] : cfg.remote ? [cfg.remote] : [])),
     downloadFile: jest.fn(async () => {
       if (cfg.downloadThrows) throw new Error('download boom');
-      lastDownload = buf(cfg.remoteContent ?? 'remote');
+      return buf(cfg.remoteContent ?? 'remote');
     }),
-    getLastDownloadBuffer: () => lastDownload,
   };
 
   const uploadStrategy = {

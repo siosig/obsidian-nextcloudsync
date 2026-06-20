@@ -20,7 +20,6 @@ interface Cfg {
 
 function makeEngine(cfg: Cfg) {
   const localBuffer = buf(cfg.localContent ?? '');
-  let lastDownload: ArrayBuffer = buf(cfg.remoteContent ?? '');
 
   const client = {
     getFiles: jest.fn(async () => {
@@ -29,9 +28,8 @@ function makeEngine(cfg: Cfg) {
     }),
     downloadFile: jest.fn(async () => {
       if (cfg.downloadThrows) throw new Error('download boom');
-      lastDownload = buf(cfg.remoteContent ?? '');
+      return buf(cfg.remoteContent ?? '');
     }),
-    getLastDownloadBuffer: () => lastDownload,
   };
 
   const localAdapter = {

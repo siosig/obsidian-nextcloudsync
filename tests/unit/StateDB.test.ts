@@ -129,4 +129,84 @@ describe('StateDB', () => {
     expect(db.getFileByRemoteId('fileid-99')?.path).toBe('notes.md');
     expect(db.getFileByRemoteId('nonexistent')).toBeUndefined();
   });
+
+  // ── P0-B: compact persistence, debounced save, O(1) remoteFileId index, v1 load ──
+
+  it('persists compact JSON (no pretty-print indentation)', async () => {
+    const adapter = makeAdapter();
+    const db = new StateDB(adapter, PLUGIN_DIR, DEVICE_ID);
+    await db.load();
+    db.setFile({ path: 'a.md', localHash: 'x', remoteId: 'x', idType: 'sha256', size: 10, mtime: 0, remoteFileId: null, isConflicted: false });
+    await db.save();
+    const written = (adapter.write as jest.Mock).mock.calls.find(([p]) => String(p).endsWith('.tmp'))?.[1] as string;
+    expect(written).toBeDefined();
+    // Compact stringify emits no newlines / multi-space indentation.
+    expect(written).not.toContain('\n');
+    expect(JSON.parse(written).files['a.md'].localHash).toBe('x');
+  });
+
+  it('coalesces watch-mode requestSave() calls into a single write, flushed by flush()', async () => {
+    const adapter = makeAdapter();
+    const db = new StateDB(adapter, PLUGIN_DIR, DEVICE_ID);
+    await db.load();
+    db.setSyncToken('tok');
+    db.requestSave();
+    db.requestSave();
+    db.requestSave();
+    // Debounced: nothing written yet (no real time has elapsed).
+    expect(adapter.write).not.toHaveBeenCalled();
+    await db.flush();
+    // Exactly one coalesced save persisted the state.
+    expect((adapter.write as jest.Mock).mock.calls.filter(([p]) => String(p).endsWith('.tmp'))).toHaveLength(1);
+    expect(adapter.rename).toHaveBeenCalledTimes(1);
+  });
+
+  it('flush() is a no-op (no throw) when no save is pending', async () => {
+    const adapter = makeAdapter();
+    const db = new StateDB(adapter, PLUGIN_DIR, DEVICE_ID);
+    await db.load();
+    await expect(db.flush()).resolves.not.toThrow();
+    expect(adapter.write).not.toHaveBeenCalled();
+  });
+
+  it('keeps the remoteFileId index correct across rename and delete', async () => {
+    const db = new StateDB(makeAdapter(), PLUGIN_DIR, DEVICE_ID);
+    await db.load();
+    db.setFile({ path: 'old.md', localHash: 'h', remoteId: 'r', idType: 'sha256', size: 5, mtime: 0, remoteFileId: 'fid-1', isConflicted: false });
+    expect(db.getFileByRemoteId('fid-1')?.path).toBe('old.md');
+    // Rename = delete old + set new (same fileId, new path).
+    db.deleteFile('old.md');
+    expect(db.getFileByRemoteId('fid-1')).toBeUndefined();
+    db.setFile({ path: 'new.md', localHash: 'h', remoteId: 'r', idType: 'sha256', size: 5, mtime: 0, remoteFileId: 'fid-1', isConflicted: false });
+    expect(db.getFileByRemoteId('fid-1')?.path).toBe('new.md');
+    // Changing a path's fileId drops the stale mapping.
+    db.setFile({ path: 'new.md', localHash: 'h', remoteId: 'r', idType: 'sha256', size: 5, mtime: 0, remoteFileId: 'fid-2', isConflicted: false });
+    expect(db.getFileByRemoteId('fid-1')).toBeUndefined();
+    expect(db.getFileByRemoteId('fid-2')?.path).toBe('new.md');
+  });
+
+  it('rebuilds the remoteFileId index on load (survives reload)', async () => {
+    const adapter = makeAdapter();
+    const db = new StateDB(adapter, PLUGIN_DIR, DEVICE_ID);
+    await db.load();
+    db.setFile({ path: 'x.md', localHash: 'h', remoteId: 'r', idType: 'sha256', size: 5, mtime: 0, remoteFileId: 'fid-9', isConflicted: false });
+    await db.save();
+    const db2 = new StateDB(adapter, PLUGIN_DIR, DEVICE_ID);
+    await db2.load();
+    expect(db2.getFileByRemoteId('fid-9')?.path).toBe('x.md');
+  });
+
+  it('loads a v1 state file lacking the new signature fields without error', async () => {
+    // No localMtime/localSize/remoteMtime — represents pre-upgrade state.
+    const v1 = {
+      deviceId: DEVICE_ID, lastSyncTime: 5, syncToken: null,
+      files: { 'n.md': { path: 'n.md', localHash: 'a', remoteId: 'b', idType: 'sha256', size: 3, mtime: 1, remoteFileId: 'fid', isConflicted: false } },
+    };
+    const adapter = makeAdapter({ [`${PLUGIN_DIR}/state-${DEVICE_ID}.json`]: JSON.stringify(v1) });
+    const db = new StateDB(adapter, PLUGIN_DIR, DEVICE_ID);
+    await expect(db.load()).resolves.not.toThrow();
+    const f = db.getFile('n.md');
+    expect(f?.localMtime).toBeUndefined();
+    expect(db.getFileByRemoteId('fid')?.path).toBe('n.md');
+  });
 });

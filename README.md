@@ -125,7 +125,7 @@ Earlier in the 0.2.x line:
 | Deletion safety | Hard delete | Routed through the **Nextcloud trashbin** — recoverable, never an irreversible `DELETE` |
 | Setup | Manual app-password copy & paste | **Login Flow v2** — approve in the browser, credentials are issued and stored automatically |
 | Large files | Skipped or fail on a single `PUT` | **Chunked upload** — split, resumable, checksum-verified |
-| Concurrent edits | Hope nobody else writes | **Files Locking** — acquire a server lock around each update to *prevent* conflicts |
+| Concurrent edits | Hope nobody else writes | **Optimistic concurrency** — every update carries an `If-Match` precondition, so a remote changed by another device is turned into a conflict (no lost update) without locking round trips; server-side **Files Locking** stays available as an opt-in |
 | Recovery from mistakes | None (your copy is all you have) | **Server version history** — browse and restore any past revision from inside Obsidian |
 | Server unavailable | Cryptic errors / partial writes | **Maintenance-mode detection** (`/status.php`) and parsed Nextcloud error messages |
 | Capability awareness | None | **Capabilities probing** (`/ocs/.../capabilities`) — features light up only when the server supports them (Progressive Enhancement) |
@@ -164,7 +164,7 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 - **Login Flow v2** — set up with a browser approval instead of manually issuing and pasting an app password. Credentials are stored in Obsidian's secret credentials store, **never in plain text** in `data.json`.
 - **Server version history** — for the active note, list every revision the server holds (newest first) and restore any of them atomically, with confirmation. The restored content syncs back cleanly without triggering an infinite conflict loop.
 - **Chunked upload** — large attachments (images, PDFs, audio) above the chunk threshold are split and uploaded resumably; interrupted uploads never publish a partial file, and completion is checksum-verified. A separate absolute `maxFileSizeMB` cap guards memory.
-- **Files Locking** *(experimental, on by default)* — acquires a per-file server lock immediately before each update and releases it right after, preventing concurrent-write conflicts from other clients (Nextcloud desktop/web). Stale locks from a crashed run are safely detected and released. Requires the Nextcloud files-locking app; when the app is absent the feature simply stays inactive.
+- **Files Locking** *(experimental, off by default)* — optionally acquires a per-file server lock immediately before each update and releases it right after. **Default off:** lost-update safety is provided instead by an always-on `If-Match` precondition (a remote changed by another client returns 412, which the engine turns into a conflict), avoiding the extra LOCK/UNLOCK round trips per file. Enable it for belt-and-suspenders locking; requires the Nextcloud files-locking app and stays inactive when the app is absent.
 
 ---
 
@@ -176,7 +176,7 @@ Mobile is supported, with a few platform-aware differences (desktop behaviour is
 - **Sync on startup** is a new setting on both platforms (desktop: on, 1 s; mobile: off).
 - **Large files are skipped on mobile** above the "Maximum file size" limit (set `0` for unlimited) to avoid out-of-memory crashes; skips are reported.
 - **No progress UI on mobile** — only error notices are shown.
-- **Network concurrency** is configurable (desktop default 16, mobile default 2).
+- **Network concurrency** is configurable (desktop default 16, mobile default 3). Transfers run with bounded parallelism — capped both by this count and by a total in-flight-bytes budget (smaller on mobile) so large files can't exhaust memory — and uploads to the same folder are serialized to avoid server lock contention.
 - **Sync on Wi-Fi only** skips on cellular (Android/desktop). **Not available on iOS** (no network-type API), where the toggle is disabled.
 - **Sync now shows a result notice on mobile** (uploads / downloads / conflicts, or "already up to date") since there's no status bar. Tapping it while not signed in stays disabled, and the settings screen shows a clear "not signed in yet" banner.
 - Debug mode (diagnostic log) is available on mobile and does not change syncing.
