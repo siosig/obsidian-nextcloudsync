@@ -32,6 +32,20 @@ export const BULK_MAX_BATCH_COUNT = 100;                  // max files per bulk 
 export const PARSE_YIELD_EVERY = 100;
 
 /**
+ * Resolve the default network concurrency from device memory, identical on every platform (no
+ * Platform branch). navigator.deviceMemory is capped at 8 by the browser and is undefined on iOS
+ * (WKWebView) — an unknown value keeps a conservative 3. Sync of many small files is round-trip
+ * bound, so concurrency scales with available RAM; the >=8 tier preserves the established desktop
+ * default of 16. Existing users keep their saved value (this only sets the first-run default).
+ */
+export function resolveConcurrencyDefault(deviceMemoryGB: number | undefined): number {
+  if (deviceMemoryGB == null) return 3;
+  if (deviceMemoryGB >= 8) return 16;
+  if (deviceMemoryGB >= 4) return 8;
+  return 4;
+}
+
+/**
  * True when a file exceeds the configured maximum size and should be skipped.
  * `maxFileSizeMB` of 0 means "unlimited" (never skip).
  */
