@@ -27,7 +27,11 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.4.1)
+## What's new in this release (0.5.0-beta.1)
+
+- **Selective `.obsidian` config folder sync (0.5.0-beta.1)** — opt in via **Sync config folder** in settings to sync chosen categories of the Obsidian config folder across devices: Appearance, Themes & snippets, Hotkeys, Core plugin settings, and Bookmarks (each its own toggle, modelled on Obsidian native Sync). Off by default — notes still sync as before. **Community plugins (`.obsidian/plugins/`) and the plugin's own sync-state database are never synced** (executable code / device-specific state). Config files conflict-resolve by newest-wins so they are never corrupted with conflict markers. The previous standalone **Sync bookmarks** setting migrates automatically into the Bookmarks category, so existing bookmark-sync users keep working with no change. Resolves [#1](https://github.com/siosig/obsidian-nextcloudsync/issues/1).
+
+## 0.4.1
 
 - **Log files are now created even when the log folder does not exist yet (0.4.1)** — fixes a bug where, if the configured log folder (e.g. `_logs`) did not already exist, the per-device sync and debug logs were silently never written. The plugin now creates the parent folder before the first write.
 
