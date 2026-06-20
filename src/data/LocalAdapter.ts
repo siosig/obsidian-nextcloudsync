@@ -1,4 +1,4 @@
-import { DataAdapter, Notice, Platform } from 'obsidian';
+import { DataAdapter, Notice, Platform, normalizePath } from 'obsidian';
 
 const TMP_SUFFIX = '.nextcloudsync.tmp';
 const IGNORE_TIMEOUT_MS = 5000;
@@ -8,6 +8,14 @@ export function isSyncTmpPath(path: string): boolean {
   return path.endsWith(TMP_SUFFIX);
 }
 
+/**
+ * Thin wrapper over Obsidian's `DataAdapter` for the plugin's local file IO. The Adapter API
+ * (rather than the higher-level Vault API) is used deliberately: it gives the tmp-write → rename
+ * atomicity the sync relies on, can address paths the Vault index does not track (the plugin's own
+ * state / log files), and reads raw bytes for hashing and binary attachments — none of which the
+ * `TFile`-based Vault API offers. All paths entering from the remote→local mapping are passed
+ * through `normalizePath()` at the boundary for cross-platform safety.
+ */
 export class LocalAdapter {
   private ignoreList: Map<string, number> = new Map();
 
@@ -51,6 +59,7 @@ export class LocalAdapter {
 
   /** Atomically write text content: write to tmp → remove existing → rename. */
   async atomicWrite(targetPath: string, content: string): Promise<void> {
+    targetPath = normalizePath(targetPath);
     const tmpPath = targetPath + TMP_SUFFIX;
     this.ignore(tmpPath);
     this.ignore(targetPath);
@@ -71,6 +80,7 @@ export class LocalAdapter {
 
   /** Atomically write binary content: write to tmp → remove existing → rename. */
   async atomicWriteBinary(targetPath: string, data: ArrayBuffer): Promise<void> {
+    targetPath = normalizePath(targetPath);
     const tmpPath = targetPath + TMP_SUFFIX;
     this.ignore(tmpPath);
     this.ignore(targetPath);
@@ -90,23 +100,23 @@ export class LocalAdapter {
   }
 
   async read(path: string): Promise<string> {
-    return this.adapter.read(path);
+    return this.adapter.read(normalizePath(path));
   }
 
   async readBinary(path: string): Promise<ArrayBuffer> {
-    return this.adapter.readBinary(path);
+    return this.adapter.readBinary(normalizePath(path));
   }
 
   async exists(path: string): Promise<boolean> {
-    return this.adapter.exists(path);
+    return this.adapter.exists(normalizePath(path));
   }
 
   async stat(path: string): Promise<{ size: number; mtime: number } | null> {
-    return this.adapter.stat(path);
+    return this.adapter.stat(normalizePath(path));
   }
 
   async list(path: string): Promise<{ files: string[]; folders: string[] }> {
-    return this.adapter.list(path);
+    return this.adapter.list(normalizePath(path));
   }
 
   /**
@@ -121,7 +131,7 @@ export class LocalAdapter {
       const nodefs = (window as Window & { require?: (m: string) => { utimes: (p: string, a: number, m: number, cb: (e: Error | null) => void) => void } }).require?.('fs');
       const getFullPath = (this.adapter as unknown as { getFullPath?: (p: string) => string }).getFullPath?.bind(this.adapter);
       if (!nodefs || !getFullPath) return;
-      const fullPath = getFullPath(path);
+      const fullPath = getFullPath(normalizePath(path));
       const sec = mtime / 1000;
       await new Promise<void>((resolve, reject) =>
         nodefs.utimes(fullPath, sec, sec, (err) => (err ? reject(err) : resolve())),

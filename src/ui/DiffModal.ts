@@ -19,6 +19,7 @@ export class DiffModal extends Modal {
 
   onOpen(): void {
     this.modalEl.addClass('ncs-diff-modal');
+    this.setTitle('Merge preview');
     this.render();
   }
 
@@ -30,7 +31,6 @@ export class DiffModal extends Modal {
     const { contentEl, preview } = this;
     contentEl.empty();
 
-    contentEl.createEl('h2', { text: 'Merge preview' });
     contentEl.createEl('p', { text: preview.path, cls: 'setting-item-description' });
 
     const status = preview.clean

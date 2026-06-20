@@ -32,6 +32,7 @@ export class CompareModal extends Modal {
 
   onOpen(): void {
     this.modalEl.addClass('ncs-diff-modal');
+    this.setTitle('Compare with remote');
     this.renderLoading();
     void this.load();
   }
@@ -58,7 +59,6 @@ export class CompareModal extends Modal {
   private renderLoading(): void {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.createEl('h2', { text: 'Compare with remote' });
     contentEl.createEl('p', { text: this.path, cls: 'setting-item-description' });
     contentEl.createEl('p', { text: 'Fetching the remote version…', cls: 'setting-item-description' });
   }
@@ -68,7 +68,6 @@ export class CompareModal extends Modal {
     const r = this.result;
     if (!r) return;
     contentEl.empty();
-    contentEl.createEl('h2', { text: 'Compare with remote' });
     contentEl.createEl('p', { text: r.path, cls: 'setting-item-description' });
 
     if (r.state === 'error') {
