@@ -36,6 +36,7 @@ refs/
 .claude/
 specs/
 report/
+docs/
 CLAUDE.md
 
 # TypeScript incremental build info
