@@ -1,5 +1,5 @@
 import { LocalAdapter } from '../../src/data/LocalAdapter';
-import { DataAdapter } from 'obsidian';
+import { DataAdapter, TFile, Vault } from 'obsidian';
 
 function makeAdapter(files: Record<string, string> = {}): DataAdapter {
   const store = { ...files };
@@ -87,6 +87,42 @@ describe('LocalAdapter', () => {
       (raw.write as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
       const adapter = new LocalAdapter(raw);
       await expect(adapter.atomicWrite('Notes/fail.md', 'x')).rejects.toThrow('disk full');
+    });
+  });
+
+  describe('LocalAdapter.listVaultFiles', () => {
+    // At runtime moduleNameMapper resolves 'obsidian' to the mock TFile (which accepts stat).
+    // TypeScript sees the real obsidian.d.ts TFile (no public constructor), so we cast to
+    // allow construction in tests — the same pattern used in SyncEngine.deletion.test.ts.
+    type MockTFileCtor = new (path: string, stat?: { ctime?: number; mtime?: number; size?: number }) => TFile;
+    const MockTFile = TFile as unknown as MockTFileCtor;
+
+    function makeVault(files: TFile[]): Vault {
+      return {
+        adapter: makeAdapter(),
+        getAbstractFileByPath: jest.fn(),
+        getFiles: jest.fn(() => files),
+        trash: jest.fn(),
+      } as unknown as Vault;
+    }
+
+    it('returns path/size/mtime from the Vault cache without touching the adapter', () => {
+      const vault = makeVault([
+        new MockTFile('Notes/a.md', { mtime: 111, size: 10 }),
+        new MockTFile('メモ/b.md', { mtime: 222, size: 20 }),
+      ]);
+      const la = new LocalAdapter(vault.adapter, vault);
+      const entries = la.listVaultFiles();
+      expect(entries).toEqual([
+        { path: 'Notes/a.md', size: 10, mtime: 111 },
+        { path: 'メモ/b.md', size: 20, mtime: 222 },
+      ]);
+      expect(vault.getFiles).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns an empty array when no Vault is injected (back-compat)', () => {
+      const la = new LocalAdapter(makeAdapter());
+      expect(la.listVaultFiles()).toEqual([]);
     });
   });
 

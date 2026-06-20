@@ -69,7 +69,8 @@ export class TFile {
   basename: string;
   extension: string;
   parent: { path: string } | null;
-  constructor(path: string) {
+  stat: { ctime: number; mtime: number; size: number };
+  constructor(path: string, stat?: { ctime?: number; mtime?: number; size?: number }) {
     this.path = path;
     const parts = path.split('/');
     const filename = parts[parts.length - 1];
@@ -77,6 +78,7 @@ export class TFile {
     this.basename = dotIdx >= 0 ? filename.slice(0, dotIdx) : filename;
     this.extension = dotIdx >= 0 ? filename.slice(dotIdx + 1) : '';
     this.parent = parts.length > 1 ? { path: parts.slice(0, -1).join('/') } : null;
+    this.stat = { ctime: stat?.ctime ?? 0, mtime: stat?.mtime ?? 0, size: stat?.size ?? 0 };
   }
 }
 
@@ -127,6 +129,7 @@ export interface FileManager {
 export interface Vault {
   adapter: DataAdapter;
   getAbstractFileByPath(path: string): TFile | TFolder | null;
+  getFiles(): TFile[];
   trash(file: TFile, system: boolean): Promise<void>;
 }
 
