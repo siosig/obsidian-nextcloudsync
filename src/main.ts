@@ -289,6 +289,10 @@ export default class ObsidianNextcloudsync extends Plugin {
 
   onunload(): void {
     this.syncEngine?.stopAutoSync();
+    // Two-Phase Termination: signal an in-flight sync to stop pulling new work (phase 1), then flush
+    // any pending debounced state save so a coalesced watch-mode update is not lost on teardown (phase 2).
+    this.syncEngine?.requestStop();
+    void this.syncEngine?.flushState();
     this.localAdapter?.dispose();
   }
 
@@ -311,7 +315,9 @@ export default class ObsidianNextcloudsync extends Plugin {
     // their values (backward compatible).
     if (Platform.isMobile) {
       if (saved.syncOnStartupEnabled === undefined) this.settings.syncOnStartupEnabled = false;
-      if (saved.networkConcurrency === undefined) this.settings.networkConcurrency = 2;
+      // Mobile default raised 2 → 3 now that concurrency is wired into the main loops with the
+      // ByteSemaphore + per-directory serialization guards (P1-A). Kept conservative for mobile RAM/radio.
+      if (saved.networkConcurrency === undefined) this.settings.networkConcurrency = 3;
       if (saved.maxFileSizeMB === undefined) this.settings.maxFileSizeMB = 20; // OOM-safe cap
       if (saved.syncOnWifiOnly === undefined) this.settings.syncOnWifiOnly = true;
     }

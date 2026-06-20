@@ -1,6 +1,37 @@
 /** Pure decision helpers for mobile-related sync limits. Kept side-effect free for testability. */
 
 /**
+ * Safety window (ms) for the stat-signature fast-path. When a file's mtime is within this window of
+ * "now" or the last sync-completion time, change detection forces a content hash even if the
+ * (mtime, size) signature matches — because some mobile filesystems have 1–2 s mtime granularity, so
+ * a same-size in-place edit made within that window would otherwise be missed. See research R2.
+ */
+export const SIGNATURE_SAFETY_WINDOW_MS = 2000;
+
+/**
+ * Files larger than this are not pre-hashed during the local scan (their hash is computed lazily at
+ * upload time). Bounds peak memory/CPU of the initial scan on mobile. See research R6.
+ */
+export const MAX_HASH_SIZE = 20 * 1024 * 1024;
+
+/**
+ * Total in-flight bytes allowed across concurrent transfers (the byte budget for the ByteSemaphore).
+ * `requestUrl` buffers whole bodies in memory, so concurrency must be bounded by bytes, not just
+ * count, to avoid OOM. Desktop is generous; mobile is tight. A single file larger than the budget is
+ * admitted alone. See research R5.
+ */
+export const MAX_INFLIGHT_BYTES_DESKTOP = 100 * 1024 * 1024;
+export const MAX_INFLIGHT_BYTES_MOBILE = 30 * 1024 * 1024;
+
+/** Bulk-upload eligibility thresholds (Nextcloud `/dav/bulk`). See research R8. */
+export const BULK_MAX_FILE_BYTES = 1 * 1024 * 1024;       // per-file cap to qualify for a bulk batch
+export const BULK_MAX_BATCH_BYTES = 3 * 1024 * 1024;      // total bytes per bulk request
+export const BULK_MAX_BATCH_COUNT = 100;                  // max files per bulk request
+
+/** Number of PROPFIND/REPORT response nodes to parse before yielding to the event loop (anti-ANR). */
+export const PARSE_YIELD_EVERY = 100;
+
+/**
  * True when a file exceeds the configured maximum size and should be skipped.
  * `maxFileSizeMB` of 0 means "unlimited" (never skip).
  */

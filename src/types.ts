@@ -87,8 +87,19 @@ export interface DavSyncSettings {
   debugLogLevel: 'error' | 'debug' | 'verbose';
   /** Enable chunked uploads (default ON; Nextcloud only). */
   chunkedUploadEnabled: boolean;
-  /** Enable Files Locking (experimental; default ON; only on servers that support files_lock). */
+  /**
+   * Enable WebDAV Files Locking (LOCK→PUT→UNLOCK per upload). Default OFF: for the common
+   * single-user / multi-device case the round-trip cost is not worth it, and lost-update safety
+   * is provided instead by an always-on `If-Match` precondition (a concurrently-changed remote
+   * returns 412, which is turned into a conflict). Only effective on servers with files_lock.
+   */
   fileLockingEnabled: boolean;
+  /**
+   * Use the Nextcloud bulk-upload endpoint to batch many small files into one request.
+   * Default ON; only takes effect when the server advertises the capability and for files under
+   * the eligibility thresholds (otherwise per-file PUT / chunked upload is used).
+   */
+  bulkUploadEnabled: boolean;
   autoMergeEnabled: boolean;
   maxConflictRegions: number;
   /**
@@ -165,7 +176,9 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   debugLogEnabled: false,
   debugLogLevel: 'error',
   chunkedUploadEnabled: true,
-  fileLockingEnabled: true,
+  // Default OFF (see field doc): If-Match optimistic concurrency replaces locking for lost-update safety.
+  fileLockingEnabled: false,
+  bulkUploadEnabled: true,
   autoMergeEnabled: true,
   maxConflictRegions: 0,
   frontmatterConflictStrategy: 'conflict',
@@ -186,6 +199,21 @@ export interface FileState {
   mtime: number;
   remoteFileId: string | null;
   isConflicted: boolean;
+  /**
+   * Local stat signature captured by re-stat IMMEDIATELY AFTER the plugin's own write/download.
+   * This is the change-detection fast-path key that works on mobile, where `setMtime()` is a no-op
+   * (Node fs.utimes is desktop-only) so the on-disk mtime never matches the remote mtime. Optional
+   * for backward compatibility: a state file without these triggers exactly one reconciling hash,
+   * after which the fields are populated. See data-model.md §1.
+   */
+  localMtime?: number;
+  /** Local size observed at the same moment as `localMtime` (see above). */
+  localSize?: number;
+  /**
+   * Server `lastModified` for the last converged state, kept separate from `localMtime` so remote
+   * change detection is unaffected by the local write timestamp.
+   */
+  remoteMtime?: number;
 }
 
 export interface SyncState {
@@ -200,6 +228,8 @@ export interface NextcloudFeatures {
   version: string;
   hasChecksums: boolean;
   hasFilesLocking: boolean;
+  /** Server advertises (or feature-probed positive for) the bulk-upload endpoint `/remote.php/dav/bulk`. */
+  hasBulkUpload: boolean;
   syncToken: string | null;
 }
 
@@ -410,5 +440,16 @@ export class FileLockedError extends Error {
   constructor(public readonly path: string) {
     super(`File is locked: ${path}`);
     this.name = 'FileLockedError';
+  }
+}
+/**
+ * An `If-Match` / `If-None-Match` precondition failed (HTTP 412): the remote file changed since the
+ * validator (etag) we sent, so the upload was refused to prevent a lost update. The engine converts
+ * this into a conflict (download remote + resolve) instead of overwriting.
+ */
+export class PreconditionFailedError extends Error {
+  constructor(public readonly path: string) {
+    super(`Precondition failed (remote changed): ${path}`);
+    this.name = 'PreconditionFailedError';
   }
 }

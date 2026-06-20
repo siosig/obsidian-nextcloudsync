@@ -43,7 +43,7 @@ function makeSettings(
     configSync: { appearance: false, themesSnippets: false, hotkeys: false, corePlugins: false, bookmarks: false },
     deviceName: '', logsFolder: '', syncLogEnabled: false, syncLogLevel: 'important',
     debugLogEnabled: false, debugLogLevel: 'error',
-    chunkedUploadEnabled: true, fileLockingEnabled: false,
+    chunkedUploadEnabled: true, fileLockingEnabled: false, bulkUploadEnabled: false,
     autoMergeEnabled: autoMerge, maxConflictRegions: 10,
     frontmatterConflictStrategy: 'conflict',
     mergeableExtensions,

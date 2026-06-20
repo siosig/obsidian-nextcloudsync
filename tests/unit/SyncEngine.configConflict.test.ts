@@ -22,7 +22,7 @@ function makeSettings(): DavSyncSettings {
     configSync: { appearance: true, themesSnippets: false, hotkeys: false, corePlugins: false, bookmarks: false },
     deviceName: '', logsFolder: '', syncLogEnabled: false, syncLogLevel: 'important',
     debugLogEnabled: false, debugLogLevel: 'error',
-    chunkedUploadEnabled: true, fileLockingEnabled: false,
+    chunkedUploadEnabled: true, fileLockingEnabled: false, bulkUploadEnabled: false,
     autoMergeEnabled: true, maxConflictRegions: 10, frontmatterConflictStrategy: 'conflict',
     mergeableExtensions: ['md', 'txt'],
     // Deliberately the most dangerous policy: proves config files bypass markers.
@@ -56,8 +56,7 @@ function buildHarness(localMtime: number, remoteMtime: number) {
   };
   const stateDB = { setFile, getFile: jest.fn(() => undefined) };
   const client = {
-    downloadFile: jest.fn(async () => undefined),
-    getLastDownloadBuffer: jest.fn(() => toBuf('remote-json')),
+    downloadFile: jest.fn(async () => toBuf('remote-json')),
   };
 
   const remote: RemoteFileInfo = {

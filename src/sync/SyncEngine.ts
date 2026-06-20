@@ -13,6 +13,7 @@ import {
   NetworkError,
   FileLockedError,
   FeatureUnsupportedError,
+  PreconditionFailedError,
   MergePreview,
   RemoteCompareResult,
 } from '../types';
@@ -29,7 +30,11 @@ import { ConflictResolver } from './ConflictResolver';
 import { ConfigSyncResolver } from './ConfigSyncResolver';
 import { sha256 } from '../util/hash';
 import { FileLogger } from '../util/FileLogger';
-import { isCellularBlocked } from '../util/limits';
+import {
+  isCellularBlocked, SIGNATURE_SAFETY_WINDOW_MS, MAX_HASH_SIZE,
+  MAX_INFLIGHT_BYTES_DESKTOP, MAX_INFLIGHT_BYTES_MOBILE,
+} from '../util/limits';
+import { createLimiter, ByteSemaphore } from '../util/ConcurrencyLimiter';
 import { isSafeVaultRelativePath } from '../network/remotePath';
 import { IUploadStrategy } from './upload/IUploadStrategy';
 import { SimpleUploadStrategy } from './upload/SimpleUploadStrategy';
@@ -75,8 +80,15 @@ export class SyncEngine {
   private client: IWebDAVClient | null = null;
   private features: NextcloudFeatures | null = null;
   private uploadStrategy: IUploadStrategy | null = null;
-  /** Sync-in-progress flag (prevents concurrent runs). */
+  /** Balking pattern: sync-in-progress flag — a second syncManual() call returns immediately. */
   private running = false;
+  /**
+   * Two-Phase Termination: set by requestStop() (e.g. plugin onunload). Bounded-parallel workers
+   * check it and stop pulling new work, so an in-progress sync winds down cleanly instead of firing
+   * more network calls after teardown — important on mobile where the OS may suspend/kill the app.
+   * The sync's finally block (state save) still runs, so no partial-progress state is lost.
+   */
+  private cancelled = false;
   /** Currently held lock tokens (path → token). */
   private readonly heldLocks = new Map<string, string>();
   /** Progress counters updated during a sync run (reset each run). */
@@ -151,6 +163,7 @@ export class SyncEngine {
       return;
     }
     this.running = true;
+    this.cancelled = false;
     void this.opts.logger?.log('sync: connecting (ensureClient)');
     await this.ensureClient();
     this.syncProgress = { processed: 0, total: 0 };
@@ -218,7 +231,9 @@ export class SyncEngine {
         { path, fileId: base?.remoteFileId ?? null, checksum: null, etag: null, size: stat.size, lastModified: stat.mtime },
         dummySummary,
       );
-      await this.opts.stateDB.save();
+      // Watch-mode single-file op: coalesce the state write via a trailing debounce so rapid
+      // edits don't each rewrite the whole state file (P0-B). onunload flushes any pending save.
+      this.opts.stateDB.requestSave();
       await this.opts.historyStore?.save(); // persist any 'uploaded' entry recorded by uploadFile
     } catch (err) {
       console.warn(`[SyncEngine] Single-file upload failed for ${path}:`, err);
@@ -240,7 +255,7 @@ export class SyncEngine {
       }
     }
     this.opts.stateDB.deleteFile(path);
-    await this.opts.stateDB.save();
+    this.opts.stateDB.requestSave(); // coalesced watch-mode save (P0-B)
     await this.opts.historyStore?.save();
   }
 
@@ -251,7 +266,7 @@ export class SyncEngine {
     const rt = this.getOrCreateRenameTracker();
     try {
       await rt.applyLocalRename(oldPath, newPath);
-      await this.opts.stateDB.save();
+      this.opts.stateDB.requestSave(); // coalesced watch-mode save (P0-B)
     } catch (err) {
       console.warn(`[SyncEngine] Single-file rename failed ${oldPath} → ${newPath}:`, err);
     }
@@ -270,6 +285,19 @@ export class SyncEngine {
       window.clearInterval(this.autoSyncHandle);
       this.autoSyncHandle = null;
     }
+  }
+
+  /** Persist any pending debounced state save now (call from the plugin's onunload). */
+  async flushState(): Promise<void> {
+    await this.opts.stateDB.flush();
+  }
+
+  /**
+   * Two-Phase Termination — phase 1: signal an in-flight sync to stop pulling new work. Idempotent
+   * and safe to call any time; the running sync's finally block still persists state (phase 2).
+   */
+  requestStop(): void {
+    this.cancelled = true;
   }
 
   getLastSessionSummary(): SyncSessionSummary | null {
@@ -315,8 +343,7 @@ export class SyncEngine {
     let remote = '';
     let remoteExists = false;
     try {
-      await client.downloadFile(path, '');
-      remote = new TextDecoder().decode(client.getLastDownloadBuffer());
+      remote = new TextDecoder().decode(await client.downloadFile(path));
       remoteExists = true;
     } catch {
       remoteExists = false; // remote missing (e.g. a new local file)
@@ -375,8 +402,7 @@ export class SyncEngine {
       const remote = await this.fetchRemoteInfo(path);
       if (!remote) return this.compareWithoutRemote(local, 'remote-missing');
 
-      await this.client!.downloadFile(path, '');
-      const remoteBytes = this.client!.getLastDownloadBuffer();
+      const remoteBytes = await this.client!.downloadFile(path);
       // Hash the actual bytes (not the server-reported checksum) so checksumMatch is guaranteed
       // consistent with the diff: identical bytes ⇔ match ⇔ empty diff.
       const remoteChecksum = await sha256(remoteBytes);
@@ -435,11 +461,11 @@ export class SyncEngine {
       localHash, remoteId: localHash, remoteIdType: 'sha256',
       localSize: stat.size, remoteSize: remote?.size,
     });
-    this.opts.stateDB.setFile({
+    this.opts.stateDB.setFile(await this.withLocalSignature({
       path, localHash, remoteId: localHash, idType: 'sha256',
       size: stat.size, mtime: stat.mtime,
       remoteFileId: remote?.fileId ?? null, isConflicted: false,
-    });
+    }, remote?.lastModified));
     await this.opts.stateDB.save();
     await this.opts.historyStore?.save();
   }
@@ -455,8 +481,7 @@ export class SyncEngine {
     const remote = await this.fetchRemoteInfo(path);
     if (!remote) throw new Error(`Remote file not found: ${path}`);
 
-    await client.downloadFile(path, '');
-    const remoteData = client.getLastDownloadBuffer();
+    const remoteData = await client.downloadFile(path);
     await this.opts.localAdapter.atomicWriteBinary(path, remoteData);
     if (remote.lastModified) await this.opts.localAdapter.setMtime(path, remote.lastModified);
 
@@ -467,11 +492,11 @@ export class SyncEngine {
       localHash, remoteId, remoteIdType: 'sha256',
       localSize: remoteData.byteLength, remoteSize: remote.size,
     });
-    this.opts.stateDB.setFile({
+    this.opts.stateDB.setFile(await this.withLocalSignature({
       path, localHash, remoteId, idType: 'sha256',
       size: remote.size, mtime,
       remoteFileId: remote.fileId, isConflicted: false,
-    });
+    }, remote.lastModified));
     await this.opts.stateDB.save();
     await this.opts.historyStore?.save();
   }
@@ -589,7 +614,7 @@ export class SyncEngine {
       return false;
     }
 
-    await this.executePlan(plan, remoteFiles, summary);
+    await this.executePlan(plan, remoteFiles, summary, localFiles);
 
     // Save sync-token
     const token = await client.getSyncToken();
@@ -653,10 +678,15 @@ export class SyncEngine {
     const eligible = remoteFiles.filter(f => !this.isSystemExcluded(f.path));
     this.syncProgress = { processed: 0, total: eligible.length };
     if (eligible.length > 0) this.opts.statusBar.setProgress(0, eligible.length);
-    for (const remote of eligible) {
-      await this.processFileWithRetry(remote, summary);
-      this.tickProgress();
-    }
+    // Bounded-parallel (P1-A): each remote file is processed by one worker; uploads to the same
+    // directory are serialized to avoid 423s. processFileWithRetry already handles its own errors.
+    await this.runFileBatch(
+      eligible,
+      (r) => r.path,
+      (r) => r.size,
+      async (r) => { await this.processFileWithRetry(r, summary); this.tickProgress(); },
+      true,
+    );
 
     // Process local modifications (files in stateDB not covered by remote changes)
     await this.processLocalModifications(remoteFiles, summary, isFullScan);
@@ -680,6 +710,110 @@ export class SyncEngine {
     }
   }
 
+  /**
+   * Local-unchanged fast-path (P0-A). Decides whether `path` can be skipped WITHOUT reading/hashing
+   * its content, using the stat signature we captured immediately after our own last write
+   * (`localMtime`/`localSize`). This works on mobile, where `setMtime` is a no-op so the on-disk
+   * mtime never equals the remote mtime — the old `mtime <= base.mtime` filter therefore failed for
+   * every previously-synced file and forced a full-vault rehash every sync.
+   *
+   * Returns false (⇒ must hash) when: the signature is absent (migrated/old state), the size or
+   * mtime differs, OR the file's mtime is within SIGNATURE_SAFETY_WINDOW_MS of now / the last sync
+   * completion. The time-window guard prevents missing a same-size in-place edit made within the
+   * filesystem's mtime granularity (1–2 s on some mobile storage).
+   */
+  private isLocallyUnchanged(base: FileState, stat: { mtime: number; size: number }): boolean {
+    if (base.localMtime == null || base.localSize == null) return false; // no signature → hash once
+    if (stat.size !== base.localSize) return false;
+    if (stat.mtime !== base.localMtime) return false;
+    const now = Date.now();
+    const lastSync = this.opts.stateDB.getLastSyncTime();
+    if (this.withinSafetyWindow(stat.mtime, now)) return false;
+    if (lastSync > 0 && this.withinSafetyWindow(stat.mtime, lastSync)) return false;
+    return true;
+  }
+
+  private withinSafetyWindow(mtime: number, ref: number): boolean {
+    return Math.abs(ref - mtime) < SIGNATURE_SAFETY_WINDOW_MS;
+  }
+
+  /**
+   * Stamp the post-write local stat signature (and optional remoteMtime) onto a FileState by
+   * re-stat-ing the on-disk file. This captures what the OS actually wrote — the only reliable
+   * change-detection key on mobile (no utimes). Call at every content-write / converge site so the
+   * next sync's fast-path recognises the file as unchanged. Best-effort: if stat fails, the fields
+   * stay undefined and the file is simply hashed next time (correct, just not fast).
+   */
+  private async withLocalSignature(fs: FileState, remoteMtime?: number | null): Promise<FileState> {
+    const st = await this.opts.localAdapter.stat(fs.path);
+    if (st) {
+      fs.localMtime = st.mtime;
+      fs.localSize = st.size;
+    }
+    if (remoteMtime != null) fs.remoteMtime = remoteMtime;
+    return fs;
+  }
+
+  /** Parent-directory key of a vault-relative path ('' for a root-level file). */
+  private static parentDir(path: string): string {
+    const i = path.lastIndexOf('/');
+    return i < 0 ? '' : path.slice(0, i);
+  }
+
+  /**
+   * Run per-file `worker`s with bounded concurrency (P1-A). Concurrency is capped by the configured
+   * `networkConcurrency` (count) AND by total in-flight bytes (ByteSemaphore), because `requestUrl`
+   * buffers whole bodies in memory and a count-only cap would OOM on large files (mobile budget is
+   * smaller). When `serializeByDir` is true, workers whose paths share a parent directory run
+   * sequentially (different directories run in parallel) to avoid Nextcloud directory-lock 423s.
+   *
+   * Distinct paths are processed by exactly one worker each, and StateDB get/set/delete are synchronous
+   * map ops, so per-file state mutations across different paths cannot interleave-corrupt; save() is
+   * already serialized by StateDB.saveChain. The byte size is acquired before the worker reads the
+   * file. A worker that throws is reported by the caller-supplied worker itself (it must not reject
+   * the batch — workers here are expected to handle their own errors, mirroring the prior sequential
+   * try/catch per file).
+   */
+  private async runFileBatch<T>(
+    items: T[],
+    pathOf: (it: T) => string,
+    sizeOf: (it: T) => number,
+    worker: (it: T) => Promise<void>,
+    serializeByDir: boolean,
+  ): Promise<void> {
+    if (items.length === 0) return;
+    const max = Math.max(1, this.opts.settings.networkConcurrency);
+    const limiter = createLimiter(max);
+    const budget = new ByteSemaphore(Platform.isMobile ? MAX_INFLIGHT_BYTES_MOBILE : MAX_INFLIGHT_BYTES_DESKTOP);
+    // Per-parent-directory promise chains: each new same-dir task waits on the previous one.
+    const dirChains = new Map<string, Promise<void>>();
+
+    const tasks = items.map((it) => limiter(async () => {
+      // Two-Phase Termination: once a stop is requested, queued workers no-op so the batch drains
+      // without launching further network operations.
+      if (this.cancelled) return;
+      const runOne = async (): Promise<void> => {
+        const release = await budget.acquire(Math.max(0, sizeOf(it)));
+        try {
+          await worker(it);
+        } finally {
+          release();
+        }
+      };
+      if (!serializeByDir) {
+        await runOne();
+        return;
+      }
+      const dir = SyncEngine.parentDir(pathOf(it));
+      const prev = dirChains.get(dir) ?? Promise.resolve();
+      // Chain regardless of the previous task's outcome so one failure doesn't wedge the directory.
+      const run = prev.then(runOne, runOne);
+      dirChains.set(dir, run.then(() => undefined, () => undefined));
+      await run;
+    }));
+    await Promise.all(tasks);
+  }
+
   private async processRemoteFile(remote: RemoteFileInfo, summary: SyncSessionSummary): Promise<void> {
     const base = this.opts.stateDB.getFile(remote.path);
     const localStat = await this.opts.localAdapter.stat(remote.path);
@@ -691,12 +825,12 @@ export class SyncEngine {
     let localHash = base?.localHash ?? '';
 
     if (localStat && base) {
-      // mtime is a cheap first-pass filter, but it is not sufficient: a size
-      // change always means the content changed even when the mtime did not
-      // advance (restore-from-backup, content swapped in place, or a clock
-      // anomaly). Recompute the hash whenever EITHER signal indicates a change.
-      if (localStat.mtime > base.mtime || localStat.size !== base.size) {
-        // Recompute hash
+      // Fast-path: skip reading/hashing when the post-write stat signature still matches (P0-A).
+      // The signature (localMtime/localSize) is what we observed right after our own last write, so
+      // it is valid on mobile where the on-disk mtime never equals the remote mtime. Only when the
+      // signature says "changed" (or is absent, or the file was touched within the safety window) do
+      // we read + hash to confirm a real content change against base.localHash.
+      if (!this.isLocallyUnchanged(base, localStat)) {
         const buf = await this.opts.localAdapter.readBinary(remote.path);
         localHash = await sha256(buf);
         localChanged = localHash !== base.localHash;
@@ -739,7 +873,18 @@ export class SyncEngine {
     }
 
     if (localChanged && !remoteChanged) {
-      await this.uploadFile(remote.path, localHash, remoteId, idType, remote, summary);
+      try {
+        await this.uploadFile(remote.path, localHash, remoteId, idType, remote, summary);
+      } catch (err) {
+        // P1-B: If-Match 412 means the remote changed between our PROPFIND/REPORT and the PUT — treat
+        // it as a both-sides conflict (download remote + resolve) instead of overwriting (lost update).
+        if (err instanceof PreconditionFailedError) {
+          void this.opts.logger?.log(`upload: If-Match 412 (remote changed during sync) → conflict → ${remote.path}`);
+          await this.handleConflict(remote.path, base, remote, remoteId, idType, summary);
+        } else {
+          throw err;
+        }
+      }
     } else if (!localChanged && remoteChanged) {
       await this.downloadFile(remote, remoteId, idType, summary);
     } else {
@@ -816,7 +961,10 @@ export class SyncEngine {
     let outcome: 'uploaded' | 'skipped';
     try {
       // US3: Delegate to the upload strategy (chunked/single/skip).
-      outcome = await this.uploadStrategy!.upload(this.client!, path, data, stat.mtime);
+      // P1-B: send If-Match using the known remote etag (when updating an existing remote file) so a
+      // remote that changed since our baseline returns 412 → PreconditionFailedError → conflict. New
+      // local files carry a null etag (synthetic remote) → no precondition.
+      outcome = await this.uploadStrategy!.upload(this.client!, path, data, stat.mtime, { ifMatchEtag: remote.etag });
     } finally {
       await this.releaseLock(path, token);
     }
@@ -828,11 +976,11 @@ export class SyncEngine {
       localSize: stat.size, remoteSize: remote.size,
     });
 
-    this.opts.stateDB.setFile({
+    this.opts.stateDB.setFile(await this.withLocalSignature({
       path, localHash, remoteId, idType,
       size: stat.size, mtime: stat.mtime,
       remoteFileId: remote.fileId, isConflicted: false,
-    });
+    }, remote.lastModified));
   }
 
   // ── US4: Lock acquire/release ──────────────────────────────────────────────
@@ -899,17 +1047,16 @@ export class SyncEngine {
     // 1. Restore on the server side (MOVE restore).
     await client.restoreVersion(version, fileId);
     // 2. Fetch the current content after restore and atomically apply it locally.
-    await client.downloadFile(path, '');
-    const data = client.getLastDownloadBuffer();
+    const data = await client.downloadFile(path);
     await this.opts.localAdapter.atomicWriteBinary(path, data);
     // 3. Update the state DB (localHash=remoteId=hash of restored content, isConflicted=false).
     const localHash = await sha256(data);
     const stat = await this.opts.localAdapter.stat(path);
-    this.opts.stateDB.setFile({
+    this.opts.stateDB.setFile(await this.withLocalSignature({
       path, localHash, remoteId: localHash, idType: 'sha256',
       size: stat?.size ?? data.byteLength, mtime: stat?.mtime ?? Date.now(),
       remoteFileId: fileId, isConflicted: false,
-    });
+    }));
     await this.opts.stateDB.save();
   }
 
@@ -917,8 +1064,7 @@ export class SyncEngine {
     remote: RemoteFileInfo, remoteId: string,
     idType: FileState['idType'], summary: SyncSessionSummary,
   ): Promise<void> {
-    await this.client!.downloadFile(remote.path, '');
-    const data = this.client!.getLastDownloadBuffer();
+    const data = await this.client!.downloadFile(remote.path);
     await this.opts.localAdapter.atomicWriteBinary(remote.path, data);
     summary.downloadedCount++;
 
@@ -933,11 +1079,11 @@ export class SyncEngine {
       localSize: data.byteLength, remoteSize: remote.size,
     });
     const mtime = remote.lastModified || (await this.opts.localAdapter.stat(remote.path))?.mtime || Date.now();
-    this.opts.stateDB.setFile({
+    this.opts.stateDB.setFile(await this.withLocalSignature({
       path: remote.path, localHash, remoteId, idType,
       size: remote.size, mtime,
       remoteFileId: remote.fileId, isConflicted: false,
-    });
+    }, remote.lastModified));
   }
 
   private async handleConflict(
@@ -954,8 +1100,7 @@ export class SyncEngine {
     // markers/merge are never applied. Equal mtime → remote-wins (stable tiebreak).
     if (this.configSync.isConfigFolderConflictPath(path)) {
       if ((remote.lastModified || 0) >= localMtimeBefore) {
-        await this.client!.downloadFile(remote.path, '');
-        const remoteData = this.client!.getLastDownloadBuffer();
+        const remoteData = await this.client!.downloadFile(remote.path);
         void this.opts.logger?.log(`conflict(config): remote newer, pulling → ${path}`);
         await this.resolveByPreferRemote(path, remote, remoteData, remoteId, idType, summary);
       } else {
@@ -966,8 +1111,7 @@ export class SyncEngine {
     }
 
     const localContent = await this.opts.localAdapter.read(path);
-    await this.client!.downloadFile(remote.path, '');
-    const remoteData = this.client!.getLastDownloadBuffer();
+    const remoteData = await this.client!.downloadFile(remote.path);
     const remoteContent = new TextDecoder().decode(remoteData);
 
     const resolver = new ConflictResolver(this.opts.app, this.opts.localAdapter, this.opts.settings);
@@ -1034,7 +1178,7 @@ export class SyncEngine {
     }
 
     const stat = await this.opts.localAdapter.stat(path);
-    this.opts.stateDB.setFile({
+    this.opts.stateDB.setFile(await this.withLocalSignature({
       path, localHash: mergedHash,
       // When the merged content is on the server, record it as the synced remote id so the next sync
       // sees both sides as identical (converged) instead of re-detecting the conflict.
@@ -1042,7 +1186,7 @@ export class SyncEngine {
       idType: uploaded ? 'sha256' : idType,
       size: stat?.size ?? 0, mtime: maxMtime,
       remoteFileId: remote.fileId, isConflicted: !clean,
-    });
+    }, remote.lastModified));
     const mergeDetail: SyncHistoryDetail = {
       localHash: mergedHash,
       remoteId: uploaded ? mergedHash : remoteId,
@@ -1094,11 +1238,11 @@ export class SyncEngine {
       localHash, remoteId: localHash, remoteIdType: 'sha256',
       localSize: stat?.size ?? localData.byteLength, remoteSize: remote.size,
     });
-    this.opts.stateDB.setFile({
+    this.opts.stateDB.setFile(await this.withLocalSignature({
       path, localHash, remoteId: localHash, idType: 'sha256',
       size: stat?.size ?? localData.byteLength, mtime,
       remoteFileId: remote.fileId, isConflicted: false,
-    });
+    }, remote.lastModified));
     void this.opts.logger?.log(`conflict: resolved by prefer-local (remote overwritten) → ${path}`);
   }
 
@@ -1126,11 +1270,11 @@ export class SyncEngine {
       localHash, remoteId, remoteIdType: idType,
       localSize: remoteData.byteLength, remoteSize: remote.size,
     });
-    this.opts.stateDB.setFile({
+    this.opts.stateDB.setFile(await this.withLocalSignature({
       path, localHash, remoteId, idType,
       size: remote.size, mtime,
       remoteFileId: remote.fileId, isConflicted: false,
-    });
+    }, remote.lastModified));
     void this.opts.logger?.log(`conflict: resolved by prefer-remote (local overwritten) → ${path}`);
   }
 
@@ -1189,32 +1333,46 @@ export class SyncEngine {
       if (st) localStats.set(p, { size: st.size, mtime: st.mtime });
     }
 
-    for (const [path, st] of localStats) {
-      if (remotePathSet.has(path)) continue; // already handled in the remote-changes loop
+    // Pre-filter with the cheap, synchronous checks (already handled remotely; signature fast-path),
+    // then upload the survivors with bounded concurrency (P1-A). The content-unchanged hash check
+    // stays inside the worker (it requires reading the file).
+    const uploadCandidates = [...localStats.entries()].filter(([path, st]) => {
+      if (remotePathSet.has(path)) return false; // already handled in the remote-changes loop
       const base = this.opts.stateDB.getFile(path);
-      // For known files, use mtime as a first-pass filter to quickly skip unchanged ones.
-      if (base && st.mtime <= base.mtime) continue;
-      const data = await this.opts.localAdapter.readBinary(path);
-      const localHash = await sha256(data);
-      if (base && localHash === base.localHash) continue; // content unchanged
-      // For new files, use the local hash as remoteId (= the server checksum after upload).
-      const remoteId = base?.remoteId ?? localHash;
-      const idType: FileState['idType'] = base?.idType ?? 'sha256';
-      void this.opts.logger?.log(`upload: ${path} (${base ? 'modified, re-upload' : 'new local file'})`);
-      try {
-        await this.uploadFile(
-          path, localHash, remoteId, idType,
-          { path, fileId: base?.remoteFileId ?? null, checksum: null, etag: null, size: st.size, lastModified: st.mtime },
-          summary,
-        );
-      } catch (err) {
-        // One failing file (e.g. a server-side 403) must not abort the whole session.
-        console.warn(`[SyncEngine] Upload failed for ${path}:`, err);
-        void this.opts.logger?.log(`upload: FAILED ${path} — ${(err as Error).message}`);
-        this.recordError(summary, path, err);
-        if (err instanceof NetworkError) this.retryQueue.push(path);
-      }
-    }
+      // Fast-path (P0-A): skip known files whose post-write stat signature is unchanged — no read,
+      // no hash. Replaces the old `st.mtime <= base.mtime` filter, which was always false on mobile
+      // (setMtime no-op) and forced a full-vault rehash every sync.
+      return !(base && this.isLocallyUnchanged(base, st));
+    });
+    await this.runFileBatch(
+      uploadCandidates,
+      ([path]) => path,
+      ([, st]) => st.size,
+      async ([path, st]) => {
+        const base = this.opts.stateDB.getFile(path);
+        const data = await this.opts.localAdapter.readBinary(path);
+        const localHash = await sha256(data);
+        if (base && localHash === base.localHash) return; // content unchanged
+        // For new files, use the local hash as remoteId (= the server checksum after upload).
+        const remoteId = base?.remoteId ?? localHash;
+        const idType: FileState['idType'] = base?.idType ?? 'sha256';
+        void this.opts.logger?.log(`upload: ${path} (${base ? 'modified, re-upload' : 'new local file'})`);
+        try {
+          await this.uploadFile(
+            path, localHash, remoteId, idType,
+            { path, fileId: base?.remoteFileId ?? null, checksum: null, etag: null, size: st.size, lastModified: st.mtime },
+            summary,
+          );
+        } catch (err) {
+          // One failing file (e.g. a server-side 403) must not abort the whole session.
+          console.warn(`[SyncEngine] Upload failed for ${path}:`, err);
+          void this.opts.logger?.log(`upload: FAILED ${path} — ${(err as Error).message}`);
+          this.recordError(summary, path, err);
+          if (err instanceof NetworkError) this.retryQueue.push(path);
+        }
+      },
+      true,
+    );
 
     // Detect local renames and deletions: files in StateDB that are no longer in localStats.
     const rt = this.getOrCreateRenameTracker();
@@ -1319,9 +1477,13 @@ export class SyncEngine {
     for (const [path, lf] of localFiles) {
       const remote = remoteMap.get(path);
       if (!remote) { uploads.push(path); continue; }
-      // Identical content (server-computed SHA-256 == local) → no transfer needed.
-      // When the checksum is unavailable (older/standard server), fall back to conflict resolution.
-      if (remote.checksum && remote.checksum === lf.hash) unchanged.push(path);
+      // Size-first (P0-C): a size mismatch always means the content changed — classify as a conflict
+      // WITHOUT computing a local hash (the hash is only needed to prove "unchanged"). Only when the
+      // sizes match do we use the server-computed SHA-256 == local hash check to conclude "unchanged";
+      // when the server checksum is unavailable or the local hash was size-gated (lf.hash === ''),
+      // fall back to conflict resolution.
+      if (remote.size !== lf.size) { conflicts.push(path); continue; }
+      if (remote.checksum && lf.hash && remote.checksum === lf.hash) unchanged.push(path);
       else conflicts.push(path);
     }
     for (const remote of remoteFiles) {
@@ -1331,35 +1493,59 @@ export class SyncEngine {
     return { uploads, downloads, conflicts, unchanged, deletes: [] };
   }
 
-  private async executePlan(plan: DryRunPlan, remoteFiles: RemoteFileInfo[], summary: SyncSessionSummary): Promise<void> {
+  private async executePlan(
+    plan: DryRunPlan, remoteFiles: RemoteFileInfo[], summary: SyncSessionSummary,
+    localFiles: Map<string, { hash: string; size: number; mtime: number }>,
+  ): Promise<void> {
+    // P0-C: the caller (initialSync) already scanned+hashed the vault once; reuse that map instead of
+    // re-scanning here. This removes a full second whole-vault read+SHA-256 pass on the first sync.
     const remoteMap = new Map(remoteFiles.map(f => [f.path, f]));
-    const localFiles = await this.scanLocalFiles();
     const actionFiles = plan.uploads.length + plan.downloads.length + plan.conflicts.length;
     this.syncProgress = { processed: 0, total: actionFiles };
     if (actionFiles > 0) this.opts.statusBar.setProgress(0, actionFiles);
 
-    for (const path of plan.uploads) {
-      try {
-        const lf = localFiles.get(path);
-        if (!lf) continue;
-        const data = await this.opts.localAdapter.readBinary(path);
-        const outcome = await this.uploadStrategy!.upload(this.client!, path, data, lf.mtime);
-        if (outcome === 'skipped') continue;
-        summary.uploadedCount++;
-        this.recordHistory(path, 'uploaded');
-        const stat = await this.opts.localAdapter.stat(path);
-        this.opts.stateDB.setFile({ path, localHash: lf.hash, remoteId: lf.hash, idType: 'sha256', size: lf.size, mtime: stat?.mtime ?? 0, remoteFileId: null, isConflicted: false });
-      } catch (err) { this.recordError(summary, path, err); this.retryQueue.push(path); }
-      this.tickProgress();
-    }
+    // Bounded-parallel uploads (P1-A); same-directory uploads serialized to avoid 423s.
+    await this.runFileBatch(
+      plan.uploads,
+      (path) => path,
+      (path) => localFiles.get(path)?.size ?? 0,
+      async (path) => {
+        try {
+          const lf = localFiles.get(path);
+          if (!lf) return;
+          const data = await this.opts.localAdapter.readBinary(path);
+          // Size-gated large files were not pre-hashed during the scan (lf.hash === ''); compute the
+          // hash now from the bytes we just read so the recorded state has a real content hash.
+          const localHash = lf.hash || await sha256(data);
+          // P1-C: reuse the hash we just computed from THIS exact buffer for the OC-Checksum header
+          // (safe — same bytes), so the client doesn't hash the file a second time.
+          const outcome = await this.uploadStrategy!.upload(this.client!, path, data, lf.mtime, { precomputedSha256: localHash });
+          if (outcome === 'skipped') { this.tickProgress(); return; }
+          summary.uploadedCount++;
+          this.recordHistory(path, 'uploaded');
+          const stat = await this.opts.localAdapter.stat(path);
+          this.opts.stateDB.setFile(await this.withLocalSignature({ path, localHash, remoteId: localHash, idType: 'sha256', size: lf.size, mtime: stat?.mtime ?? 0, remoteFileId: null, isConflicted: false }));
+        } catch (err) { this.recordError(summary, path, err); this.retryQueue.push(path); }
+        this.tickProgress();
+      },
+      true,
+    );
 
-    for (const path of plan.downloads) {
-      try {
-        const remote = remoteMap.get(path)!;
-        await this.downloadFile(remote, remote.checksum ?? remote.etag ?? String(remote.size), remote.checksum ? 'sha256' : 'etag', summary);
-      } catch (err) { this.recordError(summary, path, err); this.retryQueue.push(path); }
-      this.tickProgress();
-    }
+    // Bounded-parallel downloads (P1-A). No directory serialization needed (each writes a distinct
+    // local file; remote reads don't contend), so serializeByDir=false.
+    await this.runFileBatch(
+      plan.downloads,
+      (path) => path,
+      (path) => remoteMap.get(path)?.size ?? 0,
+      async (path) => {
+        try {
+          const remote = remoteMap.get(path)!;
+          await this.downloadFile(remote, remote.checksum ?? remote.etag ?? String(remote.size), remote.checksum ? 'sha256' : 'etag', summary);
+        } catch (err) { this.recordError(summary, path, err); this.retryQueue.push(path); }
+        this.tickProgress();
+      },
+      false,
+    );
 
     // Files already identical on both sides: seed the state DB (no transfer needed).
     // Apply remote mtime to local so both sides are in sync.
@@ -1371,10 +1557,10 @@ export class SyncEngine {
       if (remote.lastModified) {
         await this.opts.localAdapter.setMtime(path, remote.lastModified);
       }
-      this.opts.stateDB.setFile({
+      this.opts.stateDB.setFile(await this.withLocalSignature({
         path, localHash: lf.hash, remoteId: remote.checksum ?? lf.hash, idType: 'sha256',
         size: lf.size, mtime, remoteFileId: remote.fileId, isConflicted: false,
-      });
+      }, remote.lastModified));
     }
 
     // Files present on both sides with differing content: resolve as conflicts.
@@ -1429,8 +1615,9 @@ export class SyncEngine {
     for (const p of await this.configSync.enumerateIncludedPaths()) {
       const stat = await this.opts.localAdapter.stat(p);
       if (stat) {
-        const data = await this.opts.localAdapter.readBinary(p);
-        results.set(p, { hash: await sha256(data), size: stat.size, mtime: stat.mtime });
+        // Size-gate (P0-C): defer hashing of large files (hash computed lazily at upload).
+        const hash = stat.size > MAX_HASH_SIZE ? '' : await sha256(await this.opts.localAdapter.readBinary(p));
+        results.set(p, { hash, size: stat.size, mtime: stat.mtime });
       }
     }
     return results;
@@ -1458,8 +1645,10 @@ export class SyncEngine {
         if (this.isSystemExcluded(file)) continue;
         const stat = await this.opts.localAdapter.stat(file);
         if (!stat) continue;
-        const data = await this.opts.localAdapter.readBinary(file);
-        const hash = await sha256(data);
+        // Size-gate (P0-C): files larger than MAX_HASH_SIZE are NOT pre-hashed during the scan to
+        // bound peak memory/CPU on the first sync (mobile). Their hash is computed lazily at upload
+        // time; buildInitialPlan treats an empty hash as "cannot prove unchanged" (size-first guard).
+        const hash = stat.size > MAX_HASH_SIZE ? '' : await sha256(await this.opts.localAdapter.readBinary(file));
         results.set(file, { hash, size: stat.size, mtime: stat.mtime });
       }
       for (const folder of listing.folders) {

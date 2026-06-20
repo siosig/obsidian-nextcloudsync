@@ -8,6 +8,7 @@ import {
   SyncTokenExpiredError,
   ConflictError,
   FeatureUnsupportedError,
+  PreconditionFailedError,
 } from '../types';
 import { IWebDAVClient } from './IWebDAVClient';
 import { DavSyncSettings } from '../types';
@@ -50,7 +51,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
       throw: false,
     });
     if (res.status !== 207 && res.status !== 200) throw new NetworkError(res.status, res.text);
-    return { isNextcloud: false, version: '', hasChecksums: false, hasFilesLocking: false, syncToken: null };
+    return { isNextcloud: false, version: '', hasChecksums: false, hasFilesLocking: false, hasBulkUpload: false, syncToken: null };
   }
 
   async getFiles(path: string): Promise<RemoteFileInfo[]> {
@@ -86,14 +87,10 @@ export class StandardWebDAVClient implements IWebDAVClient {
     throw new SyncTokenExpiredError();
   }
 
-  async downloadFile(remotePath: string, _localTmpPath: string): Promise<void> {
+  async downloadFile(remotePath: string): Promise<ArrayBuffer> {
     const res = await requestUrl({ url: this.remoteUrl(remotePath), method: 'GET', headers: { Authorization: this.authHeader }, throw: false });
     if (res.status !== 200) throw new NetworkError(res.status, '');
-    (this as Record<string, unknown>)._lastDownload = res.arrayBuffer;
-  }
-
-  getLastDownloadBuffer(): ArrayBuffer {
-    return (this as Record<string, unknown>)._lastDownload as ArrayBuffer ?? new ArrayBuffer(0);
+    return res.arrayBuffer;
   }
 
   async recalcChecksum(_remotePath: string): Promise<string | null> {
@@ -102,11 +99,20 @@ export class StandardWebDAVClient implements IWebDAVClient {
     return null;
   }
 
-  async uploadFile(remotePath: string, data: ArrayBuffer, mtime?: number): Promise<void> {
-    await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
+  async uploadFile(
+    remotePath: string, data: ArrayBuffer, mtime?: number,
+    opts?: { precomputedSha256?: string; ifMatchEtag?: string | null },
+  ): Promise<void> {
     const headers: Record<string, string> = { Authorization: this.authHeader };
     if (mtime) headers['X-OC-MTime'] = String(Math.floor(mtime / 1000));
-    const res = await requestUrl({ url: this.remoteUrl(remotePath), method: 'PUT', headers, body: data, throw: false });
+    if (opts?.ifMatchEtag) headers['If-Match'] = `"${opts.ifMatchEtag.replace(/^"|"$/g, '')}"`;
+    // Reactive directory creation (P1-B): PUT first; only MKCOL ancestors on a 409 missing-parent, retry once.
+    let res = await requestUrl({ url: this.remoteUrl(remotePath), method: 'PUT', headers, body: data, throw: false });
+    if (res.status === 409) {
+      await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
+      res = await requestUrl({ url: this.remoteUrl(remotePath), method: 'PUT', headers, body: data, throw: false });
+    }
+    if (res.status === 412) throw new PreconditionFailedError(remotePath);
     if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
   }
 
@@ -119,6 +125,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
 
   async deleteFile(path: string, _expectedRemoteId: string): Promise<void> {
     const res = await requestUrl({ url: this.remoteUrl(path), method: 'DELETE', headers: { Authorization: this.authHeader }, throw: false });
+    if (res.status === 404) return; // blind delete (P1-B): already gone = success
     if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
   }
 

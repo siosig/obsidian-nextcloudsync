@@ -10,11 +10,13 @@ import {
   FeatureUnsupportedError,
   FileLockedError,
   MaintenanceModeError,
+  PreconditionFailedError,
 } from '../types';
 import { IWebDAVClient } from './IWebDAVClient';
 import { DavSyncSettings } from '../types';
 import { toRemotePath, hrefToRelative, encodeRemoteUrl, ensureRemoteDir } from './remotePath';
 import { sha256 } from '../util/hash';
+import { PARSE_YIELD_EVERY } from '../util/limits';
 
 const PROPFIND_BODY = `<?xml version="1.0" encoding="utf-8" ?>
 <d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">
@@ -107,6 +109,7 @@ export class NextcloudClient implements IWebDAVClient {
     let version = '';
     let hasChecksums = false;
     let hasFilesLocking = false;
+    let hasBulkUpload = false;
 
     if (capRes.status === 200) {
       const cap = capRes.json as Record<string, unknown>;
@@ -118,6 +121,10 @@ export class NextcloudClient implements IWebDAVClient {
       // When the files_lock app is enabled, capabilities.files.locking contains a version string.
       const files = caps?.files as Record<string, unknown> | undefined;
       hasFilesLocking = files?.locking != null && files.locking !== false;
+      // The bulk-upload endpoint is advertised under capabilities.dav.bulkupload (a version string)
+      // on servers that support it. Absent ⇒ fall back to per-file PUT (feature-gated by the engine).
+      const dav = caps?.dav as Record<string, unknown> | undefined;
+      hasBulkUpload = dav?.bulkupload != null && dav.bulkupload !== false;
     }
 
     // Get current sync-token
@@ -128,6 +135,7 @@ export class NextcloudClient implements IWebDAVClient {
       version,
       hasChecksums,
       hasFilesLocking,
+      hasBulkUpload,
       syncToken,
     };
     return this.features;
@@ -148,7 +156,7 @@ export class NextcloudClient implements IWebDAVClient {
     // A missing base folder (before the first sync) returns 404. Treat it as an empty list and proceed to the initial upload.
     if (res.status === 404) return [];
     if (res.status !== 207) throw new NetworkError(res.status, res.text);
-    return this.parsePropfindResponse(res.text);
+    return await this.parsePropfindResponse(res.text);
   }
 
   async getChanges(syncToken: string): Promise<SyncChanges> {
@@ -165,33 +173,40 @@ export class NextcloudClient implements IWebDAVClient {
     });
     if (res.status === 410) throw new SyncTokenExpiredError();
     if (res.status !== 207) throw new NetworkError(res.status, res.text);
-    return this.parseSyncChanges(res.text);
+    return await this.parseSyncChanges(res.text);
   }
 
-  async downloadFile(remotePath: string, localTmpPath: string): Promise<void> {
+  async downloadFile(remotePath: string): Promise<ArrayBuffer> {
     const res = await requestUrl({ url: this.remoteUrl(remotePath), method: 'GET', headers: { Authorization: this.authHeader }, throw: false });
     if (res.status !== 200) throw new NetworkError(res.status, '');
-    // The actual write to localTmpPath is handled by SyncEngine via LocalAdapter
-    // Store buffer reference for retrieval
-    (this as Record<string, unknown>)._lastDownload = res.arrayBuffer;
-    void localTmpPath; // used by SyncEngine after this call
+    // Return the bytes directly (no shared field) so concurrent downloads cannot race each other.
+    return res.arrayBuffer;
   }
 
-  /** Returns the last downloaded ArrayBuffer (called by SyncEngine after downloadFile). */
-  getLastDownloadBuffer(): ArrayBuffer {
-    return (this as Record<string, unknown>)._lastDownload as ArrayBuffer ?? new ArrayBuffer(0);
-  }
-
-  async uploadFile(remotePath: string, data: ArrayBuffer, mtime?: number): Promise<void> {
-    await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
-    const checksum = `SHA256:${await sha256(data)}`;
+  async uploadFile(
+    remotePath: string, data: ArrayBuffer, mtime?: number,
+    opts?: { precomputedSha256?: string; ifMatchEtag?: string | null },
+  ): Promise<void> {
+    // Reactive directory creation (P1-B): try the PUT first and only MKCOL the parents if the server
+    // reports a missing parent (409), then retry once. This drops the per-upload directory probe on
+    // the common path (the directory almost always already exists).
+    const checksum = `SHA256:${opts?.precomputedSha256 ?? await sha256(data)}`;
     const headers: Record<string, string> = {
       Authorization: this.authHeader,
       'OC-Checksum': checksum,
     };
     // X-OC-MTime (Unix seconds) tells Nextcloud to preserve the local file's modification time.
     if (mtime) headers['X-OC-MTime'] = String(Math.floor(mtime / 1000));
-    const res = await requestUrl({ url: this.remoteUrl(remotePath), method: 'PUT', headers, body: data, throw: false });
+    // If-Match optimistic concurrency: a remote changed since this etag returns 412.
+    if (opts?.ifMatchEtag) headers['If-Match'] = `"${opts.ifMatchEtag.replace(/^"|"$/g, '')}"`;
+
+    let res = await requestUrl({ url: this.remoteUrl(remotePath), method: 'PUT', headers, body: data, throw: false });
+    if (res.status === 409) {
+      // Missing parent collection → create ancestors, then retry the PUT once.
+      await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
+      res = await requestUrl({ url: this.remoteUrl(remotePath), method: 'PUT', headers, body: data, throw: false });
+    }
+    if (res.status === 412) throw new PreconditionFailedError(remotePath); // remote changed (If-Match)
     if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
   }
 
@@ -227,6 +242,9 @@ export class NextcloudClient implements IWebDAVClient {
     const res = await requestUrl({
       url: this.remoteUrl(path), method: 'DELETE', headers: { Authorization: this.authHeader }, throw: false,
     });
+    // Blind delete (P1-B): a 404 means the file is already gone — exactly the desired end state, so
+    // treat it as success rather than an error (no pre-deletion existence probe is needed).
+    if (res.status === 404) return;
     if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
   }
 
@@ -446,12 +464,15 @@ export class NextcloudClient implements IWebDAVClient {
     }
   }
 
-  private parsePropfindResponse(xml: string): RemoteFileInfo[] {
+  private async parsePropfindResponse(xml: string): Promise<RemoteFileInfo[]> {
     const results: RemoteFileInfo[] = [];
     const parser = new DOMParser();
     const doc = parser.parseFromString(xml, 'text/xml');
     const responses = doc.getElementsByTagNameNS('DAV:', 'response');
     for (let i = 0; i < responses.length; i++) {
+      // Yield to the event loop periodically so parsing a large Depth:infinity listing does not
+      // freeze the UI / trigger an Android ANR (FR-027 / P2-B).
+      if (i > 0 && i % PARSE_YIELD_EVERY === 0) await new Promise((r) => window.setTimeout(r, 0));
       const resp = responses[i];
       const href = resp.getElementsByTagNameNS('DAV:', 'href')[0]?.textContent ?? '';
       const prop = resp.getElementsByTagNameNS('DAV:', 'prop')[0];
@@ -481,7 +502,7 @@ export class NextcloudClient implements IWebDAVClient {
     return results;
   }
 
-  private parseSyncChanges(xml: string): SyncChanges {
+  private async parseSyncChanges(xml: string): Promise<SyncChanges> {
     const modified: RemoteFileInfo[] = [];
     const deleted: string[] = [];
     const parser = new DOMParser();
@@ -491,6 +512,8 @@ export class NextcloudClient implements IWebDAVClient {
     const newSyncToken = newSyncTokenEl?.textContent ?? '';
 
     for (let i = 0; i < responses.length; i++) {
+      // Yield periodically (anti-ANR) — see parsePropfindResponse.
+      if (i > 0 && i % PARSE_YIELD_EVERY === 0) await new Promise((r) => window.setTimeout(r, 0));
       const resp = responses[i];
       const href = resp.getElementsByTagNameNS('DAV:', 'href')[0]?.textContent ?? '';
       const path = hrefToRelative(this.baseUrl, this.remoteBase, href);

@@ -1,7 +1,7 @@
 import { Notice } from 'obsidian';
 import { DavSyncSettings, NetworkError } from '../../types';
 import { IWebDAVClient } from '../../network/IWebDAVClient';
-import { IUploadStrategy, UploadOutcome } from './IUploadStrategy';
+import { IUploadStrategy, UploadOutcome, UploadOptions } from './IUploadStrategy';
 import { isOverFileSizeLimit } from '../../util/limits';
 
 /** Size of a single chunk (bytes). A conservative 10MB to be mindful of memory. */
@@ -17,7 +17,7 @@ const CHUNK_SIZE_BYTES = 10 * 1024 * 1024;
 export class ChunkedUploadStrategy implements IUploadStrategy {
   constructor(private readonly settings: DavSyncSettings) {}
 
-  async upload(client: IWebDAVClient, remotePath: string, data: ArrayBuffer, mtime?: number): Promise<UploadOutcome> {
+  async upload(client: IWebDAVClient, remotePath: string, data: ArrayBuffer, mtime?: number, opts?: UploadOptions): Promise<UploadOutcome> {
     const sizeMB = data.byteLength / 1024 / 1024;
 
     // maxFileSizeMB of 0 means "unlimited".
@@ -36,14 +36,14 @@ export class ChunkedUploadStrategy implements IUploadStrategy {
         // If chunked upload fails, fall back to a single PUT (FR-013).
         console.warn(`[ChunkedUploadStrategy] chunked upload failed, falling back to PUT: ${remotePath}`, err);
         if (err instanceof NetworkError) {
-          await client.uploadFile(remotePath, data, mtime);
+          await client.uploadFile(remotePath, data, mtime, opts);
           return 'uploaded';
         }
         throw err;
       }
     }
 
-    await client.uploadFile(remotePath, data);
+    await client.uploadFile(remotePath, data, mtime, opts);
     return 'uploaded';
   }
 }

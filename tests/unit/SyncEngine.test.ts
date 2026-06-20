@@ -96,7 +96,7 @@ describe('SyncEngine.handleConflict — failure-policy actions', () => {
       configSync: { appearance: false, themesSnippets: false, hotkeys: false, corePlugins: false, bookmarks: false },
       deviceName: '', logsFolder: '', syncLogEnabled: false, syncLogLevel: 'important',
       debugLogEnabled: false, debugLogLevel: 'error',
-      chunkedUploadEnabled: true, fileLockingEnabled: false,
+      chunkedUploadEnabled: true, fileLockingEnabled: false, bulkUploadEnabled: false,
       autoMergeEnabled: true, maxConflictRegions: 10, frontmatterConflictStrategy: 'conflict',
       mergeableExtensions: ['md', 'txt'], conflictFailurePolicy: policy,
       explorerCompareEnabled: false,
@@ -132,8 +132,7 @@ describe('SyncEngine.handleConflict — failure-policy actions', () => {
     };
     const stateDB = { setFile, getFile: jest.fn(() => undefined) };
     const client = {
-      downloadFile: jest.fn(async () => undefined),
-      getLastDownloadBuffer: jest.fn(() => toBuf(remoteContent)),
+      downloadFile: jest.fn(async () => toBuf(remoteContent)),
     };
 
     const opts = {
@@ -319,11 +318,12 @@ describe('SyncEngine.processRemoteFile — stale conflict-flag clearing', () => 
   function buildHarness(base: FileState) {
     const setFile = jest.fn();
     const localAdapter = {
-      // mtime <= base.mtime so the engine does NOT recompute the hash → localChanged stays false.
+      // The stat signature matches base.localMtime/localSize so the fast-path treats the file as
+      // unchanged and does NOT recompute the hash → localChanged stays false.
       stat: jest.fn(async () => ({ size: base.size, mtime: base.mtime })),
       readBinary: jest.fn(async () => new ArrayBuffer(0)),
     };
-    const stateDB = { getFile: jest.fn(() => base), setFile };
+    const stateDB = { getFile: jest.fn(() => base), setFile, getLastSyncTime: jest.fn(() => 0) };
     const opts = {
       app: {}, settings: {}, localAdapter, stateDB,
       statusBar: {}, webdavFactory: {}, pluginDir: '', configDir: '.obsidian',
@@ -340,6 +340,7 @@ describe('SyncEngine.processRemoteFile — stale conflict-flag clearing', () => 
     const base: FileState = {
       path: 'note.md', localHash: 'lh', remoteId: 'same-checksum', idType: 'sha256',
       size: 12, mtime: 1000, remoteFileId: 'fid-1', isConflicted: true,
+      localMtime: 1000, localSize: 12,
     };
     const h = buildHarness(base);
     await h.invoke(makeSummary());
@@ -353,6 +354,7 @@ describe('SyncEngine.processRemoteFile — stale conflict-flag clearing', () => 
     const base: FileState = {
       path: 'note.md', localHash: 'lh', remoteId: 'same-checksum', idType: 'sha256',
       size: 12, mtime: 1000, remoteFileId: 'fid-1', isConflicted: false,
+      localMtime: 1000, localSize: 12,
     };
     const h = buildHarness(base);
     await h.invoke(makeSummary());
