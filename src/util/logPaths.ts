@@ -9,12 +9,15 @@ export function joinLogPath(logsFolder: string, filename: string): string {
   return folder ? `${folder}/${filename}` : filename;
 }
 
-/** Per-device sync-log path: `<logsFolder>/nextcloud-sync_sync_<host>.md`. */
+// The log files hold plain text, not Markdown, so they use a .txt extension —
+// a .md extension makes editors render them as Markdown and garble the output.
+
+/** Per-device sync-log path: `<logsFolder>/nextcloud-sync_sync_<host>.txt`. */
 export function syncLogPath(logsFolder: string, host: string): string {
-  return joinLogPath(logsFolder, `nextcloud-sync_sync_${host}.md`);
+  return joinLogPath(logsFolder, `nextcloud-sync_sync_${host}.txt`);
 }
 
-/** Per-device debug-log path: `<logsFolder>/nextcloud-sync_debug_<host>.md`. */
+/** Per-device debug-log path: `<logsFolder>/nextcloud-sync_debug_<host>.txt`. */
 export function debugLogPath(logsFolder: string, host: string): string {
-  return joinLogPath(logsFolder, `nextcloud-sync_debug_${host}.md`);
+  return joinLogPath(logsFolder, `nextcloud-sync_debug_${host}.txt`);
 }

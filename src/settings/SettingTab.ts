@@ -360,7 +360,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Device name')
-      .setDesc('Names this device in log filenames (nextcloud-sync_sync_<device>.md). Leave blank to use a platform + id default. Filesystem-unsafe characters are replaced automatically.')
+      .setDesc('Names this device in log filenames (nextcloud-sync_sync_<device>.txt). Leave blank to use a platform + id default. Filesystem-unsafe characters are replaced automatically.')
       .addText(text => text
         .setPlaceholder(this.plugin.defaultHostToken())
         .setValue(this.plugin.settings.deviceName)
@@ -396,7 +396,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Sync log')
-      .setDesc('Append a per-device log of sync operations (with the plugin version and conflict-resolution settings) to nextcloud-sync_sync_<device>.md.')
+      .setDesc('Append a per-device log of sync operations (with the plugin version and conflict-resolution settings) to nextcloud-sync_sync_<device>.txt.')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.syncLogEnabled)
         .onChange(async (value) => {
@@ -418,7 +418,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Debug log')
-      .setDesc('Append a per-device diagnostic log (with the plugin version and a snapshot of all settings) to nextcloud-sync_debug_<device>.md. Syncing runs normally. Turn this off and delete the file when finished.')
+      .setDesc('Append a per-device diagnostic log (with the plugin version and a snapshot of all settings) to nextcloud-sync_debug_<device>.txt. Syncing runs normally. Turn this off and delete the file when finished.')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.debugLogEnabled)
         .onChange(async (value) => {
