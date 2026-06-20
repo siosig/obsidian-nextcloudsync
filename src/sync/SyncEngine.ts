@@ -1572,10 +1572,14 @@ export class SyncEngine {
 
   private async scanLocalFiles(): Promise<Map<string, { hash: string; size: number; mtime: number }>> {
     const results = new Map<string, { hash: string; size: number; mtime: number }>();
-    // Locally, always scan the entire Vault (remotely, content is synced under a folder named after the Vault).
-    await this.scanDir('', results);
-    // The entire config folder is excluded from scanning, so explicitly inject the enabled
-    // config-sync category files (bookmarks, themes/snippets, appearance, etc.).
+    // Enumerate Vault-tracked files from the in-memory index (no native FS round-trips on mobile).
+    for (const e of this.opts.localAdapter.listVaultFiles()) {
+      if (this.isSystemExcluded(e.path)) continue;
+      // Size-gate (P0-C): defer hashing of large files; hashed lazily at upload.
+      const hash = e.size > MAX_HASH_SIZE ? '' : await sha256(await this.opts.localAdapter.readBinary(e.path));
+      results.set(e.path, { hash, size: e.size, mtime: e.mtime });
+    }
+    // The config folder is not Vault-tracked; inject the enabled config-sync category paths explicitly.
     for (const p of await this.configSync.enumerateIncludedPaths()) {
       const stat = await this.opts.localAdapter.stat(p);
       if (stat) {
@@ -1587,40 +1591,13 @@ export class SyncEngine {
     return results;
   }
 
-  /** Collect path→stat for local files in sync scope without computing hashes (first-pass filter for change detection). */
-  private async collectLocalStats(dir: string, out: Map<string, { size: number; mtime: number }>): Promise<void> {
-    try {
-      const listing = await this.opts.localAdapter.list(dir);
-      for (const file of listing.files) {
-        if (this.isSystemExcluded(file)) continue;
-        const stat = await this.opts.localAdapter.stat(file);
-        if (stat) out.set(file, { size: stat.size, mtime: stat.mtime });
-      }
-      for (const folder of listing.folders) {
-        if (!this.isSystemExcluded(folder)) await this.collectLocalStats(folder, out);
-      }
-    } catch { /* ignore unreadable dirs */ }
-  }
-
-  private async scanDir(dir: string, results: Map<string, { hash: string; size: number; mtime: number }>): Promise<void> {
-    try {
-      const listing = await this.opts.localAdapter.list(dir);
-      for (const file of listing.files) {
-        if (this.isSystemExcluded(file)) continue;
-        const stat = await this.opts.localAdapter.stat(file);
-        if (!stat) continue;
-        // Size-gate (P0-C): files larger than MAX_HASH_SIZE are NOT pre-hashed during the scan to
-        // bound peak memory/CPU on the first sync (mobile). Their hash is computed lazily at upload
-        // time; buildInitialPlan treats an empty hash as "cannot prove unchanged" (size-first guard).
-        const hash = stat.size > MAX_HASH_SIZE ? '' : await sha256(await this.opts.localAdapter.readBinary(file));
-        results.set(file, { hash, size: stat.size, mtime: stat.mtime });
-      }
-      for (const folder of listing.folders) {
-        if (!this.isSystemExcluded(folder)) {
-          await this.scanDir(folder, results);
-        }
-      }
-    } catch { /* ignore unreadable dirs */ }
+  /** Collect path→stat for local files in sync scope without computing hashes (Vault-cache based). */
+  private async collectLocalStats(_dir: string, out: Map<string, { size: number; mtime: number }>): Promise<void> {
+    for (const e of this.opts.localAdapter.listVaultFiles()) {
+      if (this.isSystemExcluded(e.path)) continue;
+      out.set(e.path, { size: e.size, mtime: e.mtime });
+    }
+    // The config folder is not Vault-tracked; the caller injects enabled config-sync paths separately.
   }
 
   private isSystemExcluded(path: string): boolean {
