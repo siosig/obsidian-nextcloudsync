@@ -27,7 +27,12 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.3.1)
+## What's new in this release (0.4.0-beta.1)
+
+- **Filter the sync-status dialog by status (0.4.0-beta.1)** — the status dialog gained a checkbox row (Uploaded, Downloaded, Deleted, Merged, Conflicted, Local wins, Remote wins, Error) so you can focus on, say, only conflicts. All on by default; the choice is remembered until you restart Obsidian and applies to every section of the dialog.
+- **Compare a file with its remote version (0.4.0-beta.1)** — opt in via "Compare with remote (explorer menu)" in settings, then right-click any file in the explorer to open a popup comparing local vs remote modification time, checksum (with a match/mismatch badge), and a line diff. Resolve the difference there with **push** (overwrite remote with local) or **pull** (overwrite local with remote), each behind a confirmation. The toggle takes effect immediately — no restart.
+
+## 0.3.1
 
 - **Maintenance release (requires Obsidian 1.11.4+)** — no functional changes. Restores the community-directory listing by fixing an internal lint issue (an undescribed ESLint directive) that failed the 0.3.0 automated review, and re-enables the repository's git hooks so the pre-push gate mirrors the directory reviewer.
 
