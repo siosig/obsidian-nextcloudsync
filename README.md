@@ -125,7 +125,7 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 - **Trashbin deletes** — remote deletions use the Nextcloud trashbin (recoverable). When a deletion is applied to your local Vault, it follows **your Obsidian "Deleted files" setting** (system trash / move to `.trash` / permanently delete) rather than forcing one behavior; folders and files outside the Vault's tracked notes (e.g. config-folder files) are handled too.
 - **Per-Vault configuration** — each Vault can target a different Nextcloud server / account without state bleeding between them.
 - **Periodic auto-sync** with a configurable interval (set to `0` for manual-only), plus a **Sync now** command.
-- **Sync on file change (watch mode)** — optionally sync immediately after you edit a local Markdown file (debounced ~2s after you stop typing). Toggle on/off in settings; works alongside the periodic interval.
+- **Sync on file change (watch mode)** — optionally sync immediately after you edit a local file (debounced ~2s after you stop typing). Toggle on/off in settings; works alongside the periodic interval.
 - **Resilient retries** — failed files are skipped, queued, and retried next sync with exponential backoff; a dropped Wi-Fi connection resumes automatically.
 - **Standard WebDAV fallback** — works against any WebDAV server (recursive), Nextcloud features auto-disabled.
 - **Filter the sync-status dialog by status** — the status dialog has a checkbox row (Uploaded, Downloaded, Deleted, Merged, Conflicted, Local wins, Remote wins, Error) so you can focus on, say, only conflicts. All on by default; the choice is remembered until you restart Obsidian and applies to every section.
@@ -144,7 +144,7 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 - **Login Flow v2** — set up with a browser approval instead of manually issuing and pasting an app password. Credentials are stored in Obsidian's secret credentials store, **never in plain text** in `data.json`.
 - **Server version history** — for the active note, list every revision the server holds (newest first) and restore any of them atomically, with confirmation. The restored content syncs back cleanly without triggering an infinite conflict loop.
 - **Chunked upload** — large attachments (images, PDFs, audio) above the chunk threshold are split and uploaded resumably; interrupted uploads never publish a partial file, and completion is checksum-verified. A separate absolute `maxFileSizeMB` cap guards memory.
-- **Files Locking** *(experimental, opt-in)* — acquires a per-file server lock immediately before each update and releases it right after, preventing concurrent-write conflicts from other clients (Nextcloud desktop/web). Stale locks from a crashed run are safely detected and released.
+- **Files Locking** *(experimental, on by default)* — acquires a per-file server lock immediately before each update and releases it right after, preventing concurrent-write conflicts from other clients (Nextcloud desktop/web). Stale locks from a crashed run are safely detected and released. Requires the Nextcloud files-locking app; when the app is absent the feature simply stays inactive.
 
 ---
 
@@ -153,10 +153,10 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 Mobile is supported, with a few platform-aware differences (desktop behaviour is unchanged):
 
 - **Automatic sync is off by default on mobile.** The OS suspends background timers, so periodic auto-sync and "sync on file change" are disabled (greyed out). Use **Sync now**, or enable **Sync on startup** (off by default on mobile) to sync once a few seconds after the app opens.
-- **Sync on startup** is a new setting on both platforms (desktop: on, 5 s; mobile: off).
+- **Sync on startup** is a new setting on both platforms (desktop: on, 1 s; mobile: off).
 - **Large files are skipped on mobile** above the "Maximum file size" limit (set `0` for unlimited) to avoid out-of-memory crashes; skips are reported.
 - **No progress UI on mobile** — only error notices are shown.
-- **Network concurrency** is configurable (desktop default 8, mobile default 2).
+- **Network concurrency** is configurable (desktop default 16, mobile default 2).
 - **Sync on Wi-Fi only** skips on cellular (Android/desktop). **Not available on iOS** (no network-type API), where the toggle is disabled.
 - **Sync now shows a result notice on mobile** (uploads / downloads / conflicts, or "already up to date") since there's no status bar. Tapping it while not signed in stays disabled, and the settings screen shows a clear "not signed in yet" banner.
 - Debug mode (diagnostic log) is available on mobile and does not change syncing.
