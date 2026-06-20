@@ -133,6 +133,12 @@ export interface DavSyncSettings {
    */
   explorerCompareEnabled: boolean;
   /**
+   * Persisted Sync Status dialog filter selection: the checked status keys, serialized as an array.
+   * Absent ⇒ all statuses shown (default). Restored on load and saved on every toggle, so the
+   * selection survives an Obsidian restart. Unknown keys are ignored on load.
+   */
+  statusFilter?: SyncFileOp[];
+  /**
    * Last Nextcloud server version observed at connect time. Used only to show a
    * recommendation banner in settings when it is below the recommended minimum.
    * Empty/undefined until the first successful connection.
@@ -185,6 +191,9 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   mergeableExtensions: ['md', 'txt'],
   conflictFailurePolicy: 'error',
   explorerCompareEnabled: false,
+  // Explicit `undefined` keeps the key in the allowlist used by pruneObsoleteSettings (so a saved
+  // selection is never pruned) while meaning "no saved selection → all statuses shown".
+  statusFilter: undefined,
   lastKnownServerVersion: '',
 };
 
@@ -302,6 +311,13 @@ export interface SyncHistoryEntry extends SyncHistoryDetail {
   at: number;
   /** Failure reason — present only for `op: 'error'`. */
   message?: string;
+  /**
+   * Start time (epoch ms) of the sync run that produced this entry — the run's `summary.startedAt`
+   * for a full sync, or the op's own time for a watch-mode single-file op. Used to group the Sync
+   * Status dialog's recent activity by sync run. Optional for backward compatibility: entries
+   * recorded before this field existed are grouped by their own `at` (best-effort).
+   */
+  runStartedAt?: number;
 }
 
 export interface SyncSessionSummary {

@@ -146,6 +146,17 @@
   margin-left: 22px; /* align under the path, past the icon */
 }
 
+/* Separator heading introducing one sync run's group of recent-activity entries. */
+.ncs-history-run-sep {
+  margin: 8px 0 2px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  text-align: center;
+}
+.ncs-history-run-sep:first-child {
+  margin-top: 0;
+}
+
 /* ── Diff / merge preview modal ──────────────────────────────────────────── */
 .ncs-diff-modal {
   width: min(1100px, 95vw);

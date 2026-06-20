@@ -62,7 +62,7 @@ describe('SyncEngine.pushLocalToRemote', () => {
     const { engine, uploadStrategy, record, historyStore, stateDB } = makeEngine({ remote: remoteInfo('a.md') });
     await engine.pushLocalToRemote('a.md');
     expect(uploadStrategy.upload).toHaveBeenCalledTimes(1);
-    expect(record).toHaveBeenCalledWith('a.md', 'uploaded', expect.any(Number), undefined, expect.any(Object));
+    expect(record).toHaveBeenCalledWith('a.md', 'uploaded', expect.any(Number), undefined, expect.any(Object), expect.any(Number));
     expect(stateDB.setFile).toHaveBeenCalledTimes(1);
     expect(historyStore.save).toHaveBeenCalled();
   });
@@ -90,7 +90,7 @@ describe('SyncEngine.pullRemoteToLocal', () => {
     expect(localAdapter.atomicWriteBinary).toHaveBeenCalledTimes(1);
     const [writtenPath] = localAdapter.atomicWriteBinary.mock.calls[0];
     expect(writtenPath).toBe('a.md');
-    expect(record).toHaveBeenCalledWith('a.md', 'downloaded', expect.any(Number), undefined, expect.any(Object));
+    expect(record).toHaveBeenCalledWith('a.md', 'downloaded', expect.any(Number), undefined, expect.any(Object), expect.any(Number));
     expect(stateDB.setFile).toHaveBeenCalledTimes(1);
     expect(historyStore.save).toHaveBeenCalled();
   });

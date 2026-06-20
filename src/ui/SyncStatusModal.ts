@@ -3,10 +3,12 @@ import { SyncErrorDetail, SyncFileOp, SyncHistoryEntry } from '../types';
 import {
   ALL_FILTER_OPS,
   filterReport,
+  groupByRun,
   makeDefaultFilterState,
   StatusFilterState,
   SyncStatusReport,
 } from './statusFilter';
+import { formatClock24 } from './timeFormat';
 
 /** Status glyph + accessible label for each recorded file outcome. */
 const OP_LABEL: Record<SyncFileOp, { icon: string; text: string }> = {
@@ -19,16 +21,6 @@ const OP_LABEL: Record<SyncFileOp, { icon: string; text: string }> = {
   'remote-wins': { icon: '⬇', text: 'Remote wins' },
   error: { icon: '✗', text: 'Error' },
 };
-
-/** Compact "5m ago" / "2h ago" / "just now" label for a past timestamp. */
-function formatAgo(at: number, now: number): string {
-  const sec = Math.max(0, Math.floor((now - at) / 1000));
-  if (sec < 60) return 'just now';
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  return `${hr}h ${min % 60}m ago`;
-}
 
 /**
  * Opened by clicking the status bar item (desktop only). Shows the last sync summary and the
@@ -48,6 +40,8 @@ export class SyncStatusModal extends Modal {
      * the choice persists until Obsidian restarts. Defaults to all-checked when omitted.
      */
     private readonly filterState: StatusFilterState = makeDefaultFilterState(),
+    /** Called after every filter toggle so the host can persist the selection (FR-011/013). */
+    private readonly onFilterChange?: () => void,
   ) {
     super(app);
   }
@@ -116,7 +110,7 @@ export class SyncStatusModal extends Modal {
   private addFilterRow(): void {
     const setting = new Setting(this.contentEl)
       .setName('Filter by status')
-      .setDesc('Show only the selected statuses. All on by default; resets when Obsidian restarts.');
+      .setDesc('Show only the selected statuses. All on by default; your selection is remembered.');
     const row = setting.controlEl.createDiv({ cls: 'ncs-status-filter' });
     for (const op of ALL_FILTER_OPS) {
       const { icon, text } = OP_LABEL[op];
@@ -126,6 +120,7 @@ export class SyncStatusModal extends Modal {
       cb.addEventListener('change', () => {
         if (cb.checked) this.filterState.checked.add(op);
         else this.filterState.checked.delete(op);
+        this.onFilterChange?.(); // persist the selection immediately (survives restart)
         this.render();
       });
       label.createSpan({ text: ` ${icon} ${text}` });
@@ -150,27 +145,36 @@ export class SyncStatusModal extends Modal {
 
     const now = Date.now();
     const list = contentEl.createEl('div', { cls: 'ncs-status-list ncs-history-list' });
-    for (const e of history) {
-      const op = OP_LABEL[e.op];
-      const row = list.createEl('div', { cls: 'ncs-status-row' });
-      // One compact line per entry: a leading status icon (hover shows the word) conveys the
-      // outcome, then the path, then a muted relative time — no separate status-word line.
-      const line = row.createEl('div', { cls: 'ncs-history-line' });
-      line.createSpan({ cls: 'ncs-history-icon', text: op.icon, attr: { 'aria-label': op.text, title: op.text } });
-      line.createSpan({ cls: 'ncs-history-path', text: e.path });
-      line.createSpan({ cls: 'ncs-history-time', text: formatAgo(e.at, now) });
-      // Errors keep their reason on a second, muted line; the icon already encodes the status.
-      if (e.op === 'error' && e.message) {
-        row.createEl('div', { text: e.message, cls: 'setting-item-description ncs-history-errmsg' });
-      }
-      // Deleted files no longer exist locally — don't make them clickable (would recreate the note).
-      if (e.op === 'deleted') {
-        row.addClass('ncs-status-row-static');
-      } else {
-        row.addEventListener('click', () => {
-          void this.app.workspace.openLinkText(e.path, '', false);
-          this.close();
-        });
+    // Group the (already-filtered) entries by the sync run that produced them, newest run first, and
+    // head each group with a separator showing that run's start time in 24-hour absolute format, so a
+    // user can tell which sync execution every line belongs to.
+    for (const group of groupByRun(history)) {
+      list.createEl('div', {
+        cls: 'ncs-history-run-sep',
+        text: `— sync ${formatClock24(group.runStartedAt, now)} —`,
+      });
+      for (const e of group.entries) {
+        const op = OP_LABEL[e.op];
+        const row = list.createEl('div', { cls: 'ncs-status-row' });
+        // One compact line per entry: a leading status icon (hover shows the word) conveys the
+        // outcome, then the path, then the entry's own 24-hour time.
+        const line = row.createEl('div', { cls: 'ncs-history-line' });
+        line.createSpan({ cls: 'ncs-history-icon', text: op.icon, attr: { 'aria-label': op.text, title: op.text } });
+        line.createSpan({ cls: 'ncs-history-path', text: e.path });
+        line.createSpan({ cls: 'ncs-history-time', text: formatClock24(e.at, now) });
+        // Errors keep their reason on a second, muted line; the icon already encodes the status.
+        if (e.op === 'error' && e.message) {
+          row.createEl('div', { text: e.message, cls: 'setting-item-description ncs-history-errmsg' });
+        }
+        // Deleted files no longer exist locally — don't make them clickable (would recreate the note).
+        if (e.op === 'deleted') {
+          row.addClass('ncs-status-row-static');
+        } else {
+          row.addEventListener('click', () => {
+            void this.app.workspace.openLinkText(e.path, '', false);
+            this.close();
+          });
+        }
       }
     }
   }

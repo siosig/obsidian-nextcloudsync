@@ -468,20 +468,14 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Last session summary')
+      .setDesc('Open the sync status dialog: recent activity grouped by sync run, conflicts, retries, and errors.')
       .addButton(btn => btn
         .setButtonText('View')
         .onClick(() => {
-          const summary = this.plugin.syncEngine?.getLastSessionSummary();
-          if (!summary) {
-            new Notice('No sync session yet.');
-            return;
-          }
-          const date = new Date(summary.startedAt).toLocaleString();
-          new Notice(
-            `Last sync: ${date}\n` +
-            `↑ ${summary.uploadedCount}  ↓ ${summary.downloadedCount}  ⟷ ${summary.mergedCount}  ⚠️ ${summary.conflictedCount}  ✗ ${summary.errorCount}`,
-            8000,
-          );
+          // Open the full Sync Status dialog (desktop and mobile), not just a one-line toast. On
+          // mobile this is the only way to reach it (no status bar). openSyncStatus handles the
+          // not-configured case with its own notice.
+          this.plugin.openSyncStatus();
         }));
   }
 

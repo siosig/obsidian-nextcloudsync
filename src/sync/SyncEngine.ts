@@ -89,6 +89,8 @@ export class SyncEngine {
    * The sync's finally block (state save) still runs, so no partial-progress state is lost.
    */
   private cancelled = false;
+  /** Start time of the in-progress full sync (= summary.startedAt); null outside a full sync run. */
+  private currentRunStartedAt: number | null = null;
   /** Currently held lock tokens (path → token). */
   private readonly heldLocks = new Map<string, string>();
   /** Progress counters updated during a sync run (reset each run). */
@@ -169,6 +171,7 @@ export class SyncEngine {
     this.syncProgress = { processed: 0, total: 0 };
     this.opts.statusBar.setStatus('syncing');
     const summary = this.initSummary();
+    this.currentRunStartedAt = summary.startedAt; // tag this run's history entries for grouping
 
     let cancelled = false;
     try {
@@ -206,6 +209,7 @@ export class SyncEngine {
       // NoticeStatusBar (a result toast) on mobile, both via setSyncComplete above. Genuine
       // failures still surface via the catch-block notice / NextcloudErrorParser.
       this.running = false;
+      this.currentRunStartedAt = null;
     }
   }
 
@@ -570,7 +574,11 @@ export class SyncEngine {
 
   /** Append one per-file outcome to the persisted 24h history (no-op when no store is injected). */
   private recordHistory(path: string, op: SyncFileOp, message?: string, detail?: SyncHistoryDetail): void {
-    this.opts.historyStore?.record(path, op, Date.now(), message, detail);
+    const now = Date.now();
+    // Group key for the Sync Status dialog: the active full-sync run's start time, or — for watch-mode
+    // single-file ops (no session) — this op's own time, so each forms its own group.
+    const runStartedAt = this.currentRunStartedAt ?? now;
+    this.opts.historyStore?.record(path, op, now, message, detail, runStartedAt);
   }
 
   /** First-ever sync: full scan → Dry Run → user approval → execute. Returns false if cancelled. */

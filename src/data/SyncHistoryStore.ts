@@ -50,10 +50,12 @@ export class SyncHistoryStore {
    */
   record(
     path: string, op: SyncFileOp, at: number = Date.now(),
-    message?: string, detail?: SyncHistoryDetail,
+    message?: string, detail?: SyncHistoryDetail, runStartedAt?: number,
   ): void {
     const entry: SyncHistoryEntry = { path, op, at };
     if (message) entry.message = message;
+    // Tag the entry with its sync run's start time so the dialog can group activity by run.
+    if (runStartedAt !== undefined) entry.runStartedAt = runStartedAt;
     if (detail) {
       if (detail.localHash !== undefined) entry.localHash = detail.localHash;
       if (detail.remoteId !== undefined) entry.remoteId = detail.remoteId;
