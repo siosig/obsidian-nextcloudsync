@@ -74,11 +74,6 @@ export default class ObsidianNextcloudsync extends Plugin {
       () => syncLogPath(this.settings.logsFolder, this.hostToken()),
     );
 
-    // Initialize SyncEngine (lazy — only when settings are complete)
-    if (this.settings.serverUrl && this.settings.username) {
-      await this.initSyncEngine();
-    }
-
     this.addSettingTab(new NextcloudSyncSettingTab(this.app, this));
 
     this.addCommand({
@@ -115,53 +110,64 @@ export default class ObsidianNextcloudsync extends Plugin {
         .onClick(() => { new CompareModal(this.app, file.path, this.syncEngine!).open(); }));
     }));
 
-    // Watch mode: react to individual file events with lightweight single-file operations.
-    // Full vault sync is reserved for manual Sync Now and the periodic interval.
-    // Watch mode is disabled on mobile (OS suspends background work).
-    const guard = (file: TAbstractFile): file is TFile =>
-      this.settings.watchOnChangeEnabled && !Platform.isMobile && file instanceof TFile;
-
-    // Vault events caused by the plugin itself (downloads / conflict writes use atomic
-    // tmp-write → rename) must not be propagated back to the server, or every download
-    // turns into a spurious upload/MOVE/DELETE storm. SyncEngine marks its own writes in
-    // the LocalAdapter ignore list; tmp paths are filtered unconditionally.
-    const isOwnSyncEvent = (path: string): boolean =>
-      isSyncTmpPath(path) || (this.localAdapter?.shouldIgnore(path) ?? false);
-
-    // Accumulate paths changed during rapid editing and flush them together after the
-    // debounce window so each keystroke does not trigger a separate network request.
-    const pendingUploads = new Set<string>();
-    const debouncedUpload = debounce(() => {
-      const paths = [...pendingUploads];
-      pendingUploads.clear();
-      for (const path of paths) {
-        void this.syncEngine?.syncSingleFile(path);
+    // Defer the heavy work to layout-ready. Registering vault listeners during `onload` is a
+    // documented pitfall: the `create` event fires once per file while the vault initializes, so
+    // a fresh start would flood the watcher. onLayoutReady runs after that initial pass. The
+    // SyncEngine (and its lazy startup sync) is also initialized here to keep `onload` lightweight.
+    this.app.workspace.onLayoutReady(() => {
+      // Initialize SyncEngine (lazy — only when settings are complete).
+      if (this.settings.serverUrl && this.settings.username) {
+        void this.initSyncEngine();
       }
-    }, 2000, true);
 
-    this.registerEvent(this.app.vault.on('modify', (file: TAbstractFile) => {
-      if (!guard(file) || isOwnSyncEvent(file.path)) return;
-      pendingUploads.add(file.path);
-      debouncedUpload();
-    }));
-    this.registerEvent(this.app.vault.on('create', (file: TAbstractFile) => {
-      if (!guard(file) || isOwnSyncEvent(file.path)) return;
-      pendingUploads.add(file.path);
-      debouncedUpload();
-    }));
-    this.registerEvent(this.app.vault.on('delete', (file: TAbstractFile) => {
-      if (!guard(file)) return;
-      pendingUploads.delete(file.path); // cancel any pending upload for this path
-      if (isOwnSyncEvent(file.path)) return; // e.g. atomic write replacing the old copy
-      void this.syncEngine?.deleteSingleFile(file.path);
-    }));
-    this.registerEvent(this.app.vault.on('rename', (file: TAbstractFile, oldPath: string) => {
-      if (!guard(file)) return;
-      pendingUploads.delete(oldPath);
-      // tmp → target renames are the tail of the plugin's own atomic writes.
-      if (isOwnSyncEvent(oldPath) || isOwnSyncEvent(file.path)) return;
-      void this.syncEngine?.renameSingleFile(oldPath, file.path);
-    }));
+      // Watch mode: react to individual file events with lightweight single-file operations.
+      // Full vault sync is reserved for manual Sync Now and the periodic interval.
+      // Watch mode is disabled on mobile (OS suspends background work).
+      const guard = (file: TAbstractFile): file is TFile =>
+        this.settings.watchOnChangeEnabled && !Platform.isMobile && file instanceof TFile;
+
+      // Vault events caused by the plugin itself (downloads / conflict writes use atomic
+      // tmp-write → rename) must not be propagated back to the server, or every download
+      // turns into a spurious upload/MOVE/DELETE storm. SyncEngine marks its own writes in
+      // the LocalAdapter ignore list; tmp paths are filtered unconditionally.
+      const isOwnSyncEvent = (path: string): boolean =>
+        isSyncTmpPath(path) || (this.localAdapter?.shouldIgnore(path) ?? false);
+
+      // Accumulate paths changed during rapid editing and flush them together after the
+      // debounce window so each keystroke does not trigger a separate network request.
+      const pendingUploads = new Set<string>();
+      const debouncedUpload = debounce(() => {
+        const paths = [...pendingUploads];
+        pendingUploads.clear();
+        for (const path of paths) {
+          void this.syncEngine?.syncSingleFile(path);
+        }
+      }, 2000, true);
+
+      this.registerEvent(this.app.vault.on('modify', (file: TAbstractFile) => {
+        if (!guard(file) || isOwnSyncEvent(file.path)) return;
+        pendingUploads.add(file.path);
+        debouncedUpload();
+      }));
+      this.registerEvent(this.app.vault.on('create', (file: TAbstractFile) => {
+        if (!guard(file) || isOwnSyncEvent(file.path)) return;
+        pendingUploads.add(file.path);
+        debouncedUpload();
+      }));
+      this.registerEvent(this.app.vault.on('delete', (file: TAbstractFile) => {
+        if (!guard(file)) return;
+        pendingUploads.delete(file.path); // cancel any pending upload for this path
+        if (isOwnSyncEvent(file.path)) return; // e.g. atomic write replacing the old copy
+        void this.syncEngine?.deleteSingleFile(file.path);
+      }));
+      this.registerEvent(this.app.vault.on('rename', (file: TAbstractFile, oldPath: string) => {
+        if (!guard(file)) return;
+        pendingUploads.delete(oldPath);
+        // tmp → target renames are the tail of the plugin's own atomic writes.
+        if (isOwnSyncEvent(oldPath) || isOwnSyncEvent(file.path)) return;
+        void this.syncEngine?.renameSingleFile(oldPath, file.path);
+      }));
+    });
   }
 
   /**

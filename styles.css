@@ -6,7 +6,7 @@
 .ncs-auth-warning {
   border: 1px solid var(--text-error, #e93147);
   border-left: 4px solid var(--text-error, #e93147);
-  background: rgba(233, 49, 71, 0.10);
+  background: var(--background-modifier-error);
   color: var(--text-error, #e93147);
   padding: 10px 12px;
   margin: 4px 0 16px;
@@ -197,7 +197,7 @@
 }
 
 .ncs-diff-section-header.is-changed {
-  background: rgba(255, 185, 0, 0.18);
+  background: color-mix(in srgb, var(--color-yellow) 18%, transparent);
   color: var(--text-warning);
 }
 
@@ -244,11 +244,11 @@
 }
 
 .ncs-diff-cell.is-del {
-  background: rgba(255, 89, 89, 0.20);
+  background: color-mix(in srgb, var(--color-red) 20%, transparent);
 }
 
 .ncs-diff-cell.is-add {
-  background: rgba(83, 200, 110, 0.20);
+  background: color-mix(in srgb, var(--color-green) 20%, transparent);
 }
 
 /* Status-filter checkbox row in the Sync Status dialog */

@@ -19,7 +19,7 @@ export class VersionHistoryModal extends Modal {
   onOpen(): void {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.createEl('h2', { text: 'Version history' });
+    this.setTitle('Version history');
     contentEl.createEl('p', { text: this.filePath, cls: 'setting-item-description' });
 
     if (this.versions.length === 0) {

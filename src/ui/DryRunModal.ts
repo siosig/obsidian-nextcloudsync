@@ -27,7 +27,7 @@ export class DryRunModal extends Modal {
   onOpen(): void {
     const { contentEl, plan } = this;
     contentEl.empty();
-    contentEl.createEl('h2', { text: 'Sync preview (dry run)' });
+    this.setTitle('Sync preview (dry run)');
 
     const stats = contentEl.createEl('p');
     const addStat = (icon: string, count: number, label: string) => {
