@@ -63,9 +63,6 @@ describe('SyncEngine.buildInitialPlan — size-first lazy hash (Task 3)', () => 
     path, fileId: 'f', checksum: null, etag: 'e', size: 100, lastModified: 1, ...over,
   });
 
-  /** Known SHA-256 of an all-zero 4-byte buffer (computed independently). */
-  const ZERO4_SHA256 = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
-
   it('size-first: local-only file → uploads, readBinary NOT called', async () => {
     const readBinary = jest.fn(async () => new ArrayBuffer(0));
     const localAdapter = { readBinary };
@@ -91,8 +88,7 @@ describe('SyncEngine.buildInitialPlan — size-first lazy hash (Task 3)', () => 
   });
 
   it('size-first: size match + matching server checksum → unchanged, readBinary called for ONLY this file', async () => {
-    // readBinary returns 4 zero bytes — sha256('') is the known constant above.
-    // Actually, sha256 of an empty ArrayBuffer is the constant; use that.
+    // readBinary returns an empty ArrayBuffer; emptyHash is its known SHA-256.
     const emptyHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
     const readBinary = jest.fn(async () => new ArrayBuffer(0));
     const localAdapter = { readBinary };
