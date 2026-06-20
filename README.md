@@ -27,7 +27,11 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.5.0-beta.2)
+## What's new in this release (0.5.0-beta.3)
+
+- **Config folder sync has its own "Config folder (.obsidian)" heading (0.5.0-beta.3)** — the **Sync config folder** master toggle and its per-category toggles are grouped under a dedicated "Config folder (.obsidian)" heading again, separate from the general Sync settings. No behaviour change.
+
+## 0.5.0-beta.2
 
 - **Config folder sync moved into the Sync settings group (0.5.0-beta.2)** — the **Sync config folder** master toggle and its per-category toggles now appear within the existing **Sync** settings group instead of under a separate "Config folder" heading. No behaviour change.
 
