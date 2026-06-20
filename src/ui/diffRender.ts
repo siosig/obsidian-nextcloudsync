@@ -1,10 +1,10 @@
 // Shared frontmatter-aware, line-level LCS diff rendering. Used by DiffModal (merge preview)
 // and CompareModal (local vs remote compare) so both render diffs identically (DRY).
 
-export type DiffRow = { left?: string; right?: string; type: 'same' | 'del' | 'add' };
+type DiffRow = { left?: string; right?: string; type: 'same' | 'del' | 'add' };
 
 /** Line-level LCS diff between two texts. */
-export function lineDiff(aText: string, bText: string): DiffRow[] {
+function lineDiff(aText: string, bText: string): DiffRow[] {
   const a = aText.split('\n');
   const b = bText.split('\n');
   const m = a.length, n = b.length;
@@ -27,7 +27,7 @@ export function lineDiff(aText: string, bText: string): DiffRow[] {
 }
 
 /** Split a document into its frontmatter block and body. */
-export function splitFm(text: string): { fm: string; body: string; hasFm: boolean } {
+function splitFm(text: string): { fm: string; body: string; hasFm: boolean } {
   const m = text.match(/^---\r?\n[\s\S]*?\r?\n---/);
   if (!m) return { fm: '', body: text, hasFm: false };
   return { fm: m[0], body: text.slice(m[0].length).replace(/^\n/, ''), hasFm: true };

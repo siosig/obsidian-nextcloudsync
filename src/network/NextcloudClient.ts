@@ -9,6 +9,7 @@ import {
   ConflictError,
   FeatureUnsupportedError,
   FileLockedError,
+  MaintenanceModeError,
 } from '../types';
 import { IWebDAVClient } from './IWebDAVClient';
 import { DavSyncSettings } from '../types';
@@ -90,7 +91,7 @@ export class NextcloudClient implements IWebDAVClient {
     if (statusRes.status === 200) {
       const status = statusRes.json as Record<string, unknown>;
       if (status.maintenance === true) {
-        throw new Error('Nextcloud is in maintenance mode');
+        throw new MaintenanceModeError();
       }
     }
 

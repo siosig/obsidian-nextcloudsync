@@ -4,7 +4,7 @@ import {
   filterReport,
   makeDefaultFilterState,
   SyncStatusReport,
-} from '../../src/ui/SyncStatusModal';
+} from '../../src/ui/statusFilter';
 import { SyncFileOp, SyncHistoryEntry } from '../../src/types';
 
 function hist(path: string, op: SyncFileOp, at = 1000): SyncHistoryEntry {

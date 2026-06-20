@@ -9,7 +9,7 @@ export interface DryRunPlan {
   unchanged: string[];
 }
 
-export interface DryRunModalOptions {
+interface DryRunModalOptions {
   /** One-line explanation of what conflict resolution will produce (derived from settings). */
   conflictNote?: string;
   /** Called when a conflicted file row is selected, to open a read-only merge preview. */

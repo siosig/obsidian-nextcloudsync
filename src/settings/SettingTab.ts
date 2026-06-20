@@ -574,7 +574,7 @@ export function loadAppPassword(app: App, secretId: string): string | null {
  * Save the app password to SecretStorage (encrypted; never stored in data.json).
  * Used to store the password obtained via Login Flow v2.
  */
-export function saveAppPassword(app: App, secretId: string, value: string): void {
+function saveAppPassword(app: App, secretId: string, value: string): void {
   const id = secretId || DEFAULT_PASSWORD_SECRET_ID;
   app.secretStorage.setSecret(id, value);
 }

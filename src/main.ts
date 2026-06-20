@@ -3,7 +3,8 @@ import { DavSyncSettings, DEFAULT_SETTINGS, FeatureUnsupportedError, SyncHistory
 import { NextcloudSyncSettingTab } from './settings/SettingTab';
 import { SyncEngine } from './sync/SyncEngine';
 import { VersionHistoryModal } from './ui/VersionHistoryModal';
-import { SyncStatusModal, StatusFilterState, makeDefaultFilterState } from './ui/SyncStatusModal';
+import { SyncStatusModal } from './ui/SyncStatusModal';
+import { StatusFilterState, makeDefaultFilterState } from './ui/statusFilter';
 import { CompareModal } from './ui/CompareModal';
 import { FileLogger } from './util/FileLogger';
 import { isSyncTmpPath, LocalAdapter } from './data/LocalAdapter';
@@ -164,8 +165,8 @@ export default class ObsidianNextcloudsync extends Plugin {
   }
 
   /**
-   * Run "Sync Now". In debug mode, show a dry-run plan modal instead of syncing.
-   * Shared by the command and the settings button.
+   * Run "Sync Now". On the very first sync (no recorded state), the engine shows a dry-run plan
+   * modal for approval before applying anything. Shared by the command and the settings button.
    */
   async runSyncNow(): Promise<void> {
     void this.logger.log('sync: "Sync now" clicked');

@@ -2,13 +2,7 @@ import { App, Modal, Notice, Setting } from 'obsidian';
 import { RemoteCompareResult } from '../types';
 import { renderDiffSections } from './diffRender';
 import { confirmModal } from './ConfirmModal';
-
-/** The slice of SyncEngine that the compare popup needs (kept narrow for testability). */
-export interface CompareEngine {
-  compareWithRemote(path: string): Promise<RemoteCompareResult>;
-  pushLocalToRemote(path: string): Promise<void>;
-  pullRemoteToLocal(path: string): Promise<void>;
-}
+import { CompareEngine, RESOLUTION_STRATEGIES, ResolutionStrategy } from './compareResolution';
 
 function fmtTime(ms: number | null): string {
   return ms != null ? new Date(ms).toLocaleString() : '—';
@@ -139,22 +133,14 @@ export class CompareModal extends Modal {
     }
   }
 
-  /** Push / pull resolution buttons (each behind a confirmation), shown only when applicable. */
+  /** One button per applicable resolution strategy (each behind a confirmation), plus Close. */
   private addActions(r: RemoteCompareResult): void {
     const setting = new Setting(this.contentEl);
-    // Push (local → remote): meaningful whenever a local file exists (creates or overwrites remote).
-    if (r.localExists) {
+    for (const strategy of RESOLUTION_STRATEGIES.filter(s => s.isApplicable(r))) {
       setting.addButton(btn => btn
-        .setButtonText('Push (overwrite remote)')
+        .setButtonText(strategy.buttonLabel)
         .setClass('mod-warning')
-        .onClick(() => void this.resolve('push')));
-    }
-    // Pull (remote → local): only when a remote counterpart exists.
-    if (r.remoteExists) {
-      setting.addButton(btn => btn
-        .setButtonText('Pull (overwrite local)')
-        .setClass('mod-warning')
-        .onClick(() => void this.resolve('pull')));
+        .onClick(() => void this.runStrategy(strategy)));
     }
     setting.addButton(btn => btn.setButtonText('Close').onClick(() => this.close()));
   }
@@ -163,30 +149,21 @@ export class CompareModal extends Modal {
     new Setting(this.contentEl).addButton(btn => btn.setButtonText('Close').setCta().onClick(() => this.close()));
   }
 
-  private async resolve(direction: 'push' | 'pull'): Promise<void> {
+  private async runStrategy(strategy: ResolutionStrategy): Promise<void> {
     if (this.busy) return;
-    const isPush = direction === 'push';
-    const ok = await confirmModal(this.app, {
-      title: isPush ? 'Overwrite remote?' : 'Overwrite local?',
-      message: isPush
-        ? `This overwrites the remote copy of "${this.path}" with your local version. This cannot be undone.`
-        : `This overwrites your local copy of "${this.path}" with the remote version. This cannot be undone.`,
-      cta: isPush ? 'Push' : 'Pull',
-      destructive: true,
-    });
+    const ok = await confirmModal(this.app, strategy.confirmOptions(this.path));
     if (!ok) return;
 
     this.busy = true;
     try {
-      if (isPush) await this.engine.pushLocalToRemote(this.path);
-      else await this.engine.pullRemoteToLocal(this.path);
+      await strategy.execute(this.engine, this.path);
     } catch (err) {
       this.busy = false;
-      new Notice(`${isPush ? 'Push' : 'Pull'} failed: ${(err as Error)?.message ?? err}`);
+      new Notice(`${strategy.name} failed: ${(err as Error)?.message ?? err}`);
       return; // leave the popup as-is; do NOT claim success
     }
     this.busy = false;
-    new Notice(isPush ? 'Pushed local to remote.' : 'Pulled remote to local.');
+    new Notice(strategy.successNotice);
     // Re-run the comparison so the popup reflects the now-matching state.
     this.renderLoading();
     await this.load();

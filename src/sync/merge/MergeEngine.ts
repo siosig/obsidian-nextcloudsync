@@ -5,7 +5,7 @@ import { Diff3Strategy } from './Diff3Strategy';
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
 
-export interface MergeEngineOptions {
+interface MergeEngineOptions {
   maxConflictRegions: number;
   /** What to do when frontmatter differs. Default 'conflict' inserts markers for the whole file. */
   frontmatterConflictStrategy?: 'local-wins' | 'remote-wins' | 'conflict';

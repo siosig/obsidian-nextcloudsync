@@ -333,24 +333,6 @@ export interface FileVersion {
   size: number;
 }
 
-// ── US3: Chunked Upload (implementation internal) ───────────────────────────
-
-/** Progress state of a chunked upload. */
-export interface ChunkUploadSession {
-  uploadId: string;
-  remotePath: string;
-  totalBytes: number;
-  chunkSizeBytes: number;
-}
-
-// ── US4: Files Locking (implementation internal) ────────────────────────────
-
-/** A held server-side lock. */
-export interface FileLock {
-  path: string;
-  token: string;
-}
-
 // Custom errors
 export class SyncTokenExpiredError extends Error {
   constructor() { super('sync-token expired (HTTP 410)'); this.name = 'SyncTokenExpiredError'; }
