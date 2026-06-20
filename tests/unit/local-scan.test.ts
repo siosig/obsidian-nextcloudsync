@@ -84,7 +84,7 @@ describe('local-scan: Vault-cache enumeration (Task 2 / P0)', () => {
     expect(rawAdapter.list).not.toHaveBeenCalled();
   });
 
-  it('scanLocalFiles returns Vault-tracked files and does NOT call adapter.list', async () => {
+  it('scanLocalFiles returns Vault-tracked files with size+mtime and does NOT call adapter.list', async () => {
     const rawAdapter = makeDataAdapter();
     const vault = makeVault(
       [new MockTFile('note.md', { size: 5, mtime: 500 })],
@@ -93,16 +93,17 @@ describe('local-scan: Vault-cache enumeration (Task 2 / P0)', () => {
     const localAdapter = new LocalAdapter(rawAdapter, vault);
     const engine = makeEngine(localAdapter);
 
+    // Task 3: scanLocalFiles returns only size+mtime; no hash field.
     const result = await (engine as unknown as {
-      scanLocalFiles(): Promise<Map<string, { hash: string; size: number; mtime: number }>>;
+      scanLocalFiles(): Promise<Map<string, { size: number; mtime: number }>>;
     }).scanLocalFiles();
 
     expect(result.has('note.md')).toBe(true);
     const entry = result.get('note.md')!;
     expect(entry.size).toBe(5);
     expect(entry.mtime).toBe(500);
-    // Hash must be a non-empty string (file is small, below MAX_HASH_SIZE).
-    expect(entry.hash).not.toBe('');
+    // No readBinary should be called — hashing is deferred to buildInitialPlan.
+    expect(rawAdapter.readBinary).not.toHaveBeenCalled();
 
     // adapter.list must NOT be invoked.
     expect(rawAdapter.list).not.toHaveBeenCalled();

@@ -568,7 +568,7 @@ export class SyncEngine {
     // files already identical on both sides are recognised as unchanged instead of conflicts.
     await this.resolveRemoteChecksums(remoteFiles, localFiles);
 
-    const plan = this.buildInitialPlan(localFiles, remoteFiles);
+    const plan = await this.buildInitialPlan(localFiles, remoteFiles);
     // No recorded state yet, so every local file the server lacks is planned as an UPLOAD —
     // including files that were deleted on another device. This is a resurrection path; log the
     // plan (and the would-be uploads) so a captured log shows whether a "deleted" file is pushed back.
@@ -1428,10 +1428,10 @@ export class SyncEngine {
     }
   }
 
-  private buildInitialPlan(
-    localFiles: Map<string, { hash: string; size: number; mtime: number }>,
+  private async buildInitialPlan(
+    localFiles: Map<string, { size: number; mtime: number }>,
     remoteFiles: RemoteFileInfo[],
-  ): InitialSyncPlan {
+  ): Promise<InitialSyncPlan> {
     const uploads: string[] = [];
     const downloads: string[] = [];
     const conflicts: string[] = [];
@@ -1440,14 +1440,14 @@ export class SyncEngine {
 
     for (const [path, lf] of localFiles) {
       const remote = remoteMap.get(path);
-      if (!remote) { uploads.push(path); continue; }
-      // Size-first (P0-C): a size mismatch always means the content changed — classify as a conflict
-      // WITHOUT computing a local hash (the hash is only needed to prove "unchanged"). Only when the
-      // sizes match do we use the server-computed SHA-256 == local hash check to conclude "unchanged";
-      // when the server checksum is unavailable or the local hash was size-gated (lf.hash === ''),
-      // fall back to conflict resolution.
-      if (remote.size !== lf.size) { conflicts.push(path); continue; }
-      if (remote.checksum && lf.hash && remote.checksum === lf.hash) unchanged.push(path);
+      if (!remote) { uploads.push(path); continue; }              // new local file — no hash needed
+      if (remote.size !== lf.size) { conflicts.push(path); continue; } // size differs — conflict, no hash
+      // Sizes match: hash is needed ONLY to prove "unchanged", and only when the server provided a
+      // checksum to compare against. Without a server checksum, or for large files exceeding the
+      // size-gate, fall back to conflict resolution without reading the file.
+      if (!remote.checksum || lf.size > MAX_HASH_SIZE) { conflicts.push(path); continue; }
+      const localHash = await sha256(await this.opts.localAdapter.readBinary(path));
+      if (localHash === remote.checksum) unchanged.push(path);
       else conflicts.push(path);
     }
     for (const remote of remoteFiles) {
@@ -1459,10 +1459,11 @@ export class SyncEngine {
 
   private async executePlan(
     plan: InitialSyncPlan, remoteFiles: RemoteFileInfo[], summary: SyncSessionSummary,
-    localFiles: Map<string, { hash: string; size: number; mtime: number }>,
+    localFiles: Map<string, { size: number; mtime: number }>,
   ): Promise<void> {
-    // P0-C: the caller (initialSync) already scanned+hashed the vault once; reuse that map instead of
-    // re-scanning here. This removes a full second whole-vault read+SHA-256 pass on the first sync.
+    // P0-C: the caller (initialSync) already scanned the vault; reuse the stat map instead of
+    // re-scanning here. Hashing is deferred to upload time (or was already done in buildInitialPlan
+    // for unchanged files, which use remote.checksum as the authoritative hash).
     const remoteMap = new Map(remoteFiles.map(f => [f.path, f]));
     const actionFiles = plan.uploads.length + plan.downloads.length + plan.conflicts.length;
     this.syncProgress = { processed: 0, total: actionFiles };
@@ -1478,9 +1479,9 @@ export class SyncEngine {
           const lf = localFiles.get(path);
           if (!lf) return;
           const data = await this.opts.localAdapter.readBinary(path);
-          // Size-gated large files were not pre-hashed during the scan (lf.hash === ''); compute the
-          // hash now from the bytes we just read so the recorded state has a real content hash.
-          const localHash = lf.hash || await sha256(data);
+          // Task 3: no pre-hash in the scan; compute the hash now from the bytes we just read so the
+          // recorded state has a real content hash (also reused for the OC-Checksum upload header).
+          const localHash = await sha256(data);
           // P1-C: reuse the hash we just computed from THIS exact buffer for the OC-Checksum header
           // (safe — same bytes), so the client doesn't hash the file a second time.
           const outcome = await this.uploadStrategy!.upload(this.client!, path, data, lf.mtime, { precomputedSha256: localHash });
@@ -1521,8 +1522,10 @@ export class SyncEngine {
       if (remote.lastModified) {
         await this.opts.localAdapter.setMtime(path, remote.lastModified);
       }
+      // buildInitialPlan classified this file as unchanged only after confirming localHash === remote.checksum,
+      // so remote.checksum is the authoritative content hash for both sides.
       this.opts.stateDB.setFile(await this.withLocalSignature({
-        path, localHash: lf.hash, remoteId: remote.checksum ?? lf.hash, idType: 'sha256',
+        path, localHash: remote.checksum!, remoteId: remote.checksum!, idType: 'sha256',
         size: lf.size, mtime, remoteFileId: remote.fileId, isConflicted: false,
       }, remote.lastModified));
     }
@@ -1555,7 +1558,7 @@ export class SyncEngine {
    */
   private async resolveRemoteChecksums(
     remoteFiles: RemoteFileInfo[],
-    localFiles: Map<string, { hash: string; size: number; mtime: number }>,
+    localFiles: Map<string, { size: number; mtime: number }>,
   ): Promise<void> {
     const targets = remoteFiles.filter(rf => !rf.checksum && localFiles.has(rf.path));
     const concurrency = Math.max(1, this.opts.settings.networkConcurrency);
@@ -1570,23 +1573,20 @@ export class SyncEngine {
     }
   }
 
-  private async scanLocalFiles(): Promise<Map<string, { hash: string; size: number; mtime: number }>> {
-    const results = new Map<string, { hash: string; size: number; mtime: number }>();
+  private async scanLocalFiles(): Promise<Map<string, { size: number; mtime: number }>> {
+    const results = new Map<string, { size: number; mtime: number }>();
     // Enumerate Vault-tracked files from the in-memory index (no native FS round-trips on mobile).
+    // Task 3 (P1): hashing is deferred entirely to buildInitialPlan, which only hashes files that
+    // need a checksum comparison to be classified as unchanged (remote exists + sizes match + server
+    // checksum present). This eliminates all readBinary calls during the initial scan on mobile.
     for (const e of this.opts.localAdapter.listVaultFiles()) {
       if (this.isSystemExcluded(e.path)) continue;
-      // Size-gate (P0-C): defer hashing of large files; hashed lazily at upload.
-      const hash = e.size > MAX_HASH_SIZE ? '' : await sha256(await this.opts.localAdapter.readBinary(e.path));
-      results.set(e.path, { hash, size: e.size, mtime: e.mtime });
+      results.set(e.path, { size: e.size, mtime: e.mtime });
     }
     // The config folder is not Vault-tracked; inject the enabled config-sync category paths explicitly.
     for (const p of await this.configSync.enumerateIncludedPaths()) {
       const stat = await this.opts.localAdapter.stat(p);
-      if (stat) {
-        // Size-gate (P0-C): defer hashing of large files (hash computed lazily at upload).
-        const hash = stat.size > MAX_HASH_SIZE ? '' : await sha256(await this.opts.localAdapter.readBinary(p));
-        results.set(p, { hash, size: stat.size, mtime: stat.mtime });
-      }
+      if (stat) results.set(p, { size: stat.size, mtime: stat.mtime });
     }
     return results;
   }

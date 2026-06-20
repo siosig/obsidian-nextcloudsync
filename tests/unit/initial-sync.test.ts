@@ -53,55 +53,135 @@ function makeEngine(localAdapter: unknown) {
   return new SyncEngine(opts as never);
 }
 
-type PlanMap = Map<string, { hash: string; size: number; mtime: number }>;
+/** LocalFiles type after Task 3: no hash field. */
+type LocalFiles = Map<string, { size: number; mtime: number }>;
+
+// --- Task 3: size-first hashing — buildInitialPlan is now async and hashes lazily ---
+
+describe('SyncEngine.buildInitialPlan — size-first lazy hash (Task 3)', () => {
+  const remote = (path: string, over: Partial<RemoteFileInfo> = {}): RemoteFileInfo => ({
+    path, fileId: 'f', checksum: null, etag: 'e', size: 100, lastModified: 1, ...over,
+  });
+
+  /** Known SHA-256 of an all-zero 4-byte buffer (computed independently). */
+  const ZERO4_SHA256 = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+
+  it('size-first: local-only file → uploads, readBinary NOT called', async () => {
+    const readBinary = jest.fn(async () => new ArrayBuffer(0));
+    const localAdapter = { readBinary };
+    const engine = makeEngine(localAdapter);
+    const localFiles: LocalFiles = new Map([['local.md', { size: 10, mtime: 1 }]]);
+    const plan = await (engine as unknown as {
+      buildInitialPlan(l: LocalFiles, r: RemoteFileInfo[]): Promise<{ uploads: string[]; downloads: string[]; conflicts: string[]; unchanged: string[] }>;
+    }).buildInitialPlan(localFiles, []);
+    expect(plan.uploads).toContain('local.md');
+    expect(readBinary).not.toHaveBeenCalled();
+  });
+
+  it('size-first: size mismatch → conflicts, readBinary NOT called', async () => {
+    const readBinary = jest.fn(async () => new ArrayBuffer(0));
+    const localAdapter = { readBinary };
+    const engine = makeEngine(localAdapter);
+    const localFiles: LocalFiles = new Map([['a.md', { size: 50, mtime: 1 }]]);
+    const plan = await (engine as unknown as {
+      buildInitialPlan(l: LocalFiles, r: RemoteFileInfo[]): Promise<{ uploads: string[]; downloads: string[]; conflicts: string[]; unchanged: string[] }>;
+    }).buildInitialPlan(localFiles, [remote('a.md', { size: 100, checksum: 'SOMESUM' })]);
+    expect(plan.conflicts).toContain('a.md');
+    expect(readBinary).not.toHaveBeenCalled();
+  });
+
+  it('size-first: size match + matching server checksum → unchanged, readBinary called for ONLY this file', async () => {
+    // readBinary returns 4 zero bytes — sha256('') is the known constant above.
+    // Actually, sha256 of an empty ArrayBuffer is the constant; use that.
+    const emptyHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+    const readBinary = jest.fn(async () => new ArrayBuffer(0));
+    const localAdapter = { readBinary };
+    const engine = makeEngine(localAdapter);
+    // Three files: one upload (no remote), one size-mismatch (conflict), one match (unchanged).
+    const localFiles: LocalFiles = new Map([
+      ['upload.md', { size: 10, mtime: 1 }],
+      ['conflict.md', { size: 50, mtime: 1 }],
+      ['match.md', { size: 0, mtime: 1 }],
+    ]);
+    const plan = await (engine as unknown as {
+      buildInitialPlan(l: LocalFiles, r: RemoteFileInfo[]): Promise<{ uploads: string[]; downloads: string[]; conflicts: string[]; unchanged: string[] }>;
+    }).buildInitialPlan(localFiles, [
+      remote('conflict.md', { size: 100, checksum: emptyHash }),
+      remote('match.md', { size: 0, checksum: emptyHash }),
+    ]);
+    expect(plan.uploads).toContain('upload.md');
+    expect(plan.conflicts).toContain('conflict.md');
+    expect(plan.unchanged).toContain('match.md');
+    // readBinary should be called ONLY for match.md (the only file needing a hash proof).
+    expect(readBinary).toHaveBeenCalledTimes(1);
+    expect(readBinary).toHaveBeenCalledWith('match.md');
+  });
+
+  it('size-first: size match but no server checksum → conflict, readBinary NOT called', async () => {
+    const readBinary = jest.fn(async () => new ArrayBuffer(0));
+    const localAdapter = { readBinary };
+    const engine = makeEngine(localAdapter);
+    const localFiles: LocalFiles = new Map([['a.md', { size: 100, mtime: 1 }]]);
+    const plan = await (engine as unknown as {
+      buildInitialPlan(l: LocalFiles, r: RemoteFileInfo[]): Promise<{ uploads: string[]; downloads: string[]; conflicts: string[]; unchanged: string[] }>;
+    }).buildInitialPlan(localFiles, [remote('a.md', { size: 100, checksum: null })]);
+    expect(plan.conflicts).toContain('a.md');
+    expect(readBinary).not.toHaveBeenCalled();
+  });
+
+  it('size-first: size match but file exceeds MAX_HASH_SIZE → conflict, readBinary NOT called', async () => {
+    const readBinary = jest.fn(async () => new ArrayBuffer(0));
+    const localAdapter = { readBinary };
+    const engine = makeEngine(localAdapter);
+    const bigSize = MAX_HASH_SIZE + 1;
+    const localFiles: LocalFiles = new Map([['big.bin', { size: bigSize, mtime: 1 }]]);
+    const plan = await (engine as unknown as {
+      buildInitialPlan(l: LocalFiles, r: RemoteFileInfo[]): Promise<{ uploads: string[]; downloads: string[]; conflicts: string[]; unchanged: string[] }>;
+    }).buildInitialPlan(localFiles, [remote('big.bin', { size: bigSize, checksum: 'SOMESUM' })]);
+    expect(plan.conflicts).toContain('big.bin');
+    expect(readBinary).not.toHaveBeenCalled();
+  });
+});
+
+// --- Legacy tests updated for Task 3 type (no hash in LocalFiles) ---
 
 describe('SyncEngine.buildInitialPlan — size-first (P0-C / FR-011)', () => {
-  const engine = makeEngine({});
-  const buildPlan = (local: PlanMap, remote: RemoteFileInfo[]) =>
-    (engine as unknown as { buildInitialPlan(l: PlanMap, r: RemoteFileInfo[]): { uploads: string[]; downloads: string[]; conflicts: string[]; unchanged: string[] } })
+  const engine = makeEngine({
+    readBinary: jest.fn(async () => new ArrayBuffer(0)),
+  });
+  const buildPlan = (local: LocalFiles, remote: RemoteFileInfo[]) =>
+    (engine as unknown as { buildInitialPlan(l: LocalFiles, r: RemoteFileInfo[]): Promise<{ uploads: string[]; downloads: string[]; conflicts: string[]; unchanged: string[] }> })
       .buildInitialPlan(local, remote);
 
   const remote = (path: string, over: Partial<RemoteFileInfo> = {}): RemoteFileInfo => ({
     path, fileId: 'f', checksum: null, etag: 'e', size: 100, lastModified: 1, ...over,
   });
 
-  it('classifies a both-sides file with differing size as a conflict (no hash needed)', () => {
-    const local: PlanMap = new Map([['a.md', { hash: 'AAA', size: 50, mtime: 1 }]]);
-    const plan = buildPlan(local, [remote('a.md', { size: 100, checksum: 'AAA' })]);
-    // Sizes differ → conflict, even though the (stale) checksum string happens to equal the local hash.
+  it('classifies a both-sides file with differing size as a conflict (no hash needed)', async () => {
+    const local: LocalFiles = new Map([['a.md', { size: 50, mtime: 1 }]]);
+    const plan = await buildPlan(local, [remote('a.md', { size: 100, checksum: 'AAA' })]);
+    // Sizes differ → conflict.
     expect(plan.conflicts).toContain('a.md');
     expect(plan.unchanged).not.toContain('a.md');
   });
 
-  it('classifies same-size + matching server SHA-256 as unchanged', () => {
-    const local: PlanMap = new Map([['a.md', { hash: 'HASH', size: 100, mtime: 1 }]]);
-    const plan = buildPlan(local, [remote('a.md', { size: 100, checksum: 'HASH' })]);
-    expect(plan.unchanged).toContain('a.md');
-  });
-
-  it('classifies same-size with no server checksum as a conflict (cannot prove unchanged)', () => {
-    const local: PlanMap = new Map([['a.md', { hash: 'HASH', size: 100, mtime: 1 }]]);
-    const plan = buildPlan(local, [remote('a.md', { size: 100, checksum: null })]);
+  it('classifies same-size with no server checksum as a conflict (cannot prove unchanged)', async () => {
+    const local: LocalFiles = new Map([['a.md', { size: 100, mtime: 1 }]]);
+    const plan = await buildPlan(local, [remote('a.md', { size: 100, checksum: null })]);
     expect(plan.conflicts).toContain('a.md');
   });
 
-  it('classifies same-size but size-gated (empty local hash) as a conflict', () => {
-    const local: PlanMap = new Map([['big.bin', { hash: '', size: 100, mtime: 1 }]]);
-    const plan = buildPlan(local, [remote('big.bin', { size: 100, checksum: 'SOMETHING' })]);
-    expect(plan.conflicts).toContain('big.bin');
-  });
-
-  it('uploads a local-only file and downloads a remote-only file', () => {
-    const local: PlanMap = new Map([['localonly.md', { hash: 'H', size: 10, mtime: 1 }]]);
-    const plan = buildPlan(local, [remote('remoteonly.md')]);
+  it('uploads a local-only file and downloads a remote-only file', async () => {
+    const local: LocalFiles = new Map([['localonly.md', { size: 10, mtime: 1 }]]);
+    const plan = await buildPlan(local, [remote('remoteonly.md')]);
     expect(plan.uploads).toContain('localonly.md');
     expect(plan.downloads).toContain('remoteonly.md');
   });
 });
 
-describe('SyncEngine.scanLocalFiles — size-gate (P0-C / FR-012)', () => {
-  it('does not pre-hash files larger than MAX_HASH_SIZE', async () => {
-    // Migrate to Vault-mock approach (Task 2: scanLocalFiles now reads from listVaultFiles()).
+describe('SyncEngine.scanLocalFiles — no pre-hashing (Task 3 / FR-012)', () => {
+  it('returns only size+mtime; readBinary is never called during the scan', async () => {
+    // Task 3: scanLocalFiles no longer hashes files at all.
     const readBinary = jest.fn(async () => new ArrayBuffer(1));
     const rawAdapter = makeDataAdapter();
     (rawAdapter.readBinary as jest.Mock).mockImplementation(readBinary);
@@ -114,11 +194,12 @@ describe('SyncEngine.scanLocalFiles — size-gate (P0-C / FR-012)', () => {
     );
     const localAdapter = new LocalAdapter(rawAdapter, vault);
     const engine = makeEngine(localAdapter);
-    const scan = await (engine as unknown as { scanLocalFiles(): Promise<Map<string, { hash: string; size: number; mtime: number }>> }).scanLocalFiles();
-    expect(scan.get('small.md')?.hash).not.toBe('');
-    expect(scan.get('big.bin')?.hash).toBe(''); // deferred
-    // readBinary called for the small file only, not the large one.
-    expect(readBinary).toHaveBeenCalledTimes(1);
+    const scan = await (engine as unknown as { scanLocalFiles(): Promise<Map<string, { size: number; mtime: number }>> }).scanLocalFiles();
+    // Both files must be present with correct stats.
+    expect(scan.get('small.md')).toEqual({ size: 4, mtime: 1 });
+    expect(scan.get('big.bin')).toEqual({ size: MAX_HASH_SIZE + 1, mtime: 1 });
+    // readBinary must NOT be called at all during the scan.
+    expect(readBinary).not.toHaveBeenCalled();
   });
 });
 
@@ -136,7 +217,7 @@ describe('SyncEngine.executePlan — reuses the scan (P0-C / FR-010, no double h
     (engine as unknown as { opts: { stateDB: unknown } }).opts.stateDB = { setFile: jest.fn() };
     (engine as unknown as { opts: { statusBar: unknown } }).opts.statusBar = { setProgress: jest.fn() };
 
-    const localFiles = new Map([['a.md', { hash: 'H', size: 0, mtime: 1 }]]);
+    const localFiles: LocalFiles = new Map([['a.md', { size: 0, mtime: 1 }]]);
     await (engine as unknown as {
       executePlan(p: unknown, r: unknown[], s: unknown, l: unknown): Promise<void>;
     }).executePlan(
