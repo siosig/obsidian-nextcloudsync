@@ -27,7 +27,11 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.6.0-beta.1)
+## What's new in this release (0.6.0-beta.2)
+
+- **Sync Status dialog reachable on mobile, grouped by sync run (0.6.0-beta.2)** — the settings **Last session summary** button now opens the full Sync Status dialog on both desktop and mobile (previously a one-line toast, and mobile had no way to reach the dialog at all). Recent activity is now grouped by sync run, each group headed by a separator showing that run's start time in 24-hour format, and your status-filter selection is remembered across restarts.
+
+## 0.6.0-beta.1
 
 - **Much faster sync — mobile/Android no longer stalls (0.6.0-beta.1)** — change detection now records the file's modification time/size *as written* and compares against that, instead of relying on setting the modification time (which is a no-op on mobile). Previously every sync re-read and re-hashed the entire vault on mobile, eventually getting killed by the OS; now an unchanged file is skipped without being read. A same-size edit made within a 2-second window is still always detected (no lost edits).
 - **Faster first sync (0.6.0-beta.1)** — the initial sync no longer hashes the whole vault twice, decides "already in sync" by size first, and skips pre-hashing very large files.
