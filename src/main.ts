@@ -398,7 +398,7 @@ export default class ObsidianNextcloudsync extends Plugin {
     const { WebDAVFactory } = await import('./network/WebDAVFactory');
     const { loadAppPassword } = await import('./settings/SettingTab');
 
-    const localAdapter = new LocalAdapter(this.app.vault.adapter);
+    const localAdapter = new LocalAdapter(this.app.vault.adapter, this.app.vault);
     this.localAdapter = localAdapter;
     const pluginDir = `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
     const stateDB = new StateDB(this.app.vault.adapter, pluginDir, this.settings.deviceId);
