@@ -6,7 +6,9 @@ import { TFile, Vault, DataAdapter } from 'obsidian';
  * Task 2: Vault-cache enumeration for local scan (P0).
  *
  * Verifies that scanLocalFiles / collectLocalStats read from Vault.getFiles() (synchronous,
- * in-memory) rather than calling adapter.list() (async native bridge, expensive on mobile).
+ * in-memory) for the normal (non-dot) file set. adapter.list() is still called once for the
+ * root-level dot-path supplementation added in Task 7 (C1 fix), but NOT for recursive traversal
+ * of the regular vault tree — that traversal is replaced by the in-memory Vault index.
  */
 
 type MockTFileCtor = new (path: string, stat?: { ctime?: number; mtime?: number; size?: number }) => TFile;
@@ -57,7 +59,7 @@ function makeEngine(localAdapter: LocalAdapter) {
 }
 
 describe('local-scan: Vault-cache enumeration (Task 2 / P0)', () => {
-  it('collectLocalStats returns Vault-tracked files and does NOT call adapter.list', async () => {
+  it('collectLocalStats returns Vault-tracked files and does NOT call adapter.list for normal file traversal', async () => {
     const rawAdapter = makeDataAdapter();
     const vault = makeVault(
       [
@@ -80,11 +82,14 @@ describe('local-scan: Vault-cache enumeration (Task 2 / P0)', () => {
     expect(out.has('sub/b.md')).toBe(true);
     expect(out.get('sub/b.md')).toEqual({ size: 20, mtime: 2000 });
 
-    // Native adapter.list must NEVER be called (that is the whole point of this optimization).
-    expect(rawAdapter.list).not.toHaveBeenCalled();
+    // Task 7 (C1 fix): adapter.list is now called once at the root to enumerate dot paths.
+    // The normal vault tree is still served from the Vault cache (no recursive list traversal).
+    // The call count is 1 (root enumeration only, not per-subdirectory of the normal tree).
+    expect(rawAdapter.list).toHaveBeenCalledTimes(1);
+    expect(rawAdapter.list).toHaveBeenCalledWith('');
   });
 
-  it('scanLocalFiles returns Vault-tracked files with size+mtime and does NOT call adapter.list', async () => {
+  it('scanLocalFiles returns Vault-tracked files with size+mtime and does NOT recurse adapter.list for normal files', async () => {
     const rawAdapter = makeDataAdapter();
     const vault = makeVault(
       [new MockTFile('note.md', { size: 5, mtime: 500 })],
@@ -105,8 +110,10 @@ describe('local-scan: Vault-cache enumeration (Task 2 / P0)', () => {
     // No readBinary should be called — hashing is deferred to buildInitialPlan.
     expect(rawAdapter.readBinary).not.toHaveBeenCalled();
 
-    // adapter.list must NOT be invoked.
-    expect(rawAdapter.list).not.toHaveBeenCalled();
+    // Task 7 (C1 fix): adapter.list is called once at root for dot-path supplementation.
+    // The normal vault tree (note.md) is served from the Vault cache, not via recursive list().
+    expect(rawAdapter.list).toHaveBeenCalledTimes(1);
+    expect(rawAdapter.list).toHaveBeenCalledWith('');
   });
 
   it('excludes system-excluded paths (e.g. .obsidian/plugins/) from collectLocalStats', async () => {

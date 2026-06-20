@@ -1588,6 +1588,9 @@ export class SyncEngine {
       const stat = await this.opts.localAdapter.stat(p);
       if (stat) results.set(p, { size: stat.size, mtime: stat.mtime });
     }
+    // Task 7 (C1 fix): Vault.getFiles() omits ALL dot-prefixed paths, but the previous
+    // adapter.list() scan synced non-.obsidian dot files/folders. Re-enumerate them here.
+    await this.collectDotPaths(results);
     return results;
   }
 
@@ -1598,6 +1601,52 @@ export class SyncEngine {
       out.set(e.path, { size: e.size, mtime: e.mtime });
     }
     // The config folder is not Vault-tracked; the caller injects enabled config-sync paths separately.
+    // Task 7 (C1 fix): supplement with non-config dot paths that Vault.getFiles() omits.
+    await this.collectDotPaths(out);
+  }
+
+  /**
+   * Re-enumerate non-config dot paths that Vault.getFiles() omits. Vault excludes ALL dot-prefixed
+   * paths, but the previous adapter.list scan synced non-.obsidian dotfiles/folders (e.g. .archive/),
+   * so the Vault switch would silently stop syncing them. The config folder is handled separately by
+   * ConfigSyncResolver and is skipped here. NOTE: dot files nested inside NON-dot folders
+   * (e.g. notes/.foo.md) are intentionally out of scope — Obsidian does not index them and a full
+   * recursion would defeat the Vault-cache round-trip savings.
+   */
+  private async collectDotPaths(out: Map<string, { size: number; mtime: number }>): Promise<void> {
+    let root: { files: string[]; folders: string[] };
+    try { root = await this.opts.localAdapter.list(''); } catch { return; }
+    for (const file of root.files) {
+      if (!SyncEngine.isDotName(file)) continue;
+      if (this.isSystemExcluded(file)) continue;
+      const st = await this.opts.localAdapter.stat(file);
+      if (st) out.set(file, { size: st.size, mtime: st.mtime });
+    }
+    for (const folder of root.folders) {
+      if (!SyncEngine.isDotName(folder)) continue;
+      if (this.configSync.isUnderConfigDir(folder)) continue; // .obsidian handled by ConfigSyncResolver
+      await this.collectStatsRecursiveViaAdapter(folder, out);
+    }
+  }
+
+  /** True when a vault path's last segment is dot-prefixed. */
+  private static isDotName(path: string): boolean {
+    const i = path.lastIndexOf('/');
+    return (i < 0 ? path : path.slice(i + 1)).startsWith('.');
+  }
+
+  /** Recursively enumerate a (Vault-untracked) directory's files via the adapter, stats only. */
+  private async collectStatsRecursiveViaAdapter(dir: string, out: Map<string, { size: number; mtime: number }>): Promise<void> {
+    let listing: { files: string[]; folders: string[] };
+    try { listing = await this.opts.localAdapter.list(dir); } catch { return; }
+    for (const file of listing.files) {
+      if (this.isSystemExcluded(file)) continue;
+      const st = await this.opts.localAdapter.stat(file);
+      if (st) out.set(file, { size: st.size, mtime: st.mtime });
+    }
+    for (const folder of listing.folders) {
+      await this.collectStatsRecursiveViaAdapter(folder, out);
+    }
   }
 
   private isSystemExcluded(path: string): boolean {
