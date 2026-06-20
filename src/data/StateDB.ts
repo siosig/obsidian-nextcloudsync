@@ -169,4 +169,36 @@ export class StateDB {
   snapshot(): SyncState {
     return JSON.parse(JSON.stringify(this.state)) as SyncState;
   }
+
+  /**
+   * Reset the tracking index ("Vault index") to its first-install empty state and persist it.
+   * Clears every tracked file and the sync token so the next sync runs as a first-run sync. The
+   * deviceId is preserved; no vault or remote file is touched (only this state file). Any pending
+   * debounced save is cancelled first so it cannot resurrect the old state after the reset write.
+   */
+  async reset(): Promise<void> {
+    if (this.saveTimer !== null) {
+      window.clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
+    this.state = { deviceId: this.state.deviceId, lastSyncTime: 0, syncToken: null, files: {} };
+    this.fileIdIndex.clear();
+    await this.save();
+  }
+
+  /**
+   * Reset the on-disk tracking index without a live {@link StateDB} instance (used when the plugin
+   * is unconfigured and no engine/StateDB has been constructed). Writes the canonical empty state
+   * for the given device using the same atomic tmp → rename strategy as {@link doSave}.
+   */
+  static async resetFile(adapter: DataAdapter, pluginDir: string, deviceId: string): Promise<void> {
+    const statePath = `${pluginDir}/state-${deviceId}.json`;
+    const tmpPath = statePath + STATEDB_TMP_SUFFIX;
+    const initial: SyncState = { deviceId, lastSyncTime: 0, syncToken: null, files: {} };
+    await adapter.write(tmpPath, JSON.stringify(initial));
+    if (await adapter.exists(statePath)) {
+      await adapter.remove(statePath);
+    }
+    await adapter.rename(tmpPath, statePath);
+  }
 }

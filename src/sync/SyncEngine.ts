@@ -14,7 +14,6 @@ import {
   FileLockedError,
   FeatureUnsupportedError,
   PreconditionFailedError,
-  MergePreview,
   RemoteCompareResult,
 } from '../types';
 import { isSyncTmpPath, LocalAdapter } from '../data/LocalAdapter';
@@ -23,8 +22,6 @@ import { SyncHistoryStore } from '../data/SyncHistoryStore';
 import { IStatusBar } from '../ui/StatusBarItem';
 import { WebDAVFactory } from '../network/WebDAVFactory';
 import { IWebDAVClient } from '../network/IWebDAVClient';
-import { DryRunModal, DryRunPlan } from '../ui/DryRunModal';
-import { DiffModal } from '../ui/DiffModal';
 import { RenameTracker } from './RenameTracker';
 import { ConflictResolver } from './ConflictResolver';
 import { ConfigSyncResolver } from './ConfigSyncResolver';
@@ -39,6 +36,16 @@ import { isSafeVaultRelativePath } from '../network/remotePath';
 import { IUploadStrategy } from './upload/IUploadStrategy';
 import { SimpleUploadStrategy } from './upload/SimpleUploadStrategy';
 import { ChunkedUploadStrategy } from './upload/ChunkedUploadStrategy';
+
+/** The categorized first-sync plan produced by buildInitialPlan and consumed by executePlan. */
+interface InitialSyncPlan {
+  uploads: string[];
+  downloads: string[];
+  conflicts: string[];
+  deletes: string[];
+  /** Files present and identical on both sides (no transfer needed; state is seeded). */
+  unchanged: string[];
+}
 
 /** The local-side fields of a compare result, shared by every `compareWithRemote` outcome. */
 type CompareLocalSide = Pick<
@@ -89,6 +96,12 @@ export class SyncEngine {
    * The sync's finally block (state save) still runs, so no partial-progress state is lost.
    */
   private cancelled = false;
+  /**
+   * The in-flight full-sync run promise (the body of {@link syncManual}), or null when idle. Lets
+   * {@link abortAndWait} await a running sync's clean wind-down (including its finally state save)
+   * before a maintenance reset clears the tracking index, so the two never interleave.
+   */
+  private currentRun: Promise<void> | null = null;
   /** Start time of the in-progress full sync (= summary.startedAt); null outside a full sync run. */
   private currentRunStartedAt: number | null = null;
   /** Currently held lock tokens (path → token). */
@@ -136,7 +149,6 @@ export class SyncEngine {
     return { client: this.client, features: this.features };
   }
 
-  /** Manual sync: Dry Run → user approval → execute */
   /**
    * "Wi-Fi only" gate. Skips when enabled and on a cellular connection.
    * Network type is only detectable on Chromium (desktop / Android); iOS (WebKit) has no
@@ -164,8 +176,21 @@ export class SyncEngine {
       if (Platform.isMobile) new Notice('Sync skipped — you are on cellular and Wi-Fi only sync is on.', 6000);
       return;
     }
+    // Set the balking flag synchronously (before any await) so a concurrent call still balks, then
+    // run the body via a tracked promise so abortAndWait() can await this run's clean wind-down.
     this.running = true;
     this.cancelled = false;
+    const run = this.runSyncSession();
+    this.currentRun = run;
+    try {
+      await run;
+    } finally {
+      this.currentRun = null;
+    }
+  }
+
+  /** The actual full-sync session body. Always runs under the {@link syncManual} balking guard. */
+  private async runSyncSession(): Promise<void> {
     void this.opts.logger?.log('sync: connecting (ensureClient)');
     await this.ensureClient();
     this.syncProgress = { processed: 0, total: 0 };
@@ -173,12 +198,12 @@ export class SyncEngine {
     const summary = this.initSummary();
     this.currentRunStartedAt = summary.startedAt; // tag this run's history entries for grouping
 
-    let cancelled = false;
+    const cancelled = false;
     try {
       const isFirstSync = !this.opts.stateDB.getSyncToken() && this.opts.stateDB.getAllFiles().length === 0;
 
       if (isFirstSync) {
-        cancelled = !(await this.initialSync(summary));
+        await this.initialSync(summary);
       } else {
         await this.incrementalSync(summary);
       }
@@ -304,6 +329,29 @@ export class SyncEngine {
     this.cancelled = true;
   }
 
+  /**
+   * Abort an in-flight sync and wait for it to fully settle (including its finally state save) so a
+   * follow-up maintenance reset cannot interleave with the run's persistence. Idempotent and safe to
+   * call when idle (resolves immediately). The run handles its own errors, so awaiting never throws.
+   */
+  async abortAndWait(): Promise<void> {
+    this.requestStop();
+    const run = this.currentRun;
+    if (run) {
+      try { await run; } catch { /* runSyncSession swallows its own errors */ }
+    }
+  }
+
+  /**
+   * Maintenance action: abort any in-flight sync, then reset this device's tracking index ("Vault
+   * index") to the first-install empty state. The next sync then runs as a first-run sync. No vault
+   * or remote file is touched.
+   */
+  async resetIndex(): Promise<void> {
+    await this.abortAndWait();
+    await this.opts.stateDB.reset();
+  }
+
   getLastSessionSummary(): SyncSessionSummary | null {
     return this.lastSummary;
   }
@@ -331,44 +379,6 @@ export class SyncEngine {
 
   getUnresolvedConflictCount(): Promise<number> {
     return Promise.resolve(this.opts.stateDB.countConflicted());
-  }
-
-  /**
-   * Read-only merge preview for one file: read the local content, fetch the remote content,
-   * and compute what a real sync would write — all WITHOUT modifying anything. For files that
-   * exist only on one side, the "after" side is simply that side's content (upload/download as-is).
-   */
-  async previewMerge(path: string): Promise<MergePreview> {
-    const { client } = await this.ensureClient();
-    const stat = await this.opts.localAdapter.stat(path);
-    const localExists = stat != null;
-    const local = localExists ? await this.opts.localAdapter.read(path) : '';
-
-    let remote = '';
-    let remoteExists = false;
-    try {
-      remote = new TextDecoder().decode(await client.downloadFile(path));
-      remoteExists = true;
-    } catch {
-      remoteExists = false; // remote missing (e.g. a new local file)
-    }
-
-    let after: string;
-    let clean = true;
-    if (localExists && !remoteExists) {
-      after = local; // upload as-is
-    } else if (!localExists && remoteExists) {
-      after = remote; // download as-is
-    } else {
-      // Both sides present: compute exactly what ConflictResolver would write (base unknown → '').
-      // Pass the path so the preview honors the mergeable-extension and failure-policy settings.
-      const resolver = new ConflictResolver(this.opts.app, this.opts.localAdapter, this.opts.settings);
-      const res = resolver.computeResolution(path, '', local, remote);
-      after = res.content;
-      clean = res.clean;
-    }
-
-    return { path, localExists, remoteExists, local, remote, after, clean };
   }
 
   /**
@@ -522,39 +532,6 @@ export class SyncEngine {
 
   // ── Private ──────────────────────────────────────────────────────────────
 
-  /**
-   * One-line, settings-aware description of what a conflict resolution will produce.
-   * Shown in the dry-run preview so the user knows the outcome before approving.
-   */
-  private describeConflictOutcome(): string {
-    const s = this.opts.settings;
-    const exts = (s.mergeableExtensions ?? []).map((e) => `.${e}`).join(', ') || '(none)';
-    const mergePrefix = s.autoMergeEnabled
-      ? `Mergeable files (${exts}) are auto-merged where the two sides changed different parts `
-        + '(frontmatter included). '
-      : `Auto-merge is OFF. `;
-    const tail = 'Select a file to preview the exact result.';
-
-    // What happens when a merge does not cleanly resolve (failure / non-mergeable file).
-    switch (s.conflictFailurePolicy) {
-      case 'local-wins':
-        return mergePrefix
-          + 'When a merge does not cleanly resolve, the LOCAL copy overwrites the remote. ' + tail;
-      case 'remote-wins':
-        return mergePrefix
-          + 'When a merge does not cleanly resolve, the REMOTE copy overwrites the local. ' + tail;
-      case 'conflict-markers':
-        return mergePrefix
-          + 'When a merge does not cleanly resolve, both versions are kept with <<<<<<< / >>>>>>> '
-          + 'markers and a #conflict tag (text files only; other files are skipped). ' + tail;
-      case 'error':
-      default:
-        return mergePrefix
-          + 'When a merge does not cleanly resolve, the file is left untouched on BOTH sides and '
-          + 'reported as an error to retry next sync — nothing is overwritten. ' + tail;
-    }
-  }
-
   private initSummary(): SyncSessionSummary {
     return {
       startedAt: Date.now(), completedAt: null,
@@ -581,8 +558,8 @@ export class SyncEngine {
     this.opts.historyStore?.record(path, op, now, message, detail, runStartedAt);
   }
 
-  /** First-ever sync: full scan → Dry Run → user approval → execute. Returns false if cancelled. */
-  private async initialSync(summary: SyncSessionSummary): Promise<boolean> {
+  /** First-ever sync: full scan → build plan → execute. */
+  private async initialSync(summary: SyncSessionSummary): Promise<void> {
     const client = this.client!;
     const remoteFiles = await client.getFiles('');
     const localFiles = await this.scanLocalFiles();
@@ -602,32 +579,11 @@ export class SyncEngine {
       'verbose',
     );
 
-    const modal = new DryRunModal(this.opts.app, plan, {
-      conflictNote: this.describeConflictOutcome(),
-      onSelectConflict: (path) => {
-        // Read-only preview of the exact content the resolution will write for this file.
-        void (async () => {
-          try {
-            const preview = await this.previewMerge(path);
-            new DiffModal(this.opts.app, preview).open();
-          } catch (err) {
-            new Notice(`❌ Merge preview failed: ${(err as Error).message}`, 6000);
-          }
-        })();
-      },
-    });
-    const approved = await modal.waitForDecision();
-    if (!approved) {
-      new Notice('Sync cancelled.');
-      return false;
-    }
-
     await this.executePlan(plan, remoteFiles, summary, localFiles);
 
     // Save sync-token
     const token = await client.getSyncToken();
     this.opts.stateDB.setSyncToken(token);
-    return true;
   }
 
   /** Incremental sync using sync-token (falls back to full PROPFIND on 410) */
@@ -1475,7 +1431,7 @@ export class SyncEngine {
   private buildInitialPlan(
     localFiles: Map<string, { hash: string; size: number; mtime: number }>,
     remoteFiles: RemoteFileInfo[],
-  ): DryRunPlan {
+  ): InitialSyncPlan {
     const uploads: string[] = [];
     const downloads: string[] = [];
     const conflicts: string[] = [];
@@ -1502,7 +1458,7 @@ export class SyncEngine {
   }
 
   private async executePlan(
-    plan: DryRunPlan, remoteFiles: RemoteFileInfo[], summary: SyncSessionSummary,
+    plan: InitialSyncPlan, remoteFiles: RemoteFileInfo[], summary: SyncSessionSummary,
     localFiles: Map<string, { hash: string; size: number; mtime: number }>,
   ): Promise<void> {
     // P0-C: the caller (initialSync) already scanned+hashed the vault once; reuse that map instead of

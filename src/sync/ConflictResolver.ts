@@ -88,8 +88,8 @@ export class ConflictResolver {
   }
 
   /**
-   * Compute the content a resolution would write, WITHOUT touching disk (pure), for the dry-run
-   * preview. Mirrors decide()'s decision so the preview matches a real sync.
+   * Compute the content a resolution would write, WITHOUT touching disk (pure). Mirrors decide()'s
+   * decision so callers can compute the resolved content independently of the write path.
    * For skip → keep local (no change); prefer-local → local; prefer-remote → remote.
    * `clean` is true only when the outcome leaves no markers / unresolved state.
    */

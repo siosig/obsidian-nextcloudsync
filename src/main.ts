@@ -6,6 +6,7 @@ import { VersionHistoryModal } from './ui/VersionHistoryModal';
 import { SyncStatusModal } from './ui/SyncStatusModal';
 import { StatusFilterState, makeDefaultFilterState, serializeFilter, deserializeFilter } from './ui/statusFilter';
 import { CompareModal } from './ui/CompareModal';
+import { confirmModal } from './ui/ConfirmModal';
 import { FileLogger } from './util/FileLogger';
 import { isSyncTmpPath, LocalAdapter } from './data/LocalAdapter';
 import { v4 as uuidv4 } from './util/uuid';
@@ -175,8 +176,8 @@ export default class ObsidianNextcloudsync extends Plugin {
   }
 
   /**
-   * Run "Sync Now". On the very first sync (no recorded state), the engine shows a dry-run plan
-   * modal for approval before applying anything. Shared by the command and the settings button.
+   * Run "Sync Now". On the very first sync (no recorded state), the engine performs a full scan and
+   * applies the initial plan directly. Shared by the command and the settings button.
    */
   async runSyncNow(): Promise<void> {
     void this.logger.log('sync: "Sync now" clicked');
@@ -227,6 +228,39 @@ export default class ObsidianNextcloudsync extends Plugin {
         void this.saveSettings();
       },
     ).open();
+  }
+
+  /**
+   * Maintenance action: reset this device's sync tracking index ("Vault index") to the first-install
+   * empty state after an explicit confirmation. No vault or remote files are deleted; the next sync
+   * performs a full re-scan. Works whether or not the sync engine is configured: with an engine it
+   * aborts any in-flight sync first; without one it resets the on-disk state file directly.
+   */
+  async resetVaultIndex(): Promise<void> {
+    const confirmed = await confirmModal(this.app, {
+      title: 'Reset vault index',
+      message:
+        "Clear this device's sync tracking index and return to the first-install state. " +
+        'No vault or remote files are deleted. The next sync will perform a full re-scan.',
+      cta: 'Reset',
+      cancel: 'Cancel',
+      destructive: true,
+    });
+    if (!confirmed) return;
+
+    try {
+      if (this.syncEngine) {
+        await this.syncEngine.resetIndex();
+      } else {
+        // Unconfigured: no engine/StateDB instance exists, but a stale state file may remain on disk.
+        const { StateDB } = await import('./data/StateDB');
+        const pluginDir = `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
+        await StateDB.resetFile(this.app.vault.adapter, pluginDir, this.settings.deviceId);
+      }
+      new Notice('Vault index reset. The next sync will perform a full re-scan.');
+    } catch (err) {
+      new Notice(`❌ Failed to reset the Vault index: ${(err as Error).message}`, 6000);
+    }
   }
 
   /** Fetch the server-side version history of the active note and show the modal (US2). */
