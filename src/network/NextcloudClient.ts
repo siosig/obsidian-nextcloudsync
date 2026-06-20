@@ -372,6 +372,10 @@ export class NextcloudClient implements IWebDAVClient {
     const finalUrl = this.remoteUrl(remotePath);
     const total = data.byteLength;
 
+    // Compute the SHA-256 once here; reuse it for both the OC-Checksum header and
+    // post-assembly verification so the full buffer is never hashed more than once.
+    const sum = await sha256(data);
+
     try {
       // 1. Create the upload session.
       const mk = await requestUrl({ url: sessionUrl, method: 'MKCOL', headers: { Authorization: this.authHeader }, throw: false });
@@ -402,14 +406,15 @@ export class NextcloudClient implements IWebDAVClient {
           Destination: finalUrl,
           'OC-Total-Length': String(total),
           // Persist the SHA-256 on the assembled file (same rationale as uploadFile).
-          'OC-Checksum': `SHA256:${await sha256(data)}`,
+          'OC-Checksum': `SHA256:${sum}`,
         },
         throw: false,
       });
       if (move.status < 200 || move.status >= 300) throw new NetworkError(move.status, move.text);
 
-      // 4. Verify the checksum after assembly (FR-012). Only compare when it can be retrieved.
-      await this.verifyRemoteChecksum(remotePath, data);
+      // 4. Verify the checksum after assembly (FR-012). Pass the precomputed hash to avoid
+      //    hashing the full buffer a second time.
+      await this.verifyRemoteChecksum(remotePath, data, sum);
     } catch (err) {
       // On abort, discard the session so no incomplete file is left at the final path (FR-011).
       await requestUrl({ url: sessionUrl, method: 'DELETE', headers: { Authorization: this.authHeader }, throw: false }).catch(() => undefined);
@@ -417,8 +422,10 @@ export class NextcloudClient implements IWebDAVClient {
     }
   }
 
-  /** After upload, fetches the remote checksum and compares it with the local SHA-256. Skips verification if unavailable. */
-  private async verifyRemoteChecksum(remotePath: string, data: ArrayBuffer): Promise<void> {
+  /** After upload, fetches the remote checksum and compares it with the local SHA-256.
+   *  Skips verification if unavailable. Accepts an optional precomputed hash to avoid
+   *  redundant hashing of the same buffer (used by uploadChunked). */
+  private async verifyRemoteChecksum(remotePath: string, data: ArrayBuffer, precomputed?: string): Promise<void> {
     const res = await requestUrl({
       url: this.remoteUrl(remotePath),
       method: 'PROPFIND',
@@ -430,7 +437,7 @@ export class NextcloudClient implements IWebDAVClient {
     const m = res.text.match(/SHA256:([0-9a-fA-F]+)/i);
     if (!m) return;
     const remoteHash = m[1].toLowerCase();
-    const localHash = await sha256(data);
+    const localHash = precomputed ?? await sha256(data);
     if (remoteHash !== localHash) {
       throw new NetworkError(0, `Checksum mismatch after chunked upload: ${remotePath}`);
     }
