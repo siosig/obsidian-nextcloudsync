@@ -27,7 +27,11 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.4.0)
+## What's new in this release (0.4.1)
+
+- **Log files are now created even when the log folder does not exist yet (0.4.1)** — fixes a bug where, if the configured log folder (e.g. `_logs`) did not already exist, the per-device sync and debug logs were silently never written. The plugin now creates the parent folder before the first write.
+
+## 0.4.0
 
 - **Filter the sync-status dialog by status (0.4.0)** — the status dialog gained a checkbox row (Uploaded, Downloaded, Deleted, Merged, Conflicted, Local wins, Remote wins, Error) so you can focus on, say, only conflicts.
 - **Compare a file with its remote version (0.4.0)** — opt in via "Compare with remote (explorer menu)" in settings, then right-click any file in the explorer to open a popup comparing local vs remote modification time, checksum (with a match/mismatch badge), and a line diff. Resolve the difference there with **push** or **pull**, each behind a confirmation.
