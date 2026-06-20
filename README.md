@@ -27,7 +27,11 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.5.0-beta.1)
+## What's new in this release (0.5.0-beta.2)
+
+- **Config folder sync moved into the Sync settings group (0.5.0-beta.2)** — the **Sync config folder** master toggle and its per-category toggles now appear within the existing **Sync** settings group instead of under a separate "Config folder" heading. No behaviour change.
+
+## 0.5.0-beta.1
 
 - **Selective `.obsidian` config folder sync (0.5.0-beta.1)** — opt in via **Sync config folder** in settings to sync chosen categories of the Obsidian config folder across devices: Appearance, Themes & snippets, Hotkeys, Core plugin settings, and Bookmarks (each its own toggle, modelled on Obsidian native Sync). Off by default — notes still sync as before. **Community plugins (`.obsidian/plugins/`) and the plugin's own sync-state database are never synced** (executable code / device-specific state). Config files conflict-resolve by newest-wins so they are never corrupted with conflict markers. The previous standalone **Sync bookmarks** setting migrates automatically into the Bookmarks category, so existing bookmark-sync users keep working with no change. Resolves [#1](https://github.com/siosig/obsidian-nextcloudsync/issues/1).
 
