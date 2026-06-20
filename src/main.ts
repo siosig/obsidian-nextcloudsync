@@ -3,7 +3,8 @@ import { DavSyncSettings, DEFAULT_SETTINGS, FeatureUnsupportedError, SyncHistory
 import { NextcloudSyncSettingTab } from './settings/SettingTab';
 import { SyncEngine } from './sync/SyncEngine';
 import { VersionHistoryModal } from './ui/VersionHistoryModal';
-import { SyncStatusModal } from './ui/SyncStatusModal';
+import { SyncStatusModal, StatusFilterState, makeDefaultFilterState } from './ui/SyncStatusModal';
+import { CompareModal } from './ui/CompareModal';
 import { FileLogger } from './util/FileLogger';
 import { isSyncTmpPath, LocalAdapter } from './data/LocalAdapter';
 import { v4 as uuidv4 } from './util/uuid';
@@ -23,6 +24,11 @@ export default class ObsidianNextcloudsync extends Plugin {
   logger!: FileLogger;
   /** Per-device sync-log writer (appends one block per sync when the sync log is enabled). */
   syncLogWriter!: SyncLogWriter;
+  /**
+   * Session-lifetime status filter for the Sync Status dialog. Held here (not on the modal, which
+   * is recreated per open) so the selection persists across reopens and resets on Obsidian restart.
+   */
+  private readonly statusFilterState: StatusFilterState = makeDefaultFilterState();
 
   async onload(): Promise<void> {
     // Obsidian version check
@@ -93,6 +99,20 @@ export default class ObsidianNextcloudsync extends Plugin {
         return true;
       },
     });
+
+    // Explorer "Compare with remote" context-menu item. Registered unconditionally; the per-click
+    // `explorerCompareEnabled` check is what makes the settings toggle take effect immediately,
+    // with no plugin reload or Obsidian restart.
+    this.registerEvent(this.app.workspace.on('file-menu', (menu, file) => {
+      if (Platform.isMobile) return;         // desktop-oriented feature (see spec assumptions)
+      if (!this.settings.explorerCompareEnabled) return;
+      if (!(file instanceof TFile)) return; // single file only
+      if (!this.syncEngine) return;          // engine must be configured
+      menu.addItem(item => item
+        .setTitle('Compare with remote')
+        .setIcon('git-compare')
+        .onClick(() => { new CompareModal(this.app, file.path, this.syncEngine!).open(); }));
+    }));
 
     // Watch mode: react to individual file events with lightweight single-file operations.
     // Full vault sync is reserved for manual Sync Now and the periodic interval.
@@ -186,6 +206,7 @@ export default class ObsidianNextcloudsync extends Plugin {
       this.app,
       () => this.syncEngine!.getStatusReport(),
       () => this.runSyncNow(),
+      this.statusFilterState,
     ).open();
   }
 

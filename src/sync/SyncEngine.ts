@@ -14,6 +14,7 @@ import {
   FileLockedError,
   FeatureUnsupportedError,
   MergePreview,
+  RemoteCompareResult,
 } from '../types';
 import { isSyncTmpPath, LocalAdapter } from '../data/LocalAdapter';
 import { StateDB } from '../data/StateDB';
@@ -322,6 +323,151 @@ export class SyncEngine {
     }
 
     return { path, localExists, remoteExists, local, remote, after, clean };
+  }
+
+  /**
+   * Read-only comparison of one file against its remote counterpart, for the explorer
+   * "Compare with remote" popup. Fetches remote metadata + content (never mutates) and computes
+   * modification times, byte-level SHA-256 checksums (so the match indicator is valid for binary
+   * files too), and decoded text for the diff (text-eligible files only). Failures are captured in
+   * the returned `state` (`remote-missing` / `error`) rather than thrown.
+   */
+  async compareWithRemote(path: string): Promise<RemoteCompareResult> {
+    await this.ensureClient();
+    const textEligible = this.textEligible(path);
+
+    // Local side
+    const stat = await this.opts.localAdapter.stat(path);
+    const localExists = stat != null;
+    let localChecksum: string | null = null;
+    let localText: string | null = null;
+    if (localExists) {
+      const localBytes = await this.opts.localAdapter.readBinary(path);
+      localChecksum = await sha256(localBytes);
+      if (textEligible) localText = new TextDecoder().decode(localBytes);
+    }
+
+    const base = {
+      path,
+      localExists,
+      localMtime: stat?.mtime ?? null,
+      localChecksum,
+      localText,
+      localSize: stat?.size ?? null,
+    };
+
+    try {
+      const remote = await this.fetchRemoteInfo(path);
+      if (!remote) {
+        return {
+          ...base, state: 'remote-missing', remoteExists: false,
+          remoteMtime: null, remoteChecksum: null, checksumMatch: false,
+          remoteText: null, diffAvailable: false, remoteSize: null,
+        };
+      }
+      await this.client!.downloadFile(path, '');
+      const remoteBytes = this.client!.getLastDownloadBuffer();
+      // Hash the actual bytes (not the server-reported checksum) so checksumMatch is guaranteed
+      // consistent with the diff: identical bytes ⇔ match ⇔ empty diff.
+      const remoteChecksum = await sha256(remoteBytes);
+      const remoteText = textEligible ? new TextDecoder().decode(remoteBytes) : null;
+      const checksumMatch = localChecksum != null && localChecksum === remoteChecksum;
+      return {
+        ...base, state: 'ok', remoteExists: true,
+        remoteMtime: remote.lastModified ?? null,
+        remoteChecksum, checksumMatch,
+        remoteText, diffAvailable: textEligible && localExists,
+        remoteSize: remote.size ?? null,
+      };
+    } catch (err) {
+      return {
+        ...base, state: 'error', errorMessage: (err as Error)?.message ?? String(err),
+        remoteExists: false, remoteMtime: null, remoteChecksum: null, checksumMatch: false,
+        remoteText: null, diffAvailable: false, remoteSize: null,
+      };
+    }
+  }
+
+  /**
+   * Manual resolution (push): overwrite the REMOTE file with the local content. Reuses the upload
+   * strategy + lock handling, records an 'uploaded' history entry, and converges StateDB so the
+   * next sync sees no spurious change. Rejects on failure so the caller can surface it (and records
+   * nothing in that case).
+   */
+  async pushLocalToRemote(path: string): Promise<void> {
+    const { client } = await this.ensureClient();
+    const stat = await this.opts.localAdapter.stat(path);
+    if (!stat) throw new Error(`Local file not found: ${path}`);
+    const localData = await this.opts.localAdapter.readBinary(path);
+    const localHash = await sha256(localData);
+    const remote = await this.fetchRemoteInfo(path); // null ⇒ creating the remote from local
+
+    const lockToken = await this.acquireLock(path);
+    try {
+      const outcome = await this.uploadStrategy!.upload(client, path, localData, stat.mtime);
+      if (outcome === 'skipped') throw new Error(`Upload skipped (over the size limit): ${path}`);
+    } finally {
+      await this.releaseLock(path, lockToken);
+    }
+
+    this.recordHistory(path, 'uploaded', undefined, {
+      localHash, remoteId: localHash, remoteIdType: 'sha256',
+      localSize: stat.size, remoteSize: remote?.size,
+    });
+    this.opts.stateDB.setFile({
+      path, localHash, remoteId: localHash, idType: 'sha256',
+      size: stat.size, mtime: stat.mtime,
+      remoteFileId: remote?.fileId ?? null, isConflicted: false,
+    });
+    await this.opts.stateDB.save();
+    await this.opts.historyStore?.save();
+  }
+
+  /**
+   * Manual resolution (pull): overwrite the LOCAL file with the remote content. The write is marked
+   * as the plugin's own (atomicWriteBinary registers an ignore) so the modify watcher does not echo
+   * it back as an upload. Records a 'downloaded' history entry and converges StateDB. Rejects on
+   * failure (local left unchanged when the download fails before any write).
+   */
+  async pullRemoteToLocal(path: string): Promise<void> {
+    const { client } = await this.ensureClient();
+    const remote = await this.fetchRemoteInfo(path);
+    if (!remote) throw new Error(`Remote file not found: ${path}`);
+
+    await client.downloadFile(path, '');
+    const remoteData = client.getLastDownloadBuffer();
+    await this.opts.localAdapter.atomicWriteBinary(path, remoteData);
+    if (remote.lastModified) await this.opts.localAdapter.setMtime(path, remote.lastModified);
+
+    const localHash = await sha256(remoteData);
+    const remoteId = remote.checksum ?? localHash;
+    const mtime = remote.lastModified || (await this.opts.localAdapter.stat(path))?.mtime || Date.now();
+    this.recordHistory(path, 'downloaded', undefined, {
+      localHash, remoteId, remoteIdType: 'sha256',
+      localSize: remoteData.byteLength, remoteSize: remote.size,
+    });
+    this.opts.stateDB.setFile({
+      path, localHash, remoteId, idType: 'sha256',
+      size: remote.size, mtime,
+      remoteFileId: remote.fileId, isConflicted: false,
+    });
+    await this.opts.stateDB.save();
+    await this.opts.historyStore?.save();
+  }
+
+  /** True when `path`'s extension is in the configured mergeable (text) extensions. */
+  private textEligible(path: string): boolean {
+    const dot = path.lastIndexOf('.');
+    if (dot < 0) return false;
+    const ext = path.slice(dot + 1).toLowerCase();
+    return (this.opts.settings.mergeableExtensions ?? []).includes(ext);
+  }
+
+  /** Fetch a single remote file's metadata via PROPFIND; null when the remote file is absent. */
+  private async fetchRemoteInfo(path: string): Promise<RemoteFileInfo | null> {
+    const infos = await this.client!.getFiles(path);
+    if (infos.length === 0) return null;
+    return infos.find(i => i.path === path) ?? infos[0];
   }
 
   // ── Private ──────────────────────────────────────────────────────────────

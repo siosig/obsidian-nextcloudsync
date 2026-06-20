@@ -47,6 +47,7 @@ function makeSettings(
     frontmatterConflictStrategy: 'conflict',
     mergeableExtensions,
     conflictFailurePolicy: policy,
+    explorerCompareEnabled: false,
   };
 }
 

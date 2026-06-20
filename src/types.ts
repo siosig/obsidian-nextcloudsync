@@ -89,6 +89,12 @@ export interface DavSyncSettings {
    */
   conflictFailurePolicy: 'error' | 'local-wins' | 'remote-wins' | 'conflict-markers';
   /**
+   * Adds a "Compare with remote" item to the file-explorer right-click menu (desktop).
+   * Default OFF — the user opts in. The menu handler reads this on every right-click, so
+   * toggling it takes effect immediately without an Obsidian restart.
+   */
+  explorerCompareEnabled: boolean;
+  /**
    * Last Nextcloud server version observed at connect time. Used only to show a
    * recommendation banner in settings when it is below the recommended minimum.
    * Empty/undefined until the first successful connection.
@@ -127,6 +133,7 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   frontmatterConflictStrategy: 'conflict',
   mergeableExtensions: ['md', 'txt'],
   conflictFailurePolicy: 'error',
+  explorerCompareEnabled: false,
   lastKnownServerVersion: '',
 };
 
@@ -260,6 +267,37 @@ export interface MergePreview {
   after: string;
   /** True when the merge resolved cleanly with no markers remaining. */
   clean: boolean;
+}
+
+/**
+ * Read-only comparison of one file against its remote counterpart, for the explorer
+ * "Compare with remote" popup. Produced by SyncEngine.compareWithRemote — it never mutates.
+ * `state` distinguishes a successful comparison from a missing remote or a fetch failure;
+ * the UI shows a separate (non-result) loading state while the promise is pending.
+ */
+export interface RemoteCompareResult {
+  path: string;
+  state: 'ok' | 'remote-missing' | 'error';
+  /** User-readable failure reason — present only when state === 'error'. */
+  errorMessage?: string;
+  localExists: boolean;
+  remoteExists: boolean;
+  /** Modification times (epoch ms); null when the corresponding side is absent. */
+  localMtime: number | null;
+  remoteMtime: number | null;
+  /** Lowercase hex SHA-256 over raw bytes; null when the side is absent. */
+  localChecksum: string | null;
+  remoteChecksum: string | null;
+  /** True iff both checksums are present and equal. */
+  checksumMatch: boolean;
+  /** Decoded text for the diff; null for binary/non-text files or an absent side. */
+  localText: string | null;
+  remoteText: string | null;
+  /** True only for text-eligible files with both sides present. */
+  diffAvailable: boolean;
+  /** Sizes in bytes; null when the side is absent. */
+  localSize: number | null;
+  remoteSize: number | null;
 }
 
 // ── US1: Login Flow v2 ──────────────────────────────────────────────────────

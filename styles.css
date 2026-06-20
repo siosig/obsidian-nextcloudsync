@@ -250,3 +250,50 @@
 .ncs-diff-cell.is-add {
   background: rgba(83, 200, 110, 0.20);
 }
+
+/* Status-filter checkbox row in the Sync Status dialog */
+.ncs-status-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.ncs-status-filter-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: var(--font-ui-small);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* Compare-with-remote popup: local vs remote metadata table */
+.ncs-compare-meta {
+  margin: 8px 0;
+}
+
+.ncs-compare-row {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.ncs-compare-label {
+  flex: 0 0 80px;
+  color: var(--text-muted);
+}
+
+.ncs-compare-local,
+.ncs-compare-remote {
+  flex: 1;
+  font-family: var(--font-monospace);
+  word-break: break-all;
+}
+
+.ncs-compare-match {
+  color: var(--color-green);
+}
+
+.ncs-compare-mismatch {
+  color: var(--color-red);
+}

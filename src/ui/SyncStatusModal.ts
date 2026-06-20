@@ -21,6 +21,46 @@ const OP_LABEL: Record<SyncFileOp, { icon: string; text: string }> = {
   error: { icon: '✗', text: 'Error' },
 };
 
+/** Every status the dialog can show — one filter checkbox is rendered per entry (in this order). */
+export const ALL_FILTER_OPS: SyncFileOp[] = [
+  'uploaded', 'downloaded', 'deleted', 'merged', 'conflicted', 'local-wins', 'remote-wins', 'error',
+];
+
+/** Session-lifetime filter selection: the set of statuses currently shown. Default = all checked. */
+export interface StatusFilterState {
+  checked: Set<SyncFileOp>;
+}
+
+/** A fresh filter state with every status checked (the default each time Obsidian starts). */
+export function makeDefaultFilterState(): StatusFilterState {
+  return { checked: new Set<SyncFileOp>(ALL_FILTER_OPS) };
+}
+
+/** Whether entries of `op` should be shown under the current selection. */
+export function isVisible(op: SyncFileOp, checked: Set<SyncFileOp>): boolean {
+  return checked.has(op);
+}
+
+/**
+ * Apply the status filter to every section of the report. History rows filter by their own `op`;
+ * the conflicts section is governed by `conflicted`; the retry queue and the per-session error
+ * list are governed by `error` (retry/error entries are failed operations).
+ */
+export function filterReport(report: SyncStatusReport, checked: Set<SyncFileOp>): {
+  history: SyncHistoryEntry[];
+  conflictedFiles: string[];
+  retryFiles: string[];
+  errors: SyncErrorDetail[];
+} {
+  const errors = report.summary?.errors ?? [];
+  return {
+    history: report.history.filter(e => isVisible(e.op, checked)),
+    conflictedFiles: isVisible('conflicted', checked) ? report.conflictedFiles : [],
+    retryFiles: isVisible('error', checked) ? report.retryFiles : [],
+    errors: isVisible('error', checked) ? errors : [],
+  };
+}
+
 /** Compact "5m ago" / "2h ago" / "just now" label for a past timestamp. */
 function formatAgo(at: number, now: number): string {
   const sec = Math.max(0, Math.floor((now - at) / 1000));
@@ -44,6 +84,11 @@ export class SyncStatusModal extends Modal {
     app: App,
     private readonly getReport: () => SyncStatusReport,
     private readonly onSyncNow: () => Promise<void>,
+    /**
+     * Session-lifetime status filter selection, owned by the plugin and shared across opens so
+     * the choice persists until Obsidian restarts. Defaults to all-checked when omitted.
+     */
+    private readonly filterState: StatusFilterState = makeDefaultFilterState(),
   ) {
     super(app);
   }
@@ -69,7 +114,11 @@ export class SyncStatusModal extends Modal {
 
     const report = this.getReport();
 
-    // Last session summary
+    // Status filter row: one checkbox per status. Toggling mutates the shared (session) selection
+    // and re-renders, so every section below reflects the filter immediately.
+    this.addFilterRow();
+
+    // Last session summary (unfiltered totals for the session — a summary, not a list).
     const s = report.summary;
     if (s) {
       const when = new Date(s.startedAt).toLocaleString();
@@ -82,17 +131,45 @@ export class SyncStatusModal extends Modal {
       contentEl.createEl('p', { text: 'No sync has run yet in this session.', cls: 'setting-item-description' });
     }
 
-    this.addHistorySection(report.history);
+    // Apply the status filter to every section.
+    const filtered = filterReport(report, this.filterState.checked);
 
-    this.addFileSection('⚠️ Conflicts', report.conflictedFiles,
+    this.addHistorySection(filtered.history);
+
+    this.addFileSection('⚠️ Conflicts', filtered.conflictedFiles,
       'Files with unresolved conflict markers. Open one to resolve it (search #conflict too).');
-    this.addFileSection('✗ Queued for retry', report.retryFiles,
+    this.addFileSection('✗ Queued for retry', filtered.retryFiles,
       'Files that failed and will be retried on the next sync.');
-    this.addErrorSection(s?.errors ?? []);
+    this.addErrorSection(filtered.errors);
 
-    if (report.conflictedFiles.length === 0 && report.retryFiles.length === 0
-        && (s?.errors.length ?? 0) === 0) {
-      contentEl.createEl('p', { text: '🟢 No conflicts or pending retries.' });
+    if (filtered.history.length === 0 && filtered.conflictedFiles.length === 0
+        && filtered.retryFiles.length === 0 && filtered.errors.length === 0) {
+      const allUnchecked = this.filterState.checked.size === 0;
+      contentEl.createEl('p', {
+        text: allUnchecked
+          ? 'No statuses selected — check a status above to show entries.'
+          : 'No entries match the selected statuses.',
+      });
+    }
+  }
+
+  /** Render the per-status filter checkboxes (icon + label), wired to the shared selection. */
+  private addFilterRow(): void {
+    const setting = new Setting(this.contentEl)
+      .setName('Filter by status')
+      .setDesc('Show only the selected statuses. All on by default; resets when Obsidian restarts.');
+    const row = setting.controlEl.createDiv({ cls: 'ncs-status-filter' });
+    for (const op of ALL_FILTER_OPS) {
+      const { icon, text } = OP_LABEL[op];
+      const label = row.createEl('label', { cls: 'ncs-status-filter-item', attr: { title: text } });
+      const cb = label.createEl('input', { type: 'checkbox' });
+      cb.checked = this.filterState.checked.has(op);
+      cb.addEventListener('change', () => {
+        if (cb.checked) this.filterState.checked.add(op);
+        else this.filterState.checked.delete(op);
+        this.render();
+      });
+      label.createSpan({ text: ` ${icon} ${text}` });
     }
   }
 
