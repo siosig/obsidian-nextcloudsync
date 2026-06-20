@@ -27,7 +27,15 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.4.0-beta.4)
+## What's new in this release (0.4.0)
+
+- **Filter the sync-status dialog by status (0.4.0)** — the status dialog gained a checkbox row (Uploaded, Downloaded, Deleted, Merged, Conflicted, Local wins, Remote wins, Error) so you can focus on, say, only conflicts.
+- **Compare a file with its remote version (0.4.0)** — opt in via "Compare with remote (explorer menu)" in settings, then right-click any file in the explorer to open a popup comparing local vs remote modification time, checksum (with a match/mismatch badge), and a line diff. Resolve the difference there with **push** or **pull**, each behind a confirmation.
+- **Files that differ between local and remote now always reconcile (0.4.0)** — fixes a case where, on servers that return no content checksum (ETag fallback), a note could differ between this device and the server yet never sync; such a file is now detected and reconciled through normal conflict resolution.
+- **Plain-text log files now use a .txt extension (0.4.0)** — per-device sync and debug logs are plain text, so they use a `.txt` extension to avoid being rendered as Markdown. Existing `.md` log files are left untouched.
+- **Internal refactor & documentation alignment (0.4.0)** — brings the code in line with the official Obsidian developer guidelines: vault watchers and engine init are deferred to `onLayoutReady`, local paths are normalized at the IO boundary, modal titles use the native title bar, and the diff/error styling follows your theme's colors.
+
+## 0.4.0-beta.4
 
 - **Internal refactor & documentation alignment (0.4.0-beta.4)** — a maintenance release with no user-facing behavior change. Brings the code in line with the official Obsidian developer guidelines: vault watchers and engine init are now deferred to `onLayoutReady` (avoiding the "create fires per file on startup" pitfall), local paths are normalized at the IO boundary, modal titles use the native title bar, and the diff/error styling now follows your theme's colors. Also fixes a few README details that had drifted from the actual behavior, and removes dead code.
 
