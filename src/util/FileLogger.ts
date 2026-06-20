@@ -1,4 +1,5 @@
 import { DataAdapter, normalizePath } from 'obsidian';
+import { ensureParentFolder } from './ensureParentFolder';
 
 /** Debug-log verbosity levels, ordered least → most verbose. */
 export type DebugLogLevel = 'error' | 'debug' | 'verbose';
@@ -39,6 +40,7 @@ export class FileLogger {
       if (await this.adapter.exists(p)) {
         await this.adapter.append(p, line);
       } else {
+        await ensureParentFolder(this.adapter, p);
         await this.adapter.write(p, `# Nextcloud Sync — diagnostic log\n\n${line}`);
       }
     } catch {

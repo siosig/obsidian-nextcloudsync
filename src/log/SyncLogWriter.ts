@@ -1,5 +1,6 @@
 import { DataAdapter, normalizePath } from 'obsidian';
 import { SyncFileOp, SyncHistoryEntry } from '../types';
+import { ensureParentFolder } from '../util/ensureParentFolder';
 
 export type SyncLogLevel = 'important' | 'all';
 
@@ -112,6 +113,7 @@ export class SyncLogWriter {
       if (await this.adapter.exists(p)) {
         await this.adapter.append(p, block);
       } else {
+        await ensureParentFolder(this.adapter, p);
         await this.adapter.write(p, `# Nextcloud Sync — sync log\n\n${block}`);
       }
     } catch {
