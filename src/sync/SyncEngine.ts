@@ -26,6 +26,7 @@ import { DryRunModal, DryRunPlan } from '../ui/DryRunModal';
 import { DiffModal } from '../ui/DiffModal';
 import { RenameTracker } from './RenameTracker';
 import { ConflictResolver } from './ConflictResolver';
+import { ConfigSyncResolver } from './ConfigSyncResolver';
 import { sha256 } from '../util/hash';
 import { FileLogger } from '../util/FileLogger';
 import { isCellularBlocked } from '../util/limits';
@@ -81,12 +82,20 @@ export class SyncEngine {
   /** Progress counters updated during a sync run (reset each run). */
   private syncProgress = { processed: 0, total: 0 };
   private renameTracker: RenameTracker | null = null;
+  /**
+   * Decides which `.obsidian` config-folder paths sync (category-level opt-in, issue #1) and
+   * enumerates them for the local scan. Single source of truth shared by `isSystemExcluded`,
+   * the remote-file filter, and the remote-deletion scope guard.
+   */
+  private readonly configSync: ConfigSyncResolver;
 
-  constructor(private readonly opts: SyncEngineOptions) {}
-
-  /** Obsidian's bookmarks config file (the only candidate exception to the config-folder exclusion). */
-  private get bookmarksPath(): string {
-    return `${this.opts.configDir}/bookmarks.json`;
+  constructor(private readonly opts: SyncEngineOptions) {
+    this.configSync = new ConfigSyncResolver({
+      configDir: opts.configDir,
+      settings: opts.settings,
+      pluginDir: opts.pluginDir,
+      localAdapter: opts.localAdapter,
+    });
   }
 
   private getOrCreateRenameTracker(): RenameTracker {
@@ -939,6 +948,23 @@ export class SyncEngine {
     const localStatBefore = await this.opts.localAdapter.stat(path);
     const localMtimeBefore = localStatBefore?.mtime ?? 0;
 
+    // Config-folder files (appearance.json, etc.) are JSON state, not authored prose: writing
+    // text conflict markers would corrupt the JSON and stop Obsidian reading the setting. Resolve
+    // these by newest-wins (most recent mtime), reusing the prefer-local/prefer-remote paths so
+    // markers/merge are never applied. Equal mtime → remote-wins (stable tiebreak).
+    if (this.configSync.isConfigFolderConflictPath(path)) {
+      if ((remote.lastModified || 0) >= localMtimeBefore) {
+        await this.client!.downloadFile(remote.path, '');
+        const remoteData = this.client!.getLastDownloadBuffer();
+        void this.opts.logger?.log(`conflict(config): remote newer, pulling → ${path}`);
+        await this.resolveByPreferRemote(path, remote, remoteData, remoteId, idType, summary);
+      } else {
+        void this.opts.logger?.log(`conflict(config): local newer, pushing → ${path}`);
+        await this.resolveByPreferLocal(path, remote, summary);
+      }
+      return;
+    }
+
     const localContent = await this.opts.localAdapter.read(path);
     await this.client!.downloadFile(remote.path, '');
     const remoteData = this.client!.getLastDownloadBuffer();
@@ -1156,10 +1182,11 @@ export class SyncEngine {
     // Scan local files in scope for sync (both new and modified).
     const localStats = new Map<string, { size: number; mtime: number }>();
     await this.collectLocalStats('', localStats);
-    // The config folder is not scanned, so explicitly add bookmarks when allowed.
-    if (this.opts.settings.syncBookmarks) {
-      const st = await this.opts.localAdapter.stat(this.bookmarksPath);
-      if (st) localStats.set(this.bookmarksPath, { size: st.size, mtime: st.mtime });
+    // The config folder is not scanned recursively, so explicitly inject the enabled
+    // config-sync category files (bookmarks, themes/snippets, appearance, etc.).
+    for (const p of await this.configSync.enumerateIncludedPaths()) {
+      const st = await this.opts.localAdapter.stat(p);
+      if (st) localStats.set(p, { size: st.size, mtime: st.mtime });
     }
 
     for (const [path, st] of localStats) {
@@ -1397,12 +1424,13 @@ export class SyncEngine {
     const results = new Map<string, { hash: string; size: number; mtime: number }>();
     // Locally, always scan the entire Vault (remotely, content is synced under a folder named after the Vault).
     await this.scanDir('', results);
-    // The entire config folder is excluded from scanning, so explicitly inject bookmarks when allowed.
-    if (this.opts.settings.syncBookmarks) {
-      const stat = await this.opts.localAdapter.stat(this.bookmarksPath);
+    // The entire config folder is excluded from scanning, so explicitly inject the enabled
+    // config-sync category files (bookmarks, themes/snippets, appearance, etc.).
+    for (const p of await this.configSync.enumerateIncludedPaths()) {
+      const stat = await this.opts.localAdapter.stat(p);
       if (stat) {
-        const data = await this.opts.localAdapter.readBinary(this.bookmarksPath);
-        results.set(this.bookmarksPath, { hash: await sha256(data), size: stat.size, mtime: stat.mtime });
+        const data = await this.opts.localAdapter.readBinary(p);
+        results.set(p, { hash: await sha256(data), size: stat.size, mtime: stat.mtime });
       }
     }
     return results;
@@ -1446,11 +1474,13 @@ export class SyncEngine {
     // The plugin's own atomic-write temp files are never sync content (defense in depth:
     // the vault watchers already filter them, but a leftover tmp must not be uploaded either).
     if (isSyncTmpPath(path)) return true;
-    // Bookmarks are synced only when enabled in settings (an exception to the config-folder exclusion).
-    if (path === this.bookmarksPath) return !this.opts.settings.syncBookmarks;
-    // Everything under the config folder (settings, themes, other plugins, state DB, etc.) is always excluded.
-    const configDir = this.opts.configDir;
-    return path === configDir || path.startsWith(`${configDir}/`);
+    // Ordinary vault files (outside the config folder) are never system-excluded.
+    if (!this.configSync.isUnderConfigDir(path)) return false;
+    // Inside the config folder: excluded unless an enabled config-sync category includes it.
+    // Community plugins (plugins/) and the plugin's own state DB are never included (hard
+    // exclusions inside ConfigSyncResolver), so the remote-deletion scope guard — which also
+    // calls this method — keeps protecting them.
+    return !this.configSync.isIncluded(path);
   }
 }
 

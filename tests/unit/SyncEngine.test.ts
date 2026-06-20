@@ -91,7 +91,9 @@ describe('SyncEngine.handleConflict — failure-policy actions', () => {
       serverUrl: '', username: '', passwordSecretId: '', syncIntervalMinutes: 0,
       networkTimeoutSeconds: 30, deviceId: 'dev-abcd', uploadChunkThresholdMB: 50,
       maxFileSizeMB: 1024, watchOnChangeEnabled: false, syncOnStartupEnabled: true,
-      startupSyncDelaySeconds: 5, networkConcurrency: 8, syncOnWifiOnly: false, syncBookmarks: false,
+      startupSyncDelaySeconds: 5, networkConcurrency: 8, syncOnWifiOnly: false,
+      syncConfigFolder: false,
+      configSync: { appearance: false, themesSnippets: false, hotkeys: false, corePlugins: false, bookmarks: false },
       deviceName: '', logsFolder: '', syncLogEnabled: false, syncLogLevel: 'important',
       debugLogEnabled: false, debugLogLevel: 'error',
       chunkedUploadEnabled: true, fileLockingEnabled: false,
@@ -223,7 +225,7 @@ describe('SyncEngine.processRemoteDeletion — out-of-scope safety', () => {
     };
   }
 
-  function buildHarness(getAbstractFile: (p: string) => unknown, opts: { syncBookmarks?: boolean } = {}) {
+  function buildHarness(getAbstractFile: (p: string) => unknown, opts: { bookmarks?: boolean } = {}) {
     const remove = jest.fn(async () => undefined);
     const trashFile = jest.fn(async () => undefined);
     const exists = jest.fn(async () => true);
@@ -235,10 +237,15 @@ describe('SyncEngine.processRemoteDeletion — out-of-scope safety', () => {
       fileManager: { trashFile },
     };
     const stateDB = { deleteFile };
-    const settings = { configDir: '.obsidian', syncBookmarks: opts.syncBookmarks ?? false } as unknown;
+    const bookmarks = opts.bookmarks ?? false;
+    const settings = {
+      configDir: '.obsidian',
+      syncConfigFolder: bookmarks,
+      configSync: { appearance: false, themesSnippets: false, hotkeys: false, corePlugins: false, bookmarks },
+    } as unknown;
     const engineOpts = {
       app, settings, stateDB, configDir: '.obsidian',
-      localAdapter: {}, statusBar: {}, webdavFactory: {}, pluginDir: '',
+      localAdapter: {}, statusBar: {}, webdavFactory: {}, pluginDir: '.obsidian/plugins/nextcloud-sync',
     };
     const engine = new SyncEngine(engineOpts as never);
     const invoke = (path: string, summary: SyncSessionSummary) =>
@@ -281,15 +288,15 @@ describe('SyncEngine.processRemoteDeletion — out-of-scope safety', () => {
     expect(summary.downloadedCount).toBe(1);
   });
 
-  it('processes bookmarks deletion only when bookmark sync is enabled', async () => {
-    // syncBookmarks ON → bookmarks.json is in scope → deletion proceeds (raw sink, untracked dotfile).
-    const on = buildHarness(() => null, { syncBookmarks: true });
+  it('processes bookmarks deletion only when the bookmarks config-sync category is enabled', async () => {
+    // master + bookmarks category ON → bookmarks.json is in scope → deletion proceeds.
+    const on = buildHarness(() => null, { bookmarks: true });
     const summaryOn = makeSummary();
     await on.invoke('.obsidian/bookmarks.json', summaryOn);
     expect(on.remove).toHaveBeenCalledTimes(1);
 
-    // syncBookmarks OFF → excluded → ignored.
-    const off = buildHarness(() => null, { syncBookmarks: false });
+    // bookmarks OFF (master off) → excluded → ignored.
+    const off = buildHarness(() => null, { bookmarks: false });
     const summaryOff = makeSummary();
     await off.invoke('.obsidian/bookmarks.json', summaryOff);
     expect(off.remove).not.toHaveBeenCalled();
