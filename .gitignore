@@ -35,6 +35,7 @@ refs/
 .specify/
 specs/
 report/
+docs/
 
 # TypeScript incremental build info
 *.tsbuildinfo
