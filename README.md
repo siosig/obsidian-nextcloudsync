@@ -27,7 +27,11 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.4.0-beta.2)
+## What's new in this release (0.4.0-beta.3)
+
+- **Plain-text log files now use a .txt extension (0.4.0-beta.3)** — the per-device sync and debug logs are plain text, not Markdown, so they now use a `.txt` extension to avoid being rendered as Markdown (which garbled the display). Existing `.md` log files are left untouched and can be deleted; new entries are written to the `.txt` files. `.txt` is in the default mergeable extensions, so cross-device log merging keeps working.
+
+## 0.4.0-beta.2
 
 - **Files that differ between local and remote now always reconcile (0.4.0-beta.2)** — fixes a case where, on servers that return no content checksum (so the plugin falls back to ETags), a note could differ between this device and the server yet never sync. The recorded sync state could become internally inconsistent and make the file look "unchanged" forever; such a file is now detected (by size) and reconciled through normal conflict resolution instead of being silently skipped.
 
