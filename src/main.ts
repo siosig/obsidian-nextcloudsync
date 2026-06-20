@@ -4,7 +4,7 @@ import { NextcloudSyncSettingTab } from './settings/SettingTab';
 import { SyncEngine } from './sync/SyncEngine';
 import { VersionHistoryModal } from './ui/VersionHistoryModal';
 import { SyncStatusModal } from './ui/SyncStatusModal';
-import { StatusFilterState, makeDefaultFilterState } from './ui/statusFilter';
+import { StatusFilterState, makeDefaultFilterState, serializeFilter, deserializeFilter } from './ui/statusFilter';
 import { CompareModal } from './ui/CompareModal';
 import { FileLogger } from './util/FileLogger';
 import { isSyncTmpPath, LocalAdapter } from './data/LocalAdapter';
@@ -26,8 +26,9 @@ export default class ObsidianNextcloudsync extends Plugin {
   /** Per-device sync-log writer (appends one block per sync when the sync log is enabled). */
   syncLogWriter!: SyncLogWriter;
   /**
-   * Session-lifetime status filter for the Sync Status dialog. Held here (not on the modal, which
-   * is recreated per open) so the selection persists across reopens and resets on Obsidian restart.
+   * Status filter for the Sync Status dialog. Held here (not on the modal, which is recreated per
+   * open) so the selection persists across reopens. Hydrated from settings on load and saved on every
+   * change, so it now survives an Obsidian restart too.
    */
   private readonly statusFilterState: StatusFilterState = makeDefaultFilterState();
 
@@ -43,6 +44,9 @@ export default class ObsidianNextcloudsync extends Plugin {
     }
 
     await this.loadSettings();
+
+    // Restore the persisted Sync Status filter selection (all-on when nothing was saved).
+    this.statusFilterState.checked = deserializeFilter(this.settings.statusFilter).checked;
 
     // Generate deviceId if not set (also used to label diagnostic-log lines per device).
     if (!this.settings.deviceId) {
@@ -203,8 +207,12 @@ export default class ObsidianNextcloudsync extends Plugin {
     }
   }
 
-  /** Open the sync-status dialog (conflicts / retry queue) from a status-bar click. */
-  private showSyncStatus(): void {
+  /**
+   * Open the Sync Status dialog. Reachable from the desktop status-bar click AND the settings
+   * "Last session summary" button, on both desktop and mobile (the dialog itself is platform-agnostic).
+   * The filter selection is persisted: every toggle saves it to settings so it survives a restart.
+   */
+  openSyncStatus(): void {
     if (!this.syncEngine) {
       new Notice('Configure the server settings first.');
       return;
@@ -214,6 +222,10 @@ export default class ObsidianNextcloudsync extends Plugin {
       () => this.syncEngine!.getStatusReport(),
       () => this.runSyncNow(),
       this.statusFilterState,
+      () => {
+        this.settings.statusFilter = serializeFilter(this.statusFilterState);
+        void this.saveSettings();
+      },
     ).open();
   }
 
@@ -366,7 +378,7 @@ export default class ObsidianNextcloudsync extends Plugin {
     // On desktop, clicking the status bar opens the sync-status dialog (conflicts / retries).
     const statusBar = Platform.isMobile
       ? new NoticeStatusBar()
-      : new StatusBarItem(this.addStatusBarItem(), () => this.showSyncStatus());
+      : new StatusBarItem(this.addStatusBarItem(), () => this.openSyncStatus());
     const password = loadAppPassword(this.app, this.settings.passwordSecretId);
     const webdavFactory = new WebDAVFactory(this.app, this.settings, password, (m) => void this.logger.log(`net: ${m}`));
 
