@@ -1,4 +1,6 @@
-import { DataAdapter, Notice, Platform, normalizePath } from 'obsidian';
+import { DataAdapter, Notice, Platform, Vault, normalizePath } from 'obsidian';
+
+export interface LocalFileEntry { path: string; size: number; mtime: number; }
 
 const TMP_SUFFIX = '.nextcloudsync.tmp';
 const IGNORE_TIMEOUT_MS = 5000;
@@ -19,7 +21,7 @@ export function isSyncTmpPath(path: string): boolean {
 export class LocalAdapter {
   private ignoreList: Map<string, number> = new Map();
 
-  constructor(private readonly adapter: DataAdapter) {}
+  constructor(private readonly adapter: DataAdapter, private readonly vault?: Vault) {}
 
   /** Register a path to be ignored for Vault events (prevents sync loop). */
   ignore(path: string): void {
@@ -148,5 +150,17 @@ export class LocalAdapter {
 
   showNotice(message: string, timeout = 4000): void {
     new Notice(message, timeout);
+  }
+
+  /**
+   * Enumerate Vault-tracked files (path + cached stat) WITHOUT any native FS round-trip.
+   * On mobile, adapter.list()/stat() each cross the JS↔native bridge; Vault.getFiles() and
+   * TFile.stat are served from Obsidian's in-memory index. The config folder (.obsidian) is not
+   * Vault-tracked and is intentionally excluded here — callers inject those paths separately.
+   * Returns [] when no Vault was injected (used only by IO-level unit tests).
+   */
+  listVaultFiles(): LocalFileEntry[] {
+    if (!this.vault) return [];
+    return this.vault.getFiles().map((f) => ({ path: f.path, size: f.stat.size, mtime: f.stat.mtime }));
   }
 }
