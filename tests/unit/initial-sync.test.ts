@@ -1,6 +1,36 @@
 import { SyncEngine } from '../../src/sync/SyncEngine';
+import { LocalAdapter } from '../../src/data/LocalAdapter';
 import { RemoteFileInfo } from '../../src/types';
 import { MAX_HASH_SIZE } from '../../src/util/limits';
+import { TFile, Vault, DataAdapter } from 'obsidian';
+
+// Cast TFile to allow construction in tests (same pattern as LocalAdapter.test.ts).
+type MockTFileCtor = new (path: string, stat?: { ctime?: number; mtime?: number; size?: number }) => TFile;
+const MockTFile = TFile as unknown as MockTFileCtor;
+
+function makeDataAdapter(): DataAdapter {
+  return {
+    read: jest.fn(),
+    write: jest.fn(),
+    readBinary: jest.fn(async () => new ArrayBuffer(0)),
+    writeBinary: jest.fn(),
+    exists: jest.fn(async () => false),
+    remove: jest.fn(),
+    rename: jest.fn(),
+    mkdir: jest.fn(),
+    stat: jest.fn(async () => null),
+    list: jest.fn(async () => ({ files: [], folders: [] })),
+  } as unknown as DataAdapter;
+}
+
+function makeVault(files: TFile[], adapter: DataAdapter): Vault {
+  return {
+    adapter,
+    getAbstractFileByPath: jest.fn(() => null),
+    getFiles: jest.fn(() => files),
+    trash: jest.fn(),
+  } as unknown as Vault;
+}
 
 /**
  * P0-C first-sync optimizations: no double whole-vault hash (executePlan reuses the scan), size-first
@@ -71,13 +101,18 @@ describe('SyncEngine.buildInitialPlan — size-first (P0-C / FR-011)', () => {
 
 describe('SyncEngine.scanLocalFiles — size-gate (P0-C / FR-012)', () => {
   it('does not pre-hash files larger than MAX_HASH_SIZE', async () => {
+    // Migrate to Vault-mock approach (Task 2: scanLocalFiles now reads from listVaultFiles()).
     const readBinary = jest.fn(async () => new ArrayBuffer(1));
-    const localAdapter = {
-      list: jest.fn(async (dir: string) =>
-        dir === '' ? { files: ['small.md', 'big.bin'], folders: [] } : { files: [], folders: [] }),
-      stat: jest.fn(async (p: string) => ({ size: p === 'big.bin' ? MAX_HASH_SIZE + 1 : 4, mtime: 1 })),
-      readBinary,
-    };
+    const rawAdapter = makeDataAdapter();
+    (rawAdapter.readBinary as jest.Mock).mockImplementation(readBinary);
+    const vault = makeVault(
+      [
+        new MockTFile('small.md', { size: 4, mtime: 1 }),
+        new MockTFile('big.bin', { size: MAX_HASH_SIZE + 1, mtime: 1 }),
+      ],
+      rawAdapter,
+    );
+    const localAdapter = new LocalAdapter(rawAdapter, vault);
     const engine = makeEngine(localAdapter);
     const scan = await (engine as unknown as { scanLocalFiles(): Promise<Map<string, { hash: string; size: number; mtime: number }>> }).scanLocalFiles();
     expect(scan.get('small.md')?.hash).not.toBe('');

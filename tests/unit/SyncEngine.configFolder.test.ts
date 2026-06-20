@@ -1,5 +1,32 @@
 import { SyncEngine } from '../../src/sync/SyncEngine';
+import { LocalAdapter } from '../../src/data/LocalAdapter';
 import { DavSyncSettings, ConfigSyncCategories, SyncSessionSummary } from '../../src/types';
+import { DataAdapter, Vault } from 'obsidian';
+
+function makeDataAdapter(overrides: Partial<DataAdapter> = {}): DataAdapter {
+  return {
+    read: jest.fn(),
+    write: jest.fn(),
+    readBinary: jest.fn(async () => new ArrayBuffer(0)),
+    writeBinary: jest.fn(),
+    exists: jest.fn(async () => false),
+    remove: jest.fn(),
+    rename: jest.fn(),
+    mkdir: jest.fn(),
+    stat: jest.fn(async () => null),
+    list: jest.fn(async () => ({ files: [], folders: [] })),
+    ...overrides,
+  } as unknown as DataAdapter;
+}
+
+function makeEmptyVault(adapter: DataAdapter): Vault {
+  return {
+    adapter,
+    getAbstractFileByPath: jest.fn(() => null),
+    getFiles: jest.fn(() => []),
+    trash: jest.fn(),
+  } as unknown as Vault;
+}
 
 /**
  * Config-folder sync wiring in SyncEngine:
@@ -30,12 +57,14 @@ function makeSummary(): SyncSessionSummary {
 
 describe('SyncEngine local-scan injection (config folder)', () => {
   it('injects an enabled-category file that exists, and excludes disabled categories', async () => {
+    // Vault is empty (config-folder files are not Vault-tracked); stat provides the file's presence.
     const present = new Set<string>([`${CONFIG_DIR}/appearance.json`]);
-    const localAdapter = {
-      list: jest.fn(async () => ({ files: [], folders: [] })), // empty vault root
-      stat: jest.fn(async (p: string) => (present.has(p) ? { size: 3, mtime: 1 } : null)),
+    const rawAdapter = makeDataAdapter({
+      stat: jest.fn(async (p: string) => (present.has(p) ? { size: 3, mtime: 1 } as never : null)),
       readBinary: jest.fn(async () => toBuf('{}')),
-    };
+    });
+    const vault = makeEmptyVault(rawAdapter);
+    const localAdapter = new LocalAdapter(rawAdapter, vault);
     const engine = new SyncEngine({
       app: {}, settings: settings(true, { appearance: true }), localAdapter,
       stateDB: {}, statusBar: {}, webdavFactory: {}, pluginDir: PLUGIN_DIR, configDir: CONFIG_DIR,
@@ -51,11 +80,12 @@ describe('SyncEngine local-scan injection (config folder)', () => {
   });
 
   it('injects nothing under the config folder when the master is OFF', async () => {
-    const localAdapter = {
-      list: jest.fn(async () => ({ files: [], folders: [] })),
-      stat: jest.fn(async () => ({ size: 3, mtime: 1 })),
+    const rawAdapter = makeDataAdapter({
+      stat: jest.fn(async () => ({ size: 3, mtime: 1 } as never)),
       readBinary: jest.fn(async () => toBuf('{}')),
-    };
+    });
+    const vault = makeEmptyVault(rawAdapter);
+    const localAdapter = new LocalAdapter(rawAdapter, vault);
     const engine = new SyncEngine({
       app: {}, settings: settings(false, { appearance: true }), localAdapter,
       stateDB: {}, statusBar: {}, webdavFactory: {}, pluginDir: PLUGIN_DIR, configDir: CONFIG_DIR,
