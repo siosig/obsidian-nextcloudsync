@@ -12,6 +12,7 @@ import { isSyncTmpPath, LocalAdapter } from './data/LocalAdapter';
 import { v4 as uuidv4 } from './util/uuid';
 import { hostToken, LogPlatform } from './util/hostToken';
 import { migrateLegacyDebugMode, migrateBookmarksToConfigSync, pruneObsoleteSettings } from './util/settingsMigration';
+import { resolveConcurrencyDefault } from './util/limits';
 import { debugLogPath, syncLogPath } from './util/logPaths';
 import { SyncLogWriter, formatResolution } from './log/SyncLogWriter';
 
@@ -361,11 +362,15 @@ export default class ObsidianNextcloudsync extends Plugin {
     // their values (backward compatible).
     if (Platform.isMobile) {
       if (saved.syncOnStartupEnabled === undefined) this.settings.syncOnStartupEnabled = false;
-      // Mobile default raised 2 → 3 now that concurrency is wired into the main loops with the
-      // ByteSemaphore + per-directory serialization guards (P1-A). Kept conservative for mobile RAM/radio.
-      if (saved.networkConcurrency === undefined) this.settings.networkConcurrency = 3;
       if (saved.maxFileSizeMB === undefined) this.settings.maxFileSizeMB = 20; // OOM-safe cap
       if (saved.syncOnWifiOnly === undefined) this.settings.syncOnWifiOnly = true;
+    }
+
+    // Network concurrency default scales with device RAM, identical on every platform (no Platform
+    // branch). Existing users keep their saved value; only the first-run default is computed here.
+    if (saved.networkConcurrency === undefined) {
+      const deviceMemoryGB = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+      this.settings.networkConcurrency = resolveConcurrencyDefault(deviceMemoryGB);
     }
 
     // Defensive normalization for the conflict-resolution settings (backward compat / corrupt data).
