@@ -27,7 +27,11 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.0-beta.1)
+## What's new in this release (0.7.0)
+
+- **Faster mobile sync via Vault-cache enumeration (0.7.0)** — local scanning now reads Obsidian's in-memory file index (`Vault.getFiles`) instead of making per-file native filesystem calls, removing the O(N) bridge round-trips that made sync slow on mobile. The initial scan also hashes only the files that actually need a checksum comparison, and network concurrency now scales with device memory uniformly across desktop and mobile (no platform-specific branch). Dot paths that `Vault.getFiles` omits are re-enumerated so they keep syncing.
+
+## 0.7.0-beta.1
 
 - **Faster mobile sync via Vault-cache enumeration (0.7.0-beta.1)** — local scanning now reads Obsidian's in-memory file index (`Vault.getFiles`) instead of making per-file native filesystem calls, removing the O(N) bridge round-trips that made sync slow on mobile. The initial scan also hashes only the files that actually need a checksum comparison, and network concurrency now scales with device memory uniformly across desktop and mobile (no platform-specific branch).
 
