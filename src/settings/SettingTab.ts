@@ -159,7 +159,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('File locking (experimental)')
-      .setDesc('⚠️ when enabled, files are locked on the server during updates to prevent concurrent-edit conflicts. Requires the Nextcloud files locking app. Default off.')
+      .setDesc('⚠️ when enabled, files are locked on the server during updates to prevent concurrent-edit conflicts. Requires the Nextcloud files locking app. Default on.')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.fileLockingEnabled)
         .onChange(async (value) => {

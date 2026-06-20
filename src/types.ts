@@ -29,7 +29,7 @@ export interface DavSyncSettings {
   startupSyncDelaySeconds: number;
   /**
    * Number of concurrent WebDAV requests. Default is platform-dependent
-   * (desktop 8 / mobile 2), resolved on first run. No clamping (user value is used as-is).
+   * (desktop 16 / mobile 2), resolved on first run. No clamping (user value is used as-is).
    */
   networkConcurrency: number;
   /**
@@ -60,7 +60,7 @@ export interface DavSyncSettings {
   debugLogLevel: 'error' | 'debug' | 'verbose';
   /** Enable chunked uploads (default ON; Nextcloud only). */
   chunkedUploadEnabled: boolean;
-  /** Enable Files Locking (experimental; default OFF; only on servers that support files_lock). */
+  /** Enable Files Locking (experimental; default ON; only on servers that support files_lock). */
   fileLockingEnabled: boolean;
   autoMergeEnabled: boolean;
   maxConflictRegions: number;
