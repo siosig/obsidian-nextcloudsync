@@ -247,40 +247,6 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
-    // ── Config folder (.obsidian) ──────────────────────────────────────────────
-    // Category-level opt-in for the config folder (issue #1), modelled on Obsidian native
-    // Sync's "Vault configuration sync". Community plugins and the plugin's own state DB are
-    // never synced and have no toggle (enforced in ConfigSyncResolver). The per-category rows
-    // are folded away while the master is OFF and re-rendered when it changes.
-    new Setting(containerEl).setName(`Config folder (${configDir})`).setHeading();
-
-    new Setting(containerEl)
-      .setName('Sync config folder')
-      .setDesc(`Opt in to syncing parts of the ${configDir} config folder across devices. Off by default — only notes and other vault files sync. Community plugins are never synced (their files stay device-local). A synced change to core-plugin settings may need an Obsidian restart to take effect on the other device.`)
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.syncConfigFolder)
-        .onChange(async (value) => {
-          this.plugin.settings.syncConfigFolder = value;
-          await this.plugin.saveSettings();
-          // Re-render so the per-category toggles fold away / reappear (their values persist
-          // in settings across the toggle).
-          this.render();
-        }));
-
-    if (this.plugin.settings.syncConfigFolder) {
-      for (const category of CONFIG_SYNC_CATEGORIES) {
-        new Setting(containerEl)
-          .setName(category.label)
-          .setDesc(category.description)
-          .addToggle(toggle => toggle
-            .setValue(this.plugin.settings.configSync[category.key])
-            .onChange(async (value) => {
-              this.plugin.settings.configSync[category.key] = value;
-              await this.plugin.saveSettings();
-            }));
-      }
-    }
-
     new Setting(containerEl)
       .setName('Compare with remote (explorer menu)')
       .setDesc('Adds a right-click item in the file explorer to compare a file with its remote version (modification time, checksum, diff) and resolve via push/pull. Takes effect immediately (no restart).')
@@ -316,6 +282,40 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
           this.plugin.settings.chunkedUploadEnabled = value;
           await this.plugin.saveSettings();
         }));
+
+    // ── Config folder (.obsidian) ──────────────────────────────────────────────
+    // Category-level opt-in for the config folder (issue #1), modelled on Obsidian native
+    // Sync's "Vault configuration sync". Community plugins and the plugin's own state DB are
+    // never synced and have no toggle (enforced in ConfigSyncResolver). The per-category rows
+    // are folded away while the master is OFF and re-rendered when it changes.
+    new Setting(containerEl).setName(`Config folder (${configDir})`).setHeading();
+
+    new Setting(containerEl)
+      .setName('Sync config folder')
+      .setDesc(`Opt in to syncing parts of the ${configDir} config folder across devices. Off by default — only notes and other vault files sync. Community plugins are never synced (their files stay device-local). A synced change to core-plugin settings may need an Obsidian restart to take effect on the other device.`)
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.syncConfigFolder)
+        .onChange(async (value) => {
+          this.plugin.settings.syncConfigFolder = value;
+          await this.plugin.saveSettings();
+          // Re-render so the per-category toggles fold away / reappear (their values persist
+          // in settings across the toggle).
+          this.render();
+        }));
+
+    if (this.plugin.settings.syncConfigFolder) {
+      for (const category of CONFIG_SYNC_CATEGORIES) {
+        new Setting(containerEl)
+          .setName(category.label)
+          .setDesc(category.description)
+          .addToggle(toggle => toggle
+            .setValue(this.plugin.settings.configSync[category.key])
+            .onChange(async (value) => {
+              this.plugin.settings.configSync[category.key] = value;
+              await this.plugin.saveSettings();
+            }));
+      }
+    }
 
     new Setting(containerEl).setName('Merge').setHeading();
 
