@@ -466,6 +466,19 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
+    new Setting(containerEl).setName('Maintenance').setHeading();
+
+    new Setting(containerEl)
+      .setName('Reset vault index')
+      .setDesc('Clear this device\'s sync tracking index so the plugin returns to its first-install state. No vault or remote files are deleted; the next sync performs a full re-scan. Use this if the sync state looks inconsistent.')
+      .addButton(btn => btn
+        .setButtonText('Reset')
+        // `mod-warning` is the destructive-button class; setDestructive() needs 1.13.0 > minAppVersion.
+        .setClass('mod-warning')
+        .onClick(() => {
+          void this.plugin.resetVaultIndex();
+        }));
+
     new Setting(containerEl)
       .setName('Last session summary')
       .setDesc('Open the sync status dialog: recent activity grouped by sync run, conflicts, retries, and errors.')

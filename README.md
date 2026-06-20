@@ -156,7 +156,6 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 ### Core sync
 - **Bidirectional sync** between Obsidian and Nextcloud.
 - **Hash-based differential sync** — only changed files are transferred (no full rescans), so a 1,000-file Vault settles in seconds.
-- **Dry-run preview** — see exactly what will upload / download *before* the first sync runs, and approve it. Conflicted files explain how they'll be resolved, and clicking one opens a read-only before/after preview of the merged result.
 - **Atomic writes** — a download interrupted mid-transfer never leaves a half-written or 0-byte file in your Vault.
 - **Rename / move tracking** via Nextcloud file IDs — moving a note doesn't re-upload it everywhere.
 - **Trashbin deletes** — remote deletions use the Nextcloud trashbin (recoverable). When a deletion is applied to your local Vault, it follows **your Obsidian "Deleted files" setting** (system trash / move to `.trash` / permanently delete) rather than forcing one behavior; folders and files outside the Vault's tracked notes (e.g. config-folder files) are handled too.
@@ -170,6 +169,7 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 - **Per-device logging** — two opt-in logs, written to a folder you pick (a fuzzy folder picker; defaults to the vault root) and named per device so multiple devices never overwrite one another:
   - **Sync log** (`nextcloud-sync_sync_<device>.txt`) — one appended block per sync with the plugin version and all merge-related settings in the header, then one line per operation showing the marker, path, local/remote checksums and sizes. A level switch records *important events only* (conflicts, merges, side-wins, errors) or *all operations*.
   - **Debug log** (`nextcloud-sync_debug_<device>.txt`) — a timestamped diagnostic log with selectable verbosity (error / debug / verbose), the plugin version, and a snapshot of all settings. Useful for troubleshooting on mobile where there's no console. Turn it off and delete the file when finished.
+- **Reset the Vault index** *(Settings → Maintenance)* — clear this device's sync tracking index back to its first-install state (behind a confirmation) so the next sync re-scans everything. No Vault or remote files are deleted; use it to recover from inconsistent sync state.
 
 ### Conflict safety (never lose content)
 - **Auto-merge** (`reconcile-text` / diff3) for edits in different regions, including YAML frontmatter when the two sides changed non-overlapping lines (on by default).
@@ -228,7 +228,7 @@ Mobile is supported, with a few platform-aware differences (desktop behaviour is
    - **Recommended:** click **Login with browser** (Login Flow v2), approve in the browser, and credentials are filled in and stored automatically; **or**
    - enter your **username** and a manually issued **app password**.
 4. (Optional) Adjust the auto-sync interval, **Sync on file change** (watch mode), auto-merge, chunk threshold, and locking options.
-5. Run the **Sync now** command (or wait for the periodic sync). On the first run you'll get a **dry-run preview** (`N uploads / M downloads`) to approve.
+5. Run the **Sync now** command (or wait for the periodic sync). The first run performs a full scan of your Vault and the remote, then transfers what's needed; subsequent syncs are incremental.
 
 Your Vault is synced into a folder named after the Vault on the Nextcloud side, keeping multiple Vaults cleanly separated.
 

@@ -190,7 +190,7 @@ describe('ConflictResolver.resolve (local-side write)', () => {
   });
 });
 
-describe('ConflictResolver.computeResolution (dry-run preview)', () => {
+describe('ConflictResolver.computeResolution (pure resolved-content compute)', () => {
   it('skip → keeps local unchanged, clean=false', () => {
     const r = makeResolver(makeSettings(false, 'error'));
     const res = r.computeResolution('image.png', '', 'localX', 'remoteY');

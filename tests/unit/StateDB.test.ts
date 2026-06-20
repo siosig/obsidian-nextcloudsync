@@ -196,6 +196,75 @@ describe('StateDB', () => {
     expect(db2.getFileByRemoteId('fid-9')?.path).toBe('x.md');
   });
 
+  // ── 017: Vault index reset (maintenance) ──
+
+  it('reset() clears all tracked files and the sync token, preserves deviceId, and persists', async () => {
+    const adapter = makeAdapter();
+    const db = new StateDB(adapter, PLUGIN_DIR, DEVICE_ID);
+    await db.load();
+    db.setSyncToken('tok123');
+    db.setLastSyncTime(999);
+    db.setFile({ path: 'a.md', localHash: 'x', remoteId: 'x', idType: 'sha256', size: 10, mtime: 0, remoteFileId: 'fid-1', isConflicted: false });
+    db.setFile({ path: 'b.md', localHash: 'y', remoteId: 'y', idType: 'sha256', size: 10, mtime: 0, remoteFileId: 'fid-2', isConflicted: true });
+
+    await db.reset();
+
+    // In-memory state is the first-install empty state, deviceId preserved.
+    expect(db.getAllFiles()).toHaveLength(0);
+    expect(db.getSyncToken()).toBeNull();
+    expect(db.getLastSyncTime()).toBe(0);
+    expect(db.getDeviceId()).toBe(DEVICE_ID);
+    // The remoteFileId reverse index is emptied too.
+    expect(db.getFileByRemoteId('fid-1')).toBeUndefined();
+    expect(db.getFileByRemoteId('fid-2')).toBeUndefined();
+    // Persisted: a fresh load yields the empty state.
+    const reloaded = new StateDB(adapter, PLUGIN_DIR, DEVICE_ID);
+    await reloaded.load();
+    expect(reloaded.getAllFiles()).toHaveLength(0);
+    expect(reloaded.getSyncToken()).toBeNull();
+    expect(reloaded.getDeviceId()).toBe(DEVICE_ID);
+  });
+
+  it('reset() cancels a pending debounced save so it cannot resurrect the old state', async () => {
+    const adapter = makeAdapter();
+    const db = new StateDB(adapter, PLUGIN_DIR, DEVICE_ID);
+    await db.load();
+    db.setSyncToken('stale');
+    db.requestSave(); // schedule a debounced write of the stale state
+    await db.reset();
+    await db.flush(); // any leftover pending timer would write here
+    const raw = await adapter.read(`${PLUGIN_DIR}/state-${DEVICE_ID}.json`);
+    const persisted = JSON.parse(raw);
+    expect(persisted.syncToken).toBeNull();
+    expect(persisted.files).toEqual({});
+  });
+
+  it('static resetFile() overwrites a non-empty on-disk state with the canonical empty state', async () => {
+    const existing = {
+      deviceId: DEVICE_ID, lastSyncTime: 42, syncToken: 'tok',
+      files: { 'n.md': { path: 'n.md', localHash: 'a', remoteId: 'b', idType: 'sha256', size: 3, mtime: 1, remoteFileId: 'fid', isConflicted: false } },
+    };
+    const adapter = makeAdapter({ [`${PLUGIN_DIR}/state-${DEVICE_ID}.json`]: JSON.stringify(existing) });
+
+    await StateDB.resetFile(adapter, PLUGIN_DIR, DEVICE_ID);
+
+    const db = new StateDB(adapter, PLUGIN_DIR, DEVICE_ID);
+    await db.load();
+    expect(db.getAllFiles()).toHaveLength(0);
+    expect(db.getSyncToken()).toBeNull();
+    expect(db.getLastSyncTime()).toBe(0);
+    expect(db.getDeviceId()).toBe(DEVICE_ID);
+  });
+
+  it('static resetFile() works when no state file exists yet', async () => {
+    const adapter = makeAdapter();
+    await expect(StateDB.resetFile(adapter, PLUGIN_DIR, DEVICE_ID)).resolves.not.toThrow();
+    const db = new StateDB(adapter, PLUGIN_DIR, DEVICE_ID);
+    await db.load();
+    expect(db.getAllFiles()).toHaveLength(0);
+    expect(db.getSyncToken()).toBeNull();
+  });
+
   it('loads a v1 state file lacking the new signature fields without error', async () => {
     // No localMtime/localSize/remoteMtime — represents pre-upgrade state.
     const v1 = {
