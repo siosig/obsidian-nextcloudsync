@@ -27,7 +27,12 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.6.0)
+## What's new in this release (0.6.1)
+
+- **New "Reset vault index" maintenance action (0.6.1)** — a new **Settings → Maintenance** section adds a button that clears this device's sync tracking index back to its first-install state (behind a confirmation), so the next sync re-scans everything from scratch. No Vault or remote files are deleted, and an in-progress sync is aborted first. The existing **Last session summary** entry now lives in this Maintenance section too.
+- **First sync no longer shows a preview/approval step (0.6.1)** — the initial-sync "dry run" confirmation modal has been removed; the first sync now scans and applies its plan directly. The reset action's confirmation is the deliberate point at which a full re-scan is acknowledged.
+
+## 0.6.0
 
 - **Much faster sync — mobile/Android no longer stalls (0.6.0)** — change detection now uses a stat signature recorded *as written* instead of relying on setting the modification time (a no-op on mobile), so a re-sync no longer re-reads and re-hashes the whole vault; the first sync no longer hashes the vault twice; transfers run with bounded parallelism capped by a memory-safe byte budget; file locking now defaults off with an `If-Match` optimistic-concurrency guard (fewer round trips, still no lost updates); and large server listings no longer freeze the UI.
 - **Sync Status dialog reachable on mobile, grouped by sync run (0.6.0)** — the settings **Last session summary** button opens the full Sync Status dialog on both desktop and mobile. Recent activity is grouped by sync run, each group headed by a separator showing that run's start time in 24-hour format, and your status-filter selection is remembered across restarts.
