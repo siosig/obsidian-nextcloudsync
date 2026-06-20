@@ -34,7 +34,13 @@ import { IUploadStrategy } from './upload/IUploadStrategy';
 import { SimpleUploadStrategy } from './upload/SimpleUploadStrategy';
 import { ChunkedUploadStrategy } from './upload/ChunkedUploadStrategy';
 
-export interface SyncEngineOptions {
+/** The local-side fields of a compare result, shared by every `compareWithRemote` outcome. */
+type CompareLocalSide = Pick<
+  RemoteCompareResult,
+  'path' | 'localExists' | 'localMtime' | 'localChecksum' | 'localText' | 'localSize'
+>;
+
+interface SyncEngineOptions {
   app: App;
   settings: DavSyncSettings;
   localAdapter: LocalAdapter;
@@ -347,7 +353,7 @@ export class SyncEngine {
       if (textEligible) localText = new TextDecoder().decode(localBytes);
     }
 
-    const base = {
+    const local: CompareLocalSide = {
       path,
       localExists,
       localMtime: stat?.mtime ?? null,
@@ -358,34 +364,40 @@ export class SyncEngine {
 
     try {
       const remote = await this.fetchRemoteInfo(path);
-      if (!remote) {
-        return {
-          ...base, state: 'remote-missing', remoteExists: false,
-          remoteMtime: null, remoteChecksum: null, checksumMatch: false,
-          remoteText: null, diffAvailable: false, remoteSize: null,
-        };
-      }
+      if (!remote) return this.compareWithoutRemote(local, 'remote-missing');
+
       await this.client!.downloadFile(path, '');
       const remoteBytes = this.client!.getLastDownloadBuffer();
       // Hash the actual bytes (not the server-reported checksum) so checksumMatch is guaranteed
       // consistent with the diff: identical bytes ⇔ match ⇔ empty diff.
       const remoteChecksum = await sha256(remoteBytes);
       const remoteText = textEligible ? new TextDecoder().decode(remoteBytes) : null;
-      const checksumMatch = localChecksum != null && localChecksum === remoteChecksum;
       return {
-        ...base, state: 'ok', remoteExists: true,
+        ...local, state: 'ok', remoteExists: true,
         remoteMtime: remote.lastModified ?? null,
-        remoteChecksum, checksumMatch,
+        remoteChecksum,
+        checksumMatch: localChecksum != null && localChecksum === remoteChecksum,
         remoteText, diffAvailable: textEligible && localExists,
         remoteSize: remote.size ?? null,
       };
     } catch (err) {
-      return {
-        ...base, state: 'error', errorMessage: (err as Error)?.message ?? String(err),
-        remoteExists: false, remoteMtime: null, remoteChecksum: null, checksumMatch: false,
-        remoteText: null, diffAvailable: false, remoteSize: null,
-      };
+      return this.compareWithoutRemote(local, 'error', (err as Error)?.message ?? String(err));
     }
+  }
+
+  /**
+   * Build a compare result for the two cases where no remote content is available — the remote file
+   * is missing, or the fetch failed. Both carry the local side and null remote fields; `error` adds
+   * a message. Centralizes the otherwise-duplicated "no remote" field set.
+   */
+  private compareWithoutRemote(
+    local: CompareLocalSide, state: 'remote-missing' | 'error', errorMessage?: string,
+  ): RemoteCompareResult {
+    return {
+      ...local, state, errorMessage,
+      remoteExists: false, remoteMtime: null, remoteChecksum: null, checksumMatch: false,
+      remoteText: null, diffAvailable: false, remoteSize: null,
+    };
   }
 
   /**
