@@ -96,6 +96,7 @@ describe('SyncEngine.handleConflict — failure-policy actions', () => {
       chunkedUploadEnabled: true, fileLockingEnabled: false,
       autoMergeEnabled: true, maxConflictRegions: 10, frontmatterConflictStrategy: 'conflict',
       mergeableExtensions: ['md', 'txt'], conflictFailurePolicy: policy,
+      explorerCompareEnabled: false,
     };
   }
 

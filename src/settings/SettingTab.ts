@@ -256,6 +256,16 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
+    new Setting(containerEl)
+      .setName('Compare with remote (explorer menu)')
+      .setDesc('Adds a right-click item in the file explorer to compare a file with its remote version (modification time, checksum, diff) and resolve via push/pull. Takes effect immediately (no restart).')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.explorerCompareEnabled)
+        .onChange(async (value) => {
+          this.plugin.settings.explorerCompareEnabled = value;
+          await this.plugin.saveSettings();
+        }));
+
     this.addNumberSlider(containerEl, {
       name: 'Chunk threshold (MB)',
       desc: 'Files larger than this are uploaded in chunks (Nextcloud only). Smaller files use a single request.',
