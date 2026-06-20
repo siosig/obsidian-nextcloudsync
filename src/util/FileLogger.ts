@@ -1,7 +1,7 @@
 import { DataAdapter, normalizePath } from 'obsidian';
 
 /** Legacy vault-root debug-log file (pre-012). Superseded by the per-device file; kept for reference. */
-export const DEBUG_LOG_PATH = 'nextcloud-sync-debug.md';
+export const DEBUG_LOG_PATH = 'nextcloud-sync-debug.txt';
 
 /** Debug-log verbosity levels, ordered least → most verbose. */
 export type DebugLogLevel = 'error' | 'debug' | 'verbose';
