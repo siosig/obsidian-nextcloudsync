@@ -247,13 +247,11 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
-    // ── Config folder (.obsidian) ──────────────────────────────────────────────
-    // Category-level opt-in for the config folder (issue #1), modelled on Obsidian native
-    // Sync's "Vault configuration sync". Community plugins and the plugin's own state DB are
-    // never synced and have no toggle (enforced in ConfigSyncResolver). The per-category rows
-    // are folded away while the master is OFF and re-rendered when it changes.
-    new Setting(containerEl).setName(`Config folder (${configDir})`).setHeading();
-
+    // Config-folder sync lives inside the Sync group (no separate heading), as a master
+    // toggle plus per-category opt-in (issue #1), modelled on Obsidian native Sync's "Vault
+    // configuration sync". Community plugins and the plugin's own state DB are never synced and
+    // have no toggle (enforced in ConfigSyncResolver). The per-category rows are folded away
+    // while the master is OFF and re-rendered when it changes.
     new Setting(containerEl)
       .setName('Sync config folder')
       .setDesc(`Opt in to syncing parts of the ${configDir} config folder across devices. Off by default — only notes and other vault files sync. Community plugins are never synced (their files stay device-local). A synced change to core-plugin settings may need an Obsidian restart to take effect on the other device.`)
