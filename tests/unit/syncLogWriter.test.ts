@@ -133,4 +133,27 @@ describe('SyncLogWriter.append', () => {
     expect(a.write).not.toHaveBeenCalled();
     expect(a.append).not.toHaveBeenCalled();
   });
+
+  it('creates a missing log folder before the first write', async () => {
+    // Adapter modelling Obsidian's real constraint: write into a missing folder throws.
+    const folders = new Set<string>(['']);
+    const files: Record<string, string> = {};
+    const a = {
+      exists: jest.fn(async (p: string) => folders.has(p) || p in files),
+      mkdir: jest.fn(async (p: string) => { folders.add(p); }),
+      append: jest.fn(async (p: string, d: string) => { files[p] = (files[p] ?? '') + d; }),
+      write: jest.fn(async (p: string, d: string) => {
+        const slash = p.lastIndexOf('/');
+        const parent = slash > 0 ? p.slice(0, slash) : '';
+        if (!folders.has(parent)) throw new Error(`ENOENT: no such folder ${parent}`);
+        files[p] = d;
+      }),
+    };
+    const writer = new SyncLogWriter(
+      a as never, () => true, () => '_logs/nextcloud-sync_sync_host.txt',
+    );
+    await writer.append([entry({ op: 'merged' })], ctx);
+    expect(a.mkdir).toHaveBeenCalledWith('_logs');
+    expect(files['_logs/nextcloud-sync_sync_host.txt']).toContain('# Nextcloud Sync — sync log');
+  });
 });

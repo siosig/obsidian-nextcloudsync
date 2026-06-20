@@ -2,9 +2,11 @@ import { FileLogger, DebugLogLevel } from '../../src/util/FileLogger';
 
 function fakeAdapter() {
   const files: Record<string, string> = {};
+  const folders = new Set<string>(['']);
   return {
     files,
-    exists: jest.fn(async (p: string) => p in files),
+    exists: jest.fn(async (p: string) => folders.has(p) || p in files),
+    mkdir: jest.fn(async (p: string) => { folders.add(p); }),
     append: jest.fn(async (p: string, d: string) => { files[p] = (files[p] ?? '') + d; }),
     write: jest.fn(async (p: string, d: string) => { files[p] = d; }),
   };
@@ -72,6 +74,30 @@ describe('FileLogger level gating', () => {
     // default 'debug' is above the 'error' threshold → not written
     expect(a.append).not.toHaveBeenCalled();
     expect(a.write).not.toHaveBeenCalled();
+  });
+
+  it('creates a missing log folder before the first write', async () => {
+    // Adapter modelling Obsidian's real constraint: write into a missing folder throws.
+    const folders = new Set<string>(['']);
+    const files: Record<string, string> = {};
+    const a = {
+      exists: jest.fn(async (p: string) => folders.has(p) || p in files),
+      mkdir: jest.fn(async (p: string) => { folders.add(p); }),
+      append: jest.fn(async (p: string, d: string) => { files[p] = (files[p] ?? '') + d; }),
+      write: jest.fn(async (p: string, d: string) => {
+        const slash = p.lastIndexOf('/');
+        const parent = slash > 0 ? p.slice(0, slash) : '';
+        if (!folders.has(parent)) throw new Error(`ENOENT: no such folder ${parent}`);
+        files[p] = d;
+      }),
+    };
+    const logger = new FileLogger(
+      a as never, () => true, () => 'verbose', '0.2.10', 'host',
+      () => '_logs/nextcloud-sync_debug_host.txt',
+    );
+    await logger.log('first line', 'verbose');
+    expect(a.mkdir).toHaveBeenCalledWith('_logs');
+    expect(files['_logs/nextcloud-sync_debug_host.txt']).toContain('first line');
   });
 
   it('records the host token and binary version, and appends to an existing file', async () => {
