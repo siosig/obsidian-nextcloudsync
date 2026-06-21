@@ -12,13 +12,10 @@ jest.mock('reconcile-text', () => ({
 }), { virtual: true });
 
 jest.mock('node-diff3', () => ({
-  merge: (a: string[], _o: string[], b: string[], _opts: unknown) => {
-    // Return conflict if lines differ
+  // Diff3Strategy uses diff3Merge, which returns a chunk array ({ok}|{conflict}).
+  diff3Merge: (a: string[], _o: string[], b: string[], _opts: unknown) => {
     const hasConflict = JSON.stringify(a) !== JSON.stringify(b);
-    if (hasConflict) {
-      return { result: [{ conflict: { a, b } }], conflict: true };
-    }
-    return { result: [{ ok: a }], conflict: false };
+    return hasConflict ? [{ conflict: { a, b } }] : [{ ok: a }];
   },
 }), { virtual: true });
 

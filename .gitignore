@@ -19,6 +19,8 @@ coverage/
 # Environment variables / logs
 .env
 .env.*
+# Keep the committed E2E env template (placeholders only; real values stay gitignored).
+!.env.e2e.example
 *.log
 
 # secretlint local-only denylist (company/personal hostnames etc.; never kept in the public repo)

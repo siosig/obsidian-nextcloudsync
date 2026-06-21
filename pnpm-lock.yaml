@@ -30,6 +30,9 @@ importers:
       '@types/node':
         specifier: ^25.9.2
         version: 25.9.2
+      '@xmldom/xmldom':
+        specifier: ^0.9.10
+        version: 0.9.10
       esbuild:
         specifier: 0.28.0
         version: 0.28.0
@@ -946,6 +949,10 @@ packages:
     resolution: {integrity: sha512-nAB74NfSNKknqQ1RrYj6uz8FcXEomu/MATJZxh/x+BArzN2U3JbOYC0APYzUIGhVY3m5hRxA8VPNdPBoG8txlA==}
     cpu: [x64]
     os: [win32]
+
+  '@xmldom/xmldom@0.9.10':
+    resolution: {integrity: sha512-A9gOqLdi6cV4ibazAjcQufGj0B1y/vDqYrcuP6d/6x8P27gRS8643Dj9o1dEKtB6O7fwxb2FgBmJS2mX7gpvdw==}
+    engines: {node: '>=14.6'}
 
   acorn-jsx@5.3.2:
     resolution: {integrity: sha512-rq9s+JNhf0IChjtDXxllJ7g41oZk5SlXtp0LHwyA5cejwn7vKmKp4pPri6YEePv2PU65sAsegbXtIinmDFDXgQ==}
@@ -3903,6 +3910,8 @@ snapshots:
 
   '@unrs/resolver-binding-win32-x64-msvc@1.12.2':
     optional: true
+
+  '@xmldom/xmldom@0.9.10': {}
 
   acorn-jsx@5.3.2(acorn@8.16.0):
     dependencies:

@@ -49,6 +49,13 @@ export class NextcloudClient implements IWebDAVClient {
   private features: NextcloudFeatures | null = null;
   /** Remote directories already created via MKCOL (in-session cache). */
   private readonly createdDirs = new Set<string>();
+  /**
+   * Set once a sync-collection REPORT returns 415: Nextcloud's files DAV does not implement
+   * the RFC 6578 sync-collection REPORT (it raises Sabre ReportNotSupported). After the first
+   * detection we skip the REPORT for the rest of this client's life and rely on full-scan, so
+   * we don't pay a 415 round-trip on every sync.
+   */
+  private syncCollectionUnsupported = false;
 
   constructor(
     private readonly settings: DavSyncSettings,
@@ -201,8 +208,10 @@ export class NextcloudClient implements IWebDAVClient {
     if (opts?.ifMatchEtag) headers['If-Match'] = `"${opts.ifMatchEtag.replace(/^"|"$/g, '')}"`;
 
     let res = await requestUrl({ url: this.remoteUrl(remotePath), method: 'PUT', headers, body: data, throw: false });
-    if (res.status === 409) {
-      // Missing parent collection → create ancestors, then retry the PUT once.
+    // Missing parent collection → create ancestors, then retry the PUT once. Standard WebDAV
+    // returns 409, but Nextcloud's files DAV returns 404 for a missing parent — handle both
+    // so the first upload into a not-yet-created folder (e.g. a fresh device) succeeds.
+    if (res.status === 409 || res.status === 404) {
       await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
       res = await requestUrl({ url: this.remoteUrl(remotePath), method: 'PUT', headers, body: data, throw: false });
     }
@@ -249,10 +258,12 @@ export class NextcloudClient implements IWebDAVClient {
   }
 
   async getSyncToken(): Promise<string | null> {
-    // sabre/dav (Nextcloud) returns an EMPTY self-closing <d:sync-token/> for a plain PROPFIND, which
-    // left sync stuck in permanent full-scan mode. Bootstrap the token the RFC 6578 way instead: a
-    // sync-collection REPORT with an EMPTY token ("initial sync") whose multistatus always carries the
-    // current, populated <d:sync-token>. We read only the token here; the member list is ignored.
+    // Nextcloud's files DAV does not implement the RFC 6578 sync-collection REPORT (it raises
+    // Sabre ReportNotSupported → HTTP 415). Once we've seen that, skip the REPORT entirely and
+    // let the engine full-scan, instead of paying a guaranteed-415 round-trip every sync.
+    if (this.syncCollectionUnsupported) return null;
+    // Bootstrap the token the RFC 6578 way (servers that DO support it): a sync-collection REPORT
+    // with an EMPTY token ("initial sync") whose multistatus carries the current <d:sync-token>.
     const res = await requestUrl({
       url: this.remoteUrl(''),
       method: 'REPORT',
@@ -260,6 +271,12 @@ export class NextcloudClient implements IWebDAVClient {
       body: REPORT_BODY(''),
       throw: false,
     });
+    // 415 = sync-collection REPORT unsupported (Nextcloud files DAV). Remember it and full-scan.
+    if (res.status === 415) {
+      this.syncCollectionUnsupported = true;
+      this.diag?.('getSyncToken(REPORT): 415 sync-collection unsupported — full-scan for the rest of this session');
+      return null;
+    }
     // Match regardless of the XML namespace prefix; require a non-empty value (skip <…sync-token/>).
     const match = res.status === 207 ? res.text.match(/<(?:\w+:)?sync-token>([^<]+)<\/(?:\w+:)?sync-token>/) : null;
     const token = match ? match[1].trim() : '';

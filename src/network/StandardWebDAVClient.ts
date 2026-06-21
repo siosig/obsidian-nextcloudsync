@@ -106,9 +106,10 @@ export class StandardWebDAVClient implements IWebDAVClient {
     const headers: Record<string, string> = { Authorization: this.authHeader };
     if (mtime) headers['X-OC-MTime'] = String(Math.floor(mtime / 1000));
     if (opts?.ifMatchEtag) headers['If-Match'] = `"${opts.ifMatchEtag.replace(/^"|"$/g, '')}"`;
-    // Reactive directory creation (P1-B): PUT first; only MKCOL ancestors on a 409 missing-parent, retry once.
+    // Reactive directory creation (P1-B): PUT first; MKCOL ancestors on a missing-parent, retry once.
+    // Standard WebDAV returns 409; Nextcloud's files DAV returns 404 for a missing parent — handle both.
     let res = await requestUrl({ url: this.remoteUrl(remotePath), method: 'PUT', headers, body: data, throw: false });
-    if (res.status === 409) {
+    if (res.status === 409 || res.status === 404) {
       await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
       res = await requestUrl({ url: this.remoteUrl(remotePath), method: 'PUT', headers, body: data, throw: false });
     }
