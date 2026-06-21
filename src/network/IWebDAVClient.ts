@@ -1,8 +1,31 @@
-import { NextcloudFeatures, RemoteFileInfo, SyncChanges, FileVersion } from '../types';
+import { NextcloudFeatures, RemoteFileInfo, RemoteDirInfo, SyncChanges, FileVersion } from '../types';
 
 export interface IWebDAVClient {
   connect(): Promise<NextcloudFeatures>;
   getFiles(path: string): Promise<RemoteFileInfo[]>;
+  /**
+   * List the directories (WebDAV collections) beneath `path` (recursive). Surfaced
+   * separately from {@link getFiles} so directories are first-class entities the engine
+   * can prune when they become empty. The base folder itself is excluded.
+   */
+  getDirectories(path: string): Promise<RemoteDirInfo[]>;
+  /**
+   * True iff the collection at `path` has no children (rmdir semantics — a single
+   * Depth:1 probe of the live server). Used immediately before {@link deleteCollection}
+   * as the data-loss guard: a recursive collection DELETE must only target an empty dir.
+   */
+  isRemoteDirEmpty(path: string): Promise<boolean>;
+  /**
+   * Create a directory (collection) and any missing ancestors via MKCOL. Used to propagate a
+   * directory created on a client to the remote — including an EMPTY directory, which is a
+   * first-class entity (not derived from whether it holds files). Existing collections are fine.
+   */
+  createDirectory(path: string): Promise<void>;
+  /**
+   * DELETE a directory (collection). WebDAV DELETE on a collection is recursive, so callers
+   * MUST confirm emptiness via {@link isRemoteDirEmpty} first. A 404 is treated as success.
+   */
+  deleteCollection(path: string): Promise<void>;
   getChanges(syncToken: string): Promise<SyncChanges>;
   /**
    * Download a remote file and RETURN its bytes. Returning the buffer (rather than stashing it in a
