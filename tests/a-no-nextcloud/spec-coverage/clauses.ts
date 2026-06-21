@@ -117,12 +117,18 @@ export const CLAUSES: Clause[] = [
   // --- PR: pause / resume mid-sync (lifecycle) ---
   { id: 'PR-1', source: 'spec 019 FR-016', layer: 'b-1' },
   { id: 'PR-2', source: 'spec 019 FR-016', layer: 'b-1' },
+  // --- LOG: active-log self-sync exclusion ---
+  { id: 'LOG-1', source: 'docs/spec.md §9.1', layer: 'a' },
   // --- file-mix distribution ---
   { id: 'FR-017', source: 'spec 019', layer: 'a' },
   // --- spec 019 (this feature's own requirements: traceability mechanism) ---
   { id: 'FR-002', source: 'spec 019 (coverage map)', layer: 'a' },
   { id: 'FR-003', source: 'spec 019 (deviation visibility)', layer: 'a' },
   { id: 'FR-025', source: 'spec 019 (b-2 UI)', layer: 'b-2' },
+  // --- spec 020 (settings tooltips + sign-in clarity); FR-001/005/010 shared above ---
+  { id: 'FR-006', source: 'spec 020 (exhaustive tooltip catalog)', layer: 'a' },
+  { id: 'FR-007', source: 'spec 020 (Server URL desc / 405)', layer: 'a' },
+  { id: 'FR-014', source: 'spec 020 (no new settings)', layer: 'a' },
   // --- Core functional requirements asserted at the pure-logic layer ---
   { id: 'FR-001', source: 'specs/001-nextcloudsync-plugin', layer: 'a' },
   { id: 'FR-005', source: 'specs/001-nextcloudsync-plugin', layer: 'a' },
