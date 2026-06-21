@@ -74,13 +74,34 @@ export class MergeEngine {
     return { ...result, mergedContent: merged };
   }
 
-  /** Merge with the primary strategy, falling back to diff3 when it cannot produce a result. */
+  /**
+   * Produce the merged body. reconcile-text (CRDT) yields a non-destructive merge but ALWAYS reports
+   * conflictRegions:0 — it cannot surface real conflicts — so we additionally run diff3 purely to
+   * COUNT the real conflict regions, feeding the maxConflictRegions circuit breaker (merge() step 4).
+   * Reconcile's merged content is kept and hadConflicts stays false: with the default cap of 0
+   * (unlimited) the reconcile merge is accepted as-is; only a positive cap exceeded by the diff3
+   * region count routes the file to conflictFailurePolicy. This revives the breaker for body
+   * conflicts (docs/spec.md §6.2; fixes §18 F5 — it was dead because reconcile's count was always 0).
+   *
+   * Note: the State DB stores only hashes, never base content, so `base` here is empty ('') for body
+   * merges driven by SyncEngine.handleConflict. diff3 with an empty base degrades to a conservative
+   * 2-way detection (identical regions reconcile via excludeFalseConflicts; divergent regions count
+   * as conflicts) — a sound, slightly over-conservative signal for the region-count breaker.
+   *
+   * If reconcile cannot produce text, fall back to diff3 entirely (markers + count).
+   */
   private mergeText(base: string, local: string, remote: string): MergeResult {
-    let result = this.primaryStrategy.merge(base, local, remote);
-    if (!result.success || result.conflictRegions < 0) {
-      result = this.fallbackStrategy.merge(base, local, remote);
+    const reconciled = this.primaryStrategy.merge(base, local, remote);
+    if (!reconciled.success || reconciled.conflictRegions < 0) {
+      return this.fallbackStrategy.merge(base, local, remote);
     }
-    return result;
+    const regionCount = this.fallbackStrategy.merge(base, local, remote).conflictRegions;
+    return {
+      success: true,
+      mergedContent: reconciled.mergedContent,
+      hadConflicts: false,
+      conflictRegions: regionCount >= 0 ? regionCount : 0,
+    };
   }
 
   private splitFrontmatter(content: string): { frontmatter: string; body: string } {

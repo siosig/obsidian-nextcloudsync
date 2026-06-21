@@ -104,11 +104,11 @@ describe('Layer B — conflict resolution (CF)', () => {
     expect(r.decide('n.md', base, local, remote).action).toBe('write');
   });
 
-  // CF-12: SRC BUG — Diff3Strategy mis-reads node-diff3's merge() output (it expects a
-  // chunk array but merge() returns a flat string[] with markers), so a real frontmatter
-  // conflict is reported as conflictRegions:0. The 'conflict' strategy therefore never
-  // triggers full-file markers. Skipped pending a fix to Diff3Strategy.
-  it.skip('CF-12 frontmatter conflict markers (blocked by Diff3Strategy node-diff3 API bug)', () => undefined);
+  // CF-12: the F4 Diff3Strategy bug was fixed in 0.7.1 (993de3c, now uses diff3Merge) and the
+  // clause is verified at layer a with the real node-diff3 (tests/a-no-nextcloud/merge/
+  // diff3Strategy.test.ts). This live-server case is left skipped (full-file marker write
+  // against a real server is redundant with the layer-a proof).
+  it.skip('CF-12 frontmatter conflict markers (verified at layer a; live write redundant)', () => undefined);
 
   // CF-13: the 412 / If-Match lost-update path is driven by SyncEngine.handleConflict
   // (network-level), not the pure resolver. Covered indirectly by Layer A (PUT If-Match).

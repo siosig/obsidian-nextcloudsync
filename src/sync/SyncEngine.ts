@@ -29,7 +29,7 @@ import { sha256 } from '../util/hash';
 import { FileLogger } from '../util/FileLogger';
 import {
   isCellularBlocked, SIGNATURE_SAFETY_WINDOW_MS, MAX_HASH_SIZE,
-  MAX_INFLIGHT_BYTES_DESKTOP, MAX_INFLIGHT_BYTES_MOBILE,
+  MAX_INFLIGHT_BYTES_DESKTOP, MAX_INFLIGHT_BYTES_MOBILE, massDeleteLimit,
 } from '../util/limits';
 import { createLimiter, ByteSemaphore } from '../util/ConcurrencyLimiter';
 import { isSafeVaultRelativePath } from '../network/remotePath';
@@ -1413,7 +1413,7 @@ export class SyncEngine {
       // 2) Circuit breaker: a healthy full listing rarely loses a large fraction of the vault at once.
       //    If too many files look "remotely deleted", assume a partial/failed listing and refuse.
       const tracked = this.opts.stateDB.getAllFiles().length;
-      const limit = Math.max(20, Math.floor(tracked * 0.2));
+      const limit = massDeleteLimit(tracked);
       if (candidates.length > limit) {
         void this.opts.logger?.log(`delete-local: SKIPPED ${candidates.length} absence-deletions — exceeds safety limit (${limit}); likely a partial remote listing`);
         new Notice(`⚠️ ${candidates.length} files look deleted on the server — skipped to avoid mass deletion. Re-sync to retry.`, 10000);

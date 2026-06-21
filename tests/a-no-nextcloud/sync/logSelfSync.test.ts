@@ -57,7 +57,7 @@ function makeObsidianLikeAdapter(target: string, onRemoveTarget: () => void) {
   return { adapter, files };
 }
 
-describe('REPRO: plugin syncs its own debug log → local atomicWrite rename self-collision', () => {
+describe('[SPEC:LOG-1] REPRO: plugin syncs its own debug log → local atomicWrite rename self-collision', () => {
   it('atomicWriteBinary on the live log throws Obsidian\'s "Destination file already exists!"', async () => {
     // The live debug log already exists (FileLogger has been appending to it).
     let filesRef: Map<string, ArrayBuffer>;
