@@ -11,6 +11,12 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.2] - 2026-06-21
+
+- **Settings tooltips now appear anywhere on the row** — the hover tooltips added for every settings row previously attached only to the short bold title, so hovering the long description (where you actually read) showed nothing and the tooltips looked broken. They now label the whole row and appear on hover across it. The Server URL description still spells out the required full WebDAV endpoint (`https://<host>/remote.php/dav/files/<user>/`) so entering only a host no longer fails with an HTTP 405, and the sign-in area leads with "Log in via browser" with a clear divider before the manual Username/App password fields.
+- **The conflict-region limit now applies to body text, not just frontmatter** — body merge conflicts are now counted with diff3, so exceeding your "max conflict regions" setting routes the file to your conflict-failure policy instead of always auto-merging. The default (`0` = unlimited) keeps the existing auto-merge behaviour.
+- **Consistent 24-hour clock in the Sync Status dialog** — the last-session summary now shows `HH:mm` (date-prefixed across midnight), matching the per-entry rows, instead of a locale-dependent time.
+
 ## [0.7.1] - 2026-06-21
 
 - **Fix: the plugin's own log files no longer error or churn during sync** — a per-device debug/sync log written *while* a sync runs raced its own write and reported "Destination file already exists!" every sync. The plugin now keeps a log file out of sync only while that log's output toggle is ON.
@@ -112,6 +118,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.2]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.2
 [0.7.1]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.1
 [0.7.0]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.0
 [0.6.1]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.6.1
