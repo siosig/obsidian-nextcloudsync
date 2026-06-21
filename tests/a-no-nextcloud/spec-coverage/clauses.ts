@@ -1,0 +1,134 @@
+// Spec clause catalog (machine-checkable coverage source of truth).
+//
+// Replaces the per-suite "conformance" mechanism: every in-scope spec clause is
+// listed here, and coverage.test.ts statically maps clauses -> tests by scanning
+// test names for the clause id (bare, e.g. "CF-2"/"FR-019") or an explicit
+// [SPEC:<id>] tag. A clause with no matching test and no `waiver` FAILS the
+// meta-test (uncovered). A clause with a non-empty `waiver` is reported as a
+// pending spec-vs-implementation adjudication (NOT a failure) — this is how the
+// known live-server findings F1..F5 (report/mock_test.md §7) stay visible
+// instead of passing silently.
+//
+// Stored as a typed TS module (not YAML) to avoid adding a parser dependency.
+
+export type Layer = 'a' | 'b-1' | 'b-2';
+
+export interface Clause {
+  id: string;
+  source: string;
+  layer: Layer;
+  /** Non-empty => pending adjudication (spec vs implementation), not a failure. */
+  waiver?: string;
+}
+
+// Findings reused as waiver reasons (report/mock_test.md §7).
+const F1 = 'F1: server returns 415 for sync-collection REPORT -> getSyncToken null, incremental sync unusable; behaviour adjudication pending';
+const F3 = 'F3: files_lock is owner-based -> 423 not reproducible with same app password; needs a second user';
+const F4 = 'F4: Diff3Strategy misreads node-diff3 output -> frontmatterConflictStrategy:conflict does not engage; src fix tracked separately';
+const CHK_CORRUPT = 'post-assembly checksum corruption cannot be induced against an uncontrolled live server';
+const SF_AGG = 'sync-folder subcategory aggregated under CG/SF-1; dedicated split deferred (not yet a test)';
+
+export const CLAUSES: Clause[] = [
+  // --- CN: connection/auth ---
+  { id: 'CN-1', source: 'report/mock_test.md §3.A', layer: 'b-1' },
+  { id: 'CN-2', source: 'report/mock_test.md §3.A', layer: 'b-1' },
+  { id: 'CN-3', source: 'report/mock_test.md §3.A', layer: 'b-1' },
+  { id: 'CN-4', source: 'report/mock_test.md §3.A', layer: 'b-1' },
+  { id: 'CN-5', source: 'report/mock_test.md §3.A', layer: 'b-1' },
+  // --- UP/DL/DEL/MV: CRUD ---
+  { id: 'UP-1', source: 'report/mock_test.md §3.B', layer: 'b-1' },
+  { id: 'UP-2', source: 'report/mock_test.md §3.B', layer: 'b-1' },
+  { id: 'UP-3', source: 'report/mock_test.md §3.B', layer: 'b-1' },
+  { id: 'UP-4', source: 'report/mock_test.md §3.B', layer: 'b-1' },
+  { id: 'UP-5', source: 'report/mock_test.md §3.B', layer: 'a' },
+  { id: 'DL-1', source: 'report/mock_test.md §3.B', layer: 'b-1' },
+  { id: 'DL-2', source: 'report/mock_test.md §3.B', layer: 'b-1' },
+  { id: 'DEL-1', source: 'report/mock_test.md §3.B', layer: 'b-1' },
+  { id: 'DEL-2', source: 'report/mock_test.md §3.B', layer: 'b-1' },
+  { id: 'MV-1', source: 'report/mock_test.md §3.B', layer: 'b-1' },
+  { id: 'MV-2', source: 'report/mock_test.md §3.B', layer: 'b-1' },
+  // --- SZ: size boundary ---
+  { id: 'SZ-1', source: 'report/mock_test.md §3.C', layer: 'b-1' },
+  { id: 'SZ-2', source: 'report/mock_test.md §3.C', layer: 'b-1' },
+  { id: 'SZ-3', source: 'report/mock_test.md §3.C', layer: 'b-1' },
+  { id: 'SZ-4', source: 'report/mock_test.md §3.C', layer: 'b-1' },
+  { id: 'SZ-5', source: 'report/mock_test.md §3.C', layer: 'b-1' },
+  { id: 'SZ-6', source: 'report/mock_test.md §3.C', layer: 'b-1' },
+  { id: 'SZ-7', source: 'report/mock_test.md §3.C', layer: 'b-1' },
+  // --- CHK: chunked ---
+  { id: 'CHK-1', source: 'report/mock_test.md §3.D', layer: 'b-1' },
+  { id: 'CHK-2', source: 'report/mock_test.md §3.D', layer: 'b-1' },
+  { id: 'CHK-3', source: 'report/mock_test.md §3.D', layer: 'b-1', waiver: CHK_CORRUPT },
+  { id: 'CHK-4', source: 'report/mock_test.md §3.D', layer: 'b-1' },
+  // --- LK: locking ---
+  { id: 'LK-1', source: 'report/mock_test.md §3.E', layer: 'b-1' },
+  { id: 'LK-2', source: 'report/mock_test.md §3.E', layer: 'b-1' },
+  { id: 'LK-3', source: 'report/mock_test.md §3.E', layer: 'b-1' },
+  { id: 'LK-4', source: 'report/mock_test.md §3.E', layer: 'b-1', waiver: F3 },
+  { id: 'LK-5', source: 'report/mock_test.md §3.E', layer: 'b-1', waiver: F3 },
+  // --- CF: conflict resolution ---
+  { id: 'CF-1', source: 'report/mock_test.md §3.F', layer: 'b-1' },
+  { id: 'CF-2', source: 'report/mock_test.md §3.F', layer: 'b-1' },
+  { id: 'CF-3', source: 'report/mock_test.md §3.F', layer: 'b-1' },
+  { id: 'CF-4', source: 'report/mock_test.md §3.F', layer: 'b-1' },
+  { id: 'CF-5', source: 'report/mock_test.md §3.F', layer: 'b-1' },
+  { id: 'CF-6', source: 'report/mock_test.md §3.F', layer: 'b-1' },
+  { id: 'CF-7', source: 'report/mock_test.md §3.F', layer: 'b-1' },
+  { id: 'CF-8', source: 'report/mock_test.md §3.F', layer: 'b-1' },
+  { id: 'CF-9', source: 'report/mock_test.md §3.F', layer: 'b-1' },
+  { id: 'CF-10', source: 'report/mock_test.md §3.F', layer: 'b-1' },
+  { id: 'CF-11', source: 'report/mock_test.md §3.F', layer: 'b-1' },
+  { id: 'CF-12', source: 'report/mock_test.md §3.F', layer: 'b-1', waiver: F4 },
+  { id: 'CF-13', source: 'report/mock_test.md §3.F', layer: 'b-1' },
+  // --- CG: config-folder categories ---
+  { id: 'CG-1', source: 'report/mock_test.md §3.G', layer: 'b-1' },
+  { id: 'CG-2', source: 'report/mock_test.md §3.G', layer: 'b-1' },
+  { id: 'CG-3', source: 'report/mock_test.md §3.G', layer: 'b-1' },
+  { id: 'CG-4', source: 'report/mock_test.md §3.G', layer: 'b-1' },
+  { id: 'CG-5', source: 'report/mock_test.md §3.G', layer: 'b-1' },
+  { id: 'CG-6', source: 'report/mock_test.md §3.G', layer: 'b-1' },
+  { id: 'CG-7', source: 'report/mock_test.md §3.G', layer: 'b-1' },
+  { id: 'CG-8', source: 'report/mock_test.md §3.G', layer: 'b-1' },
+  { id: 'CG-9', source: 'report/mock_test.md §3.G', layer: 'b-1' },
+  { id: 'CG-10', source: 'report/mock_test.md §3.G', layer: 'b-1' },
+  // --- SF: sync-folder ---
+  { id: 'SF-1', source: 'report/mock_test.md §3.G', layer: 'b-1' },
+  { id: 'SF-2', source: 'report/mock_test.md §3.G', layer: 'b-1', waiver: SF_AGG },
+  { id: 'SF-3', source: 'report/mock_test.md §3.G', layer: 'b-1', waiver: SF_AGG },
+  { id: 'SF-4', source: 'report/mock_test.md §3.G', layer: 'b-1', waiver: SF_AGG },
+  // --- TK: sync-token ---
+  { id: 'TK-1', source: 'report/mock_test.md §3.H', layer: 'b-1', waiver: F1 },
+  { id: 'TK-2', source: 'report/mock_test.md §3.H', layer: 'b-1', waiver: F1 },
+  // --- VR: versions ---
+  { id: 'VR-1', source: 'report/mock_test.md §3.I', layer: 'b-1' },
+  { id: 'VR-2', source: 'report/mock_test.md §3.I', layer: 'b-1' },
+  { id: 'VR-3', source: 'report/mock_test.md §3.I', layer: 'b-1' },
+  { id: 'VR-4', source: 'report/mock_test.md §3.I', layer: 'b-1' },
+  // --- ST: status ---
+  { id: 'ST-1', source: 'report/mock_test.md §3', layer: 'b-1' },
+  // --- INIT: install initial state (lifecycle) ---
+  { id: 'INIT-1', source: 'report/mock_test.md §7.3', layer: 'b-1' },
+  { id: 'INIT-2', source: 'report/mock_test.md §7.3', layer: 'b-1' },
+  { id: 'INIT-3', source: 'report/mock_test.md §7.3', layer: 'b-1' },
+  // --- MD: multi-device convergence (lifecycle) ---
+  { id: 'MD-1', source: 'spec 019 FR-014', layer: 'b-1' },
+  { id: 'MD-2', source: 'spec 019 FR-014', layer: 'b-1' },
+  { id: 'MD-3', source: 'spec 019 FR-014', layer: 'b-1' },
+  // --- PR: pause / resume mid-sync (lifecycle) ---
+  { id: 'PR-1', source: 'spec 019 FR-016', layer: 'b-1' },
+  { id: 'PR-2', source: 'spec 019 FR-016', layer: 'b-1' },
+  // --- file-mix distribution ---
+  { id: 'FR-017', source: 'spec 019', layer: 'a' },
+  // --- spec 019 (this feature's own requirements: traceability mechanism) ---
+  { id: 'FR-002', source: 'spec 019 (coverage map)', layer: 'a' },
+  { id: 'FR-003', source: 'spec 019 (deviation visibility)', layer: 'a' },
+  { id: 'FR-025', source: 'spec 019 (b-2 UI)', layer: 'b-2' },
+  // --- Core functional requirements asserted at the pure-logic layer ---
+  { id: 'FR-001', source: 'specs/001-nextcloudsync-plugin', layer: 'a' },
+  { id: 'FR-005', source: 'specs/001-nextcloudsync-plugin', layer: 'a' },
+  { id: 'FR-008', source: 'specs/001-nextcloudsync-plugin', layer: 'a' },
+  { id: 'FR-010', source: 'specs/001-nextcloudsync-plugin', layer: 'a' },
+  { id: 'FR-011', source: 'specs/001-nextcloudsync-plugin', layer: 'a' },
+  { id: 'FR-019', source: 'specs/001-nextcloudsync-plugin', layer: 'a' },
+  { id: 'FR-020', source: 'specs/001-nextcloudsync-plugin', layer: 'a' },
+];
