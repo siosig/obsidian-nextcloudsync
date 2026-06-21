@@ -5,6 +5,7 @@ import { FolderSuggestModal } from '../ui/FolderSuggestModal';
 import { LoginFlowV2 } from '../auth/LoginFlowV2';
 import { MIN_NEXTCLOUD_VERSION, isSupportedNextcloudVersion } from '../util/version';
 import { CONFIG_SYNC_CATEGORIES } from '../sync/ConfigSyncResolver';
+import { TOOLTIPS, SERVER_URL_DESC, SIGN_IN_HELP, SIGN_IN_MANUAL_DIVIDER, CONFIG_CATEGORY_TOOLTIP } from './tooltips';
 
 /** Default secret ID in SecretStorage (users can pick a different ID via "Link…"). */
 const DEFAULT_PASSWORD_SECRET_ID = 'obsidian-nextcloudsync-password';
@@ -82,6 +83,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Sync now')
       .setDesc('Sync this vault with Nextcloud. Available once the server URL, username and app password are set.')
+      .setTooltip(TOOLTIPS.syncNow)
       .addButton(btn => {
         syncNowButton = btn;
         btn.setButtonText('Sync now')
@@ -94,7 +96,8 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Server URL')
-      .setDesc('Nextcloud WebDAV endpoint (e.g. https://cloud.example.com/remote.php/dav/files/alice/)')
+      .setDesc(SERVER_URL_DESC)
+      .setTooltip(TOOLTIPS.serverUrl)
       .addText(text => text
         .setPlaceholder('https://cloud.example.com/remote.php/dav/files/alice/')
         .setValue(this.plugin.settings.serverUrl)
@@ -107,9 +110,32 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
+    // Sign-in guidance: explain there is no separate "login" action and that the two
+    // sign-in paths (browser vs manual) are alternatives. Shown on all platforms.
+    containerEl.createEl('p', { text: SIGN_IN_HELP, cls: 'setting-item-description' });
+
+    // Recommended path first (CTA), then a divider, then the manual fields.
+    new Setting(containerEl)
+      .setName('Log in via browser (Nextcloud) — recommended')
+      .setDesc('Use Nextcloud login flow v2 to obtain an app password automatically. Requires the server URL above. Falls back to manual entry on non-nextcloud servers.')
+      .setTooltip(TOOLTIPS.loginViaBrowser)
+      .addButton(btn => {
+        loginButton = btn;
+        btn
+          .setButtonText('Log in via browser')
+          .setCta()
+          .setDisabled(this.plugin.settings.serverUrl.trim().length === 0)
+          .onClick(async () => {
+            await this.runLoginFlow();
+          });
+      });
+
+    containerEl.createEl('p', { text: SIGN_IN_MANUAL_DIVIDER, cls: 'setting-item-description ncs-signin-divider' });
+
     new Setting(containerEl)
       .setName('Username')
-      .setDesc('Nextcloud username (vault-specific)')
+      .setDesc('Nextcloud username (vault-specific). Only needed for manual sign-in.')
+      .setTooltip(TOOLTIPS.username)
       .addText(text => text
         .setValue(this.plugin.settings.username)
         .onChange(async (value) => {
@@ -121,7 +147,8 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('App password')
-      .setDesc('Nextcloud app password. Click "Link…" to store it in Obsidian\'s encrypted Secret Storage (never saved in data.json). Generate at Settings → Security → Devices & Sessions.')
+      .setDesc('Nextcloud app password (only for manual sign-in). Click "Link…" to store it in Obsidian\'s encrypted Secret Storage (never saved in data.json). Generate at Settings → Security → Devices & Sessions.')
+      .setTooltip(TOOLTIPS.appPassword)
       .addComponent((el) => new SecretComponent(this.app, el)
         .setValue(this.plugin.settings.passwordSecretId || DEFAULT_PASSWORD_SECRET_ID)
         .onChange(async (secretId) => {
@@ -133,21 +160,9 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         }));
 
     new Setting(containerEl)
-      .setName('Log in via browser (Nextcloud)')
-      .setDesc('Use Nextcloud login flow v2 to obtain an app password automatically. Requires the server URL above. Falls back to manual entry on non-nextcloud servers.')
-      .addButton(btn => {
-        loginButton = btn;
-        btn
-          .setButtonText('Log in via browser')
-          .setDisabled(this.plugin.settings.serverUrl.trim().length === 0)
-          .onClick(async () => {
-            await this.runLoginFlow();
-          });
-      });
-
-    new Setting(containerEl)
       .setName('Sync folder')
       .setDesc('Fixed to this vault\'s name. The entire vault is synced under a remote folder named after the vault.')
+      .setTooltip(TOOLTIPS.syncFolder)
       .addText(text => text
         .setValue(this.app.vault.getName())
         .setDisabled(true));
@@ -155,12 +170,14 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     // Read-only display of the effective WebDAV sync target (Server URL + Sync Folder).
     targetSetting = new Setting(containerEl)
       .setName('Sync target (WebDAV)')
-      .setDesc(this.syncTargetUrl());
+      .setDesc(this.syncTargetUrl())
+      .setTooltip(TOOLTIPS.syncTarget);
     targetSetting.descEl.addClass('ncs-break-all');
 
     new Setting(containerEl)
       .setName('File locking (experimental)')
       .setDesc('⚠️ when enabled, the plugin locks and unlocks each file on the server around every update (extra round trips). Requires the Nextcloud files locking app. Default off — lost-update safety is instead provided by an if-match precondition that turns a remote changed by another client into a conflict, without the locking overhead.')
+      .setTooltip(TOOLTIPS.fileLocking)
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.fileLockingEnabled)
         .onChange(async (value) => {
@@ -174,6 +191,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Sync on startup')
       .setDesc('Run one sync shortly after Obsidian starts. On mobile this is off by default.')
+      .setTooltip(TOOLTIPS.syncOnStartup)
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.syncOnStartupEnabled)
         .onChange(async (value) => {
@@ -184,6 +202,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     this.addNumberSlider(containerEl, {
       name: 'Startup sync delay (seconds)',
       desc: 'Wait this many seconds after startup before the startup sync.',
+      tooltip: TOOLTIPS.startupSyncDelay,
       min: 0, max: 60, step: 1,
       get: () => this.plugin.settings.startupSyncDelaySeconds,
       set: (v) => { this.plugin.settings.startupSyncDelaySeconds = v; },
@@ -195,6 +214,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
       desc: Platform.isMobile
         ? 'Disabled on mobile (the OS suspends background timers). Use "Sync on startup" or "Sync now".'
         : '0 = manual sync only',
+      tooltip: TOOLTIPS.syncInterval,
       min: 0, max: 60, step: 1,
       disabled: Platform.isMobile,
       get: () => this.plugin.settings.syncIntervalMinutes,
@@ -206,6 +226,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
 
     this.addNumberSlider(containerEl, {
       name: 'Network timeout (seconds)',
+      tooltip: TOOLTIPS.networkTimeout,
       min: 5, max: 120, step: 5,
       get: () => this.plugin.settings.networkTimeoutSeconds,
       set: (v) => { this.plugin.settings.networkTimeoutSeconds = v; },
@@ -214,6 +235,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     this.addNumberSlider(containerEl, {
       name: 'Network concurrency',
       desc: 'Number of simultaneous WebDAV requests. Higher is faster but uses more memory/connections. Mobile defaults to a lower value.',
+      tooltip: TOOLTIPS.networkConcurrency,
       min: 1, max: 16, step: 1,
       get: () => this.plugin.settings.networkConcurrency,
       set: (v) => { this.plugin.settings.networkConcurrency = v; },
@@ -225,6 +247,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
       .setDesc(Platform.isIosApp
         ? 'Not available on iOS (no network-type API). The app cannot tell Wi-Fi from cellular here.'
         : 'Skip syncing while on a cellular connection (Wi-Fi and wired are allowed).')
+      .setTooltip(TOOLTIPS.syncOnWifiOnly)
       .then(s => { if (Platform.isIosApp) s.setDisabled(true); })
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.syncOnWifiOnly && !Platform.isIosApp)
@@ -239,6 +262,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
       .setDesc(Platform.isMobile
         ? 'Disabled on mobile (the OS suspends background work). Use "Sync on startup" or "Sync now".'
         : 'Immediately sync when a local Markdown file is modified (a short delay after you stop editing). Works alongside the periodic sync interval.')
+      .setTooltip(TOOLTIPS.syncOnFileChange)
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.watchOnChangeEnabled && !Platform.isMobile)
         .setDisabled(Platform.isMobile)
@@ -250,6 +274,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Compare with remote (explorer menu)')
       .setDesc('Adds a right-click item in the file explorer to compare a file with its remote version (modification time, checksum, diff) and resolve via push/pull. Takes effect immediately (no restart).')
+      .setTooltip(TOOLTIPS.explorerCompare)
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.explorerCompareEnabled)
         .onChange(async (value) => {
@@ -260,6 +285,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     this.addNumberSlider(containerEl, {
       name: 'Chunk threshold (MB)',
       desc: 'Files larger than this are uploaded in chunks (Nextcloud only). Smaller files use a single request.',
+      tooltip: TOOLTIPS.chunkThreshold,
       min: 1, max: 500, step: 1,
       get: () => this.plugin.settings.uploadChunkThresholdMB,
       set: (v) => { this.plugin.settings.uploadChunkThresholdMB = v; },
@@ -268,6 +294,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     this.addNumberSlider(containerEl, {
       name: 'Maximum file size (MB)',
       desc: 'Files larger than this are skipped with a warning. 0 = unlimited. On mobile a low limit avoids out-of-memory crashes.',
+      tooltip: TOOLTIPS.maxFileSize,
       min: 0, max: 4096, step: 10,
       get: () => this.plugin.settings.maxFileSizeMB,
       set: (v) => { this.plugin.settings.maxFileSizeMB = v; },
@@ -276,6 +303,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Chunked upload')
       .setDesc('Upload large files in chunks instead of skipping them (Nextcloud only).')
+      .setTooltip(TOOLTIPS.chunkedUpload)
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.chunkedUploadEnabled)
         .onChange(async (value) => {
@@ -293,6 +321,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Sync config folder')
       .setDesc(`Opt in to syncing parts of the ${configDir} config folder across devices. Off by default — only notes and other vault files sync. Community plugins are never synced (their files stay device-local). A synced change to core-plugin settings may need an Obsidian restart to take effect on the other device.`)
+      .setTooltip(TOOLTIPS.syncConfigFolder)
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.syncConfigFolder)
         .onChange(async (value) => {
@@ -308,6 +337,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         new Setting(containerEl)
           .setName(category.label)
           .setDesc(category.description)
+          .setTooltip(TOOLTIPS[CONFIG_CATEGORY_TOOLTIP[category.key]])
           .addToggle(toggle => toggle
             .setValue(this.plugin.settings.configSync[category.key])
             .onChange(async (value) => {
@@ -322,6 +352,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Auto merge (experimental)')
       .setDesc('⚠️ when enabled, conflicts are auto-merged using reconcile-text. Results may be unexpected. Ensure Nextcloud version history is enabled before activating.')
+      .setTooltip(TOOLTIPS.autoMerge)
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.autoMergeEnabled)
         .onChange(async (value) => {
@@ -332,6 +363,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Frontmatter conflict strategy (auto merge)')
       .setDesc('When local and remote frontmatter differ: "Conflict markers" inserts markers for the whole file (safest). "local wins" / "remote wins" keeps that side\'s frontmatter and still merges the body.')
+      .setTooltip(TOOLTIPS.frontmatterConflictStrategy)
       .addDropdown(drop => drop
         .addOption('conflict', 'Conflict markers (safe default)')
         .addOption('local-wins', 'Local wins (keep local frontmatter)')
@@ -345,6 +377,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     this.addNumberSlider(containerEl, {
       name: 'Max conflict regions (auto merge)',
       desc: 'If more regions conflict than this threshold, fall back to inline markers. 0 = unlimited (never fall back on region count).',
+      tooltip: TOOLTIPS.maxConflictRegions,
       min: 0, max: 20, step: 1,
       get: () => this.plugin.settings.maxConflictRegions,
       set: (v) => { this.plugin.settings.maxConflictRegions = v; },
@@ -353,6 +386,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Mergeable file extensions')
       .setDesc('Comma-separated list of extensions eligible for text merge (e.g. "md, txt"). Files with other extensions are never merged; on conflict the failure policy below is applied directly. Leave the dot off.')
+      .setTooltip(TOOLTIPS.mergeableExtensions)
       .addText(text => text
         .setPlaceholder('Extensions separated by commas')
         .setValue((this.plugin.settings.mergeableExtensions ?? []).join(', '))
@@ -369,6 +403,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('On merge failure')
       .setDesc('What to do when a merge does not cleanly resolve (file not mergeable, auto-merge off, or merge failed). "error" leaves both sides untouched and retries next sync (safe default). "conflict markers" applies to text files only; other files fall back to error.')
+      .setTooltip(TOOLTIPS.onMergeFailure)
       .addDropdown(drop => drop
         .addOption('error', 'Error — leave untouched, retry (safe default)')
         .addOption('local-wins', 'Local wins — overwrite remote with local')
@@ -386,6 +421,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Device name')
       .setDesc('Names this device in log filenames (nextcloud-sync_sync_<device>.txt). Leave blank to use a platform + id default. Filesystem-unsafe characters are replaced automatically.')
+      .setTooltip(TOOLTIPS.deviceName)
       .addText(text => text
         .setPlaceholder(this.plugin.defaultHostToken())
         .setValue(this.plugin.settings.deviceName)
@@ -398,6 +434,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Log folder')
       .setDesc('Vault folder where the sync log and debug log are written. Leave blank for the vault root.')
+      .setTooltip(TOOLTIPS.logFolder)
       .addText(text => {
         logFolderText = text;
         text
@@ -422,6 +459,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Sync log')
       .setDesc('Append a per-device log of sync operations (with the plugin version and conflict-resolution settings) to nextcloud-sync_sync_<device>.txt.')
+      .setTooltip(TOOLTIPS.syncLog)
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.syncLogEnabled)
         .onChange(async (value) => {
@@ -432,6 +470,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Sync log level')
       .setDesc('Choose how much the sync log records. Important events only covers conflicts, merges, side-wins and errors; all operations also records routine uploads, downloads and deletions.')
+      .setTooltip(TOOLTIPS.syncLogLevel)
       .addDropdown(drop => drop
         .addOption('important', 'Important events only (conflicts, merges, errors)')
         .addOption('all', 'All operations')
@@ -444,6 +483,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Debug log')
       .setDesc('Append a per-device diagnostic log (with the plugin version and a snapshot of all settings) to nextcloud-sync_debug_<device>.txt. Syncing runs normally. Turn this off and delete the file when finished.')
+      .setTooltip(TOOLTIPS.debugLog)
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.debugLogEnabled)
         .onChange(async (value) => {
@@ -456,6 +496,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Debug log level')
       .setDesc('Verbosity of the debug log: "error" records only failures; "debug" adds normal flow; "verbose" adds the most detail.')
+      .setTooltip(TOOLTIPS.debugLogLevel)
       .addDropdown(drop => drop
         .addOption('error', 'Error (failures only)')
         .addOption('debug', 'Debug (normal flow)')
@@ -471,6 +512,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Reset vault index')
       .setDesc('Clear this device\'s sync tracking index so the plugin returns to its first-install state. No vault or remote files are deleted; the next sync performs a full re-scan. Use this if the sync state looks inconsistent.')
+      .setTooltip(TOOLTIPS.resetVaultIndex)
       .addButton(btn => btn
         .setButtonText('Reset')
         // `mod-warning` is the destructive-button class; setDestructive() needs 1.13.0 > minAppVersion.
@@ -482,6 +524,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Last session summary')
       .setDesc('Open the sync status dialog: recent activity grouped by sync run, conflicts, retries, and errors.')
+      .setTooltip(TOOLTIPS.lastSessionSummary)
       .addButton(btn => btn
         .setButtonText('View')
         .onClick(() => {
@@ -515,6 +558,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
       max: number;
       step: number;
       disabled?: boolean;
+      tooltip?: string;
       get: () => number;
       set: (value: number) => void;
       /** Optional side-effect run after the value is persisted (e.g. re-apply a live timer). */
@@ -523,6 +567,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
   ): void {
     const setting = new Setting(containerEl).setName(opts.name);
     if (opts.desc) setting.setDesc(opts.desc);
+    if (opts.tooltip) setting.setTooltip(opts.tooltip);
 
     // Current-value label (always shown to the left of the slider).
     const valueLabel = setting.controlEl.createSpan({ cls: 'setting-item-description ncs-slider-value' });
