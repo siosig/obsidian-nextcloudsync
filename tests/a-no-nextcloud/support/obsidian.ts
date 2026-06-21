@@ -152,14 +152,45 @@ export interface PluginManifest {
   minAppVersion: string;
 }
 
+/**
+ * Minimal element double tracking only attributes. The `node` jest environment has
+ * no `document`, so we cannot use real DOM nodes; this is enough to assert where a
+ * tooltip's `aria-label` lands (name element vs. whole row).
+ */
+export class FakeEl {
+  private attrs = new Map<string, string>();
+  setAttribute(key: string, value: string): void { this.attrs.set(key, value); }
+  getAttribute(key: string): string | null { return this.attrs.has(key) ? this.attrs.get(key)! : null; }
+  hasAttribute(key: string): boolean { return this.attrs.has(key); }
+  removeAttribute(key: string): void { this.attrs.delete(key); }
+}
+
+/**
+ * Faithful Setting double for Obsidian 1.12.7. Crucially, `setTooltip` labels only
+ * `nameEl` (verified against the shipped obsidian.asar: `Setting.setTooltip` calls
+ * the internal helper on `this.nameEl`). This lets tests prove the row-level
+ * tooltip fix actually moves the label off the narrow name onto `settingEl`.
+ */
 export class Setting {
+  settingEl = new FakeEl();
+  infoEl = new FakeEl();
+  nameEl = new FakeEl();
+  descEl = new FakeEl();
+  controlEl = new FakeEl();
   constructor(_containerEl: HTMLElement) {}
   setName(_name: string): this { return this; }
   setDesc(_desc: string): this { return this; }
+  setHeading(): this { return this; }
+  setTooltip(tooltip: string): this { setTooltip(this.nameEl, tooltip); return this; }
   addText(_cb: (_text: TextComponent) => void): this { return this; }
   addToggle(_cb: (_toggle: ToggleComponent) => void): this { return this; }
   addSlider(_cb: (_slider: SliderComponent) => void): this { return this; }
   addButton(_cb: (_btn: ButtonComponent) => void): this { return this; }
+}
+
+/** Obsidian's exported tooltip helper: sets `aria-label` on the given element. */
+export function setTooltip(el: FakeEl, tooltip: string): void {
+  el.setAttribute('aria-label', tooltip);
 }
 
 export interface TextComponent {

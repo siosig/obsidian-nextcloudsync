@@ -1,5 +1,5 @@
 // Settings tooltips (hover help) for the settings tab. UI strings are English.
-// Canonical wording: specs/mock/desktop/settings_tooltips.html. Each entry adds
+// This module is the source of truth for the tooltip wording. Each entry adds
 // information beyond the always-visible description (defaults, ranges, units,
 // examples, common mistakes). Tooltips only show on hover (desktop); information
 // essential on mobile (e.g. the Server URL format) is also kept in setDesc.
