@@ -31,6 +31,27 @@ export const BULK_MAX_BATCH_COUNT = 100;                  // max files per bulk 
 /** Number of PROPFIND/REPORT response nodes to parse before yielding to the event loop (anti-ANR). */
 export const PARSE_YIELD_EVERY = 100;
 
+/** Mass-delete circuit breaker: floor and fraction of the tracked set (specs/main/spec.md §8). */
+export const MASS_DELETE_MIN = 20;
+export const MASS_DELETE_FRACTION = 0.2;
+
+/**
+ * Upper bound on how many "remotely absent" tracked files may be deleted locally in one full-scan
+ * reconciliation: `max(20, floor(20% of tracked))`. A healthy full listing rarely loses a large
+ * fraction of the vault at once, so exceeding this signals a partial/failed remote listing.
+ */
+export function massDeleteLimit(trackedCount: number): number {
+  return Math.max(MASS_DELETE_MIN, Math.floor(trackedCount * MASS_DELETE_FRACTION));
+}
+
+/**
+ * True when the number of local-deletion candidates exceeds {@link massDeleteLimit} for the tracked
+ * set — i.e. the mass-delete circuit breaker should fire and refuse the bulk local deletion.
+ */
+export function isMassDeletionGuarded(candidateCount: number, trackedCount: number): boolean {
+  return candidateCount > massDeleteLimit(trackedCount);
+}
+
 /**
  * Resolve the default network concurrency from device memory, identical on every platform (no
  * Platform branch). navigator.deviceMemory is capped at 8 by the browser and is undefined on iOS

@@ -156,16 +156,17 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   uploadChunkThresholdMB: 50,
   maxFileSizeMB: 0, // 0 = unlimited (desktop default). Mobile gets a safe cap in loadSettings().
   watchOnChangeEnabled: true,
-  // These are DESKTOP defaults. Mobile-specific overrides are applied on first run in
-  // loadSettings(): syncOnStartupEnabled→false, networkConcurrency→2, maxFileSizeMB→20,
-  // syncOnWifiOnly→true.
+  // These are DESKTOP defaults. Mobile-specific first-run overrides are applied in
+  // loadSettings(): syncOnStartupEnabled→false, maxFileSizeMB→20, syncOnWifiOnly→true.
+  // networkConcurrency is NOT platform-branched — it is derived from device RAM on every
+  // platform (resolveConcurrencyDefault); mobile just tends to report no memory → 3.
   syncOnStartupEnabled: true,
   startupSyncDelaySeconds: 1,
   networkConcurrency: 16,
   syncOnWifiOnly: false,
   // Config-folder sync is opt-in: master defaults OFF, so a fresh install syncs notes only.
-  // These category defaults take effect only once the user turns the master on (per the
-  // settings_v5.0.0 mock). Migrated `syncBookmarks: true` users get bookmarks-only instead
+  // These category defaults take effect only once the user turns the master on.
+  // Migrated `syncBookmarks: true` users get bookmarks-only instead
   // (see migrateBookmarksToConfigSync); `syncBookmarks` itself is removed and pruned.
   syncConfigFolder: false,
   configSync: {

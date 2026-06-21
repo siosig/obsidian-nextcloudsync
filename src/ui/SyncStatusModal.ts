@@ -74,7 +74,9 @@ export class SyncStatusModal extends Modal {
     // Last session summary (unfiltered totals for the session — a summary, not a list).
     const s = report.summary;
     if (s) {
-      const when = new Date(s.startedAt).toLocaleString();
+      // 24h absolute clock (HH:mm, date-prefixed across midnight) — consistent with the per-run /
+      // per-entry timestamps below; locale-dependent toLocaleString() (12h/AM-PM) is avoided (spec §13).
+      const when = formatClock24(s.startedAt, Date.now());
       contentEl.createEl('p', {
         cls: 'setting-item-description',
         text: `Last sync: ${when}  ·  ↑ ${s.uploadedCount}  ↓ ${s.downloadedCount}  `

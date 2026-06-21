@@ -1,18 +1,20 @@
 /** @type {import('jest').Config} */
+// Classification "a" (Nextcloud-independent, no UI). This is the DEFAULT `pnpm test`
+// and the only suite that runs in CI: pure logic + the spec-coverage meta-test.
+// The live suites live under tests/b1-nextcloud-headless/ (pnpm test:b1) and
+// tests/b2-nextcloud-ui/ (pnpm test:b2) and are excluded here.
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
-  setupFiles: ['<rootDir>/tests/setup.ts'],
+  setupFiles: ['<rootDir>/tests/a-no-nextcloud/support/setup.ts'],
   moduleNameMapper: {
-    '^obsidian$': '<rootDir>/tests/__mocks__/obsidian.ts',
+    '^obsidian$': '<rootDir>/tests/a-no-nextcloud/support/obsidian.ts',
   },
-  testMatch: ['**/tests/**/*.test.ts'],
-  // The live E2E suite lives under tests/e2e/ and runs only via `pnpm test:e2e`
-  // (jest.e2e.config.js). Exclude it from the default run and from CI.
-  // testPathIgnorePatterns stops execution; modulePathIgnorePatterns stops haste-map
-  // from scanning tests/e2e/__mocks__ (which would clash with tests/__mocks__).
-  testPathIgnorePatterns: ['/node_modules/', '/tests/e2e/', '/tests/conformance/'],
-  modulePathIgnorePatterns: ['<rootDir>/tests/e2e/', '<rootDir>/tests/conformance/'],
+  testMatch: ['**/tests/a-no-nextcloud/**/*.test.ts'],
+  // Exclude the live suites from execution and from haste-map scanning
+  // (tests/b1-.../__mocks__ shares the name 'obsidian' with tests/a-.../support).
+  testPathIgnorePatterns: ['/node_modules/', '/tests/b1-nextcloud-headless/', '/tests/b2-nextcloud-ui/'],
+  modulePathIgnorePatterns: ['<rootDir>/tests/b1-nextcloud-headless/', '<rootDir>/tests/b2-nextcloud-ui/'],
   transform: {
     '^.+\\.tsx?$': ['ts-jest', { tsconfig: 'tsconfig.test.json' }],
   },
