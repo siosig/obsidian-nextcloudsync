@@ -1,4 +1,7 @@
 allowBuilds:
+  classic-level: false
+  edgedriver: false
   esbuild: true
+  geckodriver: false
   # unrs-resolver ships prebuilt binaries via optional deps; its postinstall build is not needed.
   unrs-resolver: false
