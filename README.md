@@ -27,7 +27,14 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.1-beta.2)
+## What's new in this release (0.7.1)
+
+- **Fix: the plugin's own log files no longer error or churn during sync (0.7.1)** — a per-device debug/sync log written *while* a sync runs raced its own write and reported "Destination file already exists!" every sync. The plugin now keeps a log file out of sync only while that log's output toggle is ON.
+- **Frontmatter conflicts are now detected instead of silently merged (0.7.1)** — a bug in the three-way merge made diverging YAML frontmatter merge silently even when conflict markers were requested. Conflicting frontmatter is now surfaced according to your conflict policy.
+- **Reliable first upload into new folders on Nextcloud (0.7.1)** — Nextcloud returns 404 (not the standard WebDAV 409) when a file's parent folder does not exist yet. The plugin now creates the missing folders and retries, so the first sync from a fresh device — or into a deep new path — no longer fails.
+- **Fewer redundant server round-trips (0.7.1)** — when a server does not support the incremental sync-collection report, the plugin now detects this once and goes straight to a full scan instead of retrying it on every sync.
+
+## 0.7.1-beta.2
 
 - **Frontmatter conflicts are now detected instead of silently merged (0.7.1-beta.2)** — a bug in the three-way merge made diverging YAML frontmatter merge silently even when conflict markers were requested. Conflicting frontmatter is now surfaced according to your conflict policy.
 - **Reliable first upload into new folders on Nextcloud (0.7.1-beta.2)** — Nextcloud returns 404 (not the standard WebDAV 409) when a file's parent folder does not exist yet. The plugin now creates the missing folders and retries, so the first sync from a fresh device — or into a deep new path — no longer fails.
