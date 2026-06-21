@@ -47,6 +47,20 @@ describe('NextcloudClient.uploadFile — P1-B round-trip reduction', () => {
     expect(calls('MKCOL').length).toBeGreaterThan(0); // ancestors created
   });
 
+  // Nextcloud's files DAV returns 404 (not 409) for a missing parent — reactive MKCOL must
+  // fire on 404 too, otherwise the first upload into a not-yet-created folder fails.
+  it('reactively creates parents on 404 (Nextcloud missing-parent), then retries the PUT', async () => {
+    let putCount = 0;
+    mockRequestUrl.mockImplementation((req) => {
+      if (req.method === 'PUT') { putCount++; return res(putCount === 1 ? 404 : 201); }
+      if (req.method === 'MKCOL') return res(201);
+      return res(201);
+    });
+    await new NextcloudClient(settings, 'pw', 'Vault').uploadFile('Deep/Nested/a.md', new ArrayBuffer(2));
+    expect(calls('PUT')).toHaveLength(2);        // first 404, retry 201
+    expect(calls('MKCOL').length).toBeGreaterThan(0);
+  });
+
   it('reuses precomputedSha256 for the OC-Checksum header', async () => {
     mockRequestUrl.mockImplementation(() => res(201));
     await new NextcloudClient(settings, 'pw', 'Vault').uploadFile('a.md', new ArrayBuffer(2), undefined, { precomputedSha256: 'deadbeef' });

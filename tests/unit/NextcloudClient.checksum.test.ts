@@ -91,4 +91,18 @@ describe('NextcloudClient.getSyncToken', () => {
     mockRequestUrl.mockResolvedValue({ status: 500, text: '', json: {}, arrayBuffer: new ArrayBuffer(0), headers: {} });
     expect(await new NextcloudClient(settings, 'pw', 'Vault').getSyncToken()).toBeNull();
   });
+
+  // Nextcloud's files DAV has no sync-collection REPORT (415). After the first 415, the client
+  // must skip the REPORT entirely (full-scan) instead of re-issuing a guaranteed-415 every sync.
+  it('caches a 415 (sync-collection unsupported) and skips the REPORT thereafter', async () => {
+    let calls = 0;
+    mockRequestUrl.mockImplementation(() => {
+      calls++;
+      return Promise.resolve({ status: 415, text: '', json: {}, arrayBuffer: new ArrayBuffer(0), headers: {} });
+    });
+    const client = new NextcloudClient(settings, 'pw', 'Vault');
+    expect(await client.getSyncToken()).toBeNull();
+    expect(await client.getSyncToken()).toBeNull();
+    expect(calls).toBe(1); // second call short-circuited — no REPORT sent
+  });
 });
