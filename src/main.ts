@@ -13,7 +13,7 @@ import { v4 as uuidv4 } from './util/uuid';
 import { hostToken, LogPlatform } from './util/hostToken';
 import { migrateLegacyDebugMode, migrateBookmarksToConfigSync, pruneObsoleteSettings } from './util/settingsMigration';
 import { resolveConcurrencyDefault } from './util/limits';
-import { debugLogPath, syncLogPath } from './util/logPaths';
+import { debugLogPath, syncLogPath, isActiveOwnLog } from './util/logPaths';
 import { SyncLogWriter, formatResolution } from './log/SyncLogWriter';
 
 const MIN_OBSIDIAN_VERSION = '1.12.7';
@@ -431,6 +431,15 @@ export default class ObsidianNextcloudsync extends Plugin {
       webdavFactory,
       pluginDir,
       configDir: this.app.vault.configDir,
+      // Keep this device's own log file out of sync while its output toggle is on (it is being
+      // appended to during the sync). Evaluated live, from the same settings + host token the
+      // loggers use, so it follows the Sync log / Debug log toggles and any logsFolder change.
+      isActiveLogFile: (path) => isActiveOwnLog(path, {
+        logsFolder: this.settings.logsFolder,
+        host: this.hostToken(),
+        debugLogEnabled: this.settings.debugLogEnabled,
+        syncLogEnabled: this.settings.syncLogEnabled,
+      }),
       logger: this.logger,
       onFeatures: (features) => {
         // Record the server version so the settings screen can recommend an upgrade

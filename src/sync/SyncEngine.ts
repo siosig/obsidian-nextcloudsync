@@ -65,6 +65,13 @@ interface SyncEngineOptions {
   pluginDir: string;
   /** Obsidian's configuration folder (Vault#configDir), e.g. `.obsidian`. User-configurable. */
   configDir: string;
+  /**
+   * Returns true when `path` is one of this device's per-device log files that is currently being
+   * written (its toggle is on), so it must be kept out of sync. Optional (absent in some tests);
+   * when omitted, no log-based exclusion is applied. Host owns the host-token/settings details
+   * (see `isActiveOwnLog`) to keep SyncEngine decoupled from log-path resolution.
+   */
+  isActiveLogFile?: (path: string) => boolean;
   /** Diagnostic logger (writes nextcloud-sync-debug.md while Debug mode is on). Optional. */
   logger?: FileLogger;
   /**
@@ -1653,6 +1660,11 @@ export class SyncEngine {
     // The plugin's own atomic-write temp files are never sync content (defense in depth:
     // the vault watchers already filter them, but a leftover tmp must not be uploaded either).
     if (isSyncTmpPath(path)) return true;
+    // This device's own per-device log file, while its output toggle is ON: the plugin appends to
+    // it during the sync, so syncing it would race the live append (Obsidian's rename throws
+    // "Destination file already exists!") and churn. Turning the log OFF makes it static and
+    // syncable again. Another device's log (different host) is not written here and stays syncable.
+    if (this.opts.isActiveLogFile?.(path)) return true;
     // Ordinary vault files (outside the config folder) are never system-excluded.
     if (!this.configSync.isUnderConfigDir(path)) return false;
     // Inside the config folder: excluded unless an enabled config-sync category includes it.
