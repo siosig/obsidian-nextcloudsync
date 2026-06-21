@@ -12,8 +12,8 @@
     "secretlint": "secretlint \"**/*\"",
     "test": "jest --passWithNoTests",
     "test:watch": "jest --watch",
-    "test:e2e": "jest --config jest.e2e.config.js --runInBand",
-    "test:conformance": "jest --config jest.conformance.config.js"
+    "test:b1": "jest --config jest.b1.config.js --runInBand",
+    "test:b2": "wdio run wdio.conf.ts"
   },
   "keywords": [
     "obsidian",
