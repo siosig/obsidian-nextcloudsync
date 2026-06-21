@@ -27,7 +27,11 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.0)
+## What's new in this release (0.7.1-beta.1)
+
+- **Fix: the plugin's own log files no longer error or churn during sync (0.7.1-beta.1)** — a per-device debug/sync log (e.g. `_logs/nextcloud-sync_debug_<device>.txt`) is written *while* a sync runs, so syncing that live file raced its own write and reported "Destination file already exists!" every sync. The plugin now keeps its log file out of sync **only while that log's output toggle is ON**. Turn **Sync log** / **Debug log** OFF and the now-static file syncs normally again; another device's log is never excluded, so cross-device log collection still works.
+
+## 0.7.0
 
 - **Faster mobile sync via Vault-cache enumeration (0.7.0)** — local scanning now reads Obsidian's in-memory file index (`Vault.getFiles`) instead of making per-file native filesystem calls, removing the O(N) bridge round-trips that made sync slow on mobile. The initial scan also hashes only the files that actually need a checksum comparison, and network concurrency now scales with device memory uniformly across desktop and mobile (no platform-specific branch). Dot paths that `Vault.getFiles` omits are re-enumerated so they keep syncing.
 
