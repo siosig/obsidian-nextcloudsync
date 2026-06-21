@@ -147,6 +147,28 @@ export const CLAUSES: Clause[] = [
   { id: 'FR-006', source: 'spec 020 (exhaustive tooltip catalog)', layer: 'a' },
   { id: 'FR-007', source: 'spec 020 (Server URL desc / 405)', layer: 'a' },
   { id: 'FR-014', source: 'spec 020 (no new settings)', layer: 'a' },
+  // --- DP: directory propagation (spec 021, specs/main/spec.md §8a) ---
+  // DP-1..15 are all covered at layer a (dirSync.test.ts); DP-e2e / DP-e2e-empty at b-1.
+  { id: 'DP-1',  source: 'specs/main/spec.md §8a.1 (local-only untracked → MKCOL)', layer: 'a' },
+  { id: 'DP-2',  source: 'specs/main/spec.md §8a.1 (remote-only untracked → mkdir)', layer: 'a' },
+  { id: 'DP-3',  source: 'specs/main/spec.md §8a.1 (tracked local-absent → DELETE remote)', layer: 'a' },
+  { id: 'DP-4',  source: 'specs/main/spec.md §8a.1 (tracked remote-absent → trash local)', layer: 'a' },
+  { id: 'DP-5',  source: 'specs/main/spec.md §8a.1 (present both → keep tracking)', layer: 'a' },
+  { id: 'DP-6',  source: 'specs/main/spec.md §8a.1 (absent both tracked → drop)', layer: 'a' },
+  { id: 'DP-7',  source: 'specs/main/spec.md §8a.1 (system-excluded → no create/delete)', layer: 'a' },
+  { id: 'DP-8',  source: 'specs/main/spec.md §8a.1 (create ordering: shallow-first)', layer: 'a' },
+  { id: 'DP-9',  source: 'specs/main/spec.md §8a.1 (delete ordering: deep-first)', layer: 'a' },
+  { id: 'DP-10', source: 'specs/main/spec.md §8a.1 (non-empty probe skips delete)', layer: 'a' },
+  { id: 'DP-11', source: 'specs/main/spec.md §8a.1 (circuit breaker)', layer: 'a' },
+  { id: 'DP-12', source: 'specs/main/spec.md §8a.1 (lock ON wraps delete)', layer: 'a' },
+  { id: 'DP-13', source: 'specs/main/spec.md §8a.1 (lock OFF no lock)', layer: 'a' },
+  { id: 'DP-14', source: 'specs/main/spec.md §8a.1 (self-healing: one failed delete continues)', layer: 'a' },
+  { id: 'DP-15', source: 'specs/main/spec.md §8a.1 (self-healing: listing failure skips session)', layer: 'a' },
+  { id: 'DP-e2e',       source: 'specs/main/spec.md §8a.1 (cross-device empty-dir pruning e2e)', layer: 'b-1' },
+  { id: 'DP-e2e-empty', source: 'specs/main/spec.md §8a.1 (empty dir created on A propagates to remote + B)', layer: 'b-1' },
+  // --- DR: directory rename convergence (spec 021, specs/main/spec.md §8a.2) ---
+  { id: 'DR-local',      source: 'specs/main/spec.md §8a.2 (local rename propagates via MOVE + dir reconcile)', layer: 'b-1' },
+  { id: 'DR-concurrent', source: 'specs/main/spec.md §8a.2 (concurrent rename vs create converges without data loss)', layer: 'b-1' },
   // --- Core functional requirements asserted at the pure-logic layer ---
   { id: 'FR-001', source: 'specs/001-nextcloudsync-plugin', layer: 'a' },
   { id: 'FR-005', source: 'specs/001-nextcloudsync-plugin', layer: 'a' },

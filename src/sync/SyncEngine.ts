@@ -1,10 +1,12 @@
-import { App, Notice, Platform, TFile, TFolder, normalizePath } from 'obsidian';
+import { App, Notice, Platform, TFile, TFolder, Vault, normalizePath } from 'obsidian';
 import {
   DavSyncSettings,
   FileState,
   FileVersion,
   NextcloudFeatures,
   RemoteFileInfo,
+  RemoteDirInfo,
+  DirState,
   SyncSessionSummary,
   SyncFileOp,
   SyncHistoryDetail,
@@ -588,6 +590,9 @@ export class SyncEngine {
 
     await this.executePlan(plan, remoteFiles, summary, localFiles);
 
+    // Initial sync is always a complete listing → reconcile directory create/delete (DP).
+    await this.reconcileDirectories(summary);
+
     // Save sync-token
     const token = await client.getSyncToken();
     this.opts.stateDB.setSyncToken(token);
@@ -661,6 +666,10 @@ export class SyncEngine {
 
     // Process local modifications (files in stateDB not covered by remote changes)
     await this.processLocalModifications(remoteFiles, summary, isFullScan);
+
+    // Reconcile directory create/delete only from a COMPLETE listing (full scan). The token path's
+    // remoteFiles is a partial diff, from which directory absence cannot be read as a deletion.
+    if (isFullScan) await this.reconcileDirectories(summary);
   }
 
   private async processFileWithRetry(remote: RemoteFileInfo, summary: SyncSessionSummary): Promise<void> {
@@ -1433,6 +1442,135 @@ export class SyncEngine {
         await this.processRemoteDeletion(path, summary);
       }
     }
+  }
+
+  /**
+   * Directory reconciliation (DP). Directories are FIRST-CLASS, contentless entities, symmetric
+   * with files — a directory is NEVER deleted merely because it holds no file (an empty directory
+   * is a legitimate thing a user may keep). Instead, existence differences are propagated like file
+   * creates/deletes, tracked in the StateDB so absence means a real deletion, not "never existed":
+   *
+   *   - local-only & untracked   → the user created it here   → MKCOL on the remote (incl. EMPTY dirs)
+   *   - remote-only & untracked  → created on another device   → mkdir locally
+   *   - tracked, now local-absent → the user deleted it here   → DELETE the remote collection
+   *   - tracked, now remote-absent→ deleted on another device  → trash it locally
+   *   - present both sides        → record/keep tracking
+   *   - absent both sides         → drop stale tracking
+   *
+   * Runs only on a COMPLETE listing (full scan); absence from a partial token diff is not a deletion.
+   * Safety mirrors file deletion: a `massDeleteLimit` circuit breaker guards a suspiciously large
+   * destructive batch (partial/failed listing); a recursive collection DELETE is preceded by an
+   * `isRemoteDirEmpty` probe (children are deleted first by ordering + the earlier file phase) and
+   * optionally wrapped in a lock when the user enabled `fileLockingEnabled`; every failure is left
+   * for the next sync (self-healing).
+   */
+  private async reconcileDirectories(summary: SyncSessionSummary): Promise<void> {
+    let remoteDirInfos: RemoteDirInfo[];
+    try {
+      remoteDirInfos = await this.client!.getDirectories('');
+    } catch (err) {
+      void this.opts.logger?.log(`dir-sync: listing failed — skip this session: ${(err as Error).message}`);
+      return; // self-heal next sync
+    }
+
+    const norm = (p: string): string => p.replace(/\/+$/, '');
+    const remoteDirs = new Map(remoteDirInfos.map(d => [norm(d.path), d]));
+    const vault = this.opts.app.vault as Vault & { getAllFolders?: (includeRoot?: boolean) => TFolder[] };
+    const localDirs = new Set(
+      (vault.getAllFolders?.() ?? []).map(f => f.path).filter(p => p && p !== '/'),
+    );
+    const tracked = new Map(this.opts.stateDB.getAllDirs().map(d => [d.path, d]));
+
+    const all = new Set<string>(
+      [...remoteDirs.keys(), ...localDirs, ...tracked.keys()].filter(p => p !== '' && !this.isSystemExcluded(p)),
+    );
+
+    const mkcolRemote: string[] = []; // L !R !T — created here → push to remote
+    const mkdirLocal: string[] = [];  // !L R !T — created elsewhere → create here
+    const deleteRemote: string[] = []; // !L R T — deleted here → remove on remote
+    const trashLocal: string[] = [];   // L !R T — deleted elsewhere → remove here
+    const ensureTracked: DirState[] = []; // L R — keep tracked
+    const dropTracked: string[] = [];  // !L !R T — gone everywhere → forget
+
+    for (const p of all) {
+      const L = localDirs.has(p), R = remoteDirs.has(p), T = tracked.has(p);
+      if (L && R) ensureTracked.push({ path: p, remoteFileId: remoteDirs.get(p)!.fileId });
+      else if (L && !R) (T ? trashLocal : mkcolRemote).push(p);
+      else if (!L && R) (T ? deleteRemote : mkdirLocal).push(p);
+      else if (T) dropTracked.push(p);
+    }
+
+    // Circuit breaker on the destructive set (a partial listing would make many dirs look deleted).
+    const denom = Math.max(tracked.size, remoteDirs.size, localDirs.size);
+    if (deleteRemote.length + trashLocal.length > massDeleteLimit(denom)) {
+      void this.opts.logger?.log(`dir-sync: SKIPPED ${deleteRemote.length + trashLocal.length} dir deletions — exceeds safety limit; likely a partial listing`);
+      deleteRemote.length = 0;
+      trashLocal.length = 0;
+    }
+
+    const shallowFirst = (a: string, b: string): number => a.split('/').length - b.split('/').length;
+    const deepFirst = (a: string, b: string): number => b.split('/').length - a.split('/').length;
+
+    // CREATE remote (parents before children).
+    for (const p of mkcolRemote.sort(shallowFirst)) {
+      if (this.cancelled) break;
+      try {
+        await this.client!.createDirectory(p);
+        this.opts.stateDB.setDir({ path: p, remoteFileId: remoteDirs.get(p)?.fileId ?? null });
+        this.recordHistory(p, 'uploaded');
+      } catch (err) {
+        summary.errorCount++;
+        summary.errors.push({ path: p, message: `dir create (remote) failed: ${(err as Error).message}` });
+      }
+    }
+    // CREATE local (parents before children).
+    for (const p of mkdirLocal.sort(shallowFirst)) {
+      if (this.cancelled) break;
+      try {
+        await this.opts.app.vault.adapter.mkdir(normalizePath(p));
+        this.opts.stateDB.setDir({ path: p, remoteFileId: remoteDirs.get(p)?.fileId ?? null });
+        this.recordHistory(p, 'downloaded');
+      } catch (err) {
+        summary.errorCount++;
+        summary.errors.push({ path: p, message: `dir create (local) failed: ${(err as Error).message}` });
+      }
+    }
+    // DELETE remote (children before parents; probe + optional lock).
+    for (const p of deleteRemote.sort(deepFirst)) {
+      if (this.cancelled) break;
+      let token: string | null = null;
+      try {
+        token = await this.acquireLock(p);
+        if (!(await this.client!.isRemoteDirEmpty(p))) {
+          void this.opts.logger?.log(`dir-sync: remote dir not empty yet — keeping → ${p}`);
+          continue; // children pending — self-heal next sync
+        }
+        await this.client!.deleteCollection(p);
+        this.opts.stateDB.deleteDir(p);
+        summary.deletedCount++;
+        this.recordHistory(p, 'deleted');
+      } catch (err) {
+        summary.errorCount++;
+        summary.errors.push({ path: p, message: `dir delete (remote) failed: ${(err as Error).message}` });
+      } finally {
+        await this.releaseLock(p, token);
+      }
+    }
+    // TRASH local (children before parents).
+    for (const p of trashLocal.sort(deepFirst)) {
+      if (this.cancelled) break;
+      const folder = this.opts.app.vault.getAbstractFileByPath(p);
+      try {
+        if (folder instanceof TFolder) await this.opts.app.fileManager.trashFile(folder);
+        this.opts.stateDB.deleteDir(p);
+        this.recordHistory(p, 'deleted');
+      } catch (err) {
+        summary.errorCount++;
+        summary.errors.push({ path: p, message: `dir delete (local) failed: ${(err as Error).message}` });
+      }
+    }
+    for (const d of ensureTracked) this.opts.stateDB.setDir(d);
+    for (const p of dropTracked) this.opts.stateDB.deleteDir(p);
   }
 
   private async buildInitialPlan(
