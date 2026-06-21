@@ -14,7 +14,7 @@ updated (waiver) if the implementation is intentionally the canonical one.
 
 - **a** — pure logic + the spec-coverage meta-test. No network, no UI. Runs everywhere.
 - **b-1** — live Nextcloud (localhost Docker) via `.env` `NEXTCLOUD_*`. `--runInBand`. Skips when env absent.
-- **b-2** — real Obsidian UI via `wdio-obsidian-service` (`OBSIDIAN_*` + `NEXTCLOUD_*`). Smoke + main wiring only. Skips when driver/creds absent.
+- **b-2** — real Obsidian UI via `wdio-obsidian-service` (downloads & launches Obsidian itself; needs only `NEXTCLOUD_*`). Smoke + main wiring only. Skips when creds/deps absent. Linux/CI: run under `xvfb-run`.
 
 File naming: `*.test.ts` (a), `*.b1.test.ts` (b-1), `*.b2.test.ts` (b-2).
 

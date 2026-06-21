@@ -46,3 +46,6 @@ docs/
 # Playwright MCP snapshot output
 .playwright-mcp/
 /report/
+
+# wdio-obsidian-service download cache (b-2)
+.obsidian-cache/
