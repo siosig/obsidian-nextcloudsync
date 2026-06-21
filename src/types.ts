@@ -226,11 +226,24 @@ export interface FileState {
   remoteMtime?: number;
 }
 
+/**
+ * A tracked directory (WebDAV collection). Directories are first-class, contentless entities,
+ * symmetric with files: a directory present on one side and absent on the other is a creation or
+ * a deletion to propagate — NOT something derived from whether it holds files. `remoteFileId`
+ * (oc:fileid) is stable across MOVE for rename detection.
+ */
+export interface DirState {
+  path: string;
+  remoteFileId: string | null;
+}
+
 export interface SyncState {
   deviceId: string;
   lastSyncTime: number;
   syncToken: string | null;
   files: Record<string, FileState>;
+  /** Tracked directories (optional for back-compat with pre-DP v1 state files → defaults to {}). */
+  directories?: Record<string, DirState>;
 }
 
 export interface NextcloudFeatures {
@@ -249,6 +262,19 @@ export interface RemoteFileInfo {
   checksum: string | null;
   etag: string | null;
   size: number;
+  lastModified: number;
+}
+
+/**
+ * A remote directory (WebDAV collection). Directories carry no content hash/size;
+ * `fileId` (oc:fileid) is stable across MOVE and identifies the collection for
+ * rename detection. Surfaced separately from files so empty-directory pruning can
+ * derive "which collections hold no descendant file" from a full listing.
+ */
+export interface RemoteDirInfo {
+  path: string;
+  fileId: string | null;
+  etag: string | null;
   lastModified: number;
 }
 

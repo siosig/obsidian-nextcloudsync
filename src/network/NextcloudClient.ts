@@ -2,6 +2,7 @@ import { requestUrl } from 'obsidian';
 import {
   NextcloudFeatures,
   RemoteFileInfo,
+  RemoteDirInfo,
   SyncChanges,
   FileVersion,
   NetworkError,
@@ -164,6 +165,66 @@ export class NextcloudClient implements IWebDAVClient {
     if (res.status === 404) return [];
     if (res.status !== 207) throw new NetworkError(res.status, res.text);
     return await this.parsePropfindResponse(res.text);
+  }
+
+  async getDirectories(path: string): Promise<RemoteDirInfo[]> {
+    const res = await requestUrl({
+      url: this.remoteUrl(path),
+      method: 'PROPFIND',
+      headers: {
+        Authorization: this.authHeader,
+        Depth: 'infinity',
+        'Content-Type': 'application/xml; charset=utf-8',
+      },
+      body: PROPFIND_BODY,
+      throw: false,
+    });
+    if (res.status === 404) return [];
+    if (res.status !== 207) throw new NetworkError(res.status, res.text);
+    return await this.parsePropfindDirectories(res.text);
+  }
+
+  async isRemoteDirEmpty(path: string): Promise<boolean> {
+    // Depth:1 lists the collection itself plus its immediate children. "Empty" (rmdir
+    // semantics) ⇔ the only response is the collection itself. Conservative on any
+    // ambiguity: never report "empty" unless the server clearly says so, so a recursive
+    // DELETE is never issued against a directory that might still hold data.
+    const res = await requestUrl({
+      url: this.remoteUrl(path),
+      method: 'PROPFIND',
+      headers: { Authorization: this.authHeader, Depth: '1', 'Content-Type': 'application/xml; charset=utf-8' },
+      body: PROPFIND_BODY,
+      throw: false,
+    });
+    if (res.status !== 207) return false;
+    const doc = new DOMParser().parseFromString(res.text, 'text/xml');
+    const responses = doc.getElementsByTagNameNS('DAV:', 'response');
+    let children = 0;
+    for (let i = 0; i < responses.length; i++) {
+      const href = responses[i].getElementsByTagNameNS('DAV:', 'href')[0]?.textContent ?? '';
+      const rel = hrefToRelative(this.baseUrl, this.remoteBase, href);
+      // rel === '' is the collection itself (or the base); any other entry is a child.
+      if (rel !== null && rel !== '' && rel !== path) children++;
+    }
+    return children === 0;
+  }
+
+  async createDirectory(path: string): Promise<void> {
+    // ensureRemoteDir MKCOLs every segment of the path it is given EXCEPT the last (it assumes a
+    // trailing file name), so append a dummy segment to have `path` itself (and its ancestors) created.
+    await ensureRemoteDir(
+      { baseUrl: this.baseUrl, authHeader: this.authHeader },
+      toRemotePath(this.remoteBase, `${path}/_`),
+      this.createdDirs,
+    );
+  }
+
+  async deleteCollection(path: string): Promise<void> {
+    const res = await requestUrl({
+      url: this.remoteUrl(path), method: 'DELETE', headers: { Authorization: this.authHeader }, throw: false,
+    });
+    if (res.status === 404) return; // already gone — the desired end state.
+    if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
   }
 
   async getChanges(syncToken: string): Promise<SyncChanges> {
@@ -471,7 +532,18 @@ export class NextcloudClient implements IWebDAVClient {
     });
     if (res.status === 423) throw new FileLockedError(remotePath);
     if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
-    const token = res.headers['lock-token'] ?? res.headers['oc-lock-token'] ?? '';
+    // Nextcloud's files_lock app returns the token in the XML body (<nc:lock-token>files_lock/…),
+    // NOT in a Lock-Token response header. Parse the body first; fall back to headers for
+    // RFC-4918 servers that do use the header. Without this the token is '' and UNLOCK cannot
+    // release the lock (it would leak until the next sync's recovery).
+    let token = '';
+    try {
+      const doc = new DOMParser().parseFromString(res.text, 'text/xml');
+      token = doc.getElementsByTagNameNS('http://nextcloud.org/ns', 'lock-token')[0]?.textContent?.trim() ?? '';
+    } catch {
+      token = '';
+    }
+    if (!token) token = res.headers['lock-token'] ?? res.headers['oc-lock-token'] ?? '';
     return token;
   }
 
@@ -522,6 +594,33 @@ export class NextcloudClient implements IWebDAVClient {
       const path = hrefToRelative(this.baseUrl, this.remoteBase, href);
       if (path === null || path === '') continue; // Skip entries outside the base folder or the folder itself
       results.push({ path, fileId, checksum, etag, size, lastModified });
+    }
+    return results;
+  }
+
+  private async parsePropfindDirectories(xml: string): Promise<RemoteDirInfo[]> {
+    const results: RemoteDirInfo[] = [];
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(xml, 'text/xml');
+    const responses = doc.getElementsByTagNameNS('DAV:', 'response');
+    for (let i = 0; i < responses.length; i++) {
+      if (i > 0 && i % PARSE_YIELD_EVERY === 0) await new Promise((r) => window.setTimeout(r, 0));
+      const resp = responses[i];
+      const href = resp.getElementsByTagNameNS('DAV:', 'href')[0]?.textContent ?? '';
+      const prop = resp.getElementsByTagNameNS('DAV:', 'prop')[0];
+      if (!prop) continue;
+      const resourcetype = prop.getElementsByTagNameNS('DAV:', 'resourcetype')[0];
+      const isCollection = resourcetype?.getElementsByTagNameNS('DAV:', 'collection').length > 0;
+      if (!isCollection) continue; // mirror of parsePropfindResponse: here we KEEP only collections.
+
+      const etag = prop.getElementsByTagNameNS('DAV:', 'getetag')[0]?.textContent?.replace(/"/g, '') ?? null;
+      const lastModifiedStr = prop.getElementsByTagNameNS('DAV:', 'getlastmodified')[0]?.textContent ?? '';
+      const lastModified = lastModifiedStr ? new Date(lastModifiedStr).getTime() : 0;
+      const fileId = prop.getElementsByTagNameNS('http://owncloud.org/ns', 'fileid')[0]?.textContent ?? null;
+
+      const path = hrefToRelative(this.baseUrl, this.remoteBase, href);
+      if (path === null || path === '') continue; // outside the base folder, or the base folder itself
+      results.push({ path, fileId, etag, lastModified });
     }
     return results;
   }
