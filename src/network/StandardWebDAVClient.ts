@@ -2,6 +2,7 @@ import { requestUrl } from 'obsidian';
 import {
   NextcloudFeatures,
   RemoteFileInfo,
+  RemoteDirInfo,
   SyncChanges,
   FileVersion,
   NetworkError,
@@ -80,6 +81,59 @@ export class StandardWebDAVClient implements IWebDAVClient {
     for (const folder of folders) {
       await this.propfindRecursive(folder, out, visited);
     }
+  }
+
+  async getDirectories(path: string): Promise<RemoteDirInfo[]> {
+    const out: RemoteDirInfo[] = [];
+    await this.dirsRecursive(path, out, new Set());
+    return out;
+  }
+
+  /** Recurse with Depth:1, collecting subcollections (plain WebDAV may reject Depth:infinity). */
+  private async dirsRecursive(rel: string, out: RemoteDirInfo[], visited: Set<string>): Promise<void> {
+    if (visited.has(rel)) return;
+    visited.add(rel);
+    const res = await requestUrl({
+      url: this.remoteUrl(rel),
+      method: 'PROPFIND',
+      headers: { Authorization: this.authHeader, Depth: '1', 'Content-Type': 'application/xml' },
+      body: `<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:getetag/><d:getcontentlength/><d:getlastmodified/><d:resourcetype/></d:prop></d:propfind>`,
+      throw: false,
+    });
+    if (res.status === 404) return;
+    if (res.status !== 207) throw new NetworkError(res.status, res.text);
+    const { folders } = this.parseListing(res.text, rel);
+    for (const folder of folders) {
+      out.push({ path: folder, fileId: null, etag: null, lastModified: 0 });
+      await this.dirsRecursive(folder, out, visited);
+    }
+  }
+
+  async isRemoteDirEmpty(path: string): Promise<boolean> {
+    const res = await requestUrl({
+      url: this.remoteUrl(path),
+      method: 'PROPFIND',
+      headers: { Authorization: this.authHeader, Depth: '1', 'Content-Type': 'application/xml' },
+      body: `<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/></d:prop></d:propfind>`,
+      throw: false,
+    });
+    if (res.status !== 207) return false; // conservative: never report empty unless the server is clear.
+    const { files, folders } = this.parseListing(res.text, path);
+    return files.length === 0 && folders.length === 0;
+  }
+
+  async createDirectory(path: string): Promise<void> {
+    await ensureRemoteDir(
+      { baseUrl: this.baseUrl, authHeader: this.authHeader },
+      toRemotePath(this.remoteBase, `${path}/_`),
+      this.createdDirs,
+    );
+  }
+
+  async deleteCollection(path: string): Promise<void> {
+    const res = await requestUrl({ url: this.remoteUrl(path), method: 'DELETE', headers: { Authorization: this.authHeader }, throw: false });
+    if (res.status === 404) return;
+    if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
   }
 
   async getChanges(_syncToken: string): Promise<SyncChanges> {

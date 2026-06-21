@@ -1,5 +1,5 @@
 import { DataAdapter } from 'obsidian';
-import { FileState, SyncState } from '../types';
+import { DirState, FileState, SyncState } from '../types';
 import { AsyncMutex } from '../util/AsyncMutex';
 
 const STATEDB_TMP_SUFFIX = '.tmp';
@@ -33,7 +33,7 @@ export class StateDB {
   ) {
     this.statePath = `${pluginDir}/state-${deviceId}.json`;
     this.tmpPath = this.statePath + STATEDB_TMP_SUFFIX;
-    this.state = { deviceId, lastSyncTime: 0, syncToken: null, files: {} };
+    this.state = { deviceId, lastSyncTime: 0, syncToken: null, files: {}, directories: {} };
   }
 
   async load(): Promise<void> {
@@ -42,6 +42,7 @@ export class StateDB {
       const raw = await this.adapter.read(this.statePath);
       const parsed = JSON.parse(raw) as SyncState;
       this.state = parsed;
+      if (!this.state.directories) this.state.directories = {}; // pre-DP v1 state file
     } catch {
       // Corrupted DB — start fresh (recovery handled externally)
       console.warn('[StateDB] Failed to parse state DB; starting with empty state');
@@ -138,6 +139,24 @@ export class StateDB {
 
   getAllFiles(): FileState[] {
     return Object.values(this.state.files);
+  }
+
+  // ── Tracked directories (DP): first-class, contentless entities symmetric with files ──
+  getDir(path: string): DirState | undefined {
+    return this.state.directories?.[path];
+  }
+
+  setDir(dir: DirState): void {
+    if (!this.state.directories) this.state.directories = {};
+    this.state.directories[dir.path] = dir;
+  }
+
+  deleteDir(path: string): void {
+    if (this.state.directories) delete this.state.directories[path];
+  }
+
+  getAllDirs(): DirState[] {
+    return this.state.directories ? Object.values(this.state.directories) : [];
   }
 
   getSyncToken(): string | null {
