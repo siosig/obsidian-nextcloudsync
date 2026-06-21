@@ -16,7 +16,7 @@ import { resolveConcurrencyDefault } from './util/limits';
 import { debugLogPath, syncLogPath, isActiveOwnLog } from './util/logPaths';
 import { SyncLogWriter, formatResolution } from './log/SyncLogWriter';
 
-const MIN_OBSIDIAN_VERSION = '1.12.7';
+const MIN_OBSIDIAN_VERSION = '1.11.4';
 
 export default class ObsidianNextcloudsync extends Plugin {
   settings!: DavSyncSettings;

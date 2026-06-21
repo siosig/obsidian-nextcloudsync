@@ -21,9 +21,9 @@ describe('spec 001 — core requirements', () => {
     expect(DEFAULT_SETTINGS).not.toHaveProperty('appPassword');
   });
 
-  it('FR-020: minimum Obsidian version is 1.12.7', () => {
+  it('FR-020 (finalized): minimum Obsidian version is 1.11.4 (secret-storage API)', () => {
     const manifest = JSON.parse(readFileSync(resolve(process.cwd(), 'manifest.json'), 'utf-8')) as { minAppVersion: string };
-    expect(manifest.minAppVersion).toBe('1.12.7');
+    expect(manifest.minAppVersion).toBe('1.11.4');
   });
 
   it('FR-008: a conflict preserves BOTH sides (conflict-markers keep local and remote)', () => {
@@ -37,21 +37,25 @@ describe('spec 001 — core requirements', () => {
     }
   });
 
-  // ---- Expected to DEVIATE (spec is older than the implementation here) ----
+  // ---- Finalized: spec updated to match the implementation (D4/D5) ----
 
-  it('FR-013: auto-merge defaults to OFF', () => {
-    // DEVIATION: implementation ships autoMergeEnabled: true (README also says "on by default").
-    // Decision needed: update the spec (implementation-as-truth) or flip the default.
-    expect(DEFAULT_SETTINGS.autoMergeEnabled).toBe(false);
+  it('FR-013 (finalized): auto-merge defaults to ON', () => {
+    // Finalized D4: autoMerge is on by default (README: "on by default"); the value of the
+    // plugin is loss-less automatic merge of non-overlapping edits.
+    expect(DEFAULT_SETTINGS.autoMergeEnabled).toBe(true);
   });
 
-  it('FR-010: YAML frontmatter is excluded from auto-merge', () => {
-    // SPEC 001 FR-010 says frontmatter must NOT be auto-merged.
-    // DEVIATION: MergeEngine merges frontmatter via diff3 (README: "frontmatter auto-merged").
-    // If frontmatter were excluded, diverging frontmatter (bodies identical) would NOT
-    // come back as a clean, conflict-free success.
+  it('FR-010 (finalized): YAML frontmatter is auto-merged (non-overlapping lines merge cleanly)', () => {
+    // Finalized D5: frontmatter is IN scope for auto-merge — non-overlapping frontmatter
+    // edits (different keys) merge cleanly via diff3; only same-line divergence conflicts.
     const engine = new MergeEngine({ maxConflictRegions: 0, frontmatterConflictStrategy: 'conflict' });
-    const r = engine.merge('---\nk: base\n---\nbody\n', '---\nk: local\n---\nbody\n', '---\nk: remote\n---\nbody\n');
-    expect(r.success && !r.hadConflicts).toBe(false);
+    // Keep the two changed keys on non-adjacent lines: line-based diff3 merges distinct
+    // lines cleanly, but adjacent changed lines collapse into one (conflicting) hunk.
+    const base = '---\nk1: a\nmid: x\nk2: b\n---\nbody\n';
+    const local = '---\nk1: A\nmid: x\nk2: b\n---\nbody\n';   // changed k1 only
+    const remote = '---\nk1: a\nmid: x\nk2: B\n---\nbody\n';  // changed k2 only
+    const r = engine.merge(base, local, remote);
+    expect(r.success).toBe(true);
+    expect(r.hadConflicts).toBe(false);
   });
 });
