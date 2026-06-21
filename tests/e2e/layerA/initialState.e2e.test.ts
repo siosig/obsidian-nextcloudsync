@@ -4,7 +4,6 @@ import { NextcloudClient } from '../../../src/network/NextcloudClient';
 import { describeLive } from '../support/env';
 import { makeClient } from '../support/clientFactory';
 import { makeIsolatedWorkspace, cleanupWorkspace, IsolatedWorkspace } from '../support/isolation';
-import { ensureParentDirs } from '../support/workspace';
 import { textBuf, decodeBuf } from '../support/helpers';
 
 describeLive('Layer A — initial state (no vault folder on server yet)', (getEnv) => {
@@ -34,10 +33,8 @@ describeLive('Layer A — initial state (no vault folder on server yet)', (getEn
   });
 
   it('INIT-3 first upload into a fresh vault creates the folder and the file', async () => {
-    // Pre-create ancestors (this server 404s a PUT with missing ancestors — see
-    // report/mock_test.md §7 F2), then verify the very first upload round-trips
-    // and the once-empty vault now lists the file.
-    await ensureParentDirs(getEnv(), ws, 'first-note.md');
+    // First-ever upload into a fresh vault: reactive MKCOL now handles the 404 missing-parent
+    // (no pre-creation), the file round-trips, and the once-empty vault lists it.
     await client.uploadFile('first-note.md', textBuf('first sync'));
     expect(decodeBuf(await client.downloadFile('first-note.md'))).toBe('first sync');
     const files = await client.getFiles('');

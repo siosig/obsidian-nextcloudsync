@@ -5,7 +5,7 @@ import { ConflictError } from '../../../src/types';
 import { isSafeVaultRelativePath } from '../../../src/network/remotePath';
 import { describeLive } from '../support/env';
 import { cleanupWorkspace, IsolatedWorkspace } from '../support/isolation';
-import { setupWorkspace, ensureParentDirs } from '../support/workspace';
+import { setupWorkspace } from '../support/workspace';
 import { textBuf, buffersEqual, bytesBuf, INTL_PATH, sha256Hex } from '../support/helpers';
 
 describeLive('Layer A — CRUD + boundaries (UP/DL/DEL/MV)', (getEnv) => {
@@ -32,12 +32,10 @@ describeLive('Layer A — CRUD + boundaries (UP/DL/DEL/MV)', (getEnv) => {
     if (sum) expect(sum).toBe(await sha256Hex(data));
   });
 
-  it('UP-2 nested path upload (parents pre-created; server 404s missing ancestors)', async () => {
-    // NOTE: this server returns 404 (not 409) for a PUT with missing ancestors,
-    // so the client's reactive MKCOL (409-triggered) is not exercised here; we
-    // pre-create the parents and verify the deep upload round-trips.
+  it('UP-2 reactive MKCOL on a nested path (server 404s missing ancestors → MKCOL → retry)', async () => {
+    // The client now treats a 404 missing-parent like 409: MKCOL ancestors then retry.
+    // No pre-creation — this exercises the reactive path against the live server.
     const data = textBuf('nested');
-    await ensureParentDirs(getEnv(), ws, 'deep/a/b/up2.md');
     await client.uploadFile('deep/a/b/up2.md', data);
     const back = await client.downloadFile('deep/a/b/up2.md');
     expect(buffersEqual(back, data)).toBe(true);
@@ -50,9 +48,8 @@ describeLive('Layer A — CRUD + boundaries (UP/DL/DEL/MV)', (getEnv) => {
     expect(back.byteLength).toBe(0);
   });
 
-  it('UP-4 international/special-character path round-trips', async () => {
+  it('UP-4 international/special-character path round-trips (reactive MKCOL)', async () => {
     const data = textBuf('intl body');
-    await ensureParentDirs(getEnv(), ws, INTL_PATH);
     await client.uploadFile(INTL_PATH, data);
     const back = await client.downloadFile(INTL_PATH);
     expect(buffersEqual(back, data)).toBe(true);
