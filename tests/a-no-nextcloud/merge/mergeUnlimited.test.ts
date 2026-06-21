@@ -29,7 +29,7 @@ describe('MergeEngine — maxConflictRegions = 0 means unlimited', () => {
     expect(result.conflictRegions).toBe(2);
   });
 
-  it('still caps when a positive threshold is exceeded', () => {
+  it('[SPEC:CF-9] still caps when a positive threshold is exceeded', () => {
     const engine = new MergeEngine({ maxConflictRegions: 1 });
     const result = engine.merge(base, local, remote);
     // 2 regions > cap of 1 → fall back (success=false).

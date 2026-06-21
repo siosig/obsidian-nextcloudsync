@@ -24,15 +24,19 @@ export interface Clause {
 // Findings reused as waiver reasons (report/mock_test.md §7).
 const F1 = 'F1: server returns 415 for sync-collection REPORT -> getSyncToken null, incremental sync unusable; behaviour adjudication pending';
 const F3 = 'F3: files_lock is owner-based -> 423 not reproducible with same app password; needs a second user';
-const F4 = 'F4: Diff3Strategy misreads node-diff3 output -> frontmatterConflictStrategy:conflict does not engage; src fix tracked separately';
 const CHK_CORRUPT = 'post-assembly checksum corruption cannot be induced against an uncontrolled live server';
 const SF_AGG = 'sync-folder subcategory aggregated under CG/SF-1; dedicated split deferred (not yet a test)';
+// Deferred b-1 end-to-end stubs (it.skip): traced + documented but not yet executed against a live
+// server / SyncEngine harness. Surfaced as waivers (pending adjudication) instead of silently passing
+// via the skipped test's title — the coverage scanner now ignores skipped-test traceability.
+const DEFER_HARNESS = 'b-1 e2e deferred (it.skip) — engine-level, needs a SyncEngine harness';
+const DEFER_SERVER = 'b-1 e2e deferred (it.skip) — cannot force the required live-server condition from a test';
 
 export const CLAUSES: Clause[] = [
   // --- CN: connection/auth ---
   { id: 'CN-1', source: 'report/mock_test.md §3.A', layer: 'b-1' },
   { id: 'CN-2', source: 'report/mock_test.md §3.A', layer: 'b-1' },
-  { id: 'CN-3', source: 'report/mock_test.md §3.A', layer: 'b-1' },
+  { id: 'CN-3', source: 'report/mock_test.md §3.A', layer: 'b-1', waiver: DEFER_SERVER },
   { id: 'CN-4', source: 'report/mock_test.md §3.A', layer: 'b-1' },
   { id: 'CN-5', source: 'report/mock_test.md §3.A', layer: 'b-1' },
   // --- UP/DL/DEL/MV: CRUD ---
@@ -45,6 +49,9 @@ export const CLAUSES: Clause[] = [
   { id: 'DL-2', source: 'report/mock_test.md §3.B', layer: 'b-1' },
   { id: 'DEL-1', source: 'report/mock_test.md §3.B', layer: 'b-1' },
   { id: 'DEL-2', source: 'report/mock_test.md §3.B', layer: 'b-1' },
+  // Mass-delete circuit breaker threshold (docs/spec.md §8): extracted to a pure helper and verified
+  // at layer a (massDeletion.test.ts). The b-1 full-scan e2e remains a deferred it.skip (SF-1 waiver).
+  { id: 'DEL-3', source: 'docs/spec.md §8 (mass-delete circuit breaker)', layer: 'a' },
   { id: 'MV-1', source: 'report/mock_test.md §3.B', layer: 'b-1' },
   { id: 'MV-2', source: 'report/mock_test.md §3.B', layer: 'b-1' },
   // --- SZ: size boundary ---
@@ -59,11 +66,11 @@ export const CLAUSES: Clause[] = [
   { id: 'CHK-1', source: 'report/mock_test.md §3.D', layer: 'b-1' },
   { id: 'CHK-2', source: 'report/mock_test.md §3.D', layer: 'b-1' },
   { id: 'CHK-3', source: 'report/mock_test.md §3.D', layer: 'b-1', waiver: CHK_CORRUPT },
-  { id: 'CHK-4', source: 'report/mock_test.md §3.D', layer: 'b-1' },
+  { id: 'CHK-4', source: 'report/mock_test.md §3.D', layer: 'b-1', waiver: DEFER_SERVER },
   // --- LK: locking ---
-  { id: 'LK-1', source: 'report/mock_test.md §3.E', layer: 'b-1' },
+  { id: 'LK-1', source: 'report/mock_test.md §3.E', layer: 'b-1', waiver: DEFER_HARNESS },
   { id: 'LK-2', source: 'report/mock_test.md §3.E', layer: 'b-1' },
-  { id: 'LK-3', source: 'report/mock_test.md §3.E', layer: 'b-1' },
+  { id: 'LK-3', source: 'report/mock_test.md §3.E', layer: 'b-1', waiver: DEFER_HARNESS },
   { id: 'LK-4', source: 'report/mock_test.md §3.E', layer: 'b-1', waiver: F3 },
   { id: 'LK-5', source: 'report/mock_test.md §3.E', layer: 'b-1', waiver: F3 },
   // --- CF: conflict resolution ---
@@ -75,11 +82,22 @@ export const CLAUSES: Clause[] = [
   { id: 'CF-6', source: 'report/mock_test.md §3.F', layer: 'b-1' },
   { id: 'CF-7', source: 'report/mock_test.md §3.F', layer: 'b-1' },
   { id: 'CF-8', source: 'report/mock_test.md §3.F', layer: 'b-1' },
-  { id: 'CF-9', source: 'report/mock_test.md §3.F', layer: 'b-1' },
+  // CF-9 (conflict-region cap) is fully verified at layer a by MergeEngine's positive-cap test
+  // (mergeUnlimited.test.ts, tagged [SPEC:CF-9]); the b-1 live write is redundant (it.skip).
+  { id: 'CF-9', source: 'docs/spec.md §6.2 (maxConflictRegions cap)', layer: 'a' },
   { id: 'CF-10', source: 'report/mock_test.md §3.F', layer: 'b-1' },
   { id: 'CF-11', source: 'report/mock_test.md §3.F', layer: 'b-1' },
-  { id: 'CF-12', source: 'report/mock_test.md §3.F', layer: 'b-1', waiver: F4 },
-  { id: 'CF-13', source: 'report/mock_test.md §3.F', layer: 'b-1' },
+  // F4 resolved in 0.7.1 (993de3c): Diff3Strategy now uses diff3Merge; verified at layer a.
+  { id: 'CF-12', source: 'docs/spec.md §6.2 / §18 (F4 resolved)', layer: 'a' },
+  { id: 'CF-13', source: 'report/mock_test.md §3.F', layer: 'b-1', waiver: 'CF-13 If-Match 412 → conflict routing: b-1 e2e deferred (it.skip, engine-level); the 412→PreconditionFailedError client unit is exercised at layer a' },
+  // F5 resolved (2026-06-21, option a): MergeEngine.mergeText now feeds the real diff3 region count
+  // to the maxConflictRegions breaker, so body conflicts reach conflictFailurePolicy when the cap is
+  // exceeded. Verified at layer a (mergeEngine.test.ts).
+  { id: 'CF-14', source: 'docs/spec.md §6.2 / §18 (F5 resolved)', layer: 'a' },
+  // --- RT: retry queue ---
+  // retryQueue enqueue policy (docs/spec.md §6.3): NetworkError → retry, other errors → record only.
+  // Verified at layer a via the real processFileWithRetry wiring (retryQueue.test.ts).
+  { id: 'RT-1', source: 'docs/spec.md §6.3 (retryQueue)', layer: 'a' },
   // --- CG: config-folder categories ---
   { id: 'CG-1', source: 'report/mock_test.md §3.G', layer: 'b-1' },
   { id: 'CG-2', source: 'report/mock_test.md §3.G', layer: 'b-1' },
@@ -90,9 +108,9 @@ export const CLAUSES: Clause[] = [
   { id: 'CG-7', source: 'report/mock_test.md §3.G', layer: 'b-1' },
   { id: 'CG-8', source: 'report/mock_test.md §3.G', layer: 'b-1' },
   { id: 'CG-9', source: 'report/mock_test.md §3.G', layer: 'b-1' },
-  { id: 'CG-10', source: 'report/mock_test.md §3.G', layer: 'b-1' },
+  { id: 'CG-10', source: 'report/mock_test.md §3.G', layer: 'b-1', waiver: DEFER_HARNESS },
   // --- SF: sync-folder ---
-  { id: 'SF-1', source: 'report/mock_test.md §3.G', layer: 'b-1' },
+  { id: 'SF-1', source: 'report/mock_test.md §3.G', layer: 'b-1', waiver: 'SF-1 full-scan deletion safety: b-1 e2e deferred (it.skip) — needs a SyncEngine harness; the mass-delete circuit-breaker threshold is verified at layer a (DEL-3)' },
   { id: 'SF-2', source: 'report/mock_test.md §3.G', layer: 'b-1', waiver: SF_AGG },
   { id: 'SF-3', source: 'report/mock_test.md §3.G', layer: 'b-1', waiver: SF_AGG },
   { id: 'SF-4', source: 'report/mock_test.md §3.G', layer: 'b-1', waiver: SF_AGG },

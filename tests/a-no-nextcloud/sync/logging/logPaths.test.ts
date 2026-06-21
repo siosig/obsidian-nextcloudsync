@@ -21,7 +21,7 @@ describe('logPaths — log files use the .txt extension', () => {
   });
 });
 
-describe('isActiveOwnLog — exclude a log only while THIS device is writing it', () => {
+describe('[SPEC:LOG-1] isActiveOwnLog — exclude a log only while THIS device is writing it', () => {
   const HOST = 'desktop-plugintest';
   const base = { logsFolder: '_logs', host: HOST, debugLogEnabled: true, syncLogEnabled: true };
   const debugP = debugLogPath('_logs', HOST);

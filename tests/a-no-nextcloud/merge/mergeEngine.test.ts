@@ -55,16 +55,29 @@ describe('MergeEngine', () => {
     expect(result).toBeDefined();
   });
 
-  it('returns success=false when conflict regions exceed threshold', () => {
+  // [SPEC:CF-14] §18 F5 fix: reconcile-text (CRDT) always reports conflictRegions:0, which left the
+  // maxConflictRegions breaker dead for body conflicts. MergeEngine now runs diff3 purely to COUNT
+  // the real regions, so a body conflict surfaces a positive count even though reconcile succeeds.
+  it('[SPEC:CF-14] surfaces a positive diff3 region count for a body conflict even when reconcile succeeds', () => {
     const engine = new MergeEngine({ maxConflictRegions: 0 });
-    // With maxConflictRegions=0, any conflict triggers fallback
     const base = 'Line 1\nLine 2';
     const local = 'Changed 1\nLine 2';
     const remote = 'Line 1\nChanged 2';
     const result = engine.merge(base, local, remote);
-    // When conflictRegions > 0 with threshold 0, should fail
-    if (result.conflictRegions > 0) {
-      expect(result.success).toBe(false);
-    }
+    // diff3 mock flags a≠b as a conflict → count is surfaced (was always 0 before the fix).
+    expect(result.conflictRegions).toBeGreaterThan(0);
+    // §6.2: maxConflictRegions:0 = unlimited → the reconcile merge is still accepted (no policy).
+    expect(result.success).toBe(true);
+  });
+
+  it('[SPEC:CF-14] routes a body conflict to the failure policy when a positive cap is exceeded', () => {
+    const engine = new MergeEngine({ maxConflictRegions: 0.5 }); // any conflict region exceeds 0.5
+    const base = 'Line 1\nLine 2';
+    const local = 'Changed 1\nLine 2';
+    const remote = 'Line 1\nChanged 2';
+    const result = engine.merge(base, local, remote);
+    // The breaker fires on the body (it could not before — count was always 0) → success=false.
+    expect(result.conflictRegions).toBeGreaterThan(0);
+    expect(result.success).toBe(false);
   });
 });

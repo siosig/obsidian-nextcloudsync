@@ -30,10 +30,28 @@ function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// A skipped test verifies nothing, so a clause traced ONLY to a skipped stub must NOT count as
+// covered — it needs a real test or an explicit waiver. This codebase legitimately labels ACTIVE
+// assertions with `// CLAUSE-ID:` comments (e.g. VR-2/VR-3 inside an active it()), so we must NOT
+// strip all comments. Instead, blank each skipped-test declaration line AND the contiguous comment
+// block directly above it (its explanation), leaving comments that label active assertions intact.
+const SKIP_DECL = /\b(?:it|test|describe)\.skip\s*\(|\bx(?:it|describe)\s*\(/;
+function stripSkippedTraceability(text: string): string {
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    if (SKIP_DECL.test(lines[i])) {
+      lines[i] = ''; // the skip declaration line (its title carries the clause id)
+      // Walk up over the skip's own explanation: contiguous comment-only / blank lines.
+      for (let j = i - 1; j >= 0 && /^\s*(\/\/.*)?$/.test(lines[j]); j--) lines[j] = '';
+    }
+  }
+  return lines.join('\n');
+}
+
 // Include coverage.test.ts itself: it is the verifying test for FR-001/002/003
 // (the traceability mechanism), so its own [SPEC:] tags legitimately count.
 const testFiles = walk(TESTS_ROOT);
-const allText = testFiles.map((f) => readFileSync(f, 'utf-8')).join('\n');
+const allText = testFiles.map((f) => stripSkippedTraceability(readFileSync(f, 'utf-8'))).join('\n');
 
 function isReferenced(id: string): boolean {
   // bare id (word-bounded) OR an explicit bracketed SPEC tag for this id
@@ -72,10 +90,27 @@ describe('[SPEC:FR-002] spec coverage map (clauses <-> tests)', () => {
     expect(unknown).toEqual([]);
   });
 
+  it('[SPEC:FR-002] coverage scan ignores skipped-test traceability but keeps active comment labels', () => {
+    // A skipped stub (and its explanation comment) must NOT count as coverage; a comment that labels
+    // a real assertion inside an active test must survive. This guards the scanner's blind spot fix.
+    const sample = [
+      '// SAMPLECLAUSE-SKIP: deferred because the server cannot be driven from a test',
+      "it.skip('SAMPLECLAUSE-SKIP deferred e2e', () => undefined);",
+      "it('active path', () => {",
+      '  // SAMPLECLAUSE-ACTIVE: this comment labels a real assertion',
+      '  expect(true).toBe(true);',
+      '});',
+    ].join('\n');
+    const scanned = stripSkippedTraceability(sample);
+    expect(scanned).not.toContain('SAMPLECLAUSE-SKIP'); // skip title + its explanation comment removed
+    expect(scanned).toContain('SAMPLECLAUSE-ACTIVE'); // active assertion's label preserved
+  });
+
   it('[SPEC:FR-003] known spec-vs-implementation deviations are surfaced as waivers, not silent', () => {
-    // F4 (frontmatter conflict) and F1/F3 (server quirks) must remain visible.
+    // F1 (sync-collection 415) and F3 (owner-based lock) must remain visible.
     const waivedIds = new Set(waived.map((c) => c.id));
-    expect(waivedIds.has('CF-12')).toBe(true); // F4
+    // F4 was resolved in 0.7.1 — CF-12 is no longer waived (verified at layer a by
+    // diff3Strategy.test.ts). F1/F3 server quirks remain visible.
     expect(waivedIds.has('TK-1')).toBe(true); // F1
     expect(waived.length).toBeGreaterThan(0);
   });

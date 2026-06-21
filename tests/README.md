@@ -44,7 +44,9 @@ known spec-vs-implementation deviations visible:
 
 - **F1** server returns 415 for sync-collection → incremental sync unusable (TK-*)
 - **F3** owner-based file lock → 423 not reproducible with one user (LK-4/5)
-- **F4** Diff3Strategy misreads node-diff3 → frontmatter conflict strategy inert (CF-12)
+
+(F4 — Diff3Strategy misreading node-diff3 → frontmatter conflict strategy inert — was
+fixed in 0.7.1 (993de3c) and is no longer a waiver; CF-12 is now verified at layer a.)
 
 ## Adjudicating a failure
 
