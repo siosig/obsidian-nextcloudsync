@@ -31,7 +31,7 @@ export const BULK_MAX_BATCH_COUNT = 100;                  // max files per bulk 
 /** Number of PROPFIND/REPORT response nodes to parse before yielding to the event loop (anti-ANR). */
 export const PARSE_YIELD_EVERY = 100;
 
-/** Mass-delete circuit breaker: floor and fraction of the tracked set (docs/spec.md §8). */
+/** Mass-delete circuit breaker: floor and fraction of the tracked set (specs/main/spec.md §8). */
 export const MASS_DELETE_MIN = 20;
 export const MASS_DELETE_FRACTION = 0.2;
 
