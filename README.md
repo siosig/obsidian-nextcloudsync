@@ -27,12 +27,11 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.1)
+## What's new in this release (0.7.2-beta.1)
 
-- **Fix: the plugin's own log files no longer error or churn during sync (0.7.1)** — a per-device debug/sync log written *while* a sync runs raced its own write and reported "Destination file already exists!" every sync. The plugin now keeps a log file out of sync only while that log's output toggle is ON.
-- **Frontmatter conflicts are now detected instead of silently merged (0.7.1)** — a bug in the three-way merge made diverging YAML frontmatter merge silently even when conflict markers were requested. Conflicting frontmatter is now surfaced according to your conflict policy.
-- **Reliable first upload into new folders on Nextcloud (0.7.1)** — Nextcloud returns 404 (not the standard WebDAV 409) when a file's parent folder does not exist yet. The plugin now creates the missing folders and retries, so the first sync from a fresh device — or into a deep new path — no longer fails.
-- **Fewer redundant server round-trips (0.7.1)** — when a server does not support the incremental sync-collection report, the plugin now detects this once and goes straight to a full scan instead of retrying it on every sync.
+- **Inline tooltips and clearer sign-in across Settings (0.7.2-beta.1)** — every settings row now has a hover tooltip explaining its default, range, and gotchas. The Server URL description spells out the required full WebDAV endpoint (`https://<host>/remote.php/dav/files/<user>/`) so entering only a host no longer fails with an HTTP 405, and the sign-in area leads with "Log in via browser" with a clear divider before the manual Username/App password fields.
+- **The conflict-region limit now applies to body text, not just frontmatter (0.7.2-beta.1)** — body merge conflicts are now counted with diff3, so exceeding your "max conflict regions" setting routes the file to your conflict-failure policy instead of always auto-merging. The default (`0` = unlimited) keeps the existing auto-merge behaviour.
+- **Consistent 24-hour clock in the Sync Status dialog (0.7.2-beta.1)** — the last-session summary now shows `HH:mm` (date-prefixed across midnight), matching the per-entry rows, instead of a locale-dependent time.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
