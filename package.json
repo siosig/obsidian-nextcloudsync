@@ -13,7 +13,7 @@
     "test": "jest --passWithNoTests",
     "test:watch": "jest --watch",
     "test:b1": "jest --config jest.b1.config.js --runInBand",
-    "test:b2": "wdio run wdio.conf.ts"
+    "test:b2": "wdio run wdio.conf.mts"
   },
   "keywords": [
     "obsidian",

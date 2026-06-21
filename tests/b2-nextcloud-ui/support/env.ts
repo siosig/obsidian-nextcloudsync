@@ -1,16 +1,11 @@
-// b-2 (UI) env guard. b-2 needs BOTH the live Nextcloud connection (NEXTCLOUD_*)
-// and Obsidian community credentials (OBSIDIAN_*) to launch a real vault via
-// wdio-obsidian-service. When any are missing the suite must skip cleanly.
+// b-2 (UI) env guard. wdio-obsidian-service downloads & launches Obsidian itself
+// (no Obsidian account login needed), so b-2 only needs the live Nextcloud
+// connection (NEXTCLOUD_*) for the plugin to talk to the server. When any are
+// missing the suite must skip cleanly.
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
-const REQUIRED = [
-  'NEXTCLOUD_SERVER_URL',
-  'NEXTCLOUD_USER',
-  'NEXTCLOUD_PASSWORD',
-  'OBSIDIAN_USER',
-  'OBSIDIAN_PASSWORD',
-] as const;
+const REQUIRED = ['NEXTCLOUD_SERVER_URL', 'NEXTCLOUD_USER', 'NEXTCLOUD_PASSWORD'] as const;
 
 function parseEnvFile(filePath: string): Record<string, string> {
   const out: Record<string, string> = {};
