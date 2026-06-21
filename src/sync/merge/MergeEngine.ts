@@ -81,7 +81,7 @@ export class MergeEngine {
    * Reconcile's merged content is kept and hadConflicts stays false: with the default cap of 0
    * (unlimited) the reconcile merge is accepted as-is; only a positive cap exceeded by the diff3
    * region count routes the file to conflictFailurePolicy. This revives the breaker for body
-   * conflicts (docs/spec.md §6.2; fixes §18 F5 — it was dead because reconcile's count was always 0).
+   * conflicts (specs/main/spec.md §6.2; fixes §18 F5 — it was dead because reconcile's count was always 0).
    *
    * Note: the State DB stores only hashes, never base content, so `base` here is empty ('') for body
    * merges driven by SyncEngine.handleConflict. diff3 with an empty base degrades to a conservative

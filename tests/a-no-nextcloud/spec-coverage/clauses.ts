@@ -49,9 +49,9 @@ export const CLAUSES: Clause[] = [
   { id: 'DL-2', source: 'report/mock_test.md §3.B', layer: 'b-1' },
   { id: 'DEL-1', source: 'report/mock_test.md §3.B', layer: 'b-1' },
   { id: 'DEL-2', source: 'report/mock_test.md §3.B', layer: 'b-1' },
-  // Mass-delete circuit breaker threshold (docs/spec.md §8): extracted to a pure helper and verified
+  // Mass-delete circuit breaker threshold (specs/main/spec.md §8): extracted to a pure helper and verified
   // at layer a (massDeletion.test.ts). The b-1 full-scan e2e remains a deferred it.skip (SF-1 waiver).
-  { id: 'DEL-3', source: 'docs/spec.md §8 (mass-delete circuit breaker)', layer: 'a' },
+  { id: 'DEL-3', source: 'specs/main/spec.md §8 (mass-delete circuit breaker)', layer: 'a' },
   { id: 'MV-1', source: 'report/mock_test.md §3.B', layer: 'b-1' },
   { id: 'MV-2', source: 'report/mock_test.md §3.B', layer: 'b-1' },
   // --- SZ: size boundary ---
@@ -84,20 +84,20 @@ export const CLAUSES: Clause[] = [
   { id: 'CF-8', source: 'report/mock_test.md §3.F', layer: 'b-1' },
   // CF-9 (conflict-region cap) is fully verified at layer a by MergeEngine's positive-cap test
   // (mergeUnlimited.test.ts, tagged [SPEC:CF-9]); the b-1 live write is redundant (it.skip).
-  { id: 'CF-9', source: 'docs/spec.md §6.2 (maxConflictRegions cap)', layer: 'a' },
+  { id: 'CF-9', source: 'specs/main/spec.md §6.2 (maxConflictRegions cap)', layer: 'a' },
   { id: 'CF-10', source: 'report/mock_test.md §3.F', layer: 'b-1' },
   { id: 'CF-11', source: 'report/mock_test.md §3.F', layer: 'b-1' },
   // F4 resolved in 0.7.1 (993de3c): Diff3Strategy now uses diff3Merge; verified at layer a.
-  { id: 'CF-12', source: 'docs/spec.md §6.2 / §18 (F4 resolved)', layer: 'a' },
+  { id: 'CF-12', source: 'specs/main/spec.md §6.2 / §18 (F4 resolved)', layer: 'a' },
   { id: 'CF-13', source: 'report/mock_test.md §3.F', layer: 'b-1', waiver: 'CF-13 If-Match 412 → conflict routing: b-1 e2e deferred (it.skip, engine-level); the 412→PreconditionFailedError client unit is exercised at layer a' },
   // F5 resolved (2026-06-21, option a): MergeEngine.mergeText now feeds the real diff3 region count
   // to the maxConflictRegions breaker, so body conflicts reach conflictFailurePolicy when the cap is
   // exceeded. Verified at layer a (mergeEngine.test.ts).
-  { id: 'CF-14', source: 'docs/spec.md §6.2 / §18 (F5 resolved)', layer: 'a' },
+  { id: 'CF-14', source: 'specs/main/spec.md §6.2 / §18 (F5 resolved)', layer: 'a' },
   // --- RT: retry queue ---
-  // retryQueue enqueue policy (docs/spec.md §6.3): NetworkError → retry, other errors → record only.
+  // retryQueue enqueue policy (specs/main/spec.md §6.3): NetworkError → retry, other errors → record only.
   // Verified at layer a via the real processFileWithRetry wiring (retryQueue.test.ts).
-  { id: 'RT-1', source: 'docs/spec.md §6.3 (retryQueue)', layer: 'a' },
+  { id: 'RT-1', source: 'specs/main/spec.md §6.3 (retryQueue)', layer: 'a' },
   // --- CG: config-folder categories ---
   { id: 'CG-1', source: 'report/mock_test.md §3.G', layer: 'b-1' },
   { id: 'CG-2', source: 'report/mock_test.md §3.G', layer: 'b-1' },
@@ -136,7 +136,7 @@ export const CLAUSES: Clause[] = [
   { id: 'PR-1', source: 'spec 019 FR-016', layer: 'b-1' },
   { id: 'PR-2', source: 'spec 019 FR-016', layer: 'b-1' },
   // --- LOG: active-log self-sync exclusion ---
-  { id: 'LOG-1', source: 'docs/spec.md §9.1', layer: 'a' },
+  { id: 'LOG-1', source: 'specs/main/spec.md §9.1', layer: 'a' },
   // --- file-mix distribution ---
   { id: 'FR-017', source: 'spec 019', layer: 'a' },
   // --- spec 019 (this feature's own requirements: traceability mechanism) ---

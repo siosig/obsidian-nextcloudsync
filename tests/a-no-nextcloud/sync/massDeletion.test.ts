@@ -1,6 +1,6 @@
 import { massDeleteLimit, isMassDeletionGuarded, MASS_DELETE_MIN } from '../../../src/util/limits';
 
-// [SPEC:DEL-3] docs/spec.md §8 — mass-delete circuit breaker. A full-scan reconciliation may delete
+// [SPEC:DEL-3] specs/main/spec.md §8 — mass-delete circuit breaker. A full-scan reconciliation may delete
 // locally at most max(20, floor(20% of tracked)) "remotely absent" files; beyond that it assumes a
 // partial/failed remote listing and refuses, to avoid wiping the vault. The threshold previously
 // lived as an inline `Math.max(20, Math.floor(tracked * 0.2))` in SyncEngine with no a-layer test

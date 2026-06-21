@@ -165,8 +165,8 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   networkConcurrency: 16,
   syncOnWifiOnly: false,
   // Config-folder sync is opt-in: master defaults OFF, so a fresh install syncs notes only.
-  // These category defaults take effect only once the user turns the master on (per the
-  // settings_v5.0.0 mock). Migrated `syncBookmarks: true` users get bookmarks-only instead
+  // These category defaults take effect only once the user turns the master on.
+  // Migrated `syncBookmarks: true` users get bookmarks-only instead
   // (see migrateBookmarksToConfigSync); `syncBookmarks` itself is removed and pruned.
   syncConfigFolder: false,
   configSync: {
