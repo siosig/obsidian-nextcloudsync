@@ -11,9 +11,12 @@ export class Diff3Strategy implements IMergeStrategy {
     try {
       // node-diff3 is a CommonJS module with no type declarations resolvable under node module
       // resolution; require() keeps it working in both the esbuild bundle and the ts-jest tests.
+      // Use diff3Merge (returns a MergeRegion[] of {ok}|{conflict}); merge() returns a different
+      // shape ({conflict, result: string[]}) that this strategy must NOT consume — that mismatch
+      // silently dropped real conflicts (e.g. frontmatter), see report/spec_conformance.md D1.
       // eslint-disable-next-line @typescript-eslint/no-require-imports, no-undef -- CJS interop for an untyped bundled dependency (esbuild inlines this; never a runtime Node require)
-      const { merge: diff3Merge } = require('node-diff3') as {
-        merge: (a: string[], o: string[], b: string[], opts?: Record<string, unknown>) => { result: Diff3Chunk[]; conflict: boolean };
+      const { diff3Merge } = require('node-diff3') as {
+        diff3Merge: (a: string[], o: string[], b: string[], opts?: Record<string, unknown>) => Diff3Chunk[];
       };
 
       const localLines = local.split('\n');
@@ -25,7 +28,7 @@ export class Diff3Strategy implements IMergeStrategy {
       let mergedContent = '';
       let conflictRegions = 0;
 
-      for (const chunk of result.result) {
+      for (const chunk of result) {
         if (chunk.ok) {
           mergedContent += chunk.ok.join('\n');
           if (chunk.ok.length > 0) mergedContent += '\n';

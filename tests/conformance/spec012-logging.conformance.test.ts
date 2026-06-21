@@ -5,15 +5,13 @@ import { syncLogPath, debugLogPath, joinLogPath } from '../../src/util/logPaths'
 import { shouldRecord, renderSyncLogBlock } from '../../src/log/SyncLogWriter';
 
 describe('spec 012 — per-device logging (paths)', () => {
-  it('FR-012: sync-log filename uses the .md extension', () => {
-    // DEVIATION (D7): implementation uses .txt (changed in 0.4.0 so editors don't
-    // render the plain-text log as Markdown). The 012 spec still says .md.
-    expect(syncLogPath('', 'dev1')).toBe('nextcloud-sync_sync_dev1.md');
+  it('FR-012 (finalized): sync-log filename uses the .txt extension', () => {
+    // Finalized D7: logs are plain text → .txt (avoids Markdown rendering; since 0.4.0).
+    expect(syncLogPath('', 'dev1')).toBe('nextcloud-sync_sync_dev1.txt');
   });
 
-  it('FR-020: debug-log filename uses the .md extension', () => {
-    // DEVIATION (D7): .txt in the implementation.
-    expect(debugLogPath('', 'dev1')).toBe('nextcloud-sync_debug_dev1.md');
+  it('FR-020 (finalized): debug-log filename uses the .txt extension', () => {
+    expect(debugLogPath('', 'dev1')).toBe('nextcloud-sync_debug_dev1.txt');
   });
 
   it('FR-008/009: log is placed in the chosen folder; blank ⇒ vault root', () => {

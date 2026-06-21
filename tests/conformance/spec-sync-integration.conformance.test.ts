@@ -42,23 +42,26 @@ describe('SyncEngine integration — spec conformance', () => {
     expect(b.stateDB.getDeviceId()).toBe('deviceB');
   });
 
-  it('003 FR-001: a remote deletion is applied locally (DEVIATION D8: full-scan gap)', async () => {
-    // SPEC: a remote deletion must propagate to the local copy (honoring trash).
-    // DEVIATION (D8): getSyncToken is null on this server (REPORT 415), so the engine
-    // full-scans. Full-scan only deletes LOCAL-missing files; a REMOTE deletion of a
-    // still-present local file is NOT reflected → cross-device deletes break here.
-    // (The token/getChanges → processRemoteDeletion path is unreachable without REPORT.)
+  it('003 FR-001: a remote deletion is applied locally (full-scan absence detection)', async () => {
+    // SPEC: a remote deletion propagates to the local copy (honoring trash). The engine
+    // implements this even on full-scan (processLocalModifications absence detection:
+    // tracked + locally-present + remote-absent + content-unchanged → delete, guarded by a
+    // mass-delete circuit breaker and a 404 re-check). It INTENTIONALLY skips when the remote
+    // listing is empty (size 0) — a guard against a truncated/failed listing — so we keep
+    // another file on the remote to exercise the real deletion path.
     const remote = new FakeRemote();
     const a = await makeDevice('deviceA', remote);
+    a.vault.seedLocal('keep.md', 'stays');
     a.vault.seedLocal('del.md', 'gone soon');
     await a.sync();
     const b = await makeDevice('deviceB', remote);
     await b.sync();
     expect(b.vault.localExists('del.md')).toBe(true);
-    // Delete on the remote, then B syncs again → local copy must be removed.
+    // Delete del.md on the remote (keep.md remains → listing non-empty); B re-syncs.
     await remote.deleteFile('del.md', '');
     await b.sync();
     expect(b.vault.localExists('del.md')).toBe(false);
+    expect(b.vault.localExists('keep.md')).toBe(true);
   });
 
   it('010 FR-010: a converged file (identical both sides) is not flagged conflicted', async () => {
