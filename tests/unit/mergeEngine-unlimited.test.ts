@@ -6,16 +6,14 @@ jest.mock('reconcile-text', () => ({
   reconcile: () => ({ text: undefined }),
 }), { virtual: true });
 
-// node-diff3 returns TWO conflict regions, so conflictRegions === 2.
+// node-diff3's diff3Merge returns a chunk array with TWO conflict regions, so
+// conflictRegions === 2. (Diff3Strategy uses diff3Merge, not merge.)
 jest.mock('node-diff3', () => ({
-  merge: () => ({
-    result: [
-      { conflict: { a: ['local one'], b: ['remote one'] } },
-      { ok: ['shared middle'] },
-      { conflict: { a: ['local two'], b: ['remote two'] } },
-    ],
-    conflict: true,
-  }),
+  diff3Merge: () => [
+    { conflict: { a: ['local one'], b: ['remote one'] } },
+    { ok: ['shared middle'] },
+    { conflict: { a: ['local two'], b: ['remote two'] } },
+  ],
 }), { virtual: true });
 
 const base = 'shared middle';
