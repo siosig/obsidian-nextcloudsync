@@ -11,8 +11,8 @@ module.exports = {
   // (jest.e2e.config.js). Exclude it from the default run and from CI.
   // testPathIgnorePatterns stops execution; modulePathIgnorePatterns stops haste-map
   // from scanning tests/e2e/__mocks__ (which would clash with tests/__mocks__).
-  testPathIgnorePatterns: ['/node_modules/', '/tests/e2e/'],
-  modulePathIgnorePatterns: ['<rootDir>/tests/e2e/'],
+  testPathIgnorePatterns: ['/node_modules/', '/tests/e2e/', '/tests/conformance/'],
+  modulePathIgnorePatterns: ['<rootDir>/tests/e2e/', '<rootDir>/tests/conformance/'],
   transform: {
     '^.+\\.tsx?$': ['ts-jest', { tsconfig: 'tsconfig.test.json' }],
   },

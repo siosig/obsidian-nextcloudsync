@@ -17,7 +17,9 @@ export interface LiveEnv {
   appPassword: string;
 }
 
-const REQUIRED_KEYS = ['SERVER_URL', 'SYNC_FOLDER', 'USER_NAME', 'NEXTCLOUD_TOKEN'] as const;
+// NEXTCLOUD_VAULT_NAME is OPTIONAL (empty ⇒ operate under the SERVER_URL root —
+// i.e. the "no vault configured yet" initial state).
+const REQUIRED_KEYS = ['NEXTCLOUD_SERVER_URL', 'NEXTCLOUD_USER', 'NEXTCLOUD_PASSWORD'] as const;
 
 /** Minimal `KEY=value` / `KEY="value"` parser (no dotenv dependency). */
 function parseEnvFile(filePath: string): Record<string, string> {
@@ -66,10 +68,13 @@ export function requireLiveEnv(): LiveEnvResult {
   return {
     ok: true,
     env: {
-      serverUrl: values.SERVER_URL,
-      syncFolder: values.SYNC_FOLDER,
-      username: values.USER_NAME,
-      appPassword: values.NEXTCLOUD_TOKEN,
+      serverUrl: values.NEXTCLOUD_SERVER_URL,
+      // The Vault name is the top remote folder; tests isolate into a unique
+      // subfolder beneath it (NEXTCLOUD_VAULT_NAME/e2e-<ts>). Empty/unset ⇒
+      // isolate directly under the SERVER_URL root (no-vault initial state).
+      syncFolder: values.NEXTCLOUD_VAULT_NAME ?? '',
+      username: values.NEXTCLOUD_USER,
+      appPassword: values.NEXTCLOUD_PASSWORD,
     },
   };
 }
