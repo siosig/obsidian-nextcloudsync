@@ -27,11 +27,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.2)
+## What's new in this release (0.7.3)
 
-- **Settings tooltips now appear anywhere on the row (0.7.2)** — the hover tooltips added for every settings row previously attached only to the short bold title, so hovering the long description (where you actually read) showed nothing and the tooltips looked broken. They now label the whole row and appear on hover across it. The Server URL description still spells out the required full WebDAV endpoint (`https://<host>/remote.php/dav/files/<user>/`) so entering only a host no longer fails with an HTTP 405, and the sign-in area leads with "Log in via browser" with a clear divider before the manual Username/App password fields.
-- **The conflict-region limit now applies to body text, not just frontmatter (0.7.2)** — body merge conflicts are now counted with diff3, so exceeding your "max conflict regions" setting routes the file to your conflict-failure policy instead of always auto-merging. The default (`0` = unlimited) keeps the existing auto-merge behaviour.
-- **Consistent 24-hour clock in the Sync Status dialog (0.7.2)** — the last-session summary now shows `HH:mm` (date-prefixed across midnight), matching the per-entry rows, instead of a locale-dependent time.
+- **Empty directories now sync correctly (0.7.3)** — directories are treated as first-class entities alongside files. An empty folder created on one device now propagates to the remote and to every other device. A folder that is emptied and deleted on one device is now pruned from the remote and from every other device — fixing the long-standing bug where empty year folders like `2011/` lingered on the remote after all their files were deleted.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
