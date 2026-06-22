@@ -27,9 +27,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.6-beta.1)
+## What's new in this release (0.7.6)
 
-- **Fix: a rare multi-device data-loss case is closed (0.7.6-beta.1)** — when a conflict was left unresolved (the "error" failure policy) and the remote was otherwise unchanged, the next sync could silently overwrite the other device's edit with the local copy via the unchanged-sync fast path (0.7.5). The fast path now disarms itself after any sync that leaves a conflict, error, or pending retry, so an unresolved remote change is always re-detected instead of being lost.
+- **Fix: a rare multi-device data-loss case is closed (0.7.6)** — when a conflict was left unresolved (the "error" failure policy) and the remote was otherwise unchanged, the next sync could silently overwrite the other device's edit with the local copy via the unchanged-sync fast path introduced in 0.7.5. The fast path now disarms itself after any sync that leaves a conflict, error, or pending retry, so an unresolved remote change is always re-detected instead of being lost.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
