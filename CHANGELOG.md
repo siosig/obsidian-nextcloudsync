@@ -11,6 +11,10 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.6] - 2026-06-23
+
+- **Fix: a rare multi-device data-loss case is closed** — when a conflict was left unresolved (the "error" failure policy) and the remote was otherwise unchanged, the next sync could silently overwrite the other device's edit with the local copy via the unchanged-sync fast path introduced in 0.7.5. The fast path now disarms itself after any sync that leaves a conflict, error, or pending retry, so an unresolved remote change is always re-detected instead of being lost.
+
 ## [0.7.5] - 2026-06-23
 
 - **Faster unchanged syncs on Nextcloud** — when the vault's remote contents have not changed since the last scan, the sync now skips the full remote directory listing and reuses cached state, detected via the root folder's ETag. Measured on a real server, an unchanged sync drops from two large directory listings to a single tiny request. Correctness is unaffected: any remote change is still picked up on the next sync, and the optimization only applies to Nextcloud (plain WebDAV is unchanged).
@@ -131,6 +135,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.6]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.6
 [0.7.5]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.5
 [0.7.4]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.4
 [0.7.3]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.3
