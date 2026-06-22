@@ -5,3 +5,10 @@ allowBuilds:
   geckodriver: false
   # unrs-resolver ships prebuilt binaries via optional deps; its postinstall build is not needed.
   unrs-resolver: false
+
+# Force patched versions of vulnerable TRANSITIVE dev/test-only deps (not bundled into the plugin;
+# both only execute under tooling we do not run in CI: mocha=wdio b2, js-yaml 3.x=istanbul coverage).
+# Range-scoped so only the vulnerable versions are lifted. (pnpm v11 reads overrides here, not in package.json.)
+overrides:
+  serialize-javascript@<7.0.5: '>=7.0.5'  # GHSA RCE/DoS (<=7.0.2 high, <7.0.5 moderate), via mocha
+  js-yaml@<4.2.0: '>=4.2.0'               # GHSA quadratic-complexity DoS (<=4.1.1), via istanbul

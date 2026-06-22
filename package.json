@@ -39,7 +39,7 @@
     "eslint-plugin-obsidianmd": "^0.3.0",
     "jest": "^30.4.2",
     "mocha": "^11.7.6",
-    "obsidian": "latest",
+    "obsidian": "^1.13.1",
     "secretlint": "^13.0.2",
     "ts-jest": "^29.4.11",
     "typescript": "^6.0.3",
