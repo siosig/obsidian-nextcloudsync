@@ -62,6 +62,13 @@ export class StandardWebDAVClient implements IWebDAVClient {
     return results;
   }
 
+  async getRootEtag(): Promise<string | null> {
+    // Root-ETag short-circuit is Nextcloud-only: plain WebDAV does not guarantee that a child change
+    // propagates to the parent/root collection's ETag, so returning null makes the engine always
+    // perform a real full scan here (safe default — never a missed remote change).
+    return null;
+  }
+
   /** Fetches a single collection with Depth:1, collecting files while recursing into subcollections. */
   private async propfindRecursive(rel: string, out: RemoteFileInfo[], visited: Set<string>): Promise<void> {
     if (visited.has(rel)) return; // Guard against self-reference and cycles
