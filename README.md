@@ -27,9 +27,10 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.5-beta.1)
+## What's new in this release (0.7.5-beta.2)
 
-- **Faster unchanged syncs on Nextcloud (0.7.5-beta.1)** — when the vault's remote contents have not changed since the last scan, the sync now skips the full remote directory listing and reuses cached state, detected via the root folder's ETag. Measured on a real server, an unchanged sync drops from two large directory listings to a single tiny request. Correctness is unaffected: any remote change is still picked up on the next sync, and the optimization only applies to Nextcloud (plain WebDAV is unchanged).
+- **Faster unchanged syncs on Nextcloud (0.7.5-beta.2)** — when the vault's remote contents have not changed since the last scan, the sync now skips the full remote directory listing and reuses cached state, detected via the root folder's ETag. Measured on a real server, an unchanged sync drops from two large directory listings to a single tiny request. Correctness is unaffected: any remote change is still picked up on the next sync, and the optimization only applies to Nextcloud (plain WebDAV is unchanged).
+- **Security maintenance (0.7.5-beta.2)** — patched vulnerable build/test-only dependencies (no change to the shipped plugin).
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
