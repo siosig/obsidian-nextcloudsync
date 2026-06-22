@@ -167,6 +167,29 @@ export class NextcloudClient implements IWebDAVClient {
     return await this.parsePropfindResponse(res.text);
   }
 
+  async getRootEtag(): Promise<string | null> {
+    // Root-ETag short-circuit (spec 023): a single Depth:0 PROPFIND on the vault root. Nextcloud
+    // propagates any descendant change up to the root collection's ETag, so a matching value means
+    // the remote tree is unchanged since the last full scan. Never throws — any non-207 (incl. 404
+    // before the folder exists) or error yields null so the caller falls back to a real full scan.
+    try {
+      const res = await requestUrl({
+        url: this.remoteUrl(''),
+        method: 'PROPFIND',
+        headers: { Authorization: this.authHeader, Depth: '0', 'Content-Type': 'application/xml; charset=utf-8' },
+        body: PROPFIND_BODY,
+        throw: false,
+      });
+      if (res.status !== 207) return null;
+      const doc = new DOMParser().parseFromString(res.text, 'text/xml');
+      const resp = doc.getElementsByTagNameNS('DAV:', 'response')[0];
+      const etag = resp?.getElementsByTagNameNS('DAV:', 'getetag')[0]?.textContent?.replace(/"/g, '') ?? null;
+      return etag && etag.length > 0 ? etag : null;
+    } catch {
+      return null;
+    }
+  }
+
   async getDirectories(path: string): Promise<RemoteDirInfo[]> {
     const res = await requestUrl({
       url: this.remoteUrl(path),
