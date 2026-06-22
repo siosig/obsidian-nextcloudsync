@@ -43,6 +43,9 @@ export class StateDB {
       const parsed = JSON.parse(raw) as SyncState;
       this.state = parsed;
       if (!this.state.directories) this.state.directories = {}; // pre-DP v1 state file
+      // Root-ETag short-circuit (spec 023): pre-023 state has neither field. Absent remoteRootEtag
+      // ⇒ next sync does a real full scan; skip count defaults to 0.
+      if (this.state.fullScanSkipCount == null) this.state.fullScanSkipCount = 0;
     } catch {
       // Corrupted DB — start fresh (recovery handled externally)
       console.warn('[StateDB] Failed to parse state DB; starting with empty state');
@@ -165,6 +168,26 @@ export class StateDB {
 
   setSyncToken(token: string | null): void {
     this.state.syncToken = token;
+  }
+
+  // ── Root-ETag short-circuit (spec 023) ──
+  /** Vault root ETag from the last REAL full scan, or null when unrecorded (⇒ next sync full-scans). */
+  getRemoteRootEtag(): string | null {
+    return this.state.remoteRootEtag ?? null;
+  }
+
+  /** Persist the vault root ETag. Set ONLY after a real full scan completes (never on a short-circuit). */
+  setRemoteRootEtag(etag: string | null): void {
+    this.state.remoteRootEtag = etag;
+  }
+
+  /** Consecutive short-circuited full-scans since the last real scan (defaults to 0). */
+  getFullScanSkipCount(): number {
+    return this.state.fullScanSkipCount ?? 0;
+  }
+
+  setFullScanSkipCount(n: number): void {
+    this.state.fullScanSkipCount = n;
   }
 
   getLastSyncTime(): number {

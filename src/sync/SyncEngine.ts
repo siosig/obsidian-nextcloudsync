@@ -31,7 +31,7 @@ import { sha256 } from '../util/hash';
 import { FileLogger } from '../util/FileLogger';
 import {
   isCellularBlocked, SIGNATURE_SAFETY_WINDOW_MS, MAX_HASH_SIZE,
-  MAX_INFLIGHT_BYTES_DESKTOP, MAX_INFLIGHT_BYTES_MOBILE, massDeleteLimit,
+  MAX_INFLIGHT_BYTES_DESKTOP, MAX_INFLIGHT_BYTES_MOBILE, massDeleteLimit, FORCE_FULL_SCAN_EVERY,
 } from '../util/limits';
 import { createLimiter, ByteSemaphore } from '../util/ConcurrencyLimiter';
 import { isSafeVaultRelativePath } from '../network/remotePath';
@@ -605,6 +605,9 @@ export class SyncEngine {
     // True when remoteFiles is the COMPLETE remote listing (so absence implies a remote deletion).
     // False in the token path, where remoteFiles is only the partial set of changed files.
     let isFullScan = false;
+    // Set (non-null) when the full scan was short-circuited (spec 023): the directory listing rebuilt
+    // from State, fed to reconcileDirectories so it too skips getDirectories('').
+    let fullScanCachedDirs: RemoteDirInfo[] | null = null;
 
     const existingToken = this.opts.stateDB.getSyncToken();
     if (existingToken) {
@@ -628,22 +631,28 @@ export class SyncEngine {
         }
       } catch (err) {
         if (err instanceof SyncTokenExpiredError) {
-          // Fallback to full scan
-          remoteFiles = await client.getFiles('');
+          // Fallback to full scan (root-ETag short-circuit may rebuild the listing from State — spec 023).
+          const listing = await this.obtainFullScanListing(client);
+          remoteFiles = listing.remoteFiles;
+          fullScanCachedDirs = listing.cachedDirs;
           isFullScan = true;
           const token = await client.getSyncToken();
           this.opts.stateDB.setSyncToken(token);
-          void this.opts.logger?.log(`sync: sync-token expired → FULL SCAN (remote=${remoteFiles.length}, nextToken=${token ? 'obtained' : 'NULL'}). Remote deletions detected by absence (full-scan reconciliation)`);
+          void this.opts.logger?.log(`sync: sync-token expired → FULL SCAN (remote=${remoteFiles.length}, shortCircuit=${listing.cachedDirs != null}, nextToken=${token ? 'obtained' : 'NULL'}). Remote deletions detected by absence (full-scan reconciliation)`);
         } else {
           throw err;
         }
       }
     } else {
-      remoteFiles = await client.getFiles('');
+      // No prior token (the common Nextcloud case: sync-collection REPORT is unsupported, spec §18 F1,
+      // so every sync lands here). Root-ETag short-circuit may rebuild the listing from State (spec 023).
+      const listing = await this.obtainFullScanListing(client);
+      remoteFiles = listing.remoteFiles;
+      fullScanCachedDirs = listing.cachedDirs;
       isFullScan = true;
       const token = await client.getSyncToken();
       this.opts.stateDB.setSyncToken(token);
-      void this.opts.logger?.log(`sync: FULL SCAN, no prior token (remote=${remoteFiles.length}, nextToken=${token ? 'obtained' : 'NULL'}). Remote deletions detected by absence (full-scan reconciliation)`);
+      void this.opts.logger?.log(`sync: FULL SCAN, no prior token (remote=${remoteFiles.length}, shortCircuit=${listing.cachedDirs != null}, nextToken=${token ? 'obtained' : 'NULL'}). Remote deletions detected by absence (full-scan reconciliation)`);
     }
 
     // Retry queue files
@@ -669,7 +678,79 @@ export class SyncEngine {
 
     // Reconcile directory create/delete only from a COMPLETE listing (full scan). The token path's
     // remoteFiles is a partial diff, from which directory absence cannot be read as a deletion.
-    if (isFullScan) await this.reconcileDirectories(summary);
+    // On a short-circuited scan, feed the State-rebuilt directory list so getDirectories('') is skipped.
+    if (isFullScan) await this.reconcileDirectories(summary, fullScanCachedDirs ?? undefined);
+  }
+
+  /**
+   * Root-ETag short-circuit (spec 023). Obtain the COMPLETE remote file listing for a full scan,
+   * either by a real Depth:infinity PROPFIND (`getFiles('')`) or — when this is Nextcloud and the
+   * vault root ETag is unchanged since the last REAL scan — by rebuilding it from State, skipping the
+   * heavy listing. Returns the rebuilt directory list too (non-null only when short-circuited) so
+   * reconcileDirectories can likewise skip getDirectories('').
+   *
+   * Safety: the rebuilt listing is COMPLETE (every tracked file/dir), so it flows through the normal
+   * full-scan path unchanged — absence-based remote-deletion, the mass-delete breaker, conflict
+   * resolution and uploads are all untouched. The stored root ETag is updated ONLY on a real scan, so
+   * a local upload/delete/rename (which changes the remote root ETag) forces a real scan next time.
+   */
+  private async obtainFullScanListing(
+    client: IWebDAVClient,
+  ): Promise<{ remoteFiles: RemoteFileInfo[]; cachedDirs: RemoteDirInfo[] | null }> {
+    const db = this.opts.stateDB;
+    const isNextcloud = this.features?.isNextcloud === true;
+    const stored = db.getRemoteRootEtag();
+    const skipCount = db.getFullScanSkipCount();
+    const forced = skipCount >= FORCE_FULL_SCAN_EVERY;
+
+    // Capture the current root ETag BEFORE listing so a real scan never stores a value NEWER than its
+    // listing: any remote change interleaving here yields a mismatch next sync (an extra real scan,
+    // never a missed change). Nextcloud only — getRootEtag() is null elsewhere (no short-circuit).
+    const cur = isNextcloud ? await client.getRootEtag() : null;
+
+    if (cur != null && stored != null && cur === stored && !forced) {
+      const remoteFiles = this.rebuildRemoteFilesFromState();
+      const cachedDirs = this.rebuildRemoteDirsFromState();
+      db.setFullScanSkipCount(skipCount + 1);
+      void this.opts.logger?.log(
+        `sync: root-ETag MATCH (${cur}) → SHORT-CIRCUIT full scan; rebuilt ${remoteFiles.length} files / ${cachedDirs.length} dirs from State (skip ${skipCount + 1}/${FORCE_FULL_SCAN_EVERY})`,
+      );
+      return { remoteFiles, cachedDirs };
+    }
+
+    // Real full scan. Persist the captured root ETag (may be null on non-Nextcloud / fetch failure →
+    // next sync simply real-scans again) and reset the skip budget.
+    const remoteFiles = await client.getFiles('');
+    db.setRemoteRootEtag(cur);
+    db.setFullScanSkipCount(0);
+    void this.opts.logger?.log(
+      `sync: REAL full scan (remote=${remoteFiles.length}); rootEtag=${cur ?? 'null'}${forced ? ' (forced: skip budget reached)' : ''}`,
+    );
+    return { remoteFiles, cachedDirs: null };
+  }
+
+  /** Rebuild the remote file listing from State (root-ETag short-circuit). Every entry must read as
+   *  "remote unchanged" against its own base: effective id = checksum ?? etag ?? size = remoteId. */
+  private rebuildRemoteFilesFromState(): RemoteFileInfo[] {
+    return this.opts.stateDB.getAllFiles().map((fs) => ({
+      path: fs.path,
+      fileId: fs.remoteFileId,
+      checksum: fs.idType === 'sha256' ? fs.remoteId : null,
+      etag: fs.idType === 'etag' ? fs.remoteId : null,
+      size: fs.size,
+      lastModified: fs.remoteMtime ?? fs.mtime,
+    }));
+  }
+
+  /** Rebuild the remote directory listing from State (root-ETag short-circuit). reconcileDirectories
+   *  only needs path/fileId; etag/lastModified are unused there. */
+  private rebuildRemoteDirsFromState(): RemoteDirInfo[] {
+    return this.opts.stateDB.getAllDirs().map((d) => ({
+      path: d.path,
+      fileId: d.remoteFileId,
+      etag: null,
+      lastModified: 0,
+    }));
   }
 
   private async processFileWithRetry(remote: RemoteFileInfo, summary: SyncSessionSummary): Promise<void> {
@@ -1464,13 +1545,19 @@ export class SyncEngine {
    * optionally wrapped in a lock when the user enabled `fileLockingEnabled`; every failure is left
    * for the next sync (self-healing).
    */
-  private async reconcileDirectories(summary: SyncSessionSummary): Promise<void> {
+  private async reconcileDirectories(summary: SyncSessionSummary, cachedDirs?: RemoteDirInfo[]): Promise<void> {
     let remoteDirInfos: RemoteDirInfo[];
-    try {
-      remoteDirInfos = await this.client!.getDirectories('');
-    } catch (err) {
-      void this.opts.logger?.log(`dir-sync: listing failed — skip this session: ${(err as Error).message}`);
-      return; // self-heal next sync
+    if (cachedDirs) {
+      // Root-ETag short-circuit (spec 023): remote unchanged since the last real scan, so the tracked
+      // directory set IS the remote set — skip the getDirectories('') Depth:infinity PROPFIND.
+      remoteDirInfos = cachedDirs;
+    } else {
+      try {
+        remoteDirInfos = await this.client!.getDirectories('');
+      } catch (err) {
+        void this.opts.logger?.log(`dir-sync: listing failed — skip this session: ${(err as Error).message}`);
+        return; // self-heal next sync
+      }
     }
 
     const norm = (p: string): string => p.replace(/\/+$/, '');
