@@ -244,6 +244,15 @@ export interface SyncState {
   files: Record<string, FileState>;
   /** Tracked directories (optional for back-compat with pre-DP v1 state files → defaults to {}). */
   directories?: Record<string, DirState>;
+  /**
+   * Root-ETag short-circuit (spec 023): the vault root collection's ETag captured at the end of the
+   * last REAL full scan. Optional for back-compat (absent ⇒ next sync does a real full scan). A
+   * matching current root ETag means the remote tree is unchanged since that scan, so the remote
+   * listing can be rebuilt from `files`/`directories` instead of a Depth:infinity PROPFIND.
+   */
+  remoteRootEtag?: string | null;
+  /** Consecutive short-circuited full-scans since the last real scan (FORCE_FULL_SCAN_EVERY bounds it). */
+  fullScanSkipCount?: number;
 }
 
 export interface NextcloudFeatures {

@@ -27,9 +27,10 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.4)
+## What's new in this release (0.7.5-beta.2)
 
-- **Dependency updates (0.7.4)** — dev dependencies bumped to their latest versions: `@types/node` 25→26, `eslint` 10.4→10.5, `typescript-eslint` 8.60→8.61. No user-facing behaviour changes.
+- **Faster unchanged syncs on Nextcloud (0.7.5-beta.2)** — when the vault's remote contents have not changed since the last scan, the sync now skips the full remote directory listing and reuses cached state, detected via the root folder's ETag. Measured on a real server, an unchanged sync drops from two large directory listings to a single tiny request. Correctness is unaffected: any remote change is still picked up on the next sync, and the optimization only applies to Nextcloud (plain WebDAV is unchanged).
+- **Security maintenance (0.7.5-beta.2)** — patched vulnerable build/test-only dependencies (no change to the shipped plugin).
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 

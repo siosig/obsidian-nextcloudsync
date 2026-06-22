@@ -4,6 +4,14 @@ export interface IWebDAVClient {
   connect(): Promise<NextcloudFeatures>;
   getFiles(path: string): Promise<RemoteFileInfo[]>;
   /**
+   * Returns the ETag of the sync-root collection (the vault folder), or null when it cannot be
+   * obtained or is not meaningful for change detection (root-ETag short-circuit, spec 023). Nextcloud
+   * propagates child changes up to the root, so a matching root ETag means the remote tree is
+   * unchanged since the last full scan. Standard WebDAV returns null (propagation not guaranteed) so
+   * it never short-circuits. Implementations must not throw: any failure ⇒ null (caller full-scans).
+   */
+  getRootEtag(): Promise<string | null>;
+  /**
    * List the directories (WebDAV collections) beneath `path` (recursive). Surfaced
    * separately from {@link getFiles} so directories are first-class entities the engine
    * can prune when they become empty. The base folder itself is excluded.

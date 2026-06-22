@@ -169,6 +169,17 @@ export const CLAUSES: Clause[] = [
   // --- DR: directory rename convergence (spec 021, specs/main/spec.md §8a.2) ---
   { id: 'DR-local',      source: 'specs/main/spec.md §8a.2 (local rename propagates via MOVE + dir reconcile)', layer: 'b-1' },
   { id: 'DR-concurrent', source: 'specs/main/spec.md §8a.2 (concurrent rename vs create converges without data loss)', layer: 'b-1' },
+  // --- ES: root-ETag short-circuit (spec 023, specs/main/spec.md §8a.5) ---
+  { id: 'ES-1',  source: 'specs/main/spec.md §8a.5 (full-scan path fetches root ETag)', layer: 'a' },
+  { id: 'ES-2',  source: 'specs/main/spec.md §8a.5 (root ETag match → short-circuit, skip getFiles∞)', layer: 'a' },
+  { id: 'ES-3',  source: 'specs/main/spec.md §8a.5 (rebuilt listing is complete → deletion safety unchanged)', layer: 'a' },
+  { id: 'ES-4',  source: 'specs/main/spec.md §8a.5 (rebuilt files read as remote-unchanged by idType)', layer: 'a' },
+  { id: 'ES-5',  source: 'specs/main/spec.md §8a.5 (mismatch / null → real full scan)', layer: 'a' },
+  { id: 'ES-6',  source: 'specs/main/spec.md §8a.5 (stored ETag updated only on real scan → self-heal)', layer: 'a' },
+  { id: 'ES-7',  source: 'specs/main/spec.md §8a.5 (first run / no stored ETag / non-Nextcloud → real scan)', layer: 'a' },
+  { id: 'ES-8',  source: 'specs/main/spec.md §8a.5 (FORCE_FULL_SCAN_EVERY forces a real scan, resets count)', layer: 'a' },
+  { id: 'ES-9',  source: 'specs/main/spec.md §8a.5 (remoteRootEtag/skipCount persist + pre-023 back-compat)', layer: 'a' },
+  { id: 'ES-10', source: 'specs/main/spec.md §8a.5 (short-circuit also skips getDirectories∞ via rebuilt dirs)', layer: 'a' },
   // --- Core functional requirements asserted at the pure-logic layer ---
   { id: 'FR-001', source: 'specs/001-nextcloudsync-plugin', layer: 'a' },
   { id: 'FR-005', source: 'specs/001-nextcloudsync-plugin', layer: 'a' },
