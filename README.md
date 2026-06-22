@@ -27,10 +27,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.5)
+## What's new in this release (0.7.6-beta.1)
 
-- **Faster unchanged syncs on Nextcloud (0.7.5)** — when the vault's remote contents have not changed since the last scan, the sync now skips the full remote directory listing and reuses cached state, detected via the root folder's ETag. Measured on a real server, an unchanged sync drops from two large directory listings to a single tiny request. Correctness is unaffected: any remote change is still picked up on the next sync, and the optimization only applies to Nextcloud (plain WebDAV is unchanged).
-- **Security maintenance (0.7.5)** — patched vulnerable build/test-only dependencies (no change to the shipped plugin).
+- **Fix: a rare multi-device data-loss case is closed (0.7.6-beta.1)** — when a conflict was left unresolved (the "error" failure policy) and the remote was otherwise unchanged, the next sync could silently overwrite the other device's edit with the local copy via the unchanged-sync fast path (0.7.5). The fast path now disarms itself after any sync that leaves a conflict, error, or pending retry, so an unresolved remote change is always re-detected instead of being lost.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
