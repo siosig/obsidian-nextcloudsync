@@ -27,9 +27,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.3)
+## What's new in this release (0.7.4)
 
-- **Empty directories now sync correctly (0.7.3)** — directories are treated as first-class entities alongside files. An empty folder created on one device now propagates to the remote and to every other device. A folder that is emptied and deleted on one device is now pruned from the remote and from every other device — fixing the long-standing bug where empty year folders like `2011/` lingered on the remote after all their files were deleted.
+- **Dependency updates (0.7.4)** — dev dependencies bumped to their latest versions: `@types/node` 25→26, `eslint` 10.4→10.5, `typescript-eslint` 8.60→8.61. No user-facing behaviour changes.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 

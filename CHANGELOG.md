@@ -11,6 +11,10 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.4] - 2026-06-22
+
+- **Dependency updates** — dev dependencies bumped to their latest versions: `@types/node` 25→26, `eslint` 10.4→10.5, `typescript-eslint` 8.60→8.61. No user-facing behaviour changes.
+
 ## [0.7.3] - 2026-06-21
 
 - **Empty directories now sync correctly** — directories are treated as first-class entities alongside files. An empty folder created on one device now propagates to the remote and to every other device. A folder that is emptied and deleted on one device is now pruned from the remote and from every other device — fixing the long-standing bug where empty year folders like `2011/` lingered on the remote after all their files were deleted.
@@ -122,6 +126,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.4]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.4
 [0.7.3]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.3
 [0.7.2]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.2
 [0.7.1]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.1
