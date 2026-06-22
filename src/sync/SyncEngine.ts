@@ -680,6 +680,18 @@ export class SyncEngine {
     // remoteFiles is a partial diff, from which directory absence cannot be read as a deletion.
     // On a short-circuited scan, feed the State-rebuilt directory list so getDirectories('') is skipped.
     if (isFullScan) await this.reconcileDirectories(summary, fullScanCachedDirs ?? undefined);
+
+    // Root-ETag short-circuit SAFETY (spec 023 §8a.5): only ARM the short-circuit when this scan fully
+    // converged (StateDB now mirrors the remote). If any file was left UNRESOLVED — a conflict skipped
+    // by the 'error' policy, conflict markers, an error, or a queued retry — StateDB.remoteId may stay
+    // stale relative to the actual remote while the remote root ETag is unchanged (no push happened).
+    // A later short-circuit would then rebuild the remote listing from that stale State and silently
+    // "resolve" the unresolved remote change as local-wins, OVERWRITING the other device's edit (data
+    // loss). Invalidating the stored root ETag forces a real full scan next time, so the conflict is
+    // re-detected instead. Self-healing: convergence (no conflicts) re-arms it on a later scan.
+    if (summary.conflictedCount > 0 || summary.errorCount > 0 || this.retryQueue.length > 0) {
+      this.opts.stateDB.setRemoteRootEtag(null);
+    }
   }
 
   /**
