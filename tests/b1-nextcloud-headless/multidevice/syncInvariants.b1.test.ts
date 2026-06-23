@@ -189,15 +189,13 @@ describeLive('Layer B — cross-device sync invariants', (getEnv) => {
     expect(e1).not.toBeNull();                                   // remote genuinely changed (sanity)
   }, 180_000);
 
-  // KNOWN BUG (documented via it.failing — flips to a failure once fixed, alerting us).
-  // Discovered by the Gemini devil's-advocate critic (#1, highest severity) and confirmed live:
-  // when the remote folder was deleted by another device and this device has UN-PUSHED edits/creates
-  // under it, the upload into the now-missing parent fails with HTTP 404 ("<Folder> could not be
-  // located") and does NOT recover via reactive MKCOL across syncs, so the local change never reaches
-  // the remote (anomaly #4: local→remote gap; data stays local but unsynced). Needs a dedicated fix
-  // (e.g. create parent collections before re-uploading resurrected/new nested files, or make the
-  // reactive MKCOL retry robust for this path). Tracked for a follow-up spec.
-  it.failing('INV-12 dir-delete (remote) × nested local edit/create: nested upload should survive (KNOWN BUG)', async () => {
+  // FIXED in spec 024 (was a confirmed bug found by the Gemini devil's-advocate critic #1): when the
+  // remote folder was deleted by another device and this device holds UN-PUSHED edits/creates under it,
+  // the upload into the now-missing parent failed with HTTP 404 ("<Folder> could not be located") and
+  // never recovered, because NextcloudClient's in-session "createdDirs" cache held a stale positive for
+  // the (since-deleted) folder, so reactive MKCOL skipped re-creating it. Fixed by dropping the stale
+  // ancestor cache entries on a 404/409 before re-issuing MKCOL. This is now a permanent regression test.
+  it('INV-12 dir-delete (remote) × nested local edit/create: nested upload survives (no data loss)', async () => {
     const d = dev('inv12-D'); const m = dev('inv12-M');
     d.vault.seedLocal('anchor.md', 'a');
     d.vault.seedLocal('Folder/note.md', 'note-base\n');
