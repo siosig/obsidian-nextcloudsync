@@ -1519,6 +1519,11 @@ export class SyncEngine {
       if (candidates.length > limit) {
         void this.opts.logger?.log(`delete-local: SKIPPED ${candidates.length} absence-deletions — exceeds safety limit (${limit}); likely a partial remote listing`);
         new Notice(`⚠️ ${candidates.length} files look deleted on the server — skipped to avoid mass deletion. Re-sync to retry.`, 10000);
+        // Tripping the breaker is an UNRESOLVED state: record it as an error so (a) the UI surfaces it
+        // and (b) the root-ETag short-circuit convergence gate (spec 023 §8a.5) invalidates the stored
+        // etag — otherwise the next sync would short-circuit on stale State and the "re-sync to retry"
+        // advice would never re-evaluate the deletions (the breaker would be stuck silently).
+        this.recordError(summary, '(mass-delete breaker)', new Error(`Skipped ${candidates.length} absence-deletions — exceeds safety limit ${limit}`));
         return;
       }
 
@@ -1603,6 +1608,9 @@ export class SyncEngine {
     const denom = Math.max(tracked.size, remoteDirs.size, localDirs.size);
     if (deleteRemote.length + trashLocal.length > massDeleteLimit(denom)) {
       void this.opts.logger?.log(`dir-sync: SKIPPED ${deleteRemote.length + trashLocal.length} dir deletions — exceeds safety limit; likely a partial listing`);
+      // Record as an error so the root-ETag short-circuit convergence gate (spec 023 §8a.5) invalidates
+      // the stored etag and the next sync really re-scans instead of short-circuiting on stale State.
+      this.recordError(summary, '(dir mass-delete breaker)', new Error(`Skipped ${deleteRemote.length + trashLocal.length} dir deletions — exceeds safety limit`));
       deleteRemote.length = 0;
       trashLocal.length = 0;
     }
