@@ -86,6 +86,22 @@ export class NextcloudClient implements IWebDAVClient {
     return encodeRemoteUrl(this.baseUrl, toRemotePath(this.remoteBase, rel));
   }
 
+  /**
+   * Drop every ancestor directory of `remoteFilePath` from the in-session "already created" cache
+   * (spec 024). Call this when a write proves the parent is actually missing (PUT/MKCOL 404/409) so
+   * {@link ensureRemoteDir} re-issues the MKCOLs instead of trusting a stale positive cache entry —
+   * which happens when another device deletes a folder this client previously created.
+   */
+  private forgetCreatedAncestors(remoteFilePath: string): void {
+    const segments = remoteFilePath.split('/').slice(0, -1); // drop the trailing file name
+    let acc = '';
+    for (const seg of segments) {
+      if (!seg) continue;
+      acc = acc ? `${acc}/${seg}` : seg;
+      this.createdDirs.delete(acc);
+    }
+  }
+
   private get authHeader(): string {
     const credentials = `${this.settings.username}:${this.appPassword}`;
     const bytes = new TextEncoder().encode(credentials);
@@ -296,6 +312,11 @@ export class NextcloudClient implements IWebDAVClient {
     // returns 409, but Nextcloud's files DAV returns 404 for a missing parent — handle both
     // so the first upload into a not-yet-created folder (e.g. a fresh device) succeeds.
     if (res.status === 409 || res.status === 404) {
+      // The parent is provably missing now, so any "already created" entry for it in our in-session
+      // cache is STALE (e.g. another device deleted the folder after we created it). Drop the ancestor
+      // entries so ensureRemoteDir actually re-issues the MKCOLs — otherwise a stale positive cache
+      // entry makes the retry PUT 404 forever and the local change never reaches the remote (spec 024).
+      this.forgetCreatedAncestors(toRemotePath(this.remoteBase, remotePath));
       await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
       res = await requestUrl({ url: this.remoteUrl(remotePath), method: 'PUT', headers, body: data, throw: false });
     }
@@ -498,6 +519,9 @@ export class NextcloudClient implements IWebDAVClient {
       }
 
       // 3. Ensure the parent directory of the final file exists, then assemble by MOVE-ing .file.
+      // Drop any stale "already created" cache entries first so a folder another device deleted is
+      // genuinely re-created (spec 024) — otherwise the assembling MOVE would target a missing parent.
+      this.forgetCreatedAncestors(toRemotePath(this.remoteBase, remotePath));
       await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
       const move = await requestUrl({
         url: `${sessionUrl}/.file`,
