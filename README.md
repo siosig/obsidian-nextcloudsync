@@ -183,6 +183,14 @@ On connect, the plugin probes `/status.php` (maintenance mode) and `/ocs/v1.php/
 
 ---
 
+## Testing & reliability
+
+Sync correctness is guarded by an extensive automated test suite: **hundreds of fast pure-logic tests** (run on every change) plus **live end-to-end suites that drive two devices against a real Nextcloud server**, including exhaustive option-combination matrices for conflict resolution and multi-device convergence.
+
+These tests exist specifically to prevent sync-inconsistency states — **data loss, endless re-uploading/re-downloading, a remote change that never reaches the local copy, or a local change that never reaches the remote**. Even so, no test suite can cover every possible case, and unintended behavior can never be entirely ruled out. **If you ever run into such a situation, please don't hesitate to [open an issue](https://github.com/siosig/obsidian-nextcloudsync/issues) — it will be addressed as quickly as possible.**
+
+---
+
 ## Privacy & security
 
 - **This plugin collects no telemetry whatsoever.** No usage data, analytics, or crash reports are gathered or sent anywhere; the only network traffic is the sync between your vault and your own Nextcloud/WebDAV server.
