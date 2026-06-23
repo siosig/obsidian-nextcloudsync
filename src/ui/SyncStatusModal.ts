@@ -110,22 +110,26 @@ export class SyncStatusModal extends Modal {
 
   /** Render the per-status filter checkboxes (icon + label), wired to the shared selection. */
   private addFilterRow(): void {
-    const setting = new Setting(this.contentEl)
+    new Setting(this.contentEl)
       .setName('Filter by status')
       .setDesc('Show only the selected statuses. All on by default; your selection is remembered.');
-    const row = setting.controlEl.createDiv({ cls: 'ncs-status-filter' });
+    // Render the chips as a FULL-WIDTH block under the setting (not inside the narrow Setting
+    // control column, which squeezed and overlapped the checkboxes on mobile).
+    const row = this.contentEl.createDiv({ cls: 'ncs-status-filter' });
     for (const op of ALL_FILTER_OPS) {
       const { icon, text } = OP_LABEL[op];
       const label = row.createEl('label', { cls: 'ncs-status-filter-item', attr: { title: text } });
       const cb = label.createEl('input', { type: 'checkbox' });
       cb.checked = this.filterState.checked.has(op);
+      label.toggleClass('is-checked', cb.checked); // chip reflects state for at-a-glance contrast
       cb.addEventListener('change', () => {
         if (cb.checked) this.filterState.checked.add(op);
         else this.filterState.checked.delete(op);
+        label.toggleClass('is-checked', cb.checked);
         this.onFilterChange?.(); // persist the selection immediately (survives restart)
         this.render();
       });
-      label.createSpan({ text: ` ${icon} ${text}` });
+      label.createSpan({ cls: 'ncs-status-filter-text', text: `${icon} ${text}` });
     }
   }
 
