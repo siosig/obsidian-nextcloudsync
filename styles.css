@@ -262,20 +262,46 @@
   background: color-mix(in srgb, var(--color-green) 20%, transparent);
 }
 
-/* Status-filter checkbox row in the Sync Status dialog */
+/* Status-filter chips in the Sync Status dialog (full-width, wraps; readable on mobile) */
 .ncs-status-filter {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 12px;
+  gap: 8px;
+  width: 100%;
+  margin: 8px 0 4px;
 }
 
 .ncs-status-filter-item {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 6px;
   font-size: var(--font-ui-small);
   white-space: nowrap;
   cursor: pointer;
+  /* Chip: clear bounds + comfortable tap target so the checkbox never overlaps the label. */
+  padding: 4px 10px;
+  min-height: 28px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 14px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.ncs-status-filter-item input[type='checkbox'] {
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.ncs-status-filter-item .ncs-status-filter-text {
+  line-height: 1.2;
+}
+
+/* Selected chip: accent border + text so on/off is obvious at a glance. */
+.ncs-status-filter-item.is-checked {
+  border-color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 16%, var(--background-secondary));
+  color: var(--text-normal);
 }
 
 /* Compare-with-remote popup: local vs remote metadata table */
