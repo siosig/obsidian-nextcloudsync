@@ -27,10 +27,10 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.7-beta.3)
+## What's new in this release (0.7.7)
 
-- **Stronger protection against a misbehaving server (0.7.7-beta.3)** — if the server reports a file as non-empty but then returns an empty or truncated body (a rare server/storage glitch), the plugin now refuses to overwrite your local copy and retries instead of destroying data. Legitimately emptied files still sync normally. Local writes are also verified after the fact to catch truncated/corrupt saves.
-- **Nested-file & multi-device sync fixes (0.7.7-beta.3)** — files inside a folder another device deleted now sync reliably (no more repeated HTTP 404), and the mass-deletion safety brake re-scans on the next sync as intended. Backed by an expanded live two-device test suite covering data loss, endless re-syncing, and one-way sync gaps.
+- **Multi-device data-safety hardening (0.7.7)** — several rare cross-device edge cases that could lose or strand changes are now fixed: a file edited/created inside a folder another device deleted now syncs reliably (no more repeated HTTP 404), the mass-deletion safety brake re-scans on the next sync as intended, and a misbehaving server that reports a file as non-empty but returns an empty/truncated body is refused instead of overwriting your local copy (legitimate empties still sync). Local writes are verified after saving to catch truncation/corruption.
+- **Expanded automated testing (0.7.7)** — a new live two-device test suite checks many cross-device scenarios (deletes, renames, concurrent edits, every conflict-policy combination) for data loss, endless re-syncing, and one-way sync gaps.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
