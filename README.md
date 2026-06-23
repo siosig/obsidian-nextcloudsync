@@ -27,9 +27,10 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.7-beta.1)
+## What's new in this release (0.7.7-beta.2)
 
-- **More multi-device safety hardening (0.7.7-beta.1)** — the mass-deletion safety brake now forces a full re-scan on the next sync (instead of getting stuck behind the unchanged-sync fast path), so "re-sync to retry" works as intended after the brake trips. Backed by a new live two-device test suite that checks many cross-device scenarios (deletes, renames, concurrent edits, conflict policies) for data loss, endless re-syncing, and one-way sync gaps.
+- **Fix: nested files no longer get stuck when a folder is deleted on another device (0.7.7-beta.2)** — if you edited or created a file inside a folder that another device had meanwhile deleted, the upload could fail repeatedly (HTTP 404) and your change never reached the server. The missing parent folder is now re-created reliably so the change syncs.
+- **More multi-device safety hardening (0.7.7-beta.2)** — the mass-deletion safety brake now forces a full re-scan on the next sync so "re-sync to retry" works as intended, backed by a new live two-device test suite checking many cross-device scenarios for data loss, endless re-syncing, and one-way sync gaps.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
