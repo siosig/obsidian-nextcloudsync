@@ -180,6 +180,13 @@ export const CLAUSES: Clause[] = [
   { id: 'ES-8',  source: 'specs/main/spec.md §8a.5 (FORCE_FULL_SCAN_EVERY forces a real scan, resets count)', layer: 'a' },
   { id: 'ES-9',  source: 'specs/main/spec.md §8a.5 (remoteRootEtag/skipCount persist + pre-023 back-compat)', layer: 'a' },
   { id: 'ES-10', source: 'specs/main/spec.md §8a.5 (short-circuit also skips getDirectories∞ via rebuilt dirs)', layer: 'a' },
+  // --- SG/WB: download safety guards (spec 025, specs/main/spec.md §9) ---
+  { id: 'SG-1', source: 'specs/main/spec.md §9 (advertised size > received ⇒ anomalous remote)', layer: 'a' },
+  { id: 'SG-2', source: 'specs/main/spec.md §9 (anomalous download refused: no overwrite, Base kept, retry)', layer: 'a' },
+  { id: 'SG-3', source: 'specs/main/spec.md §9 (legitimate empty not flagged — zero false positives)', layer: 'a' },
+  { id: 'SG-4', source: 'specs/main/spec.md §9 (guard applies to download and prefer-remote overwrite)', layer: 'a' },
+  { id: 'WB-1', source: 'specs/main/spec.md §9 (atomicWriteBinary read-back: size matches ⇒ ok)', layer: 'a' },
+  { id: 'WB-2', source: 'specs/main/spec.md §9 (atomicWriteBinary read-back: mismatch/missing ⇒ throws)', layer: 'a' },
   // --- Core functional requirements asserted at the pure-logic layer ---
   { id: 'FR-001', source: 'specs/001-nextcloudsync-plugin', layer: 'a' },
   { id: 'FR-005', source: 'specs/001-nextcloudsync-plugin', layer: 'a' },
