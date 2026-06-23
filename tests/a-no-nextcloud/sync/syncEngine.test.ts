@@ -143,10 +143,13 @@ describe('SyncEngine.handleConflict — failure-policy actions', () => {
     (engine as unknown as { client: unknown }).client = client;
     (engine as unknown as { uploadStrategy: unknown }).uploadStrategy = { upload };
 
+    // remote.size must match the body length so the spec-025 server-anomaly guard (advertised vs
+    // received) does not refuse the prefer-remote overwrite in these conflict tests.
+    const harnessRemote: RemoteFileInfo = { ...remote, size: new TextEncoder().encode(remoteContent).byteLength };
     const invoke = (base: FileState | undefined, summary: SyncSessionSummary) =>
       (engine as unknown as {
         handleConflict(p: string, b: FileState | undefined, r: RemoteFileInfo, id: string, t: FileState['idType'], s: SyncSessionSummary): Promise<void>;
-      }).handleConflict('image.png', base, remote, 'rem-checksum', 'sha256', summary);
+      }).handleConflict('image.png', base, harnessRemote, 'rem-checksum', 'sha256', summary);
 
     return { engine, invoke, setFile, atomicWrite, atomicWriteBinary, upload, client, localAdapter };
   }

@@ -3,16 +3,20 @@ import { DataAdapter, TFile, Vault } from 'obsidian';
 
 function makeAdapter(files: Record<string, string> = {}): DataAdapter {
   const store = { ...files };
+  const sizes = new Map<string, number>(); // byte length per path (for atomicWriteBinary read-back, spec 025)
   return {
     read: jest.fn(async (p: string) => store[p] ?? ''),
     write: jest.fn(async (p: string, d: string) => { store[p] = d; }),
     readBinary: jest.fn(),
-    writeBinary: jest.fn(async () => {}),
-    exists: jest.fn(async (p: string) => p in store),
-    remove: jest.fn(async (p: string) => { delete store[p]; }),
-    rename: jest.fn(async (from: string, to: string) => { store[to] = store[from]; delete store[from]; }),
+    writeBinary: jest.fn(async (p: string, d: ArrayBuffer) => { sizes.set(p, d.byteLength); }),
+    exists: jest.fn(async (p: string) => p in store || sizes.has(p)),
+    remove: jest.fn(async (p: string) => { delete store[p]; sizes.delete(p); }),
+    rename: jest.fn(async (from: string, to: string) => {
+      if (from in store) { store[to] = store[from]; delete store[from]; }
+      if (sizes.has(from)) { sizes.set(to, sizes.get(from)!); sizes.delete(from); }
+    }),
     mkdir: jest.fn(async () => {}),
-    stat: jest.fn(),
+    stat: jest.fn(async (p: string) => (sizes.has(p) ? { size: sizes.get(p)!, mtime: 0 } : null)),
     list: jest.fn(),
   } as unknown as DataAdapter;
 }
