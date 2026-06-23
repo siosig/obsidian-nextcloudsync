@@ -93,6 +93,14 @@ export class LocalAdapter {
         await this.adapter.remove(targetPath);
       }
       await this.adapter.rename(tmpPath, targetPath);
+      // Read-back verification (spec 025, report §4.4): fsync is unavailable via the Obsidian adapter,
+      // so confirm the file actually landed at the intended byte length. A truncated/empty write throws
+      // here so the caller leaves Base unadvanced and re-syncs (self-heal) instead of recording a
+      // corrupt download as converged.
+      const written = await this.adapter.stat(targetPath);
+      if (!written || written.size !== data.byteLength) {
+        throw new Error(`write-back verification failed for ${targetPath}: expected ${data.byteLength} bytes, found ${written ? written.size : 'none'}`);
+      }
     } catch (err) {
       if (await this.adapter.exists(tmpPath)) {
         await this.adapter.remove(tmpPath);

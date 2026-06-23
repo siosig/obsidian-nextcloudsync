@@ -32,6 +32,7 @@ import { FileLogger } from '../util/FileLogger';
 import {
   isCellularBlocked, SIGNATURE_SAFETY_WINDOW_MS, MAX_HASH_SIZE,
   MAX_INFLIGHT_BYTES_DESKTOP, MAX_INFLIGHT_BYTES_MOBILE, massDeleteLimit, FORCE_FULL_SCAN_EVERY,
+  isAnomalousRemoteContent,
 } from '../util/limits';
 import { createLimiter, ByteSemaphore } from '../util/ConcurrencyLimiter';
 import { isSafeVaultRelativePath } from '../network/remotePath';
@@ -1138,6 +1139,18 @@ export class SyncEngine {
     idType: FileState['idType'], summary: SyncSessionSummary,
   ): Promise<void> {
     const data = await this.client!.downloadFile(remote.path);
+    // Server-anomaly guard (spec 025): refuse to overwrite local with content whose byte length does
+    // not match the size the server advertised (0-byte / truncated body on a buggy/inconsistent
+    // server). Leave local + Base untouched and retry next sync; a legitimate empty file (advertised
+    // size 0) is not flagged.
+    if (isAnomalousRemoteContent(remote.size, data.byteLength)) {
+      this.recordError(summary, remote.path, new Error(`Refused remote overwrite: server advertised ${remote.size} bytes but returned ${data.byteLength} (server anomaly)`));
+      this.retryQueue.push(remote.path);
+      const base = this.opts.stateDB.getFile(remote.path);
+      if (base) this.opts.stateDB.setFile({ ...base, isConflicted: true });
+      void this.opts.logger?.log(`download: REFUSED anomalous remote (size ${remote.size}≠${data.byteLength}) → kept local, queued retry → ${remote.path}`);
+      return;
+    }
     await this.opts.localAdapter.atomicWriteBinary(remote.path, data);
     summary.downloadedCount++;
 
@@ -1324,6 +1337,14 @@ export class SyncEngine {
     path: string, remote: RemoteFileInfo, remoteData: ArrayBuffer,
     remoteId: string, idType: FileState['idType'], summary: SyncSessionSummary,
   ): Promise<void> {
+    // Server-anomaly guard (spec 025): never overwrite local with a body whose length disagrees with
+    // the advertised remote size (0-byte / truncated). Keep the conflict unresolved and retry.
+    if (isAnomalousRemoteContent(remote.size, remoteData.byteLength)) {
+      this.recordError(summary, path, new Error(`Refused prefer-remote overwrite: advertised ${remote.size} bytes but body is ${remoteData.byteLength} (server anomaly)`));
+      this.retryQueue.push(path);
+      void this.opts.logger?.log(`conflict: prefer-remote REFUSED anomalous remote (size ${remote.size}≠${remoteData.byteLength}) → kept local, queued retry → ${path}`);
+      return;
+    }
     try {
       await this.opts.localAdapter.atomicWriteBinary(path, remoteData);
       if (remote.lastModified) {
