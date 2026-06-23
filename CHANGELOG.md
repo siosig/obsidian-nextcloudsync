@@ -11,6 +11,11 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.8] - 2026-06-23
+
+- **Fix: regression where downloads were refused on mobile** — the download safety guard added in 0.7.7 compared the received `arrayBuffer.byteLength` against the server-advertised `getcontentlength` and rejected any mismatch. On iOS, Obsidian's `requestUrl` reports a byte length that legitimately differs from the server's content-length (verified against the live server: PROPFIND == GET Content-Length == actual bytes are all consistent; only the client count differs, scaling with multi-byte content), so legitimate downloads were refused and remote→local sync stalled. The guard now only rejects a genuinely empty (0-byte) body for a file advertised as non-empty. Write-back verification (size of what was just written) is unaffected.
+- **Fix: Sync Status filter readability on mobile** — the per-status filter is rendered as a full-width set of chips with a clear selected state instead of cramped, overlapping checkboxes.
+
 ## [0.7.7] - 2026-06-23
 
 - **Multi-device data-safety hardening** — several rare cross-device edge cases that could lose or strand changes are fixed: (1) a file edited or created inside a folder another device had deleted now syncs reliably instead of failing repeatedly with HTTP 404 (a stale "already-created directory" cache no longer defeats the reactive folder re-creation); (2) the mass-deletion safety brake now records an error so the unchanged-sync fast path is disarmed and "re-sync to retry" actually re-evaluates; (3) a misbehaving server that advertises a non-empty file but returns an empty/truncated body is refused instead of overwriting the local copy (legitimately emptied files still sync — zero false positives), and local writes are size-verified after saving to catch truncation/corruption.
@@ -140,6 +145,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.8]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.8
 [0.7.7]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.7
 [0.7.6]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.6
 [0.7.5]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.5

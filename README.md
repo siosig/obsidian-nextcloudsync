@@ -27,10 +27,10 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.7)
+## What's new in this release (0.7.8)
 
-- **Multi-device data-safety hardening (0.7.7)** — several rare cross-device edge cases that could lose or strand changes are now fixed: a file edited/created inside a folder another device deleted now syncs reliably (no more repeated HTTP 404), the mass-deletion safety brake re-scans on the next sync as intended, and a misbehaving server that reports a file as non-empty but returns an empty/truncated body is refused instead of overwriting your local copy (legitimate empties still sync). Local writes are verified after saving to catch truncation/corruption.
-- **Expanded automated testing (0.7.7)** — a new live two-device test suite checks many cross-device scenarios (deletes, renames, concurrent edits, every conflict-policy combination) for data loss, endless re-syncing, and one-way sync gaps.
+- **Fix: downloads were wrongly refused on iPhone/iPad (0.7.8)** — a safety check added in 0.7.7 compared the downloaded byte count against the size the server advertised, but on mobile that count legitimately differs (the app reports a slightly different length than the server), so normal downloads were refused and remote changes stopped reaching the device. The check now only rejects a genuinely empty response, so syncing works normally again while still guarding against a server returning nothing.
+- **Clearer status filter on mobile (0.7.8)** — the "Filter by status" controls in the Sync Status dialog are now full-width, readable chips instead of cramped, overlapping checkboxes.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
