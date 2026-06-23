@@ -11,18 +11,22 @@ import { DEFAULT_SETTINGS, FileState, RemoteFileInfo, SyncSessionSummary } from 
 
 const buf = (n: number): ArrayBuffer => new Uint8Array(n).buffer;
 
-describe('[SPEC:SG-1..SG-4] isAnomalousRemoteContent (server-anomaly size guard)', () => {
+describe('[SPEC:SG-1..SG-4] isAnomalousRemoteContent (empty-body server-anomaly guard)', () => {
   it('SG-1 advertised >0 but received 0 (server returned empty body) → anomalous', () => {
     expect(isAnomalousRemoteContent(10, 0)).toBe(true);
   });
-  it('SG-1 advertised >0 but received a different (truncated) length → anomalous', () => {
-    expect(isAnomalousRemoteContent(100, 40)).toBe(true);
-  });
-  it('SG-3 legitimately empty (advertised 0, received 0) → NOT anomalous (no false positive)', () => {
+  it('SG-3 legitimately empty (advertised 0, received 0) → NOT anomalous', () => {
     expect(isAnomalousRemoteContent(0, 0)).toBe(false);
   });
   it('SG-3 advertised == received → NOT anomalous', () => {
     expect(isAnomalousRemoteContent(123, 123)).toBe(false);
+  });
+  it('SG-3 NON-ZERO size mismatch is NOT anomalous (client byteLength ≠ server content-length on iOS; spec 025 fix)', () => {
+    // Real-world: Obsidian requestUrl on iOS reports e.g. 1949 bytes for a 1948-byte file. Flagging
+    // this refused legitimate downloads in 0.7.7 — only a truly empty (0-byte) body is an anomaly now.
+    expect(isAnomalousRemoteContent(1948, 1949)).toBe(false);
+    expect(isAnomalousRemoteContent(10766, 10994)).toBe(false);
+    expect(isAnomalousRemoteContent(100, 40)).toBe(false);
   });
 });
 
