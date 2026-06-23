@@ -76,14 +76,21 @@ export function resolveConcurrencyDefault(deviceMemoryGB: number | undefined): n
 
 /**
  * Server-anomaly guard (spec 025, report §4.5): true when downloaded remote content must NOT be
- * applied over a local file because the server's advertised size and the bytes actually received
- * disagree — e.g. a buggy/inconsistent server (ETag not bumped, S3-mount glitch) returns a 0-byte
- * or truncated body while PROPFIND's getcontentlength claims > 0. A legitimate empty file is NOT
- * flagged: it advertises size 0 and a 0-byte body, which agree (remoteSize === 0 → returns false).
- * No false positives on real empties; only the advertised-vs-received mismatch is rejected.
+ * applied over a local file because the server returned an EMPTY body for a file it advertised as
+ * non-empty (PROPFIND getcontentlength > 0) — the clear "server returned nothing / 0-byte" anomaly
+ * (S3-mount glitch, ETag not bumped, etc.). A legitimate empty file is NOT flagged: it advertises
+ * size 0 and a 0-byte body agree (remoteSize === 0 → false).
+ *
+ * IMPORTANT (spec 025 fix): we deliberately do NOT flag a non-zero size MISMATCH. On real clients the
+ * downloaded `arrayBuffer.byteLength` does not reliably equal the server's content-length — Obsidian's
+ * `requestUrl` on iOS reports a slightly different byte count (e.g. 1948 → 1949, scaling with
+ * multi-byte/Japanese content), while the server itself is consistent (verified: PROPFIND == GET
+ * Content-Length == actual bytes). Treating any mismatch as an anomaly produced massive false
+ * positives that REFUSED legitimate downloads (a remote→local sync gap). Only a genuinely empty
+ * received body is treated as anomalous.
  */
 export function isAnomalousRemoteContent(remoteSize: number, receivedBytes: number): boolean {
-  return remoteSize > 0 && receivedBytes !== remoteSize;
+  return remoteSize > 0 && receivedBytes === 0;
 }
 
 /**
