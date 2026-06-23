@@ -27,9 +27,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.6)
+## What's new in this release (0.7.7-beta.1)
 
-- **Fix: a rare multi-device data-loss case is closed (0.7.6)** — when a conflict was left unresolved (the "error" failure policy) and the remote was otherwise unchanged, the next sync could silently overwrite the other device's edit with the local copy via the unchanged-sync fast path introduced in 0.7.5. The fast path now disarms itself after any sync that leaves a conflict, error, or pending retry, so an unresolved remote change is always re-detected instead of being lost.
+- **More multi-device safety hardening (0.7.7-beta.1)** — the mass-deletion safety brake now forces a full re-scan on the next sync (instead of getting stuck behind the unchanged-sync fast path), so "re-sync to retry" works as intended after the brake trips. Backed by a new live two-device test suite that checks many cross-device scenarios (deletes, renames, concurrent edits, conflict policies) for data loss, endless re-syncing, and one-way sync gaps.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
