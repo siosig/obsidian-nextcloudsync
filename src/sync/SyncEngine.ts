@@ -32,6 +32,7 @@ import { FileLogger } from '../util/FileLogger';
 import {
   isCellularBlocked, SIGNATURE_SAFETY_WINDOW_MS, MAX_HASH_SIZE,
   MAX_INFLIGHT_BYTES_DESKTOP, MAX_INFLIGHT_BYTES_MOBILE, massDeleteLimit, FORCE_FULL_SCAN_EVERY,
+  isAnomalousRemoteContent,
 } from '../util/limits';
 import { createLimiter, ByteSemaphore } from '../util/ConcurrencyLimiter';
 import { isSafeVaultRelativePath } from '../network/remotePath';
@@ -1138,6 +1139,18 @@ export class SyncEngine {
     idType: FileState['idType'], summary: SyncSessionSummary,
   ): Promise<void> {
     const data = await this.client!.downloadFile(remote.path);
+    // Server-anomaly guard (spec 025): refuse to overwrite local with content whose byte length does
+    // not match the size the server advertised (0-byte / truncated body on a buggy/inconsistent
+    // server). Leave local + Base untouched and retry next sync; a legitimate empty file (advertised
+    // size 0) is not flagged.
+    if (isAnomalousRemoteContent(remote.size, data.byteLength)) {
+      this.recordError(summary, remote.path, new Error(`Refused remote overwrite: server advertised ${remote.size} bytes but returned ${data.byteLength} (server anomaly)`));
+      this.retryQueue.push(remote.path);
+      const base = this.opts.stateDB.getFile(remote.path);
+      if (base) this.opts.stateDB.setFile({ ...base, isConflicted: true });
+      void this.opts.logger?.log(`download: REFUSED anomalous remote (size ${remote.size}≠${data.byteLength}) → kept local, queued retry → ${remote.path}`);
+      return;
+    }
     await this.opts.localAdapter.atomicWriteBinary(remote.path, data);
     summary.downloadedCount++;
 
@@ -1324,6 +1337,14 @@ export class SyncEngine {
     path: string, remote: RemoteFileInfo, remoteData: ArrayBuffer,
     remoteId: string, idType: FileState['idType'], summary: SyncSessionSummary,
   ): Promise<void> {
+    // Server-anomaly guard (spec 025): never overwrite local with a body whose length disagrees with
+    // the advertised remote size (0-byte / truncated). Keep the conflict unresolved and retry.
+    if (isAnomalousRemoteContent(remote.size, remoteData.byteLength)) {
+      this.recordError(summary, path, new Error(`Refused prefer-remote overwrite: advertised ${remote.size} bytes but body is ${remoteData.byteLength} (server anomaly)`));
+      this.retryQueue.push(path);
+      void this.opts.logger?.log(`conflict: prefer-remote REFUSED anomalous remote (size ${remote.size}≠${remoteData.byteLength}) → kept local, queued retry → ${path}`);
+      return;
+    }
     try {
       await this.opts.localAdapter.atomicWriteBinary(path, remoteData);
       if (remote.lastModified) {
@@ -1519,6 +1540,11 @@ export class SyncEngine {
       if (candidates.length > limit) {
         void this.opts.logger?.log(`delete-local: SKIPPED ${candidates.length} absence-deletions — exceeds safety limit (${limit}); likely a partial remote listing`);
         new Notice(`⚠️ ${candidates.length} files look deleted on the server — skipped to avoid mass deletion. Re-sync to retry.`, 10000);
+        // Tripping the breaker is an UNRESOLVED state: record it as an error so (a) the UI surfaces it
+        // and (b) the root-ETag short-circuit convergence gate (spec 023 §8a.5) invalidates the stored
+        // etag — otherwise the next sync would short-circuit on stale State and the "re-sync to retry"
+        // advice would never re-evaluate the deletions (the breaker would be stuck silently).
+        this.recordError(summary, '(mass-delete breaker)', new Error(`Skipped ${candidates.length} absence-deletions — exceeds safety limit ${limit}`));
         return;
       }
 
@@ -1603,6 +1629,9 @@ export class SyncEngine {
     const denom = Math.max(tracked.size, remoteDirs.size, localDirs.size);
     if (deleteRemote.length + trashLocal.length > massDeleteLimit(denom)) {
       void this.opts.logger?.log(`dir-sync: SKIPPED ${deleteRemote.length + trashLocal.length} dir deletions — exceeds safety limit; likely a partial listing`);
+      // Record as an error so the root-ETag short-circuit convergence gate (spec 023 §8a.5) invalidates
+      // the stored etag and the next sync really re-scans instead of short-circuiting on stale State.
+      this.recordError(summary, '(dir mass-delete breaker)', new Error(`Skipped ${deleteRemote.length + trashLocal.length} dir deletions — exceeds safety limit`));
       deleteRemote.length = 0;
       trashLocal.length = 0;
     }

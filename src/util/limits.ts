@@ -75,6 +75,18 @@ export function resolveConcurrencyDefault(deviceMemoryGB: number | undefined): n
 }
 
 /**
+ * Server-anomaly guard (spec 025, report §4.5): true when downloaded remote content must NOT be
+ * applied over a local file because the server's advertised size and the bytes actually received
+ * disagree — e.g. a buggy/inconsistent server (ETag not bumped, S3-mount glitch) returns a 0-byte
+ * or truncated body while PROPFIND's getcontentlength claims > 0. A legitimate empty file is NOT
+ * flagged: it advertises size 0 and a 0-byte body, which agree (remoteSize === 0 → returns false).
+ * No false positives on real empties; only the advertised-vs-received mismatch is rejected.
+ */
+export function isAnomalousRemoteContent(remoteSize: number, receivedBytes: number): boolean {
+  return remoteSize > 0 && receivedBytes !== remoteSize;
+}
+
+/**
  * True when a file exceeds the configured maximum size and should be skipped.
  * `maxFileSizeMB` of 0 means "unlimited" (never skip).
  */

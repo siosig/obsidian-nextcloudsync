@@ -27,9 +27,10 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.6)
+## What's new in this release (0.7.7-beta.3)
 
-- **Fix: a rare multi-device data-loss case is closed (0.7.6)** — when a conflict was left unresolved (the "error" failure policy) and the remote was otherwise unchanged, the next sync could silently overwrite the other device's edit with the local copy via the unchanged-sync fast path introduced in 0.7.5. The fast path now disarms itself after any sync that leaves a conflict, error, or pending retry, so an unresolved remote change is always re-detected instead of being lost.
+- **Stronger protection against a misbehaving server (0.7.7-beta.3)** — if the server reports a file as non-empty but then returns an empty or truncated body (a rare server/storage glitch), the plugin now refuses to overwrite your local copy and retries instead of destroying data. Legitimately emptied files still sync normally. Local writes are also verified after the fact to catch truncated/corrupt saves.
+- **Nested-file & multi-device sync fixes (0.7.7-beta.3)** — files inside a folder another device deleted now sync reliably (no more repeated HTTP 404), and the mass-deletion safety brake re-scans on the next sync as intended. Backed by an expanded live two-device test suite covering data loss, endless re-syncing, and one-way sync gaps.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
@@ -180,6 +181,14 @@ These are not strictly required, but on self-hosted instances they often need at
 ## How it works (in brief)
 
 On connect, the plugin probes `/status.php` (maintenance mode) and `/ocs/v1.php/cloud/capabilities` to learn the server version and which features (`checksums`, `files locking`, …) are available. It then maintains a **per-device state database** — a snapshot of every file's path, content hash, and remote file ID at the last successful sync. Each sync diffs the current state against that snapshot and the server's `sync-token`, transferring only what changed. Every Nextcloud-specific behavior is gated behind capability detection, so the same plugin works against a full Nextcloud Hub and a bare WebDAV server alike (**Progressive Enhancement**).
+
+---
+
+## Testing & reliability
+
+Sync correctness is guarded by an extensive automated test suite: **hundreds of fast pure-logic tests** (run on every change) plus **live end-to-end suites that drive two devices against a real Nextcloud server**, including exhaustive option-combination matrices for conflict resolution and multi-device convergence.
+
+These tests exist specifically to prevent sync-inconsistency states — **data loss, endless re-uploading/re-downloading, a remote change that never reaches the local copy, or a local change that never reaches the remote**. Even so, no test suite can cover every possible case, and unintended behavior can never be entirely ruled out. **If you ever run into such a situation, please don't hesitate to [open an issue](https://github.com/siosig/obsidian-nextcloudsync/issues) — it will be addressed as quickly as possible.**
 
 ---
 
