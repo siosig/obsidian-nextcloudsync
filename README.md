@@ -27,10 +27,10 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.7-beta.2)
+## What's new in this release (0.7.7-beta.3)
 
-- **Fix: nested files no longer get stuck when a folder is deleted on another device (0.7.7-beta.2)** — if you edited or created a file inside a folder that another device had meanwhile deleted, the upload could fail repeatedly (HTTP 404) and your change never reached the server. The missing parent folder is now re-created reliably so the change syncs.
-- **More multi-device safety hardening (0.7.7-beta.2)** — the mass-deletion safety brake now forces a full re-scan on the next sync so "re-sync to retry" works as intended, backed by a new live two-device test suite checking many cross-device scenarios for data loss, endless re-syncing, and one-way sync gaps.
+- **Stronger protection against a misbehaving server (0.7.7-beta.3)** — if the server reports a file as non-empty but then returns an empty or truncated body (a rare server/storage glitch), the plugin now refuses to overwrite your local copy and retries instead of destroying data. Legitimately emptied files still sync normally. Local writes are also verified after the fact to catch truncated/corrupt saves.
+- **Nested-file & multi-device sync fixes (0.7.7-beta.3)** — files inside a folder another device deleted now sync reliably (no more repeated HTTP 404), and the mass-deletion safety brake re-scans on the next sync as intended. Backed by an expanded live two-device test suite covering data loss, endless re-syncing, and one-way sync gaps.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
