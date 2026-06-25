@@ -1,5 +1,5 @@
 import { StateDB } from '../../../src/data/StateDB';
-import { DavSyncSettings, FileState, RemoteFileInfo, SyncSessionSummary } from '../../../src/types';
+import { DavSyncSettings, DEFAULT_SETTINGS, FileState, RemoteFileInfo, SyncSessionSummary } from '../../../src/types';
 import { FIXED } from '../../../src/sync/fixedConfig';
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { sha256 } from '../../../src/util/hash';
@@ -91,21 +91,10 @@ describe('SyncEngine.handleConflict — failure-policy actions', () => {
   // (now production-unreachable) prefer-local / prefer-remote handleConflict branches.
   afterEach(() => { FIXED.conflictFailurePolicy = 'error'; });
 
-  function makeSettings(policy: DavSyncSettings['conflictFailurePolicy']): DavSyncSettings {
-    return {
-      serverUrl: '', username: '', passwordSecretId: '', syncIntervalMinutes: 0,
-      networkTimeoutSeconds: 30, deviceId: 'dev-abcd', uploadChunkThresholdMB: 50,
-      maxFileSizeMB: 1024, watchOnChangeEnabled: false, syncOnStartupEnabled: true,
-      startupSyncDelaySeconds: 5, networkConcurrency: 8, syncOnWifiOnly: false,
-      syncConfigFolder: false,
-      configSync: { appearance: false, themesSnippets: false, hotkeys: false, corePlugins: false, bookmarks: false },
-      deviceName: '', logsFolder: '', loggingEnabled: false, syncLogEnabled: false, syncLogLevel: 'important',
-      debugLogEnabled: false, debugLogLevel: 'error',
-      chunkedUploadEnabled: true, fileLockingEnabled: false, bulkUploadEnabled: false,
-      autoMergeEnabled: true, maxConflictRegions: 10, frontmatterConflictStrategy: 'conflict',
-      mergeableExtensions: ['md', 'txt'], conflictFailurePolicy: policy,
-      explorerCompareEnabled: false, excludedFolders: [],
-    };
+  // Feature 028: the conflict-resolution settings are FIXED; the per-case policy is pinned on
+  // FIXED.conflictFailurePolicy (see buildHarness), so the settings object is just the defaults.
+  function makeSettings(): DavSyncSettings {
+    return { ...DEFAULT_SETTINGS, deviceId: 'dev-abcd' };
   }
 
   function makeSummary(): SyncSessionSummary {
@@ -120,7 +109,7 @@ describe('SyncEngine.handleConflict — failure-policy actions', () => {
     size: 6, lastModified: 2000,
   };
 
-  function buildHarness(policy: DavSyncSettings['conflictFailurePolicy'], localContent: string, remoteContent: string) {
+  function buildHarness(policy: typeof FIXED.conflictFailurePolicy, localContent: string, remoteContent: string) {
     const setFile = jest.fn();
     const atomicWrite = jest.fn(async () => undefined);
     const atomicWriteBinary = jest.fn(async () => undefined);
@@ -142,7 +131,7 @@ describe('SyncEngine.handleConflict — failure-policy actions', () => {
 
     FIXED.conflictFailurePolicy = policy;
     const opts = {
-      app: {}, settings: makeSettings(policy), localAdapter, stateDB,
+      app: {}, settings: makeSettings(), localAdapter, stateDB,
       statusBar: {}, webdavFactory: {}, pluginDir: '', configDir: '.obsidian',
     };
     const engine = new SyncEngine(opts as never);

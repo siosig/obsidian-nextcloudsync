@@ -2,14 +2,24 @@
 // Asserts the SPEC's expected behavior. A FAIL = implementation deviates.
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { DavSyncSettings, DEFAULT_SETTINGS } from '../../../src/types';
-import { ConflictResolver } from '../../../src/sync/ConflictResolver';
+import { DEFAULT_SETTINGS } from '../../../src/types';
+import { ConflictResolver, MergeConfig } from '../../../src/sync/ConflictResolver';
 import { MergeEngine } from '../../../src/sync/merge/MergeEngine';
+import { FIXED } from '../../../src/sync/fixedConfig';
 import type { App } from 'obsidian';
 import type { LocalAdapter } from '../../../src/data/LocalAdapter';
 
-function resolver(overrides: Partial<DavSyncSettings>): ConflictResolver {
-  return new ConflictResolver({} as App, {} as unknown as LocalAdapter, { ...DEFAULT_SETTINGS, deviceId: 'conf-device', ...overrides });
+// Feature 028: ConflictResolver takes a MergeConfig built from FIXED; tests override it directly.
+function resolver(overrides: Partial<MergeConfig>): ConflictResolver {
+  return new ConflictResolver({} as App, {} as unknown as LocalAdapter, {
+    autoMergeEnabled: FIXED.autoMergeEnabled,
+    maxConflictRegions: FIXED.maxConflictRegions,
+    frontmatterConflictStrategy: FIXED.frontmatterConflictStrategy,
+    mergeableExtensions: FIXED.mergeableExtensions,
+    conflictFailurePolicy: FIXED.conflictFailurePolicy,
+    deviceId: 'conf-device',
+    ...overrides,
+  });
 }
 
 describe('spec 001 — core requirements', () => {
@@ -42,7 +52,7 @@ describe('spec 001 — core requirements', () => {
   it('FR-013 (finalized): auto-merge defaults to ON', () => {
     // Finalized D4: autoMerge is on by default (README: "on by default"); the value of the
     // plugin is loss-less automatic merge of non-overlapping edits.
-    expect(DEFAULT_SETTINGS.autoMergeEnabled).toBe(true);
+    expect(FIXED.autoMergeEnabled).toBe(true);
   });
 
   it('FR-010 (finalized): YAML frontmatter is auto-merged (non-overlapping lines merge cleanly)', () => {

@@ -27,30 +27,9 @@ export interface DavSyncSettings {
    * The actual password value is never saved in data.json; secretStorage manages it encrypted.
    */
   passwordSecretId: string;
+  /** Auto-sync period in minutes. 0 = manual only. Disabled on mobile (the OS suspends timers). */
   syncIntervalMinutes: number;
-  networkTimeoutSeconds: number;
   deviceId: string;
-  /**
-   * Threshold (MB) above which files start chunked uploads.
-   * (Meaning changed from the old "skip when exceeded" to "start chunking". 002 spec.)
-   */
-  uploadChunkThresholdMB: number;
-  /** Absolute limit (MB). Files exceeding this are skipped with a warning. `0` = unlimited. */
-  maxFileSizeMB: number;
-  /** Detect local Markdown edits and sync immediately (watch mode). Disabled on mobile. */
-  watchOnChangeEnabled: boolean;
-  /**
-   * Sync once on startup. Default is platform-dependent (desktop ON / mobile OFF),
-   * resolved on first run in loadSettings().
-   */
-  syncOnStartupEnabled: boolean;
-  /** Seconds to wait after startup before the startup sync (when syncOnStartupEnabled). `>= 0`. */
-  startupSyncDelaySeconds: number;
-  /**
-   * Number of concurrent WebDAV requests. Default is platform-dependent
-   * (desktop 16 / mobile 2), resolved on first run. No clamping (user value is used as-is).
-   */
-  networkConcurrency: number;
   /**
    * Sync only on Wi-Fi (non-cellular). Not supported on iOS (no network-type API);
    * the toggle is disabled there and the setting is ignored.
@@ -67,77 +46,12 @@ export interface DavSyncSettings {
   /** Per-category opt-in for config-folder sync. Only consulted when `syncConfigFolder` is true. */
   configSync: ConfigSyncCategories;
   /**
-   * User-facing device label. Source of the `<host>` token in per-device log filenames.
-   * Empty ⇒ derive `"<platform>-<deviceId6>"`. Sanitized for filenames at use sites.
-   */
-  deviceName: string;
-  /** Vault-relative folder holding both log files. Blank ⇒ vault root. */
-  logsFolder: string;
-  /**
    * Master troubleshooting-logs toggle (feature 028). When on: the sync log records 'all', the
    * debug log records 'verbose', both written to the vault root. Replaces the former separate
-   * syncLog/debugLog enable + level + folder settings (which are removed in the simplification).
+   * syncLog/debugLog enable + level + folder settings (removed in the simplification). The
+   * fixed/auto values for the other former settings live in fixedConfig.ts / platformDefaults.ts.
    */
   loggingEnabled: boolean;
-  /** Master on/off for the per-device sync log. */
-  syncLogEnabled: boolean;
-  /**
-   * Which operations the sync log records:
-   *   'important' — conflicts, merges, side-wins resolutions, and errors
-   *   'all'       — the above plus routine uploads, downloads, and deletions
-   */
-  syncLogLevel: 'important' | 'all';
-  /** Master on/off for the per-device debug log (replaces the old `debugMode`). */
-  debugLogEnabled: boolean;
-  /** Verbosity threshold for the debug log (order: error < debug < verbose). */
-  debugLogLevel: 'error' | 'debug' | 'verbose';
-  /** Enable chunked uploads (default ON; Nextcloud only). */
-  chunkedUploadEnabled: boolean;
-  /**
-   * Enable WebDAV Files Locking (LOCK→PUT→UNLOCK per upload). Default OFF: for the common
-   * single-user / multi-device case the round-trip cost is not worth it, and lost-update safety
-   * is provided instead by an always-on `If-Match` precondition (a concurrently-changed remote
-   * returns 412, which is turned into a conflict). Only effective on servers with files_lock.
-   */
-  fileLockingEnabled: boolean;
-  /**
-   * Use the Nextcloud bulk-upload endpoint to batch many small files into one request.
-   * Default ON; only takes effect when the server advertises the capability and for files under
-   * the eligibility thresholds (otherwise per-file PUT / chunked upload is used).
-   */
-  bulkUploadEnabled: boolean;
-  autoMergeEnabled: boolean;
-  maxConflictRegions: number;
-  /**
-   * What to do when local and remote frontmatter differ during auto-merge:
-   *   'local-wins'  — keep local frontmatter, merge bodies
-   *   'remote-wins' — use remote frontmatter, merge bodies
-   *   'conflict'    — insert conflict markers for the whole file (default / safe)
-   */
-  frontmatterConflictStrategy: 'local-wins' | 'remote-wins' | 'conflict';
-  /**
-   * File extensions (lowercase, no leading dot) that are eligible for text merge.
-   * Files whose extension is NOT in this list are never merged; on conflict the
-   * `conflictFailurePolicy` is applied directly (never embeds markers into them).
-   * Default: ['md', 'txt'].
-   */
-  mergeableExtensions: string[];
-  /**
-   * What to do when a merge does not cleanly resolve — i.e. the file is not mergeable,
-   * auto-merge is off, or the merge failed / left conflicts:
-   *   'error'           — leave BOTH sides untouched, count as an error, retry next sync (default / safe)
-   *   'local-wins'      — overwrite the remote with the local copy
-   *   'remote-wins'     — overwrite the local with the remote copy
-   *   'conflict-markers'— embed <<<<<<< / ======= / >>>>>>> markers (mergeable text only;
-   *                       non-mergeable files fall back to 'error')
-   */
-  conflictFailurePolicy: 'error' | 'local-wins' | 'remote-wins' | 'conflict-markers';
-  /**
-   * Adds a "Compare with remote" item to the file-explorer right-click menu (desktop).
-   * Default OFF — the user opts in. The menu handler reads this on every right-click, so
-   * toggling it takes effect immediately without an Obsidian restart.
-   */
-  explorerCompareEnabled: boolean;
   /**
    * User-managed list of vault-relative folder paths that are never synced (feature 027).
    * Folder-prefix match at a folder boundary; entries are normalized and unique. This is an
@@ -164,18 +78,8 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   username: '',
   passwordSecretId: '',
   syncIntervalMinutes: 15,
-  networkTimeoutSeconds: 30,
   deviceId: '',
-  uploadChunkThresholdMB: 50,
-  maxFileSizeMB: 0, // 0 = unlimited (desktop default). Mobile gets a safe cap in loadSettings().
-  watchOnChangeEnabled: true,
-  // These are DESKTOP defaults. Mobile-specific first-run overrides are applied in
-  // loadSettings(): syncOnStartupEnabled→false, maxFileSizeMB→20, syncOnWifiOnly→true.
-  // networkConcurrency is NOT platform-branched — it is derived from device RAM on every
-  // platform (resolveConcurrencyDefault); mobile just tends to report no memory → 3.
-  syncOnStartupEnabled: true,
-  startupSyncDelaySeconds: 1,
-  networkConcurrency: 16,
+  // Desktop default OFF; mobile's first run flips it ON in loadSettings() (metered data).
   syncOnWifiOnly: false,
   // Config-folder sync is opt-in: master defaults OFF, so a fresh install syncs notes only.
   // These category defaults take effect only once the user turns the master on.
@@ -189,23 +93,7 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
     corePlugins: false,
     bookmarks: true,
   },
-  deviceName: '',
-  logsFolder: '',
   loggingEnabled: false,
-  syncLogEnabled: false,
-  syncLogLevel: 'important',
-  debugLogEnabled: false,
-  debugLogLevel: 'error',
-  chunkedUploadEnabled: true,
-  // Default OFF (see field doc): If-Match optimistic concurrency replaces locking for lost-update safety.
-  fileLockingEnabled: false,
-  bulkUploadEnabled: true,
-  autoMergeEnabled: true,
-  maxConflictRegions: 0,
-  frontmatterConflictStrategy: 'conflict',
-  mergeableExtensions: ['md', 'txt'],
-  conflictFailurePolicy: 'error',
-  explorerCompareEnabled: false,
   excludedFolders: [],
   // Explicit `undefined` keeps the key in the allowlist used by pruneObsoleteSettings (so a saved
   // selection is never pruned) while meaning "no saved selection → all statuses shown".
