@@ -1,6 +1,7 @@
 import { App, Platform, PluginSettingTab, Setting, Notice, SecretComponent, ButtonComponent, TextComponent } from 'obsidian';
 import type ObsidianNextcloudsync from '../main';
-import { LoginFlowError } from '../types';
+import { LoginFlowError, DavSyncSettings } from '../types';
+import { parseMergeableExtensions, formatMergeableExtensions } from '../util/mergeableExtensions';
 import { FolderSuggestModal } from '../ui/FolderSuggestModal';
 import { FolderInputSuggest } from '../ui/FolderInputSuggest';
 import { LoginFlowV2 } from '../auth/LoginFlowV2';
@@ -208,6 +209,52 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         .setDisabled(Platform.isIosApp)
         .onChange(async (value) => {
           this.plugin.settings.syncOnWifiOnly = value;
+          await this.plugin.saveSettings();
+        }));
+
+    // ── Conflict resolution ─────────────────────────────────────────────────────
+    // Feature 030: frontmatter strategy, merge-failure policy and mergeable extensions are
+    // user-editable. "Error" holds the file; switch to Remote/Local and re-sync, or use the
+    // file's "Compare with remote" Push/Pull, to resolve.
+    new Setting(containerEl).setName('Conflict resolution').setHeading();
+
+    makeSetting(containerEl)
+      .setName('Frontmatter conflict strategy')
+      .setDesc('How to handle a note whose frontmatter differs on both sides. Keep one side and merge the body, or hold the file to resolve it yourself.')
+      .setTooltip(TOOLTIPS.frontmatterConflictStrategy)
+      .addDropdown(dd => dd
+        .addOption('remote-wins', 'Remote')
+        .addOption('local-wins', 'Local')
+        .addOption('conflict', 'Error')
+        .setValue(this.plugin.settings.frontmatterConflictStrategy)
+        .onChange(async (value) => {
+          this.plugin.settings.frontmatterConflictStrategy = value as DavSyncSettings['frontmatterConflictStrategy'];
+          await this.plugin.saveSettings();
+        }));
+
+    makeSetting(containerEl)
+      .setName('On merge failure')
+      .setDesc('What to do when an automatic merge cannot complete: overwrite with one side, or hold the file. A held file resolves on a later sync once you pick a side, or via the file’s compare-with-remote command.')
+      .setTooltip(TOOLTIPS.conflictFailurePolicy)
+      .addDropdown(dd => dd
+        .addOption('remote-wins', 'Remote')
+        .addOption('local-wins', 'Local')
+        .addOption('error', 'Error')
+        .setValue(this.plugin.settings.conflictFailurePolicy)
+        .onChange(async (value) => {
+          this.plugin.settings.conflictFailurePolicy = value as DavSyncSettings['conflictFailurePolicy'];
+          await this.plugin.saveSettings();
+        }));
+
+    makeSetting(containerEl)
+      .setName('Auto-merge file types')
+      .setDesc('Comma-separated file extensions eligible for automatic merge, such as md, txt or py. Clear the field to disable auto-merge entirely — every conflict then uses the merge-failure policy above.')
+      .setTooltip(TOOLTIPS.mergeableExtensions)
+      .addText(text => text
+        .setPlaceholder('Comma-separated extensions')
+        .setValue(formatMergeableExtensions(this.plugin.settings.mergeableExtensions))
+        .onChange(async (value) => {
+          this.plugin.settings.mergeableExtensions = parseMergeableExtensions(value);
           await this.plugin.saveSettings();
         }));
 

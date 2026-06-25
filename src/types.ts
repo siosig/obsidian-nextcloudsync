@@ -54,6 +54,29 @@ export interface DavSyncSettings {
    */
   loggingEnabled: boolean;
   /**
+   * Frontmatter conflict strategy (feature 030, restored from the 028 fixed value). When a note's
+   * YAML frontmatter differs on both sides during a merge: 'remote-wins' / 'local-wins' take that
+   * side's frontmatter and continue the body merge; 'conflict' treats it as unmergeable and routes
+   * the whole file to `conflictFailurePolicy`. UI labels: Remote / Local / Error (= conflict).
+   */
+  frontmatterConflictStrategy: 'remote-wins' | 'local-wins' | 'conflict';
+  /**
+   * What to do when an automatic merge fails (feature 030, restored from the 028 fixed value):
+   * 'remote-wins' overwrites local with the remote copy, 'local-wins' overwrites remote with the
+   * local copy, 'error' leaves both sides untouched and flags the file as conflicted (sync held).
+   * A held file resolves on a later sync once this is switched to remote/local-wins, or via the
+   * Compare-with-remote Push/Pull. 'conflict-markers' (Git-style markers) stays in the type for the
+   * internal ConflictResolver branch and the b1 policy matrix, but the settings UI offers only the
+   * three Remote/Local/Error choices (so the user-facing freedom is three).
+   */
+  conflictFailurePolicy: 'remote-wins' | 'local-wins' | 'error' | 'conflict-markers';
+  /**
+   * File extensions eligible for automatic 3-way merge (feature 030, restored from the 028 fixed
+   * value). Lowercase, no leading dot. An empty list disables auto-merge entirely — every conflict
+   * then routes straight to `conflictFailurePolicy` instead of attempting a merge.
+   */
+  mergeableExtensions: string[];
+  /**
    * User-managed list of vault-relative folder paths that are never synced (feature 027).
    * Folder-prefix match at a folder boundary; entries are normalized and unique. This is an
    * additive layer on top of the permanent hard exclusions (dotfolders, community plugins,
@@ -92,6 +115,15 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
     others: true,
   },
   loggingEnabled: false,
+  // Conflict strategies (feature 030): defaults match the former 028 fixed values, so existing
+  // users see unchanged behaviour until they pick a side. 'conflict'/'error' = the cautious
+  // "hold and let me decide" default.
+  frontmatterConflictStrategy: 'conflict',
+  conflictFailurePolicy: 'error',
+  // Auto-merge file types (feature 030): user-editable. Markdown/text plus common code extensions
+  // are pre-registered; clearing the list entirely disables auto-merge (every conflict then routes
+  // straight to conflictFailurePolicy). Normalized to lowercase without a leading dot on save.
+  mergeableExtensions: ['md', 'txt', 'cpp', 'py', 'c', 'h', 'hpp', 'rs', 'go', 'ts', 'js', 'java', 'sh'],
   excludedFolders: [],
   // Explicit `undefined` keeps the key in the allowlist used by pruneObsoleteSettings (so a saved
   // selection is never pruned) while meaning "no saved selection → all statuses shown".
