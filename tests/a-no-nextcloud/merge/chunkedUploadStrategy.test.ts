@@ -1,5 +1,6 @@
 import { ChunkedUploadStrategy } from '../../../src/sync/upload/ChunkedUploadStrategy';
-import { DEFAULT_SETTINGS, DavSyncSettings, NetworkError } from '../../../src/types';
+import { UploadConfig } from '../../../src/sync/upload/IUploadStrategy';
+import { NetworkError } from '../../../src/types';
 import { IWebDAVClient } from '../../../src/network/IWebDAVClient';
 
 interface FakeClient {
@@ -14,8 +15,8 @@ function fakeClient(): FakeClient {
   };
 }
 
-function settings(over: Partial<DavSyncSettings>): DavSyncSettings {
-  return { ...DEFAULT_SETTINGS, ...over };
+function uploadConfig(over: Partial<UploadConfig>): UploadConfig {
+  return { maxFileSizeMB: 0, uploadChunkThresholdMB: 50, ...over };
 }
 
 const data = new ArrayBuffer(10); // about 9.5e-6 MB
@@ -23,7 +24,7 @@ const data = new ArrayBuffer(10); // about 9.5e-6 MB
 describe('ChunkedUploadStrategy', () => {
   it('skips files larger than maxFileSizeMB', async () => {
     const client = fakeClient();
-    const s = new ChunkedUploadStrategy(settings({ maxFileSizeMB: 0.0000001 }));
+    const s = new ChunkedUploadStrategy(uploadConfig({ maxFileSizeMB: 0.0000001 }));
     const outcome = await s.upload(client as unknown as IWebDAVClient, 'big.bin', data);
     expect(outcome).toBe('skipped');
     expect(client.uploadFile).not.toHaveBeenCalled();
@@ -32,7 +33,7 @@ describe('ChunkedUploadStrategy', () => {
 
   it('uses chunked upload above the chunk threshold', async () => {
     const client = fakeClient();
-    const s = new ChunkedUploadStrategy(settings({ uploadChunkThresholdMB: 0.0000001, maxFileSizeMB: 100 }));
+    const s = new ChunkedUploadStrategy(uploadConfig({ uploadChunkThresholdMB: 0.0000001, maxFileSizeMB: 100 }));
     const outcome = await s.upload(client as unknown as IWebDAVClient, 'mid.bin', data);
     expect(outcome).toBe('uploaded');
     expect(client.uploadChunked).toHaveBeenCalledTimes(1);
@@ -41,7 +42,7 @@ describe('ChunkedUploadStrategy', () => {
 
   it('uses a single PUT below the chunk threshold', async () => {
     const client = fakeClient();
-    const s = new ChunkedUploadStrategy(settings({ uploadChunkThresholdMB: 100, maxFileSizeMB: 1000 }));
+    const s = new ChunkedUploadStrategy(uploadConfig({ uploadChunkThresholdMB: 100, maxFileSizeMB: 1000 }));
     const outcome = await s.upload(client as unknown as IWebDAVClient, 'small.md', data);
     expect(outcome).toBe('uploaded');
     expect(client.uploadFile).toHaveBeenCalledTimes(1);
@@ -51,7 +52,7 @@ describe('ChunkedUploadStrategy', () => {
   it('falls back to single PUT when chunked upload fails', async () => {
     const client = fakeClient();
     client.uploadChunked.mockRejectedValueOnce(new NetworkError(500, 'boom'));
-    const s = new ChunkedUploadStrategy(settings({ uploadChunkThresholdMB: 0.0000001, maxFileSizeMB: 100 }));
+    const s = new ChunkedUploadStrategy(uploadConfig({ uploadChunkThresholdMB: 0.0000001, maxFileSizeMB: 100 }));
     const outcome = await s.upload(client as unknown as IWebDAVClient, 'mid.bin', data);
     expect(outcome).toBe('uploaded');
     expect(client.uploadChunked).toHaveBeenCalledTimes(1);

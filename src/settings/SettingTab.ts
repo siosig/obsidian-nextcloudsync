@@ -176,39 +176,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
       .setTooltip(TOOLTIPS.syncTarget);
     targetSetting.descEl.addClass('ncs-break-all');
 
-    makeSetting(containerEl)
-      .setName('File locking (experimental)')
-      .setDesc('⚠️ when enabled, the plugin locks and unlocks each file on the server around every update (extra round trips). Requires the Nextcloud files locking app. Default off — lost-update safety is instead provided by an if-match precondition that turns a remote changed by another client into a conflict, without the locking overhead.')
-      .setTooltip(TOOLTIPS.fileLocking)
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.fileLockingEnabled)
-        .onChange(async (value) => {
-          this.plugin.settings.fileLockingEnabled = value;
-          await this.plugin.saveSettings();
-        }));
-
     new Setting(containerEl).setName('Sync').setHeading();
-
-    // Startup sync (both platforms). Default ON desktop / OFF mobile (resolved at first run).
-    makeSetting(containerEl)
-      .setName('Sync on startup')
-      .setDesc('Run one sync shortly after Obsidian starts. On mobile this is off by default.')
-      .setTooltip(TOOLTIPS.syncOnStartup)
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.syncOnStartupEnabled)
-        .onChange(async (value) => {
-          this.plugin.settings.syncOnStartupEnabled = value;
-          await this.plugin.saveSettings();
-        }));
-
-    this.addNumberSlider(containerEl, {
-      name: 'Startup sync delay (seconds)',
-      desc: 'Wait this many seconds after startup before the startup sync.',
-      tooltip: TOOLTIPS.startupSyncDelay,
-      min: 0, max: 60, step: 1,
-      get: () => this.plugin.settings.startupSyncDelaySeconds,
-      set: (v) => { this.plugin.settings.startupSyncDelaySeconds = v; },
-    });
 
     // Periodic auto-sync is disabled on mobile (OS suspends background timers).
     this.addNumberSlider(containerEl, {
@@ -226,23 +194,6 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
       apply: () => this.plugin.applyAutoSyncInterval(),
     });
 
-    this.addNumberSlider(containerEl, {
-      name: 'Network timeout (seconds)',
-      tooltip: TOOLTIPS.networkTimeout,
-      min: 5, max: 120, step: 5,
-      get: () => this.plugin.settings.networkTimeoutSeconds,
-      set: (v) => { this.plugin.settings.networkTimeoutSeconds = v; },
-    });
-
-    this.addNumberSlider(containerEl, {
-      name: 'Network concurrency',
-      desc: 'Number of simultaneous WebDAV requests. Higher is faster but uses more memory/connections. Mobile defaults to a lower value.',
-      tooltip: TOOLTIPS.networkConcurrency,
-      min: 1, max: 16, step: 1,
-      get: () => this.plugin.settings.networkConcurrency,
-      set: (v) => { this.plugin.settings.networkConcurrency = v; },
-    });
-
     // Wi-Fi only. Network type is undetectable on iOS (no navigator.connection), so disable there.
     makeSetting(containerEl)
       .setName('Sync on Wi-Fi only')
@@ -256,60 +207,6 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         .setDisabled(Platform.isIosApp)
         .onChange(async (value) => {
           this.plugin.settings.syncOnWifiOnly = value;
-          await this.plugin.saveSettings();
-        }));
-
-    makeSetting(containerEl)
-      .setName('Sync on file change')
-      .setDesc(Platform.isMobile
-        ? 'Disabled on mobile (the OS suspends background work). Use "Sync on startup" or "Sync now".'
-        : 'Immediately sync when a local Markdown file is modified (a short delay after you stop editing). Works alongside the periodic sync interval.')
-      .setTooltip(TOOLTIPS.syncOnFileChange)
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.watchOnChangeEnabled && !Platform.isMobile)
-        .setDisabled(Platform.isMobile)
-        .onChange(async (value) => {
-          this.plugin.settings.watchOnChangeEnabled = value;
-          await this.plugin.saveSettings();
-        }));
-
-    makeSetting(containerEl)
-      .setName('Compare with remote (explorer menu)')
-      .setDesc('Adds a right-click item in the file explorer to compare a file with its remote version (modification time, checksum, diff) and resolve via push/pull. Takes effect immediately (no restart).')
-      .setTooltip(TOOLTIPS.explorerCompare)
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.explorerCompareEnabled)
-        .onChange(async (value) => {
-          this.plugin.settings.explorerCompareEnabled = value;
-          await this.plugin.saveSettings();
-        }));
-
-    this.addNumberSlider(containerEl, {
-      name: 'Chunk threshold (MB)',
-      desc: 'Files larger than this are uploaded in chunks (Nextcloud only). Smaller files use a single request.',
-      tooltip: TOOLTIPS.chunkThreshold,
-      min: 1, max: 500, step: 1,
-      get: () => this.plugin.settings.uploadChunkThresholdMB,
-      set: (v) => { this.plugin.settings.uploadChunkThresholdMB = v; },
-    });
-
-    this.addNumberSlider(containerEl, {
-      name: 'Maximum file size (MB)',
-      desc: 'Files larger than this are skipped with a warning. 0 = unlimited. On mobile a low limit avoids out-of-memory crashes.',
-      tooltip: TOOLTIPS.maxFileSize,
-      min: 0, max: 4096, step: 10,
-      get: () => this.plugin.settings.maxFileSizeMB,
-      set: (v) => { this.plugin.settings.maxFileSizeMB = v; },
-    });
-
-    makeSetting(containerEl)
-      .setName('Chunked upload')
-      .setDesc('Upload large files in chunks instead of skipping them (Nextcloud only).')
-      .setTooltip(TOOLTIPS.chunkedUpload)
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.chunkedUploadEnabled)
-        .onChange(async (value) => {
-          this.plugin.settings.chunkedUploadEnabled = value;
           await this.plugin.saveSettings();
         }));
 
@@ -404,167 +301,20 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
       }
     }
 
-    new Setting(containerEl).setName('Merge').setHeading();
+    new Setting(containerEl).setName('Maintenance').setHeading();
 
     makeSetting(containerEl)
-      .setName('Auto merge (experimental)')
-      .setDesc('⚠️ when enabled, conflicts are auto-merged using reconcile-text. Results may be unexpected. Ensure Nextcloud version history is enabled before activating.')
-      .setTooltip(TOOLTIPS.autoMerge)
+      .setName('Enable logging (troubleshooting)')
+      .setDesc('Write a per-device sync log and debug log to the vault root while troubleshooting. The sync log records all operations and the debug log is verbose. Turn this off and delete the log files when finished.')
+      .setTooltip(TOOLTIPS.loggingEnabled)
       .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.autoMergeEnabled)
+        .setValue(this.plugin.settings.loggingEnabled)
         .onChange(async (value) => {
-          this.plugin.settings.autoMergeEnabled = value;
+          this.plugin.settings.loggingEnabled = value;
           await this.plugin.saveSettings();
-        }));
-
-    makeSetting(containerEl)
-      .setName('Frontmatter conflict strategy (auto merge)')
-      .setDesc('When local and remote frontmatter differ: "Conflict markers" inserts markers for the whole file (safest). "local wins" / "remote wins" keeps that side\'s frontmatter and still merges the body.')
-      .setTooltip(TOOLTIPS.frontmatterConflictStrategy)
-      .addDropdown(drop => drop
-        .addOption('conflict', 'Conflict markers (safe default)')
-        .addOption('local-wins', 'Local wins (keep local frontmatter)')
-        .addOption('remote-wins', 'Remote wins (use remote frontmatter)')
-        .setValue(this.plugin.settings.frontmatterConflictStrategy)
-        .onChange(async (value) => {
-          this.plugin.settings.frontmatterConflictStrategy = value as 'conflict' | 'local-wins' | 'remote-wins';
-          await this.plugin.saveSettings();
-        }));
-
-    this.addNumberSlider(containerEl, {
-      name: 'Max conflict regions (auto merge)',
-      desc: 'If more regions conflict than this threshold, fall back to inline markers. 0 = unlimited (never fall back on region count).',
-      tooltip: TOOLTIPS.maxConflictRegions,
-      min: 0, max: 20, step: 1,
-      get: () => this.plugin.settings.maxConflictRegions,
-      set: (v) => { this.plugin.settings.maxConflictRegions = v; },
-    });
-
-    makeSetting(containerEl)
-      .setName('Mergeable file extensions')
-      .setDesc('Comma-separated list of extensions eligible for text merge (e.g. "md, txt"). Files with other extensions are never merged; on conflict the failure policy below is applied directly. Leave the dot off.')
-      .setTooltip(TOOLTIPS.mergeableExtensions)
-      .addText(text => text
-        .setPlaceholder('Extensions separated by commas')
-        .setValue((this.plugin.settings.mergeableExtensions ?? []).join(', '))
-        .onChange(async (value) => {
-          // Normalize: split on comma, trim, strip leading dots, lowercase, drop empties, dedup.
-          const exts = value
-            .split(',')
-            .map(e => e.trim().replace(/^\.+/, '').toLowerCase())
-            .filter(e => e.length > 0);
-          this.plugin.settings.mergeableExtensions = [...new Set(exts)];
-          await this.plugin.saveSettings();
-        }));
-
-    makeSetting(containerEl)
-      .setName('On merge failure')
-      .setDesc('What to do when a merge does not cleanly resolve (file not mergeable, auto-merge off, or merge failed). "error" leaves both sides untouched and retries next sync (safe default). "conflict markers" applies to text files only; other files fall back to error.')
-      .setTooltip(TOOLTIPS.onMergeFailure)
-      .addDropdown(drop => drop
-        .addOption('error', 'Error — leave untouched, retry (safe default)')
-        .addOption('local-wins', 'Local wins — overwrite remote with local')
-        .addOption('remote-wins', 'Remote wins — overwrite local with remote')
-        .addOption('conflict-markers', 'Conflict markers — keep both versions (text only)')
-        .setValue(this.plugin.settings.conflictFailurePolicy)
-        .onChange(async (value) => {
-          this.plugin.settings.conflictFailurePolicy =
-            value as 'error' | 'local-wins' | 'remote-wins' | 'conflict-markers';
-          await this.plugin.saveSettings();
-        }));
-
-    new Setting(containerEl).setName('Debug').setHeading();
-
-    makeSetting(containerEl)
-      .setName('Device name')
-      .setDesc('Names this device in log filenames (nextcloud-sync_sync_<device>.txt). Leave blank to use a platform + id default. Filesystem-unsafe characters are replaced automatically.')
-      .setTooltip(TOOLTIPS.deviceName)
-      .addText(text => text
-        .setPlaceholder(this.plugin.defaultHostToken())
-        .setValue(this.plugin.settings.deviceName)
-        .onChange(async (value) => {
-          this.plugin.settings.deviceName = value;
-          await this.plugin.saveSettings();
-        }));
-
-    let logFolderText: TextComponent | null = null;
-    makeSetting(containerEl)
-      .setName('Log folder')
-      .setDesc('Vault folder where the sync log and debug log are written. Leave blank for the vault root.')
-      .setTooltip(TOOLTIPS.logFolder)
-      .addText(text => {
-        logFolderText = text;
-        text
-          .setPlaceholder('Vault root')
-          .setValue(this.plugin.settings.logsFolder)
-          .onChange(async (value) => {
-            this.plugin.settings.logsFolder = value.replace(/\/+$/, '').trim();
-            await this.plugin.saveSettings();
-          });
-      })
-      // "Browse…" opens a fuzzy folder picker (Templater-style) that fills the field.
-      .addButton(btn => btn
-        .setButtonText('Browse…')
-        .onClick(() => {
-          new FolderSuggestModal(this.app, (path) => {
-            this.plugin.settings.logsFolder = path;
-            logFolderText?.setValue(path);
-            void this.plugin.saveSettings();
-          }).open();
-        }));
-
-    makeSetting(containerEl)
-      .setName('Sync log')
-      .setDesc('Append a per-device log of sync operations (with the plugin version and conflict-resolution settings) to nextcloud-sync_sync_<device>.txt.')
-      .setTooltip(TOOLTIPS.syncLog)
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.syncLogEnabled)
-        .onChange(async (value) => {
-          this.plugin.settings.syncLogEnabled = value;
-          await this.plugin.saveSettings();
-        }));
-
-    makeSetting(containerEl)
-      .setName('Sync log level')
-      .setDesc('Choose how much the sync log records. Important events only covers conflicts, merges, side-wins and errors; all operations also records routine uploads, downloads and deletions.')
-      .setTooltip(TOOLTIPS.syncLogLevel)
-      .addDropdown(drop => drop
-        .addOption('important', 'Important events only (conflicts, merges, errors)')
-        .addOption('all', 'All operations')
-        .setValue(this.plugin.settings.syncLogLevel)
-        .onChange(async (value) => {
-          this.plugin.settings.syncLogLevel = value as 'important' | 'all';
-          await this.plugin.saveSettings();
-        }));
-
-    makeSetting(containerEl)
-      .setName('Debug log')
-      .setDesc('Append a per-device diagnostic log (with the plugin version and a snapshot of all settings) to nextcloud-sync_debug_<device>.txt. Syncing runs normally. Turn this off and delete the file when finished.')
-      .setTooltip(TOOLTIPS.debugLog)
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.debugLogEnabled)
-        .onChange(async (value) => {
-          this.plugin.settings.debugLogEnabled = value;
-          await this.plugin.saveSettings();
-          // Dump a fresh settings snapshot as soon as the debug log is turned on.
+          // Dump a fresh settings snapshot as soon as logging is turned on.
           if (value) void this.plugin.logSettingsSnapshot();
         }));
-
-    makeSetting(containerEl)
-      .setName('Debug log level')
-      .setDesc('Verbosity of the debug log: "error" records only failures; "debug" adds normal flow; "verbose" adds the most detail.')
-      .setTooltip(TOOLTIPS.debugLogLevel)
-      .addDropdown(drop => drop
-        .addOption('error', 'Error (failures only)')
-        .addOption('debug', 'Debug (normal flow)')
-        .addOption('verbose', 'Verbose (most detail)')
-        .setValue(this.plugin.settings.debugLogLevel)
-        .onChange(async (value) => {
-          this.plugin.settings.debugLogLevel = value as 'error' | 'debug' | 'verbose';
-          await this.plugin.saveSettings();
-        }));
-
-    new Setting(containerEl).setName('Maintenance').setHeading();
 
     makeSetting(containerEl)
       .setName('Reset vault index')

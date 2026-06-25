@@ -139,18 +139,9 @@ Your Vault is synced into a folder named after the Vault on the Nextcloud side, 
 
 ## Enabling Nextcloud server-side features
 
-Two power features depend on server-side Nextcloud apps. Each only needs to be enabled **once by a Nextcloud administrator**. The plugin detects them through the capabilities API — if an app is missing, the corresponding feature simply stays inactive (no error).
+One power feature depends on a server-side Nextcloud app. It only needs to be enabled **once by a Nextcloud administrator**. The plugin detects it through the capabilities API — if the app is missing, the feature simply stays inactive (no error).
 
-### File Locking
-
-Locking uses Nextcloud's **Temporary files lock** app (app ID `files_lock`, available since Nextcloud 24; bundled with Nextcloud Hub from v34).
-
-- **Web UI (admin):** sign in as an administrator → profile menu (top-right) → **Apps** → search for **Temporary files lock** → **Enable** (download it first if it isn't installed).
-- **Command line (`occ`)** — run as the web-server user (often `www-data`):
-  ```bash
-  sudo -u www-data php /var/www/nextcloud/occ app:enable files_lock
-  ```
-- Then enable **File Locking (Experimental)** in the plugin settings and re-sync. (Docker: `docker exec -u www-data <container> php occ app:enable files_lock`.)
+> **Lost-update safety needs no setting.** The plugin always sends an `If-Match` precondition on upload, so a file changed on the server by another client is turned into a conflict instead of being silently overwritten — there is no File Locking toggle to configure.
 
 ### Version history
 
@@ -170,11 +161,49 @@ These are not strictly required, but on self-hosted instances they often need at
 - **Trusted domains** — the host you connect to must be listed in `trusted_domains` in `config.php`, otherwise the server rejects requests. Add your domain/IP if needed.
 - **HTTPS & reverse proxy (important for Login Flow v2)** — behind a reverse proxy, set `overwriteprotocol => 'https'`, `overwritehost`, `overwrite.cli.url`, and `trusted_proxies` correctly. If these are wrong, the URLs returned by Login Flow v2 (and downloads) can point to the wrong scheme/host and fail. Always use an `https://` server URL in the plugin.
 - **Upload size limits (for chunked upload / large attachments)** — raise PHP `upload_max_filesize` and `post_max_size`, and the web-server body limit (nginx `client_max_body_size`, e.g. `0` or a large value). Chunked upload sends small chunks, but the final assembly and very large files still hit these limits.
-- **Request timeouts** — for large vaults or big files, increase PHP `max_execution_time` and php-fpm / web-server timeouts (e.g. nginx `fastcgi_read_timeout`). The plugin's own network timeout is configurable in settings.
+- **Request timeouts** — for large vaults or big files, increase PHP `max_execution_time` and php-fpm / web-server timeouts (e.g. nginx `fastcgi_read_timeout`). The plugin uses a fixed 30-second network timeout.
 - **Brute-force protection** — Nextcloud throttles repeated requests from one IP and can return HTTP 429, especially when several devices sync from the same network or after auth errors. If you hit this, whitelist the network in **Administration settings → Security**, or set `auth.bruteforce.protection.enabled`/the IP allow-list in `config.php`.
 - **Background jobs (cron)** — configure Nextcloud's recommended **Cron** background-job mode so version cleanup and other maintenance run reliably.
 - **App passwords & two-factor auth** — never use your main account password; if 2FA is enabled an app password is mandatory. Login Flow v2 issues one for you automatically.
 - **Checksums (optional, recommended)** — the plugin prefers Nextcloud's `oc:checksums` (SHA-256) for change detection and automatically falls back to ETag when they aren't present, so no configuration is required; leaving Nextcloud's default checksum support enabled gives the most accurate detection.
+
+---
+
+## Settings defaults
+
+The settings screen is intentionally minimal: only Server URL, sign-in, Sync folder,
+Sync interval, Wi-Fi only, Excluded folders, the config-folder toggles, and an
+*Enable logging* switch are shown. Every other option was removed and is now a fixed
+value or derived automatically from your platform. They are documented here so you
+always know what the plugin is doing.
+
+### Fixed values (all platforms)
+
+| Setting | Value |
+|---|---|
+| Network timeout | 30 seconds |
+| Startup sync delay | 1 second |
+| Chunk threshold | 50 MB |
+| Chunked upload | on |
+| Bulk upload | on |
+| File locking | off — `If-Match` preconditions provide lost-update safety |
+| Auto merge | on |
+| Frontmatter conflict strategy | conflict markers (safe) |
+| Max conflict regions | 0 (no region-count fallback) |
+| Mergeable extensions | `md`, `txt` |
+| On merge failure | error — leave both sides, retry next sync |
+| Compare with remote (desktop) | on |
+| Log folder | vault root |
+| Device name | auto (`<platform>-<deviceId>`) |
+
+### Platform-derived values
+
+| Setting | Desktop | Mobile |
+|---|---|---|
+| Sync on startup | on | off |
+| Sync on file change | on | off |
+| Maximum file size | unlimited (`0`) | 20 MB |
+| Network concurrency | auto from RAM (≈ 16 on 8 GB+) | ≈ 3 |
 
 ---
 
