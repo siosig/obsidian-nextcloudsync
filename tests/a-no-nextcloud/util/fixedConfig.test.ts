@@ -1,25 +1,22 @@
-import { FIXED } from '../../../src/sync/fixedConfig';
+import { DEFAULT_SETTINGS } from '../../../src/types';
 
-// Feature 028 (settings simplification): FIXED is the single source of truth for the values
-// that were previously user-editable. These must match the former DEFAULT_SETTINGS so behaviour
-// is unchanged — except explorerCompareEnabled, intentionally flipped to true (Q5).
-describe('FIXED config constants (028)', () => {
-  it('matches the settings contract (C2)', () => {
-    expect(FIXED.fileLockingEnabled).toBe(false);
-    expect(FIXED.startupSyncDelaySeconds).toBe(1);
-    expect(FIXED.networkTimeoutSeconds).toBe(30);
-    expect(FIXED.uploadChunkThresholdMB).toBe(50);
-    expect(FIXED.chunkedUploadEnabled).toBe(true);
-    expect(FIXED.bulkUploadEnabled).toBe(true);
-    expect(FIXED.autoMergeEnabled).toBe(true);
-    expect(FIXED.maxConflictRegions).toBe(0);
-    // Feature 030: frontmatterConflictStrategy / mergeableExtensions / conflictFailurePolicy moved
-    // back to DavSyncSettings (user-editable); their defaults are asserted in DEFAULT_SETTINGS tests.
-    expect(FIXED.logsFolder).toBe('');
-    expect(FIXED.deviceName).toBe('');
+// Feature 032 (settings restoration): all values formerly in FIXED are now user-editable
+// DavSyncSettings fields. Assert their defaults match the former FIXED values.
+describe('DEFAULT_SETTINGS — formerly-fixed values (032)', () => {
+  it('matches the former settings contract (C2)', () => {
+    expect(DEFAULT_SETTINGS.fileLockingEnabled).toBe(false);
+    expect(DEFAULT_SETTINGS.startupSyncDelaySeconds).toBe(1);
+    expect(DEFAULT_SETTINGS.networkTimeoutSeconds).toBe(30);
+    expect(DEFAULT_SETTINGS.uploadChunkThresholdMB).toBe(50);
+    expect(DEFAULT_SETTINGS.chunkedUploadEnabled).toBe(true);
+    expect(DEFAULT_SETTINGS.bulkUploadEnabled).toBe(true);
+    expect(DEFAULT_SETTINGS.autoMergeEnabled).toBe(true);
+    expect(DEFAULT_SETTINGS.maxConflictRegions).toBe(0);
+    expect(DEFAULT_SETTINGS.logsFolder).toBe('');
+    expect(DEFAULT_SETTINGS.deviceName).toBe('');
   });
 
-  it('keeps the Compare-with-remote feature on (Q5: toggle removed, feature kept)', () => {
-    expect(FIXED.explorerCompareEnabled).toBe(true);
+  it('Compare-with-remote defaults OFF (user must opt in)', () => {
+    expect(DEFAULT_SETTINGS.explorerCompareEnabled).toBe(false);
   });
 });

@@ -14,8 +14,7 @@ import { hostToken, LogPlatform } from './util/hostToken';
 import { migrateConfigSyncCategories, migrateBookmarksToConfigSync, pruneObsoleteSettings } from './util/settingsMigration';
 import { debugLogPath, syncLogPath, isActiveOwnLog } from './util/logPaths';
 import { SyncLogWriter, formatResolution } from './log/SyncLogWriter';
-import { FIXED } from './sync/fixedConfig';
-import { autoSyncOnStartup, autoWatchOnChange } from './util/platformDefaults';
+import { autoNetworkConcurrency } from './util/platformDefaults';
 
 const MIN_OBSIDIAN_VERSION = '1.11.4';
 
@@ -67,7 +66,7 @@ export default class ObsidianNextcloudsync extends Plugin {
       () => 'verbose' as const,
       this.manifest.version,
       this.hostToken(),
-      () => debugLogPath(FIXED.logsFolder, this.hostToken()),
+      () => debugLogPath(this.settings.logsFolder, this.hostToken()),
     );
     void this.logger.log(`plugin loaded (obsidian=${currentVersion})`);
     // Record a full settings snapshot at the top of each debug-log session.
@@ -78,7 +77,7 @@ export default class ObsidianNextcloudsync extends Plugin {
     this.syncLogWriter = new SyncLogWriter(
       this.app.vault.adapter,
       () => this.settings.loggingEnabled,
-      () => syncLogPath(FIXED.logsFolder, this.hostToken()),
+      () => syncLogPath(this.settings.logsFolder, this.hostToken()),
     );
 
     this.addSettingTab(new NextcloudSyncSettingTab(this.app, this));
@@ -143,7 +142,7 @@ export default class ObsidianNextcloudsync extends Plugin {
       // Full vault sync is reserved for manual Sync Now and the periodic interval.
       // Watch mode is disabled on mobile (OS suspends background work).
       const guard = (file: TAbstractFile): file is TFile =>
-        autoWatchOnChange() && file instanceof TFile; // autoWatchOnChange() is false on mobile
+        this.settings.watchOnChangeEnabled && file instanceof TFile; // false on mobile (applied in loadSettings)
 
       // Vault events caused by the plugin itself (downloads / conflict writes use atomic
       // tmp-write → rename) must not be propagated back to the server, or every download
@@ -308,7 +307,7 @@ export default class ObsidianNextcloudsync extends Plugin {
    * lines. Derived from the user-facing Device name, defaulting to `<platform>-<deviceId6>`.
    */
   private hostToken(): string {
-    return hostToken(FIXED.deviceName, this.logPlatform(), this.settings.deviceId);
+    return hostToken(this.settings.deviceName, this.logPlatform(), this.settings.deviceId);
   }
 
   /** The default host token (Device name blank) — shown as the settings placeholder. */
@@ -323,11 +322,10 @@ export default class ObsidianNextcloudsync extends Plugin {
    */
   private async appendSyncLog(entries: SyncHistoryEntry[], summary: SyncSessionSummary): Promise<void> {
     const resolution = formatResolution({
-      // Feature 030: these three are user-editable again; read from settings for the log header.
       failurePolicy: this.settings.conflictFailurePolicy,
       frontmatterStrategy: this.settings.frontmatterConflictStrategy,
-      maxConflictRegions: FIXED.maxConflictRegions,
-      autoMergeEnabled: FIXED.autoMergeEnabled,
+      maxConflictRegions: this.settings.maxConflictRegions,
+      autoMergeEnabled: this.settings.autoMergeEnabled,
       mergeableExtensions: this.settings.mergeableExtensions,
     });
     await this.syncLogWriter.append(entries, {
@@ -367,14 +365,15 @@ export default class ObsidianNextcloudsync extends Plugin {
     this.settings.configSync = { ...DEFAULT_SETTINGS.configSync };
     migrateConfigSyncCategories(saved, this.settings);
     migrateBookmarksToConfigSync(saved, this.settings);
-
-    // syncOnWifiOnly is still a user setting; default it on for mobile's first run (metered data).
-    // The conflict-resolution settings (frontmatter strategy, merge-failure policy, mergeable
-    // extensions) are user-editable again (feature 030) and persist via the Object.assign above.
-    // The remaining mobile/RAM-derived defaults (startup sync, max file size, concurrency) stay
-    // platform-derived (see platformDefaults / fixedConfig).
-    if (Platform.isMobile && saved.syncOnWifiOnly === undefined) {
-      this.settings.syncOnWifiOnly = true;
+    // Mobile first-run defaults: override before pruning so they are persisted immediately.
+    if (Platform.isMobile) {
+      if (saved.syncOnWifiOnly === undefined) this.settings.syncOnWifiOnly = true;
+      if (saved.maxFileSizeMB === undefined)  this.settings.maxFileSizeMB = 20;
+      if (saved.watchOnChangeEnabled === undefined) this.settings.watchOnChangeEnabled = false;
+    }
+    // networkConcurrency: derived from device RAM on first run (the persisted value is kept as-is).
+    if (saved.networkConcurrency === undefined) {
+      this.settings.networkConcurrency = autoNetworkConcurrency();
     }
 
     // Drop obsolete persisted keys (e.g. the removed `debugMode` and the leftover
@@ -430,7 +429,7 @@ export default class ObsidianNextcloudsync extends Plugin {
       // appended to during the sync). Evaluated live, from the same settings + host token the
       // loggers use, so it follows the Sync log / Debug log toggles and any logsFolder change.
       isActiveLogFile: (path) => isActiveOwnLog(path, {
-        logsFolder: FIXED.logsFolder,
+        logsFolder: this.settings.logsFolder,
         host: this.hostToken(),
         loggingEnabled: this.settings.loggingEnabled,
       }),
@@ -449,9 +448,9 @@ export default class ObsidianNextcloudsync extends Plugin {
     // Periodic auto-sync is desktop-only (mobile OS suspends background timers).
     this.applyAutoSyncInterval();
 
-    // Startup sync: configurable on both platforms. Default ON (desktop) / OFF (mobile).
-    if (autoSyncOnStartup()) {
-      const delayMs = Math.max(0, FIXED.startupSyncDelaySeconds) * 1000;
+    // Startup sync: user-configurable. Default ON on all platforms (feature 030).
+    if (this.settings.syncOnStartupEnabled) {
+      const delayMs = Math.max(0, this.settings.startupSyncDelaySeconds) * 1000;
       window.setTimeout(() => { void this.syncEngine?.syncManual(); }, delayMs);
     }
   }
