@@ -27,9 +27,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.10-beta.5)
+## What's new in this release (0.7.10-beta.6)
 
-- **Compare with remote respects the setting toggle on mobile (0.7.10-beta.5)** — the file-menu item and command-palette entry both now check the *Enable Compare* toggle before activating, so disabling the setting takes effect immediately without a plugin restart.
+- **Fix TypeScript build error: remove stale `explorerCompareEnabled` references (0.7.10-beta.6)** — removes two references to `explorerCompareEnabled` that no longer exist in `DavSyncSettings`, fixing the CI build failure that prevented 0.7.10-beta.5 from being published.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
