@@ -39,3 +39,30 @@ export function isUnderExcludedFolder(path: string, folders: readonly string[]):
   }
   return false;
 }
+
+/**
+ * Candidate folders for the "Add excluded folder" input suggestion (feature 029). The match pool is
+ * every vault folder that is NOT already excluded — neither registered exactly nor nested under a
+ * registered entry — and whose normalized path contains `query` (case-insensitive substring). The
+ * vault root is never a candidate (excluding it would stop all syncing). Output preserves the input
+ * order, so pass a sorted `allFolders` for sorted suggestions. Pure — no Obsidian/DOM access.
+ */
+export function filterExcludableFolders(
+  allFolders: readonly string[],
+  excluded: readonly string[],
+  query: string,
+): string[] {
+  const q = query.trim().toLowerCase();
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of allFolders) {
+    const folder = normalizeExcludedFolder(raw);
+    if (folder === null) continue;                          // vault root / empty → skip
+    if (seen.has(folder)) continue;                         // de-dup normalized paths
+    if (isUnderExcludedFolder(folder, excluded)) continue;  // already excluded (self or nested)
+    if (q.length > 0 && !folder.toLowerCase().includes(q)) continue; // substring filter
+    seen.add(folder);
+    out.push(folder);
+  }
+  return out;
+}
