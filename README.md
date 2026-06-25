@@ -27,9 +27,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.10-beta.7)
+## What's new in this release (0.7.10)
 
-- **Restore all 28 settings to the UI (0.7.10-beta.7)** — all settings removed in the 028 simplification (file locking, startup sync, network timeout/concurrency, sync-on-file-change, compare-with-remote, chunk threshold, max file size, chunked upload, auto-merge, max conflict regions, device name, log folder) are now user-editable again. `fixedConfig.ts` has been deleted; `DEFAULT_SETTINGS` is the single source of truth. A new Debug section groups device name, log folder and the logging toggle.
+- **Excluded folders, mobile Compare, conflict-failure policy, and more (0.7.10)** — user-configurable excluded folders with inline autocomplete, selectable conflict-failure policy (mark / keep-local / keep-remote / revert), Compare with remote on mobile (vertical diff), startup-sync toggle for mobile, two-category config sync (Bookmarks / Others), and all settings restored to the UI as user-editable fields.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
