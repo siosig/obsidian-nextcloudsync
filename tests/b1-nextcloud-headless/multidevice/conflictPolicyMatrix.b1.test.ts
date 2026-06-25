@@ -11,8 +11,9 @@
 // outcome derived from spec §6.2/§6.3 (see expectedWinner()).
 //
 // Notes the matrix surfaces (intentional, spec-consistent degeneracies):
-//   - autoMerge=Off ⇒ MergeEngine is skipped, so frontmatterConflictStrategy is a NO-OP (all 3 values
-//     behave identically) and conflictFailurePolicy decides directly.
+//   - autoMerge=Off (modelled in 030 as an empty mergeable list) ⇒ MergeEngine is skipped, so
+//     frontmatterConflictStrategy is a NO-OP and conflictFailurePolicy decides directly. A
+//     non-mergeable file cannot receive conflict markers, so the conflict-markers policy → skip.
 //   - autoMerge=On with frontmatterStrategy ∈ {local-wins, remote-wins} resolves the frontmatter
 //     cleanly, so the failure policy never fires (clean auto-merge).
 //
@@ -48,7 +49,10 @@ function expectedWinner(autoMerge: AutoMerge, fm: FmStrategy, policy: FailPolicy
   switch (policy) {
     case 'local-wins': return 'M';
     case 'remote-wins': return 'D';
-    case 'conflict-markers': return 'markers';
+    // Feature 030: "auto-merge off" is modelled by an empty mergeable list (the file is
+    // non-mergeable). A non-mergeable file cannot receive conflict markers, so the
+    // conflict-markers policy degenerates to skip — only a mergeable file gets markers.
+    case 'conflict-markers': return autoMerge ? 'markers' : 'skip';
     case 'error': default: return 'skip';
   }
 }
@@ -96,7 +100,10 @@ describeLive('Layer B — conflict-resolution settings matrix (2 devices, 24 com
       const env = getEnv();
       const path = fileFor(c);
       const over: Partial<DavSyncSettings> = {
-        autoMergeEnabled: c.autoMerge,
+        // Feature 030: autoMergeEnabled is FIXED true; "auto-merge off" is expressed by an empty
+        // mergeable list (isMergeable=false ⇒ MergeEngine skipped) — spec-equivalent for this
+        // frontmatter-only matrix. Markdown files merge only when 'md' is in the list.
+        mergeableExtensions: c.autoMerge ? ['md'] : [],
         frontmatterConflictStrategy: c.fm,
         conflictFailurePolicy: c.policy,
       };

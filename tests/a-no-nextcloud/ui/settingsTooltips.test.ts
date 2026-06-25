@@ -14,6 +14,7 @@ const EXPECTED_KEYS: TooltipKey[] = [
   'syncNow',
   'serverUrl', 'username', 'appPassword', 'loginViaBrowser', 'syncFolder', 'syncTarget',
   'syncInterval', 'syncOnWifiOnly',
+  'frontmatterConflictStrategy', 'conflictFailurePolicy', 'mergeableExtensions',
   'syncConfigFolder', 'configBookmarks', 'configOthers',
   'excludedFolders', 'addExcludedFolder',
   'loggingEnabled', 'resetVaultIndex', 'lastSessionSummary',
