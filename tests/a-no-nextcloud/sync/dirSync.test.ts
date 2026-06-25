@@ -22,7 +22,6 @@ function settings(over: Partial<DavSyncSettings> = {}): DavSyncSettings {
   return {
     configDir: CONFIG_DIR, syncConfigFolder: false,
     configSync: { appearance: false, themesSnippets: false, hotkeys: false, corePlugins: false, bookmarks: false },
-    fileLockingEnabled: false,
     ...over,
   } as unknown as DavSyncSettings;
 }
@@ -201,7 +200,7 @@ describe('SyncEngine.reconcileDirectories — directory create/delete propagatio
 
   it('DP-13 lock OFF: issues no lock but still deletes', async () => {
     const client = makeClient({ remoteDirs: ['gone'] });
-    const { engine } = makeEngine({ client, localDirs: [], tracked: [dirState('gone')], settings: settings({ fileLockingEnabled: false }) });
+    const { engine } = makeEngine({ client, localDirs: [], tracked: [dirState('gone')], settings: settings() });
     await reconcile(engine, makeSummary());
     expect(client.lockFile).not.toHaveBeenCalled();
     expect(client.deleteCollection).toHaveBeenCalledWith('gone');

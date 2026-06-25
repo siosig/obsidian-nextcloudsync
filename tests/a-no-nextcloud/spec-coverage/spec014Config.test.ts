@@ -13,9 +13,7 @@ describe('spec 014 — config folder sync (defaults & migration)', () => {
     const s = { ...DEFAULT_SETTINGS, configSync: { ...DEFAULT_SETTINGS.configSync } };
     migrateBookmarksToConfigSync({ syncBookmarks: true }, s);
     expect(s.syncConfigFolder).toBe(true);
-    expect(s.configSync).toEqual({
-      appearance: false, themesSnippets: false, hotkeys: false, corePlugins: false, bookmarks: true,
-    });
+    expect(s.configSync).toEqual({ bookmarks: true, others: false });
   });
 
   it('FR-011: legacy syncBookmarks=false → master stays OFF', () => {

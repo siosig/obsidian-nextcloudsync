@@ -1,20 +1,27 @@
 import { DEFAULT_SETTINGS, DavSyncSettings } from '../types';
 
 /**
- * Migrate the removed `debugMode` boolean to the new debug-log fields.
- *
- * When a previous version persisted `debugMode === true` and the new `debugLogEnabled` field
- * was never saved, enable the debug log at level `debug` so existing debuggers keep their log.
- * Mutates `settings` in place. No-op otherwise (fresh installs and already-migrated profiles).
+ * Migrate the former five-key configSync ({appearance, themesSnippets, hotkeys, corePlugins,
+ * bookmarks}) into the two-key model ({bookmarks, others}) introduced in feature 029. The four
+ * non-bookmark categories collapse into `others` (enabled if ANY of them was enabled). A profile
+ * already on the two-key shape (has an `others` key) is normalized to booleans. Mutates `settings`.
+ * Run before {@link migrateBookmarksToConfigSync} (which handles the even older `syncBookmarks`).
  */
-export function migrateLegacyDebugMode(
-  saved: { debugMode?: unknown; debugLogEnabled?: unknown },
+export function migrateConfigSyncCategories(
+  saved: { configSync?: unknown },
   settings: DavSyncSettings,
 ): void {
-  if (saved.debugLogEnabled === undefined && saved.debugMode === true) {
-    settings.debugLogEnabled = true;
-    settings.debugLogLevel = 'debug';
+  const sc = saved.configSync;
+  if (!sc || typeof sc !== 'object') return; // nothing persisted → keep defaults
+  const obj = sc as Record<string, unknown>;
+  if ('others' in obj) {
+    settings.configSync = { bookmarks: Boolean(obj.bookmarks), others: Boolean(obj.others) };
+    return;
   }
+  settings.configSync = {
+    bookmarks: Boolean(obj.bookmarks),
+    others: Boolean(obj.appearance) || Boolean(obj.themesSnippets) || Boolean(obj.hotkeys) || Boolean(obj.corePlugins),
+  };
 }
 
 /**
@@ -35,13 +42,7 @@ export function migrateBookmarksToConfigSync(
   if (saved.syncConfigFolder !== undefined) return; // already on the new model — don't re-migrate
   if (saved.syncBookmarks === true) {
     settings.syncConfigFolder = true;
-    settings.configSync = {
-      appearance: false,
-      themesSnippets: false,
-      hotkeys: false,
-      corePlugins: false,
-      bookmarks: true,
-    };
+    settings.configSync = { bookmarks: true, others: false };
   }
 }
 
@@ -49,7 +50,7 @@ export function migrateBookmarksToConfigSync(
  * Delete persisted settings keys that are no longer part of the schema (e.g. `debugMode`,
  * and the `logLevel` / `syncResultsEnabled` / `syncResultsFolder` fields left behind by an
  * earlier 0.3.0-beta implementation). Mutates `settings` in place and returns the removed keys.
- * Run after {@link migrateLegacyDebugMode} so any legacy value is migrated before it is dropped.
+ * The legacy `debugMode` key and the settings removed by feature 028 are simply dropped here.
  */
 export function pruneObsoleteSettings(settings: Record<string, unknown>): string[] {
   const allowed = new Set<string>(Object.keys(DEFAULT_SETTINGS));
