@@ -11,6 +11,19 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.10] - 2026-06-26
+
+### Added
+- User-configurable excluded folders: specify folder paths to skip during sync
+- Inline autocomplete suggestions when adding excluded folder paths
+- Selectable conflict-failure policy: choose between `mark` (conflict markers), `keep-local`, `keep-remote`, or `revert` when auto-merge fails
+- Compare with remote command now available on mobile (vertical diff layout)
+- Startup sync toggle for mobile devices
+
+### Changed
+- Config-folder sync reorganised into two categories: **Bookmarks** and **Others**
+- All sync settings are now user-editable in the Settings UI; `DEFAULT_SETTINGS` is the single source of truth. A new **Debug** section groups device name, log folder, and the logging toggle.
+
 ## [0.7.9] - 2026-06-25
 
 - **Fix: notes with very long names failed to sync onto Android** — a file whose own name was within the filesystem's 255-byte per-component limit could still fail to download with a `FILE_NOTCREATED` error, because the temporary file used during the atomic write appended an 18-byte suffix that pushed the temporary name over the limit (Japanese titles, at 3 bytes per character, hit this around 80 characters). The temporary file now uses a short, fixed-length hashed name in the target's own directory, so its length no longer depends on the target name and any note whose own name fits is written reliably (the rename stays atomic). A name that genuinely exceeds 255 bytes — unavoidable at the OS level — is now reported as a clear "file name too long (N bytes / max 255)" message instead of an opaque error.
@@ -149,6 +162,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.10]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.10
 [0.7.9]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.9
 [0.7.8]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.8
 [0.7.7]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.7
