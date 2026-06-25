@@ -107,8 +107,9 @@ export default class ObsidianNextcloudsync extends Plugin {
     // `explorerCompareEnabled` check is what makes the settings toggle take effect immediately,
     // with no plugin reload or Obsidian restart.
     this.registerEvent(this.app.workspace.on('file-menu', (menu, file) => {
-      // Feature 030: available on mobile too (long-press menu). The diff is a pure Modal + LCS with
-      // no Electron deps, and the layout collapses to a single column on narrow screens.
+      // Available on mobile too (long-press menu). The diff is a pure Modal + LCS with no Electron
+      // deps, and the layout collapses to a single column on narrow screens.
+      if (!this.settings.explorerCompareEnabled) return;
       if (!(file instanceof TFile)) return; // single file only
       if (!this.syncEngine) return;          // engine must be configured
       menu.addItem(item => item
@@ -118,13 +119,13 @@ export default class ObsidianNextcloudsync extends Plugin {
     }));
 
     // Command-palette entry — the reliable entry point on mobile (works on desktop too). Active only
-    // when a file is open and the engine is configured.
+    // when Compare is enabled, a file is open, and the engine is configured.
     this.addCommand({
       id: 'compare-with-remote',
       name: 'Compare with remote',
       checkCallback: (checking: boolean) => {
         const file = this.app.workspace.getActiveFile();
-        const ok = file instanceof TFile && !!this.syncEngine;
+        const ok = this.settings.explorerCompareEnabled && file instanceof TFile && !!this.syncEngine;
         if (ok && !checking) new CompareModal(this.app, file.path, this.syncEngine!).open();
         return ok;
       },
