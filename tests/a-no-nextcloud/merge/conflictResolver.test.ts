@@ -49,6 +49,7 @@ function makeSettings(
     mergeableExtensions,
     conflictFailurePolicy: policy,
     explorerCompareEnabled: false,
+    excludedFolders: [],
   };
 }
 
