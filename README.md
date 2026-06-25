@@ -27,10 +27,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.8)
+## What's new in this release (0.7.9)
 
-- **Fix: downloads were wrongly refused on iPhone/iPad (0.7.8)** — a safety check added in 0.7.7 compared the downloaded byte count against the size the server advertised, but on mobile that count legitimately differs (the app reports a slightly different length than the server), so normal downloads were refused and remote changes stopped reaching the device. The check now only rejects a genuinely empty response, so syncing works normally again while still guarding against a server returning nothing.
-- **Clearer status filter on mobile (0.7.8)** — the "Filter by status" controls in the Sync Status dialog are now full-width, readable chips instead of cramped, overlapping checkboxes.
+- **Fix: notes with very long names failed to sync onto Android (0.7.9)** — files whose name was within the filesystem limit could still fail to download with a `FILE_NOTCREATED` error, because the temporary file used during writing added a suffix that pushed the name over the 255-byte limit (Japanese titles hit this around 80 characters). The temporary file now uses a short fixed-length name, so any note whose own name fits is written reliably; a name that genuinely exceeds the limit now reports a clear "file name too long" message instead of an opaque error.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
