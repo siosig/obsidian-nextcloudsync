@@ -26,8 +26,6 @@ import { WebDAVFactory } from '../network/WebDAVFactory';
 import { IWebDAVClient } from '../network/IWebDAVClient';
 import { RenameTracker } from './RenameTracker';
 import { ConflictResolver } from './ConflictResolver';
-import { FIXED } from './fixedConfig';
-import { autoMaxFileSizeMB, autoNetworkConcurrency } from '../util/platformDefaults';
 import { ConfigSyncResolver } from './ConfigSyncResolver';
 import { sha256 } from '../util/hash';
 import { isUnderExcludedFolder } from '../util/excludedFolders';
@@ -154,8 +152,8 @@ export class SyncEngine {
       const { client, features } = await this.opts.webdavFactory.createClient();
       this.client = client;
       this.features = features;
-      const uploadConfig = { maxFileSizeMB: autoMaxFileSizeMB(), uploadChunkThresholdMB: FIXED.uploadChunkThresholdMB };
-      this.uploadStrategy = (FIXED.chunkedUploadEnabled && features.isNextcloud)
+      const uploadConfig = { maxFileSizeMB: this.opts.settings.maxFileSizeMB, uploadChunkThresholdMB: this.opts.settings.uploadChunkThresholdMB };
+      this.uploadStrategy = (this.opts.settings.chunkedUploadEnabled && features.isNextcloud)
         ? new ChunkedUploadStrategy(uploadConfig)
         : new SimpleUploadStrategy(uploadConfig);
       this.opts.onFeatures?.(features);
@@ -860,7 +858,7 @@ export class SyncEngine {
     serializeByDir: boolean,
   ): Promise<void> {
     if (items.length === 0) return;
-    const max = Math.max(1, autoNetworkConcurrency());
+    const max = Math.max(1, this.opts.settings.networkConcurrency);
     const limiter = createLimiter(max);
     const budget = new ByteSemaphore(Platform.isMobile ? MAX_INFLIGHT_BYTES_MOBILE : MAX_INFLIGHT_BYTES_DESKTOP);
     // Per-parent-directory promise chains: each new same-dir task waits on the previous one.
@@ -1068,7 +1066,7 @@ export class SyncEngine {
    * If locked by someone else (423), retries with backoff and throws FileLockedError if not released.
    */
   private async acquireLock(path: string): Promise<string | null> {
-    if (!FIXED.fileLockingEnabled || !this.features?.hasFilesLocking) return null;
+    if (!this.opts.settings.fileLockingEnabled || !this.features?.hasFilesLocking) return null;
     const maxAttempts = 3;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
@@ -1205,8 +1203,8 @@ export class SyncEngine {
     const remoteContent = new TextDecoder().decode(remoteData);
 
     const resolver = new ConflictResolver(this.opts.app, this.opts.localAdapter, {
-      autoMergeEnabled: FIXED.autoMergeEnabled,
-      maxConflictRegions: FIXED.maxConflictRegions,
+      autoMergeEnabled: this.opts.settings.autoMergeEnabled,
+      maxConflictRegions: this.opts.settings.maxConflictRegions,
       // Feature 030: frontmatter strategy, merge-failure policy and merge-eligible extensions are
       // user-editable again (read live from settings so a change applies on the next sync).
       frontmatterConflictStrategy: this.opts.settings.frontmatterConflictStrategy,
@@ -1847,7 +1845,7 @@ export class SyncEngine {
     localFiles: Map<string, { size: number; mtime: number }>,
   ): Promise<void> {
     const targets = remoteFiles.filter(rf => !rf.checksum && localFiles.has(rf.path));
-    const concurrency = Math.max(1, autoNetworkConcurrency());
+    const concurrency = Math.max(1, this.opts.settings.networkConcurrency);
     for (let i = 0; i < targets.length; i += concurrency) {
       const batch = targets.slice(i, i + concurrency);
       await Promise.all(batch.map(async (rf) => {

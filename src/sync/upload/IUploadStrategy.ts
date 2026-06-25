@@ -4,10 +4,8 @@ import { IWebDAVClient } from '../../network/IWebDAVClient';
 export type UploadOutcome = 'uploaded' | 'skipped';
 
 /**
- * Size parameters an upload strategy needs. After the settings simplification (feature 028) these
- * are no longer user-editable: `maxFileSizeMB` is platform-derived (autoMaxFileSizeMB) and
- * `uploadChunkThresholdMB` is a FIXED constant. Kept as an explicit input so the strategies stay
- * pure and fully unit-testable.
+ * Size parameters an upload strategy needs. Both values come from user settings. Kept as an
+ * explicit input so the strategies stay pure and fully unit-testable.
  */
 export interface UploadConfig {
   /** Absolute size cap (MB); files above it are skipped. `0` = unlimited. */
