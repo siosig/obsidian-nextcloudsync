@@ -11,7 +11,7 @@ import { FileLogger } from './util/FileLogger';
 import { isSyncTmpPath, LocalAdapter } from './data/LocalAdapter';
 import { v4 as uuidv4 } from './util/uuid';
 import { hostToken, LogPlatform } from './util/hostToken';
-import { migrateBookmarksToConfigSync, pruneObsoleteSettings } from './util/settingsMigration';
+import { migrateConfigSyncCategories, migrateBookmarksToConfigSync, pruneObsoleteSettings } from './util/settingsMigration';
 import { debugLogPath, syncLogPath, isActiveOwnLog } from './util/logPaths';
 import { SyncLogWriter, formatResolution } from './log/SyncLogWriter';
 import { FIXED } from './sync/fixedConfig';
@@ -348,11 +348,11 @@ export default class ObsidianNextcloudsync extends Plugin {
     const saved = (await this.loadData() ?? {}) as Partial<DavSyncSettings>;
     this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
 
-    // Object.assign is shallow: if a partial `configSync` was persisted, complete missing keys
-    // from the defaults so every category flag is a real boolean. Do this BEFORE the bookmarks
-    // migration, which replaces `configSync` wholesale when it fires.
-    this.settings.configSync = { ...DEFAULT_SETTINGS.configSync, ...(saved.configSync ?? {}) };
-    // Migrate the removed standalone `syncBookmarks` flag into the config-folder sync model.
+    // Start from the two-key defaults, then fold any persisted configSync into the new model:
+    // migrateConfigSyncCategories collapses the old five-key shape into {bookmarks, others}
+    // (feature 029); migrateBookmarksToConfigSync handles the even older standalone syncBookmarks.
+    this.settings.configSync = { ...DEFAULT_SETTINGS.configSync };
+    migrateConfigSyncCategories(saved, this.settings);
     migrateBookmarksToConfigSync(saved, this.settings);
 
     // syncOnWifiOnly is still a user setting; default it on for mobile's first run (metered data).
