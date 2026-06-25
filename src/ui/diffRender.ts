@@ -52,15 +52,18 @@ function addRows(scrollEl: HTMLElement, rows: DiffRow[]): HTMLElement | null {
     const line = scrollEl.createDiv({ cls: 'ncs-diff-row' });
     if (row.type !== 'same' && !firstChanged) firstChanged = line;
 
-    // Left: line-number gutter + marker + text
-    line.createDiv({ text: row.left !== undefined ? String(lNum) : '', cls: 'ncs-diff-gutter' });
-    const lMarker = line.createDiv({ text: row.type === 'del' ? '−' : ' ', cls: 'ncs-diff-marker' });
-    const left = line.createDiv({ text: row.left ?? '', cls: 'ncs-diff-cell ncs-diff-cell-left' });
+    // Left side: line-number gutter + marker + text. Wrapped in a side container so narrow screens
+    // (mobile) can stack the two sides vertically via CSS instead of squeezing them side by side.
+    const leftSide = line.createDiv({ cls: 'ncs-diff-side ncs-diff-side-left' });
+    leftSide.createDiv({ text: row.left !== undefined ? String(lNum) : '', cls: 'ncs-diff-gutter' });
+    const lMarker = leftSide.createDiv({ text: row.type === 'del' ? '−' : ' ', cls: 'ncs-diff-marker' });
+    const left = leftSide.createDiv({ text: row.left ?? '', cls: 'ncs-diff-cell ncs-diff-cell-left' });
 
-    // Right: line-number gutter + marker + text
-    line.createDiv({ text: row.right !== undefined ? String(rNum) : '', cls: 'ncs-diff-gutter' });
-    const rMarker = line.createDiv({ text: row.type === 'add' ? '+' : ' ', cls: 'ncs-diff-marker' });
-    const right = line.createDiv({ text: row.right ?? '', cls: 'ncs-diff-cell' });
+    // Right side: line-number gutter + marker + text
+    const rightSide = line.createDiv({ cls: 'ncs-diff-side ncs-diff-side-right' });
+    rightSide.createDiv({ text: row.right !== undefined ? String(rNum) : '', cls: 'ncs-diff-gutter' });
+    const rMarker = rightSide.createDiv({ text: row.type === 'add' ? '+' : ' ', cls: 'ncs-diff-marker' });
+    const right = rightSide.createDiv({ text: row.right ?? '', cls: 'ncs-diff-cell' });
 
     if (row.type === 'del') { lMarker.addClass('is-del'); left.addClass('is-del'); }
     if (row.type === 'add') { rMarker.addClass('is-add'); right.addClass('is-add'); }

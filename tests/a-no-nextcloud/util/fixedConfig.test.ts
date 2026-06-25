@@ -13,9 +13,8 @@ describe('FIXED config constants (028)', () => {
     expect(FIXED.bulkUploadEnabled).toBe(true);
     expect(FIXED.autoMergeEnabled).toBe(true);
     expect(FIXED.maxConflictRegions).toBe(0);
-    expect(FIXED.frontmatterConflictStrategy).toBe('conflict');
-    expect(FIXED.mergeableExtensions).toEqual(['md', 'txt']);
-    expect(FIXED.conflictFailurePolicy).toBe('error');
+    // Feature 030: frontmatterConflictStrategy / mergeableExtensions / conflictFailurePolicy moved
+    // back to DavSyncSettings (user-editable); their defaults are asserted in DEFAULT_SETTINGS tests.
     expect(FIXED.logsFolder).toBe('');
     expect(FIXED.deviceName).toBe('');
   });
