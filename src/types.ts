@@ -133,6 +133,13 @@ export interface DavSyncSettings {
    */
   explorerCompareEnabled: boolean;
   /**
+   * User-managed list of vault-relative folder paths that are never synced (feature 027).
+   * Folder-prefix match at a folder boundary; entries are normalized and unique. This is an
+   * additive layer on top of the permanent hard exclusions (dotfolders, community plugins,
+   * the plugin's own state DB), which always apply regardless of this list.
+   */
+  excludedFolders: string[];
+  /**
    * Persisted Sync Status dialog filter selection: the checked status keys, serialized as an array.
    * Absent ⇒ all statuses shown (default). Restored on load and saved on every toggle, so the
    * selection survives an Obsidian restart. Unknown keys are ignored on load.
@@ -192,6 +199,7 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   mergeableExtensions: ['md', 'txt'],
   conflictFailurePolicy: 'error',
   explorerCompareEnabled: false,
+  excludedFolders: [],
   // Explicit `undefined` keeps the key in the allowlist used by pruneObsoleteSettings (so a saved
   // selection is never pruned) while meaning "no saved selection → all statuses shown".
   statusFilter: undefined,
