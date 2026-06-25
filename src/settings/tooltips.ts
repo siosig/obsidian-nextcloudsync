@@ -25,29 +25,12 @@ export const TOOLTIPS = {
     'Read-only. Fixed to this vault’s name; the whole vault syncs under a remote folder of that name.',
   syncTarget:
     'Read-only preview of the effective remote path (Server URL + vault folder). Confirm this is where you expect the vault to sync.',
-  fileLocking:
-    'Locks each file on the server around every update (extra round trips; needs the Nextcloud files-lock app). Off is safe — if-match preconditions already prevent lost updates.',
 
   // Sync section
-  syncOnStartup: 'Run one sync shortly after Obsidian starts. Off by default on mobile.',
-  startupSyncDelay: 'How long to wait after startup before that first sync.',
   syncInterval:
     'Auto-sync period. 0 = manual only. Disabled on mobile (the OS suspends background timers).',
-  networkTimeout: 'Abort a WebDAV request that takes longer than this.',
-  networkConcurrency:
-    'How many WebDAV requests run at once. Higher = faster but more memory/connections. Mobile defaults lower.',
   syncOnWifiOnly:
     'Skip syncing on cellular (Wi-Fi/wired allowed). Unavailable on iOS (no network-type API).',
-  syncOnFileChange:
-    'Sync a Markdown file shortly after you stop editing it. Disabled on mobile.',
-  explorerCompare:
-    'Adds a right-click action to compare a file with its remote version (mtime, checksum, diff) and resolve via push/pull.',
-  chunkThreshold:
-    'Files larger than this upload in chunks (Nextcloud only). Smaller files use a single request.',
-  maxFileSize:
-    'Skip files larger than this. 0 = unlimited. Keep low on mobile to avoid out-of-memory crashes.',
-  chunkedUpload:
-    'Upload oversized files in chunks instead of skipping them (Nextcloud only).',
 
   // Config folder section
   syncConfigFolder:
@@ -59,27 +42,6 @@ export const TOOLTIPS = {
     'Enabled core plugins and their settings (core-plugins.json, graph.json…). May need a restart on the other device.',
   configBookmarks: 'Obsidian bookmarks (bookmarks.json).',
 
-  // Merge section
-  autoMerge:
-    'Auto-merge conflicts with reconcile-text. Enable Nextcloud version history first; results may be unexpected. (Version history is on by default on Nextcloud; there is no per-user toggle.)',
-  frontmatterConflictStrategy:
-    'How to handle differing frontmatter when auto-merging: conflict markers (safest) / local wins / remote wins. The body still merges.',
-  maxConflictRegions:
-    'If more regions conflict than this, fall back to inline markers. 0 = never fall back on region count.',
-  mergeableExtensions:
-    'Extensions eligible for text merge (e.g. md, txt). Others use the failure policy below. Leave the dot off.',
-  onMergeFailure:
-    'What to do when a merge can’t cleanly resolve: error/retry (safe), local wins, remote wins, or conflict markers (text only).',
-
-  // Debug section
-  deviceName:
-    'Labels this device in log filenames. Blank = platform+id default. Filesystem-unsafe characters are replaced.',
-  logFolder: 'Vault folder for the sync/debug logs. Blank = vault root.',
-  syncLog: 'Append a per-device log of sync operations to nextcloud-sync_sync_<device>.txt.',
-  syncLogLevel: 'Important events only (conflicts/merges/errors) or all operations.',
-  debugLog: 'Append a per-device diagnostic log + settings snapshot. Turn off and delete the file when finished.',
-  debugLogLevel: 'error (failures only) / debug (normal flow) / verbose (most detail).',
-
   // Excluded folders section
   excludedFolders:
     'Folders listed here are never synced (folder-prefix match). Dotfolders like .git and the config plugins folder are already excluded by default.',
@@ -87,6 +49,8 @@ export const TOOLTIPS = {
     'Pick or type a vault-relative folder to exclude. Browse… opens a folder picker; the path is added to the list below.',
 
   // Maintenance section
+  loggingEnabled:
+    'Write a per-device sync log (all operations) and a verbose debug log to the vault root while troubleshooting. Turn off and delete the log files when done.',
   resetVaultIndex:
     'Clears this device’s sync index (first-install state). No files are deleted; the next sync re-scans.',
   lastSessionSummary:
