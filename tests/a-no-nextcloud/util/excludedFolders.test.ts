@@ -1,4 +1,29 @@
-import { normalizeExcludedFolder, isUnderExcludedFolder } from '../../../src/util/excludedFolders';
+import { normalizeExcludedFolder, isUnderExcludedFolder, filterExcludableFolders } from '../../../src/util/excludedFolders';
+
+describe('filterExcludableFolders (029 — Add suggestion pool)', () => {
+  const all = ['Attachments', 'Attachments/Large media', 'Notes', 'Notes/Daily', '.git', 'Archive'];
+
+  it('returns all candidate folders when the query is empty', () => {
+    expect(filterExcludableFolders(all, [], '')).toEqual(all);
+  });
+
+  it('substring-matches case-insensitively against the path', () => {
+    expect(filterExcludableFolders(all, [], 'att')).toEqual(['Attachments', 'Attachments/Large media']);
+    expect(filterExcludableFolders(all, [], 'DAILY')).toEqual(['Notes/Daily']);
+  });
+
+  it('drops folders already excluded (the entry itself and anything nested under it)', () => {
+    expect(filterExcludableFolders(all, ['Attachments'], '')).toEqual(['Notes', 'Notes/Daily', '.git', 'Archive']);
+  });
+
+  it('never offers the vault root or empty entries', () => {
+    expect(filterExcludableFolders(['/', '', 'Notes'], [], '')).toEqual(['Notes']);
+  });
+
+  it('normalizes candidate paths and de-dups', () => {
+    expect(filterExcludableFolders(['Notes/', 'Archive\\Old', 'Notes'], [], '')).toEqual(['Notes', 'Archive/Old']);
+  });
+});
 
 describe('normalizeExcludedFolder', () => {
   it('keeps already-clean vault-relative paths', () => {
