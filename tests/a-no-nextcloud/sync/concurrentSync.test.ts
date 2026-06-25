@@ -1,4 +1,13 @@
 import { SyncEngine } from '../../../src/sync/SyncEngine';
+import { autoNetworkConcurrency } from '../../../src/util/platformDefaults';
+
+// Feature 028: network concurrency is no longer a user setting — the engine reads
+// autoNetworkConcurrency(). Tests mock it to exercise the bounded-parallel cap.
+jest.mock('../../../src/util/platformDefaults', () => ({
+  ...jest.requireActual('../../../src/util/platformDefaults'),
+  autoNetworkConcurrency: jest.fn(() => 8),
+}));
+const mockedConcurrency = autoNetworkConcurrency as jest.Mock;
 
 /**
  * P1-A: the engine's bounded-parallel file runner (runFileBatch). Verifies the safety properties the
@@ -6,6 +15,7 @@ import { SyncEngine } from '../../../src/sync/SyncEngine';
  * and different directories run concurrently.
  */
 function makeEngine(networkConcurrency = 8) {
+  mockedConcurrency.mockReturnValue(networkConcurrency);
   const opts = {
     app: {}, settings: { networkConcurrency, syncConfigFolder: false, configSync: {} },
     localAdapter: {}, stateDB: {}, statusBar: {}, webdavFactory: {},
@@ -69,6 +79,7 @@ describe('SyncEngine.runFileBatch (P1-A bounded parallel)', () => {
 
 describe('SyncEngine — Two-Phase Termination (requestStop)', () => {
   function makeEngineWithStop(networkConcurrency = 2) {
+    mockedConcurrency.mockReturnValue(networkConcurrency);
     const opts = {
       app: {}, settings: { networkConcurrency, syncConfigFolder: false, configSync: {} },
       localAdapter: {}, stateDB: {}, statusBar: {}, webdavFactory: {}, pluginDir: '', configDir: '.obsidian',

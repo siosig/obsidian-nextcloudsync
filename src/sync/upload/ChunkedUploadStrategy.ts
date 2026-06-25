@@ -1,7 +1,7 @@
 import { Notice } from 'obsidian';
-import { DavSyncSettings, NetworkError } from '../../types';
+import { NetworkError } from '../../types';
 import { IWebDAVClient } from '../../network/IWebDAVClient';
-import { IUploadStrategy, UploadOutcome, UploadOptions } from './IUploadStrategy';
+import { IUploadStrategy, UploadConfig, UploadOutcome, UploadOptions } from './IUploadStrategy';
 import { isOverFileSizeLimit } from '../../util/limits';
 
 /** Size of a single chunk (bytes). A conservative 10MB to be mindful of memory. */
@@ -15,20 +15,20 @@ const CHUNK_SIZE_BYTES = 10 * 1024 * 1024;
  * - below that: single PUT
  */
 export class ChunkedUploadStrategy implements IUploadStrategy {
-  constructor(private readonly settings: DavSyncSettings) {}
+  constructor(private readonly config: UploadConfig) {}
 
   async upload(client: IWebDAVClient, remotePath: string, data: ArrayBuffer, mtime?: number, opts?: UploadOptions): Promise<UploadOutcome> {
     const sizeMB = data.byteLength / 1024 / 1024;
 
     // maxFileSizeMB of 0 means "unlimited".
-    if (isOverFileSizeLimit(data.byteLength, this.settings.maxFileSizeMB)) {
+    if (isOverFileSizeLimit(data.byteLength, this.config.maxFileSizeMB)) {
       new Notice(
-        `⚠️ File too large to sync: ${remotePath} (${sizeMB.toFixed(1)} MB > ${this.settings.maxFileSizeMB} MB)`,
+        `⚠️ File too large to sync: ${remotePath} (${sizeMB.toFixed(1)} MB > ${this.config.maxFileSizeMB} MB)`,
       );
       return 'skipped';
     }
 
-    if (sizeMB > this.settings.uploadChunkThresholdMB) {
+    if (sizeMB > this.config.uploadChunkThresholdMB) {
       try {
         await client.uploadChunked(remotePath, data, CHUNK_SIZE_BYTES);
         return 'uploaded';
