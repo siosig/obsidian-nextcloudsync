@@ -28,6 +28,7 @@ import { RenameTracker } from './RenameTracker';
 import { ConflictResolver } from './ConflictResolver';
 import { ConfigSyncResolver } from './ConfigSyncResolver';
 import { sha256 } from '../util/hash';
+import { isUnderExcludedFolder } from '../util/excludedFolders';
 import { FileLogger } from '../util/FileLogger';
 import {
   isCellularBlocked, SIGNATURE_SAFETY_WINDOW_MS, MAX_HASH_SIZE,
@@ -1931,6 +1932,10 @@ export class SyncEngine {
     // "Destination file already exists!") and churn. Turning the log OFF makes it static and
     // syncable again. Another device's log (different host) is not written here and stays syncable.
     if (this.opts.isActiveLogFile?.(path)) return true;
+    // User-managed excluded folders (feature 027): folder-prefix match, applied to every
+    // path before the config-folder logic so it covers ordinary vault files too. This is an
+    // additive layer on top of the hard exclusions above — those always take precedence.
+    if (isUnderExcludedFolder(path, this.opts.settings?.excludedFolders ?? [])) return true;
     // Ordinary vault files (outside the config folder) are never system-excluded.
     if (!this.configSync.isUnderConfigDir(path)) return false;
     // Inside the config folder: excluded unless an enabled config-sync category includes it.
