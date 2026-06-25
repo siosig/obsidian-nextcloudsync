@@ -27,9 +27,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.10-beta.3)
+## What's new in this release (0.7.10-beta.4)
 
-- **Simpler config-folder sync and folder suggestions (0.7.10-beta.3)** — *Sync config folder* now has just two toggles, **Bookmarks** and **Other settings** (appearance, themes & snippets, hotkeys, and core-plugin settings), instead of five separate categories. And the **Add excluded folder** field now shows an inline dropdown of matching vault folders as you type — limited to folders that are not already excluded — while the Browse… picker stays available. The README's **Settings defaults** section now also lists the initial values of every editable setting on desktop and mobile.
+- **You choose how conflicts resolve, and Compare works on mobile (0.7.10-beta.4)** — conflict handling is configurable again: pick **Remote / Local / Error** for the frontmatter strategy and for the on-merge-failure policy, and edit the list of **file types eligible for auto-merge** (markdown, text and common code extensions by default; clear it to disable auto-merge). An *Error*-held file resolves later by switching to Remote/Local and re-syncing, or via *Compare with remote*. **Compare with remote now works on mobile** (long-press a file or run the command; the diff stacks vertically on narrow screens), and **Sync on startup defaults ON on mobile** too.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
