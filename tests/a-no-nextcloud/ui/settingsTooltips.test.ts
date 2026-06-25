@@ -7,15 +7,17 @@ import { CONFIG_SYNC_CATEGORIES } from '../../../src/sync/ConfigSyncResolver';
 import { DEFAULT_SETTINGS } from '../../../src/types';
 
 // The non-heading settings rows that must each carry a tooltip (keys into TOOLTIPS).
+// Feature 028: the settings UI is simplified — Sync detail rows, the Merge and Debug sections,
+// File locking and Compare-with-remote are removed; the per-log toggles collapse into a single
+// loggingEnabled row. The surviving editable rows are listed here.
 const EXPECTED_KEYS: TooltipKey[] = [
   'syncNow',
-  'serverUrl', 'username', 'appPassword', 'loginViaBrowser', 'syncFolder', 'syncTarget', 'fileLocking',
-  'syncOnStartup', 'startupSyncDelay', 'syncInterval', 'networkTimeout', 'networkConcurrency',
-  'syncOnWifiOnly', 'syncOnFileChange', 'explorerCompare', 'chunkThreshold', 'maxFileSize', 'chunkedUpload',
-  'syncConfigFolder', 'configAppearance', 'configThemesSnippets', 'configHotkeys', 'configCorePlugins', 'configBookmarks',
-  'autoMerge', 'frontmatterConflictStrategy', 'maxConflictRegions', 'mergeableExtensions', 'onMergeFailure',
-  'deviceName', 'logFolder', 'syncLog', 'syncLogLevel', 'debugLog', 'debugLogLevel',
-  'resetVaultIndex', 'lastSessionSummary',
+  'serverUrl', 'username', 'appPassword', 'loginViaBrowser', 'syncFolder', 'syncTarget',
+  'syncInterval', 'syncOnWifiOnly',
+  'frontmatterConflictStrategy', 'conflictFailurePolicy', 'mergeableExtensions',
+  'syncConfigFolder', 'configBookmarks', 'configOthers',
+  'excludedFolders', 'addExcludedFolder',
+  'loggingEnabled', 'resetVaultIndex', 'lastSessionSummary',
 ];
 
 describe('[SPEC:FR-001] settings tooltips coverage', () => {

@@ -23,24 +23,25 @@ describe('logPaths — log files use the .txt extension', () => {
 
 describe('[SPEC:LOG-1] isActiveOwnLog — exclude a log only while THIS device is writing it', () => {
   const HOST = 'desktop-plugintest';
-  const base = { logsFolder: '_logs', host: HOST, debugLogEnabled: true, syncLogEnabled: true };
+  // Feature 028: the per-log toggles are unified into a single loggingEnabled flag.
+  const base = { logsFolder: '_logs', host: HOST, loggingEnabled: true };
   const debugP = debugLogPath('_logs', HOST);
   const syncP = syncLogPath('_logs', HOST);
 
-  it('excludes the debug log only when debug logging is ON', () => {
-    expect(isActiveOwnLog(debugP, { ...base, debugLogEnabled: true })).toBe(true);
-    expect(isActiveOwnLog(debugP, { ...base, debugLogEnabled: false })).toBe(false); // OFF → syncable
+  it('excludes the debug log while logging is ON', () => {
+    expect(isActiveOwnLog(debugP, { ...base, loggingEnabled: true })).toBe(true);
+    expect(isActiveOwnLog(debugP, { ...base, loggingEnabled: false })).toBe(false); // OFF → syncable
   });
 
-  it('excludes the sync log only when sync logging is ON', () => {
-    expect(isActiveOwnLog(syncP, { ...base, syncLogEnabled: true })).toBe(true);
-    expect(isActiveOwnLog(syncP, { ...base, syncLogEnabled: false })).toBe(false); // OFF → syncable
+  it('excludes the sync log while logging is ON', () => {
+    expect(isActiveOwnLog(syncP, { ...base, loggingEnabled: true })).toBe(true);
+    expect(isActiveOwnLog(syncP, { ...base, loggingEnabled: false })).toBe(false); // OFF → syncable
   });
 
-  it('the two toggles are independent', () => {
-    const onlyDebug = { ...base, debugLogEnabled: true, syncLogEnabled: false };
-    expect(isActiveOwnLog(debugP, onlyDebug)).toBe(true);
-    expect(isActiveOwnLog(syncP, onlyDebug)).toBe(false);
+  it('excludes both logs together under the unified toggle', () => {
+    const on = { ...base, loggingEnabled: true };
+    expect(isActiveOwnLog(debugP, on)).toBe(true);
+    expect(isActiveOwnLog(syncP, on)).toBe(true);
   });
 
   it("does not exclude another device's log (different host) — it stays syncable", () => {

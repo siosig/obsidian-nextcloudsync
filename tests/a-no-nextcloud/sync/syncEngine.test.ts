@@ -1,5 +1,5 @@
 import { StateDB } from '../../../src/data/StateDB';
-import { DavSyncSettings, FileState, RemoteFileInfo, SyncSessionSummary } from '../../../src/types';
+import { DavSyncSettings, DEFAULT_SETTINGS, FileState, RemoteFileInfo, SyncSessionSummary } from '../../../src/types';
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { sha256 } from '../../../src/util/hash';
 
@@ -86,21 +86,10 @@ describe('SyncEngine.handleConflict — failure-policy actions', () => {
   const enc = new TextEncoder();
   const toBuf = (s: string): ArrayBuffer => enc.encode(s).buffer;
 
+  // Feature 030: conflictFailurePolicy is a user setting again. Each case sets it on the settings
+  // object to exercise the prefer-local / prefer-remote / error handleConflict branches.
   function makeSettings(policy: DavSyncSettings['conflictFailurePolicy']): DavSyncSettings {
-    return {
-      serverUrl: '', username: '', passwordSecretId: '', syncIntervalMinutes: 0,
-      networkTimeoutSeconds: 30, deviceId: 'dev-abcd', uploadChunkThresholdMB: 50,
-      maxFileSizeMB: 1024, watchOnChangeEnabled: false, syncOnStartupEnabled: true,
-      startupSyncDelaySeconds: 5, networkConcurrency: 8, syncOnWifiOnly: false,
-      syncConfigFolder: false,
-      configSync: { appearance: false, themesSnippets: false, hotkeys: false, corePlugins: false, bookmarks: false },
-      deviceName: '', logsFolder: '', syncLogEnabled: false, syncLogLevel: 'important',
-      debugLogEnabled: false, debugLogLevel: 'error',
-      chunkedUploadEnabled: true, fileLockingEnabled: false, bulkUploadEnabled: false,
-      autoMergeEnabled: true, maxConflictRegions: 10, frontmatterConflictStrategy: 'conflict',
-      mergeableExtensions: ['md', 'txt'], conflictFailurePolicy: policy,
-      explorerCompareEnabled: false,
-    };
+    return { ...DEFAULT_SETTINGS, deviceId: 'dev-abcd', conflictFailurePolicy: policy };
   }
 
   function makeSummary(): SyncSessionSummary {
@@ -216,6 +205,32 @@ describe('SyncEngine.handleConflict — failure-policy actions', () => {
     expect(summary.errors[0]).toEqual({ path: 'image.png', message: 'network down' });
     // Must NOT record a converged (isConflicted:false) entry on failure.
     expect(h.setFile).not.toHaveBeenCalled();
+  });
+
+  // Feature 030 core requirement: a file held by the 'error' policy must be resolvable simply by
+  // switching the policy to remote/local-wins and syncing again (the held entry's hashes are
+  // unchanged, so the same divergence is re-detected and now overwritten).
+  it('SH self-healing: a file held by error is overwritten once the policy switches to remote-wins', async () => {
+    const base: FileState = {
+      path: 'image.png', localHash: 'lh', remoteId: 'rh', idType: 'sha256',
+      size: 10, mtime: 1000, remoteFileId: 'fid-1', isConflicted: false,
+    };
+
+    // 1st sync — error policy holds the file (skip): nothing overwritten, flagged conflicted.
+    const held = buildHarness('error', 'local-text', 'remote-text');
+    const s1 = makeSummary();
+    await held.invoke(base, s1);
+    expect(held.atomicWriteBinary).not.toHaveBeenCalled();
+    expect(s1.errorCount).toBe(1);
+    expect(held.setFile).toHaveBeenCalledWith(expect.objectContaining({ isConflicted: true }));
+
+    // User switches to remote-wins; the same divergence now resolves by overwriting local.
+    const resolved = buildHarness('remote-wins', 'local-text', 'remote-text');
+    const s2 = makeSummary();
+    await resolved.invoke(base, s2);
+    expect(resolved.atomicWriteBinary).toHaveBeenCalledTimes(1);
+    expect(s2.downloadedCount).toBe(1);
+    expect((resolved.setFile.mock.calls[0][0] as FileState).isConflicted).toBe(false);
   });
 });
 

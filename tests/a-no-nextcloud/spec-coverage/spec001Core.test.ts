@@ -2,14 +2,22 @@
 // Asserts the SPEC's expected behavior. A FAIL = implementation deviates.
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { DavSyncSettings, DEFAULT_SETTINGS } from '../../../src/types';
-import { ConflictResolver } from '../../../src/sync/ConflictResolver';
+import { DEFAULT_SETTINGS } from '../../../src/types';
+import { ConflictResolver, MergeConfig } from '../../../src/sync/ConflictResolver';
 import { MergeEngine } from '../../../src/sync/merge/MergeEngine';
 import type { App } from 'obsidian';
 import type { LocalAdapter } from '../../../src/data/LocalAdapter';
 
-function resolver(overrides: Partial<DavSyncSettings>): ConflictResolver {
-  return new ConflictResolver({} as App, {} as unknown as LocalAdapter, { ...DEFAULT_SETTINGS, deviceId: 'conf-device', ...overrides });
+function resolver(overrides: Partial<MergeConfig>): ConflictResolver {
+  return new ConflictResolver({} as App, {} as unknown as LocalAdapter, {
+    autoMergeEnabled: DEFAULT_SETTINGS.autoMergeEnabled,
+    maxConflictRegions: DEFAULT_SETTINGS.maxConflictRegions,
+    frontmatterConflictStrategy: DEFAULT_SETTINGS.frontmatterConflictStrategy,
+    mergeableExtensions: DEFAULT_SETTINGS.mergeableExtensions,
+    conflictFailurePolicy: DEFAULT_SETTINGS.conflictFailurePolicy,
+    deviceId: 'conf-device',
+    ...overrides,
+  });
 }
 
 describe('spec 001 — core requirements', () => {

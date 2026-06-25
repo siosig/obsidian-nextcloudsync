@@ -3,6 +3,17 @@ import { IWebDAVClient } from '../../network/IWebDAVClient';
 /** Result of an upload: either skipped (over the size limit) or sent. */
 export type UploadOutcome = 'uploaded' | 'skipped';
 
+/**
+ * Size parameters an upload strategy needs. Both values come from user settings. Kept as an
+ * explicit input so the strategies stay pure and fully unit-testable.
+ */
+export interface UploadConfig {
+  /** Absolute size cap (MB); files above it are skipped. `0` = unlimited. */
+  maxFileSizeMB: number;
+  /** Size (MB) above which a chunked upload is used instead of a single PUT. */
+  uploadChunkThresholdMB: number;
+}
+
 /** Optional per-upload hints (P1-B / P1-C). */
 export interface UploadOptions {
   /** Reuse this already-computed SHA-256 (hex) for the OC-Checksum header instead of re-hashing. */

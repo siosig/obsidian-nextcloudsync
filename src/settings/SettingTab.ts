@@ -1,12 +1,15 @@
 import { App, Platform, PluginSettingTab, Setting, Notice, SecretComponent, ButtonComponent, TextComponent } from 'obsidian';
 import type ObsidianNextcloudsync from '../main';
-import { LoginFlowError } from '../types';
+import { LoginFlowError, DavSyncSettings } from '../types';
+import { parseMergeableExtensions, formatMergeableExtensions } from '../util/mergeableExtensions';
 import { FolderSuggestModal } from '../ui/FolderSuggestModal';
+import { FolderInputSuggest } from '../ui/FolderInputSuggest';
 import { LoginFlowV2 } from '../auth/LoginFlowV2';
 import { MIN_NEXTCLOUD_VERSION, isSupportedNextcloudVersion } from '../util/version';
 import { CONFIG_SYNC_CATEGORIES } from '../sync/ConfigSyncResolver';
 import { TOOLTIPS, SERVER_URL_DESC, SIGN_IN_HELP, SIGN_IN_MANUAL_DIVIDER, CONFIG_CATEGORY_TOOLTIP } from './tooltips';
 import { makeSetting } from './settingFactory';
+import { normalizeExcludedFolder } from '../util/excludedFolders';
 
 /** Default secret ID in SecretStorage (users can pick a different ID via "Link…"). */
 const DEFAULT_PASSWORD_SECRET_ID = 'obsidian-nextcloudsync-password';
@@ -312,6 +315,129 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
+    // ── Conflict resolution ─────────────────────────────────────────────────────
+    // Feature 030: frontmatter strategy, merge-failure policy and mergeable extensions are
+    // user-editable. "Error" holds the file; switch to Remote/Local and re-sync, or use the
+    // file's "Compare with remote" Push/Pull, to resolve.
+    new Setting(containerEl).setName('Conflict resolution').setHeading();
+
+    makeSetting(containerEl)
+      .setName('Auto merge (experimental)')
+      .setDesc('⚠️ when enabled, conflicts are auto-merged using reconcile-text. Results may be unexpected. Ensure Nextcloud version history is enabled before activating.')
+      .setTooltip(TOOLTIPS.autoMerge)
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.autoMergeEnabled)
+        .onChange(async (value) => {
+          this.plugin.settings.autoMergeEnabled = value;
+          await this.plugin.saveSettings();
+        }));
+
+    makeSetting(containerEl)
+      .setName('Frontmatter conflict strategy')
+      .setDesc('How to handle a note whose frontmatter differs on both sides. Keep one side and merge the body, or hold the file to resolve it yourself.')
+      .setTooltip(TOOLTIPS.frontmatterConflictStrategy)
+      .addDropdown(dd => dd
+        .addOption('remote-wins', 'Remote')
+        .addOption('local-wins', 'Local')
+        .addOption('conflict', 'Error')
+        .setValue(this.plugin.settings.frontmatterConflictStrategy)
+        .onChange(async (value) => {
+          this.plugin.settings.frontmatterConflictStrategy = value as DavSyncSettings['frontmatterConflictStrategy'];
+          await this.plugin.saveSettings();
+        }));
+
+    this.addNumberSlider(containerEl, {
+      name: 'Max conflict regions (auto merge)',
+      desc: 'If more regions conflict than this threshold, fall back to inline markers. 0 = unlimited (never fall back on region count).',
+      tooltip: TOOLTIPS.maxConflictRegions,
+      min: 0, max: 20, step: 1,
+      get: () => this.plugin.settings.maxConflictRegions,
+      set: (v) => { this.plugin.settings.maxConflictRegions = v; },
+    });
+
+    makeSetting(containerEl)
+      .setName('On merge failure')
+      .setDesc('What to do when an automatic merge cannot complete: overwrite with one side, or hold the file. A held file resolves on a later sync once you pick a side, or via the file\'s compare-with-remote command.')
+      .setTooltip(TOOLTIPS.conflictFailurePolicy)
+      .addDropdown(dd => dd
+        .addOption('remote-wins', 'Remote')
+        .addOption('local-wins', 'Local')
+        .addOption('error', 'Error')
+        .setValue(this.plugin.settings.conflictFailurePolicy)
+        .onChange(async (value) => {
+          this.plugin.settings.conflictFailurePolicy = value as DavSyncSettings['conflictFailurePolicy'];
+          await this.plugin.saveSettings();
+        }));
+
+    makeSetting(containerEl)
+      .setName('Auto-merge file types')
+      .setDesc('Comma-separated file extensions eligible for automatic merge, such as md, txt or py. Clear the field to disable auto-merge entirely — every conflict then uses the merge-failure policy above.')
+      .setTooltip(TOOLTIPS.mergeableExtensions)
+      .addText(text => text
+        .setPlaceholder('Comma-separated extensions')
+        .setValue(formatMergeableExtensions(this.plugin.settings.mergeableExtensions))
+        .onChange(async (value) => {
+          this.plugin.settings.mergeableExtensions = parseMergeableExtensions(value);
+          await this.plugin.saveSettings();
+        }));
+
+    // ── Excluded folders ───────────────────────────────────────────────────────
+    // User-managed list of vault-relative folders that are never synced (feature 027).
+    // Folder-prefix match; additive on top of the permanent dotfolder/plugins/state-DB
+    // hard exclusions. The list re-renders via render() after each add/remove.
+    new Setting(containerEl).setName('Excluded folders').setHeading();
+
+    makeSetting(containerEl)
+      .setName('Excluded folders')
+      .setDesc('Folders that are never synced — neither uploaded nor downloaded. Matched by folder prefix at a folder boundary, additive on top of the dotfolders, config plugins folder, and plugin state that are already excluded automatically.')
+      .setTooltip(TOOLTIPS.excludedFolders);
+
+    const excluded = this.plugin.settings.excludedFolders ?? [];
+    for (const folder of excluded) {
+      makeSetting(containerEl)
+        .setName(folder)
+        .addExtraButton(btn => btn
+          .setIcon('trash')
+          .setTooltip('Remove')
+          .onClick(async () => {
+            this.plugin.settings.excludedFolders =
+              (this.plugin.settings.excludedFolders ?? []).filter(f => f !== folder);
+            await this.plugin.saveSettings();
+            this.render();
+          }));
+    }
+
+    let excludeInput: TextComponent | null = null;
+    const addExcluded = async (raw: string) => {
+      const norm = normalizeExcludedFolder(raw);
+      if (!norm) { new Notice('Enter a folder path inside the vault.'); return; }
+      const list = this.plugin.settings.excludedFolders ?? [];
+      if (list.includes(norm)) { new Notice(`"${norm}" is already excluded.`); return; }
+      this.plugin.settings.excludedFolders = [...list, norm];
+      await this.plugin.saveSettings();
+      this.render();
+    };
+
+    makeSetting(containerEl)
+      .setName('Add excluded folder')
+      .setDesc('Choose a vault folder to stop syncing. Start typing to pick from matching folders, or open the full folder picker.')
+      .setTooltip(TOOLTIPS.addExcludedFolder)
+      .addText(text => {
+        excludeInput = text;
+        text.setPlaceholder('e.g. .git or Attachments/Large media');
+        // Inline suggestions: vault folders not already excluded, filtered by what you type.
+        new FolderInputSuggest(
+          this.app,
+          text.inputEl,
+          () => this.plugin.settings.excludedFolders,
+          (path) => { void addExcluded(path); },
+        );
+      })
+      .addButton(btn => btn
+        .setButtonText('Add')
+        .setCta()
+        .onClick(() => { void addExcluded(excludeInput?.getValue() ?? ''); }));
+
     // ── Config folder (.obsidian) ──────────────────────────────────────────────
     // Category-level opt-in for the config folder (issue #1), modelled on Obsidian native
     // Sync's "Vault configuration sync". Community plugins and the plugin's own state DB are
@@ -348,75 +474,6 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
       }
     }
 
-    new Setting(containerEl).setName('Merge').setHeading();
-
-    makeSetting(containerEl)
-      .setName('Auto merge (experimental)')
-      .setDesc('⚠️ when enabled, conflicts are auto-merged using reconcile-text. Results may be unexpected. Ensure Nextcloud version history is enabled before activating.')
-      .setTooltip(TOOLTIPS.autoMerge)
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.autoMergeEnabled)
-        .onChange(async (value) => {
-          this.plugin.settings.autoMergeEnabled = value;
-          await this.plugin.saveSettings();
-        }));
-
-    makeSetting(containerEl)
-      .setName('Frontmatter conflict strategy (auto merge)')
-      .setDesc('When local and remote frontmatter differ: "Conflict markers" inserts markers for the whole file (safest). "local wins" / "remote wins" keeps that side\'s frontmatter and still merges the body.')
-      .setTooltip(TOOLTIPS.frontmatterConflictStrategy)
-      .addDropdown(drop => drop
-        .addOption('conflict', 'Conflict markers (safe default)')
-        .addOption('local-wins', 'Local wins (keep local frontmatter)')
-        .addOption('remote-wins', 'Remote wins (use remote frontmatter)')
-        .setValue(this.plugin.settings.frontmatterConflictStrategy)
-        .onChange(async (value) => {
-          this.plugin.settings.frontmatterConflictStrategy = value as 'conflict' | 'local-wins' | 'remote-wins';
-          await this.plugin.saveSettings();
-        }));
-
-    this.addNumberSlider(containerEl, {
-      name: 'Max conflict regions (auto merge)',
-      desc: 'If more regions conflict than this threshold, fall back to inline markers. 0 = unlimited (never fall back on region count).',
-      tooltip: TOOLTIPS.maxConflictRegions,
-      min: 0, max: 20, step: 1,
-      get: () => this.plugin.settings.maxConflictRegions,
-      set: (v) => { this.plugin.settings.maxConflictRegions = v; },
-    });
-
-    makeSetting(containerEl)
-      .setName('Mergeable file extensions')
-      .setDesc('Comma-separated list of extensions eligible for text merge (e.g. "md, txt"). Files with other extensions are never merged; on conflict the failure policy below is applied directly. Leave the dot off.')
-      .setTooltip(TOOLTIPS.mergeableExtensions)
-      .addText(text => text
-        .setPlaceholder('Extensions separated by commas')
-        .setValue((this.plugin.settings.mergeableExtensions ?? []).join(', '))
-        .onChange(async (value) => {
-          // Normalize: split on comma, trim, strip leading dots, lowercase, drop empties, dedup.
-          const exts = value
-            .split(',')
-            .map(e => e.trim().replace(/^\.+/, '').toLowerCase())
-            .filter(e => e.length > 0);
-          this.plugin.settings.mergeableExtensions = [...new Set(exts)];
-          await this.plugin.saveSettings();
-        }));
-
-    makeSetting(containerEl)
-      .setName('On merge failure')
-      .setDesc('What to do when a merge does not cleanly resolve (file not mergeable, auto-merge off, or merge failed). "error" leaves both sides untouched and retries next sync (safe default). "conflict markers" applies to text files only; other files fall back to error.')
-      .setTooltip(TOOLTIPS.onMergeFailure)
-      .addDropdown(drop => drop
-        .addOption('error', 'Error — leave untouched, retry (safe default)')
-        .addOption('local-wins', 'Local wins — overwrite remote with local')
-        .addOption('remote-wins', 'Remote wins — overwrite local with remote')
-        .addOption('conflict-markers', 'Conflict markers — keep both versions (text only)')
-        .setValue(this.plugin.settings.conflictFailurePolicy)
-        .onChange(async (value) => {
-          this.plugin.settings.conflictFailurePolicy =
-            value as 'error' | 'local-wins' | 'remote-wins' | 'conflict-markers';
-          await this.plugin.saveSettings();
-        }));
-
     new Setting(containerEl).setName('Debug').setHeading();
 
     makeSetting(containerEl)
@@ -446,7 +503,6 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           });
       })
-      // "Browse…" opens a fuzzy folder picker (Templater-style) that fills the field.
       .addButton(btn => btn
         .setButtonText('Browse…')
         .onClick(() => {
@@ -458,54 +514,16 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         }));
 
     makeSetting(containerEl)
-      .setName('Sync log')
-      .setDesc('Append a per-device log of sync operations (with the plugin version and conflict-resolution settings) to nextcloud-sync_sync_<device>.txt.')
-      .setTooltip(TOOLTIPS.syncLog)
+      .setName('Enable logging (troubleshooting)')
+      .setDesc('Write a per-device sync log and debug log to the vault root while troubleshooting. The sync log records all operations and the debug log is verbose. Turn this off and delete the log files when finished.')
+      .setTooltip(TOOLTIPS.loggingEnabled)
       .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.syncLogEnabled)
+        .setValue(this.plugin.settings.loggingEnabled)
         .onChange(async (value) => {
-          this.plugin.settings.syncLogEnabled = value;
+          this.plugin.settings.loggingEnabled = value;
           await this.plugin.saveSettings();
-        }));
-
-    makeSetting(containerEl)
-      .setName('Sync log level')
-      .setDesc('Choose how much the sync log records. Important events only covers conflicts, merges, side-wins and errors; all operations also records routine uploads, downloads and deletions.')
-      .setTooltip(TOOLTIPS.syncLogLevel)
-      .addDropdown(drop => drop
-        .addOption('important', 'Important events only (conflicts, merges, errors)')
-        .addOption('all', 'All operations')
-        .setValue(this.plugin.settings.syncLogLevel)
-        .onChange(async (value) => {
-          this.plugin.settings.syncLogLevel = value as 'important' | 'all';
-          await this.plugin.saveSettings();
-        }));
-
-    makeSetting(containerEl)
-      .setName('Debug log')
-      .setDesc('Append a per-device diagnostic log (with the plugin version and a snapshot of all settings) to nextcloud-sync_debug_<device>.txt. Syncing runs normally. Turn this off and delete the file when finished.')
-      .setTooltip(TOOLTIPS.debugLog)
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.debugLogEnabled)
-        .onChange(async (value) => {
-          this.plugin.settings.debugLogEnabled = value;
-          await this.plugin.saveSettings();
-          // Dump a fresh settings snapshot as soon as the debug log is turned on.
+          // Dump a fresh settings snapshot as soon as logging is turned on.
           if (value) void this.plugin.logSettingsSnapshot();
-        }));
-
-    makeSetting(containerEl)
-      .setName('Debug log level')
-      .setDesc('Verbosity of the debug log: "error" records only failures; "debug" adds normal flow; "verbose" adds the most detail.')
-      .setTooltip(TOOLTIPS.debugLogLevel)
-      .addDropdown(drop => drop
-        .addOption('error', 'Error (failures only)')
-        .addOption('debug', 'Debug (normal flow)')
-        .addOption('verbose', 'Verbose (most detail)')
-        .setValue(this.plugin.settings.debugLogLevel)
-        .onChange(async (value) => {
-          this.plugin.settings.debugLogLevel = value as 'error' | 'debug' | 'verbose';
-          await this.plugin.saveSettings();
         }));
 
     new Setting(containerEl).setName('Maintenance').setHeading();

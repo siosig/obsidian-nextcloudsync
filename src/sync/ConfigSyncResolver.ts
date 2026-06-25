@@ -52,40 +52,27 @@ export interface ConfigSyncCategoryDescriptor {
 }
 
 /**
- * The five config-sync categories. This single list drives BOTH the include decision
- * (iterate enabled categories) and the settings UI (one toggle per descriptor), so the UI
- * and the sync logic cannot drift apart.
+ * The two config-sync categories (feature 029: Bookmarks + Other settings). This single list drives
+ * BOTH the include decision (iterate enabled categories) and the settings UI (one toggle per
+ * descriptor), so the UI and the sync logic cannot drift apart. "Other settings" folds together the
+ * former appearance / themes-snippets / hotkeys / core-plugins categories.
  */
 export const CONFIG_SYNC_CATEGORIES: readonly ConfigSyncCategoryDescriptor[] = [
-  {
-    key: 'appearance',
-    label: 'Appearance',
-    description: 'Appearance and base settings (appearance.json, app.json) — theme mode, fonts, base settings.',
-    matches: (rel) => rel === 'appearance.json' || rel === 'app.json',
-  },
-  {
-    key: 'themesSnippets',
-    label: 'Themes & snippets',
-    description: 'Installed themes and CSS snippets (themes/, snippets/). CSS only — no executable code.',
-    matches: (rel) => rel.startsWith('themes/') || rel.startsWith('snippets/'),
-  },
-  {
-    key: 'hotkeys',
-    label: 'Hotkeys',
-    description: 'Custom keyboard shortcuts (hotkeys.json).',
-    matches: (rel) => rel === 'hotkeys.json',
-  },
-  {
-    key: 'corePlugins',
-    label: 'Core plugin settings',
-    description: 'Enabled core plugins and their settings (core-plugins.json, graph.json, etc.). A restart may be needed to apply on the other device.',
-    matches: (rel) => CORE_PLUGIN_CONFIG_FILES.includes(rel),
-  },
   {
     key: 'bookmarks',
     label: 'Bookmarks',
     description: 'Obsidian bookmarks (bookmarks.json).',
     matches: (rel) => rel === 'bookmarks.json',
+  },
+  {
+    key: 'others',
+    label: 'Other settings (appearance, themes, hotkeys, core plugins)',
+    description: 'Appearance & base settings (appearance.json, app.json), themes and CSS snippets (themes/, snippets/), hotkeys (hotkeys.json), and core-plugin settings (core-plugins.json, graph.json, etc.). A restart may be needed on the other device to apply core-plugin changes.',
+    matches: (rel) =>
+      rel === 'appearance.json' || rel === 'app.json'
+      || rel.startsWith('themes/') || rel.startsWith('snippets/')
+      || rel === 'hotkeys.json'
+      || CORE_PLUGIN_CONFIG_FILES.includes(rel),
   },
 ];
 
@@ -170,17 +157,15 @@ export class ConfigSyncResolver {
     const out: string[] = [];
 
     const exactFiles: string[] = [];
-    if (cs.appearance) exactFiles.push('appearance.json', 'app.json');
-    if (cs.hotkeys) exactFiles.push('hotkeys.json');
     if (cs.bookmarks) exactFiles.push('bookmarks.json');
-    if (cs.corePlugins) exactFiles.push(...CORE_PLUGIN_CONFIG_FILES);
+    if (cs.others) exactFiles.push('appearance.json', 'app.json', 'hotkeys.json', ...CORE_PLUGIN_CONFIG_FILES);
     for (const rel of exactFiles) {
       const p = `${cd}/${rel}`;
       const st = await this.opts.localAdapter.stat(p);
       if (st) out.push(p);
     }
 
-    if (cs.themesSnippets) {
+    if (cs.others) {
       await this.listRecursive(`${cd}/themes`, out);
       await this.listRecursive(`${cd}/snippets`, out);
     }

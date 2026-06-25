@@ -28,6 +28,7 @@ import { RenameTracker } from './RenameTracker';
 import { ConflictResolver } from './ConflictResolver';
 import { ConfigSyncResolver } from './ConfigSyncResolver';
 import { sha256 } from '../util/hash';
+import { isUnderExcludedFolder } from '../util/excludedFolders';
 import { FileLogger } from '../util/FileLogger';
 import {
   isCellularBlocked, SIGNATURE_SAFETY_WINDOW_MS, MAX_HASH_SIZE,
@@ -151,9 +152,10 @@ export class SyncEngine {
       const { client, features } = await this.opts.webdavFactory.createClient();
       this.client = client;
       this.features = features;
+      const uploadConfig = { maxFileSizeMB: this.opts.settings.maxFileSizeMB, uploadChunkThresholdMB: this.opts.settings.uploadChunkThresholdMB };
       this.uploadStrategy = (this.opts.settings.chunkedUploadEnabled && features.isNextcloud)
-        ? new ChunkedUploadStrategy(this.opts.settings)
-        : new SimpleUploadStrategy(this.opts.settings);
+        ? new ChunkedUploadStrategy(uploadConfig)
+        : new SimpleUploadStrategy(uploadConfig);
       this.opts.onFeatures?.(features);
     }
     return { client: this.client, features: this.features };
@@ -530,7 +532,7 @@ export class SyncEngine {
     const dot = path.lastIndexOf('.');
     if (dot < 0) return false;
     const ext = path.slice(dot + 1).toLowerCase();
-    return (this.opts.settings.mergeableExtensions ?? []).includes(ext);
+    return this.opts.settings.mergeableExtensions.includes(ext);
   }
 
   /** Fetch a single remote file's metadata via PROPFIND; null when the remote file is absent. */
@@ -1200,7 +1202,16 @@ export class SyncEngine {
     const remoteData = await this.client!.downloadFile(remote.path);
     const remoteContent = new TextDecoder().decode(remoteData);
 
-    const resolver = new ConflictResolver(this.opts.app, this.opts.localAdapter, this.opts.settings);
+    const resolver = new ConflictResolver(this.opts.app, this.opts.localAdapter, {
+      autoMergeEnabled: this.opts.settings.autoMergeEnabled,
+      maxConflictRegions: this.opts.settings.maxConflictRegions,
+      // Feature 030: frontmatter strategy, merge-failure policy and merge-eligible extensions are
+      // user-editable again (read live from settings so a change applies on the next sync).
+      frontmatterConflictStrategy: this.opts.settings.frontmatterConflictStrategy,
+      mergeableExtensions: this.opts.settings.mergeableExtensions,
+      conflictFailurePolicy: this.opts.settings.conflictFailurePolicy,
+      deviceId: this.opts.settings.deviceId,
+    });
     const decision = resolver.decide(path, '', localContent, remoteContent);
 
     switch (decision.action) {
@@ -1931,6 +1942,10 @@ export class SyncEngine {
     // "Destination file already exists!") and churn. Turning the log OFF makes it static and
     // syncable again. Another device's log (different host) is not written here and stays syncable.
     if (this.opts.isActiveLogFile?.(path)) return true;
+    // User-managed excluded folders (feature 027): folder-prefix match, applied to every
+    // path before the config-folder logic so it covers ordinary vault files too. This is an
+    // additive layer on top of the hard exclusions above — those always take precedence.
+    if (isUnderExcludedFolder(path, this.opts.settings?.excludedFolders ?? [])) return true;
     // Ordinary vault files (outside the config folder) are never system-excluded.
     if (!this.configSync.isUnderConfigDir(path)) return false;
     // Inside the config folder: excluded unless an enabled config-sync category includes it.
