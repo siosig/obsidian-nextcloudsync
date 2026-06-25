@@ -204,7 +204,7 @@ These tests exist specifically to prevent sync-inconsistency states — **data l
 
 ## Limitations
 
-- **End-to-end encryption (E2EE)** is out of scope for this version.
+- **End-to-end encryption (E2EE)** relies on the HTTPS transport layer; the plugin does not add a redundant encryption layer of its own. This is a deliberate trade-off favouring maximum transport security and performance.
 - **Config folder sync is opt-in and selective.** Enable **Sync config folder** in settings to sync chosen categories of `.obsidian/` across devices: Appearance, Themes & snippets, Hotkeys, Core plugin settings, and Bookmarks. **Community plugins and the plugin's own sync-state database are never synced** (executable code / device-specific state). A synced change to core-plugin settings may require an Obsidian restart on the other device to take effect.
 - Designed primarily for Markdown / text Vaults; single files in the hundreds-of-MB range are beyond the v1 design target.
 - Keep the Vault on local storage — don't double-manage it with another cloud sync (e.g. iCloud Drive) at the same time.
