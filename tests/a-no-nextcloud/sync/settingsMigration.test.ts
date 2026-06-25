@@ -13,9 +13,7 @@ describe('migrateBookmarksToConfigSync', () => {
     const settings = freshSettings();
     migrateBookmarksToConfigSync({ syncBookmarks: true }, settings);
     expect(settings.syncConfigFolder).toBe(true);
-    expect(settings.configSync).toEqual({
-      appearance: false, themesSnippets: false, hotkeys: false, corePlugins: false, bookmarks: true,
-    });
+    expect(settings.configSync).toEqual({ bookmarks: true, others: false });
   });
 
   it('leaves the master off when legacy syncBookmarks was false', () => {
@@ -34,7 +32,7 @@ describe('migrateBookmarksToConfigSync', () => {
   it('is idempotent: does nothing once syncConfigFolder has been persisted', () => {
     const settings = freshSettings();
     settings.syncConfigFolder = false;
-    settings.configSync = { appearance: true, themesSnippets: true, hotkeys: true, corePlugins: true, bookmarks: false };
+    settings.configSync = { bookmarks: false, others: true };
     // Even though legacy syncBookmarks=true is present, the new flag already exists → no-op.
     migrateBookmarksToConfigSync({ syncBookmarks: true, syncConfigFolder: false }, settings);
     expect(settings.syncConfigFolder).toBe(false);

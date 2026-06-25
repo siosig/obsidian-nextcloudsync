@@ -1,22 +1,23 @@
 // Shared type definitions for nextcloud-sync
 
 /**
- * Per-category opt-in flags for `.obsidian` config-folder sync (issue #1), modelled on
- * Obsidian native Sync's "Vault configuration sync". Each flag is only consulted when the
- * master `syncConfigFolder` setting is on. Community plugins and the plugin's own sync-state
- * DB are intentionally NOT representable here — they are permanent hard exclusions.
+ * Opt-in flags for `.obsidian` config-folder sync (issue #1). Each flag is only consulted when the
+ * master `syncConfigFolder` setting is on. Community plugins and the plugin's own sync-state DB are
+ * intentionally NOT representable here — they are permanent hard exclusions.
+ *
+ * Feature 029 collapsed the former five categories into two: Bookmarks stays on its own, and
+ * everything else (appearance, themes & snippets, hotkeys, core-plugin settings) is grouped under
+ * `others`. The detailed file mapping lives in `ConfigSyncResolver.CONFIG_SYNC_CATEGORIES`.
  */
 export interface ConfigSyncCategories {
-  /** appearance.json, app.json */
-  appearance: boolean;
-  /** themes/**, snippets/** */
-  themesSnippets: boolean;
-  /** hotkeys.json */
-  hotkeys: boolean;
-  /** core-plugins.json, graph.json, and the bundled core-plugin config files (fixed allowlist) */
-  corePlugins: boolean;
   /** bookmarks.json (migrated from the former standalone `syncBookmarks` setting) */
   bookmarks: boolean;
+  /**
+   * appearance.json / app.json, themes/** and snippets/**, hotkeys.json, and the core-plugin
+   * config files (the fixed allowlist). Grouped from the former appearance/themesSnippets/
+   * hotkeys/corePlugins categories (feature 029).
+   */
+  others: boolean;
 }
 
 export interface DavSyncSettings {
@@ -87,11 +88,8 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   // (see migrateBookmarksToConfigSync); `syncBookmarks` itself is removed and pruned.
   syncConfigFolder: false,
   configSync: {
-    appearance: true,
-    themesSnippets: true,
-    hotkeys: true,
-    corePlugins: false,
     bookmarks: true,
+    others: true,
   },
   loggingEnabled: false,
   excludedFolders: [],

@@ -35,12 +35,9 @@ export const TOOLTIPS = {
   // Config folder section
   syncConfigFolder:
     'Opt in to syncing parts of the Obsidian config folder across devices. Community plugins are never synced.',
-  configAppearance: 'Theme mode, fonts and base settings (appearance.json, app.json).',
-  configThemesSnippets: 'Installed themes and CSS snippets (themes/, snippets/). CSS only, no code.',
-  configHotkeys: 'Custom keyboard shortcuts (hotkeys.json).',
-  configCorePlugins:
-    'Enabled core plugins and their settings (core-plugins.json, graph.json…). May need a restart on the other device.',
   configBookmarks: 'Obsidian bookmarks (bookmarks.json).',
+  configOthers:
+    'Appearance & base settings, themes and CSS snippets, hotkeys, and core-plugin settings. Core-plugin changes may need a restart on the other device.',
 
   // Excluded folders section
   excludedFolders:
@@ -72,9 +69,6 @@ export const SIGN_IN_MANUAL_DIVIDER = '— or sign in manually —';
 
 /** Config-folder category key → tooltip key. */
 export const CONFIG_CATEGORY_TOOLTIP: Record<string, TooltipKey> = {
-  appearance: 'configAppearance',
-  themesSnippets: 'configThemesSnippets',
-  hotkeys: 'configHotkeys',
-  corePlugins: 'configCorePlugins',
   bookmarks: 'configBookmarks',
+  others: 'configOthers',
 };
