@@ -30,12 +30,45 @@ export interface DavSyncSettings {
   passwordSecretId: string;
   /** Auto-sync period in minutes. 0 = manual only. Disabled on mobile (the OS suspends timers). */
   syncIntervalMinutes: number;
+  /** WebDAV request timeout in seconds. */
+  networkTimeoutSeconds: number;
   deviceId: string;
+  /**
+   * Threshold (MB) above which files start chunked uploads (Nextcloud only).
+   * Files below this use a single PUT; files above chunk via the TUS-like OC chunking API.
+   */
+  uploadChunkThresholdMB: number;
+  /** Absolute file-size cap (MB). Files exceeding this are skipped with a warning. 0 = unlimited. */
+  maxFileSizeMB: number;
+  /** Detect local Markdown edits and sync immediately (watch mode). Disabled on mobile. */
+  watchOnChangeEnabled: boolean;
+  /**
+   * Sync once on startup. Default ON on all platforms (feature 030). Mobile users benefit from
+   * a startup sync to stay current without relying on background timers.
+   */
+  syncOnStartupEnabled: boolean;
+  /** Seconds to wait after startup before the startup sync (when syncOnStartupEnabled). >= 0. */
+  startupSyncDelaySeconds: number;
+  /** Number of concurrent WebDAV requests. Derived from device RAM on first run if not persisted. */
+  networkConcurrency: number;
   /**
    * Sync only on Wi-Fi (non-cellular). Not supported on iOS (no network-type API);
    * the toggle is disabled there and the setting is ignored.
    */
   syncOnWifiOnly: boolean;
+  /** Enable chunked uploads (Nextcloud only). Default ON. */
+  chunkedUploadEnabled: boolean;
+  /**
+   * Enable WebDAV Files Locking (LOCK→PUT→UNLOCK per upload). Default OFF: for the common
+   * single-user / multi-device case the round-trip cost is not worth it, and lost-update safety
+   * is provided instead by an always-on `If-Match` precondition.
+   */
+  fileLockingEnabled: boolean;
+  /**
+   * Use the Nextcloud bulk-upload endpoint to batch many small files into one request.
+   * Default ON; only takes effect when the server advertises the capability.
+   */
+  bulkUploadEnabled: boolean;
   /**
    * Master opt-in for syncing parts of the Obsidian config folder (Vault#configDir, e.g. `.obsidian`).
    * Default OFF. While off, nothing under the config folder is synced (notes-only behaviour).
@@ -46,13 +79,15 @@ export interface DavSyncSettings {
   syncConfigFolder: boolean;
   /** Per-category opt-in for config-folder sync. Only consulted when `syncConfigFolder` is true. */
   configSync: ConfigSyncCategories;
-  /**
-   * Master troubleshooting-logs toggle (feature 028). When on: the sync log records 'all', the
-   * debug log records 'verbose', both written to the vault root. Replaces the former separate
-   * syncLog/debugLog enable + level + folder settings (removed in the simplification). The
-   * fixed/auto values for the other former settings live in fixedConfig.ts / platformDefaults.ts.
-   */
+  /** User-facing device label. Empty ⇒ derive "<platform>-<deviceId6>". Sanitized for filenames at use sites. */
+  deviceName: string;
+  /** Vault-relative folder holding both log files. Blank ⇒ vault root. */
+  logsFolder: string;
+  /** Master on/off for all log output (sync log + debug log). */
   loggingEnabled: boolean;
+  autoMergeEnabled: boolean;
+  /** If more regions conflict than this, fall back to inline markers. 0 = unlimited. */
+  maxConflictRegions: number;
   /**
    * Frontmatter conflict strategy (feature 030, restored from the 028 fixed value). When a note's
    * YAML frontmatter differs on both sides during a merge: 'remote-wins' / 'local-wins' take that
@@ -76,6 +111,11 @@ export interface DavSyncSettings {
    * then routes straight to `conflictFailurePolicy` instead of attempting a merge.
    */
   mergeableExtensions: string[];
+  /**
+   * Adds a "Compare with remote" item to the file-explorer right-click menu.
+   * Default OFF. The menu handler reads this on every right-click, so toggling takes effect immediately.
+   */
+  explorerCompareEnabled: boolean;
   /**
    * User-managed list of vault-relative folder paths that are never synced (feature 027).
    * Folder-prefix match at a folder boundary; entries are normalized and unique. This is an
@@ -102,9 +142,20 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   username: '',
   passwordSecretId: '',
   syncIntervalMinutes: 15,
+  networkTimeoutSeconds: 30,
   deviceId: '',
+  uploadChunkThresholdMB: 50,
+  maxFileSizeMB: 0, // 0 = unlimited (desktop default). Mobile gets a safe cap in loadSettings().
+  watchOnChangeEnabled: true, // Mobile first-run: false (applied in loadSettings()).
+  syncOnStartupEnabled: true,
+  startupSyncDelaySeconds: 1,
+  networkConcurrency: 16, // First-run: overridden by autoNetworkConcurrency() in loadSettings(); persisted value is kept on subsequent loads.
   // Desktop default OFF; mobile's first run flips it ON in loadSettings() (metered data).
   syncOnWifiOnly: false,
+  chunkedUploadEnabled: true,
+  // Default OFF: If-Match optimistic concurrency replaces locking for lost-update safety.
+  fileLockingEnabled: false,
+  bulkUploadEnabled: true,
   // Config-folder sync is opt-in: master defaults OFF, so a fresh install syncs notes only.
   // These category defaults take effect only once the user turns the master on.
   // Migrated `syncBookmarks: true` users get bookmarks-only instead
@@ -114,7 +165,11 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
     bookmarks: true,
     others: true,
   },
+  deviceName: '',
+  logsFolder: '',
   loggingEnabled: false,
+  autoMergeEnabled: true,
+  maxConflictRegions: 0,
   // Conflict strategies (feature 030): defaults match the former 028 fixed values, so existing
   // users see unchanged behaviour until they pick a side. 'conflict'/'error' = the cautious
   // "hold and let me decide" default.
@@ -124,6 +179,7 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   // are pre-registered; clearing the list entirely disables auto-merge (every conflict then routes
   // straight to conflictFailurePolicy). Normalized to lowercase without a leading dot on save.
   mergeableExtensions: ['md', 'txt', 'cpp', 'py', 'c', 'h', 'hpp', 'rs', 'go', 'ts', 'js', 'java', 'sh'],
+  explorerCompareEnabled: false,
   excludedFolders: [],
   // Explicit `undefined` keeps the key in the allowlist used by pruneObsoleteSettings (so a saved
   // selection is never pruned) while meaning "no saved selection → all statuses shown".

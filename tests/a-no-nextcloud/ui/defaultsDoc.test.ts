@@ -1,10 +1,9 @@
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { FIXED } from '../../../src/sync/fixedConfig';
+import { DEFAULT_SETTINGS } from '../../../src/types';
 
-// SC-005 (feature 028): the "Settings defaults" tables in the READMEs must stay in sync with the
-// actual fixed / platform-derived values, so users can trust them. We assert that each documented
-// value's string appears and that both language files carry the section.
+// SC-005: the "Settings defaults" tables in the READMEs must stay in sync with
+// actual DEFAULT_SETTINGS values, so users can trust them.
 function readme(name: string): string {
   return readFileSync(resolve(process.cwd(), name), 'utf-8');
 }
@@ -18,10 +17,10 @@ describe('[SPEC:SC-005] README settings-defaults tables match the code', () => {
         expect(text).toMatch(/Settings defaults|設定の既定値/);
       });
 
-      it('documents the fixed values from FIXED', () => {
-        expect(text).toContain('30');                                       // networkTimeoutSeconds
-        expect(text).toContain(String(FIXED.uploadChunkThresholdMB));       // 50
-        expect(text).toContain(String(FIXED.startupSyncDelaySeconds));      // 1
+      it('documents the default values from DEFAULT_SETTINGS', () => {
+        expect(text).toContain(String(DEFAULT_SETTINGS.networkTimeoutSeconds));   // 30
+        expect(text).toContain(String(DEFAULT_SETTINGS.uploadChunkThresholdMB));  // 50
+        expect(text).toContain(String(DEFAULT_SETTINGS.startupSyncDelaySeconds)); // 1
       });
 
       it('documents the platform-derived values (mobile max file size, concurrency tiers)', () => {
