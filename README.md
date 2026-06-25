@@ -27,9 +27,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.10-beta.2)
+## What's new in this release (0.7.10-beta.3)
 
-- **Simplified settings screen (0.7.10-beta.2)** — the settings now show only a small, opinionated set of options (Server URL, sign-in, Sync folder, Sync interval, Wi-Fi only, Excluded folders, the config-folder toggles, and a single *Enable logging* switch). Everything else — File locking, the Sync detail fields, the whole Merge and Debug sections, and Compare-with-remote — was removed and is now a fixed value or derived automatically from your platform, so there is less to misconfigure. The separate sync-log and debug-log toggles collapse into one *Enable logging* switch, and Compare-with-remote stays available on desktop. The defaults are documented in the new **Settings defaults** section of the README so you always know what the plugin is doing.
+- **Simpler config-folder sync and folder suggestions (0.7.10-beta.3)** — *Sync config folder* now has just two toggles, **Bookmarks** and **Other settings** (appearance, themes & snippets, hotkeys, and core-plugin settings), instead of five separate categories. And the **Add excluded folder** field now shows an inline dropdown of matching vault folders as you type — limited to folders that are not already excluded — while the Browse… picker stays available. The README's **Settings defaults** section now also lists the initial values of every editable setting on desktop and mobile.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
