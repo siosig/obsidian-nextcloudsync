@@ -534,7 +534,7 @@ export class SyncEngine {
     const dot = path.lastIndexOf('.');
     if (dot < 0) return false;
     const ext = path.slice(dot + 1).toLowerCase();
-    return FIXED.mergeableExtensions.includes(ext);
+    return this.opts.settings.mergeableExtensions.includes(ext);
   }
 
   /** Fetch a single remote file's metadata via PROPFIND; null when the remote file is absent. */
@@ -1207,9 +1207,11 @@ export class SyncEngine {
     const resolver = new ConflictResolver(this.opts.app, this.opts.localAdapter, {
       autoMergeEnabled: FIXED.autoMergeEnabled,
       maxConflictRegions: FIXED.maxConflictRegions,
-      frontmatterConflictStrategy: FIXED.frontmatterConflictStrategy,
-      mergeableExtensions: FIXED.mergeableExtensions,
-      conflictFailurePolicy: FIXED.conflictFailurePolicy,
+      // Feature 030: frontmatter strategy, merge-failure policy and merge-eligible extensions are
+      // user-editable again (read live from settings so a change applies on the next sync).
+      frontmatterConflictStrategy: this.opts.settings.frontmatterConflictStrategy,
+      mergeableExtensions: this.opts.settings.mergeableExtensions,
+      conflictFailurePolicy: this.opts.settings.conflictFailurePolicy,
       deviceId: this.opts.settings.deviceId,
     });
     const decision = resolver.decide(path, '', localContent, remoteContent);

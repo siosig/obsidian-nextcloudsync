@@ -13,9 +13,6 @@ export const FIXED: {
   bulkUploadEnabled: boolean;
   autoMergeEnabled: boolean;
   maxConflictRegions: number;
-  frontmatterConflictStrategy: 'local-wins' | 'remote-wins' | 'conflict';
-  mergeableExtensions: string[];
-  conflictFailurePolicy: 'error' | 'local-wins' | 'remote-wins' | 'conflict-markers';
   explorerCompareEnabled: boolean;
   logsFolder: string;
   deviceName: string;
@@ -28,9 +25,6 @@ export const FIXED: {
   bulkUploadEnabled: true,
   autoMergeEnabled: true,
   maxConflictRegions: 0,
-  frontmatterConflictStrategy: 'conflict',
-  mergeableExtensions: ['md', 'txt'],
-  conflictFailurePolicy: 'error',
   explorerCompareEnabled: true, // Q5: feature kept, toggle removed
   logsFolder: '', // vault root
   deviceName: '', // derive '<platform>-<deviceId6>' at use sites

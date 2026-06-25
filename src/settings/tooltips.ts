@@ -32,6 +32,14 @@ export const TOOLTIPS = {
   syncOnWifiOnly:
     'Skip syncing on cellular (Wi-Fi/wired allowed). Unavailable on iOS (no network-type API).',
 
+  // Conflict resolution section
+  frontmatterConflictStrategy:
+    'How to handle a note whose YAML frontmatter differs on both sides. Remote or Local keeps that side and merges the body; Error holds the file for manual resolution.',
+  conflictFailurePolicy:
+    'What to do when an automatic merge fails. Remote overwrites local, Local overwrites remote, Error holds the file. A held file resolves on a later sync once switched to Remote or Local, or via the file’s Compare with remote.',
+  mergeableExtensions:
+    'Comma-separated file extensions eligible for automatic merge. Clear the field to disable auto-merge entirely (every conflict then uses the merge-failure policy).',
+
   // Config folder section
   syncConfigFolder:
     'Opt in to syncing parts of the Obsidian config folder across devices. Community plugins are never synced.',

@@ -107,8 +107,8 @@ export default class ObsidianNextcloudsync extends Plugin {
     // `explorerCompareEnabled` check is what makes the settings toggle take effect immediately,
     // with no plugin reload or Obsidian restart.
     this.registerEvent(this.app.workspace.on('file-menu', (menu, file) => {
-      if (Platform.isMobile) return;         // desktop-oriented feature (see spec assumptions)
-      // Feature 028: Compare with remote is always on — the toggle was removed, the feature kept (Q5).
+      // Feature 030: available on mobile too (long-press menu). The diff is a pure Modal + LCS with
+      // no Electron deps, and the layout collapses to a single column on narrow screens.
       if (!(file instanceof TFile)) return; // single file only
       if (!this.syncEngine) return;          // engine must be configured
       menu.addItem(item => item
@@ -116,6 +116,19 @@ export default class ObsidianNextcloudsync extends Plugin {
         .setIcon('git-compare')
         .onClick(() => { new CompareModal(this.app, file.path, this.syncEngine!).open(); }));
     }));
+
+    // Command-palette entry — the reliable entry point on mobile (works on desktop too). Active only
+    // when a file is open and the engine is configured.
+    this.addCommand({
+      id: 'compare-with-remote',
+      name: 'Compare with remote',
+      checkCallback: (checking: boolean) => {
+        const file = this.app.workspace.getActiveFile();
+        const ok = file instanceof TFile && !!this.syncEngine;
+        if (ok && !checking) new CompareModal(this.app, file.path, this.syncEngine!).open();
+        return ok;
+      },
+    });
 
     // Defer the heavy work to layout-ready. Registering vault listeners during `onload` is a
     // documented pitfall: the `create` event fires once per file while the vault initializes, so
@@ -311,11 +324,12 @@ export default class ObsidianNextcloudsync extends Plugin {
    */
   private async appendSyncLog(entries: SyncHistoryEntry[], summary: SyncSessionSummary): Promise<void> {
     const resolution = formatResolution({
-      failurePolicy: FIXED.conflictFailurePolicy,
-      frontmatterStrategy: FIXED.frontmatterConflictStrategy,
+      // Feature 030: these three are user-editable again; read from settings for the log header.
+      failurePolicy: this.settings.conflictFailurePolicy,
+      frontmatterStrategy: this.settings.frontmatterConflictStrategy,
       maxConflictRegions: FIXED.maxConflictRegions,
       autoMergeEnabled: FIXED.autoMergeEnabled,
-      mergeableExtensions: FIXED.mergeableExtensions,
+      mergeableExtensions: this.settings.mergeableExtensions,
     });
     await this.syncLogWriter.append(entries, {
       at: summary.startedAt,
@@ -356,9 +370,10 @@ export default class ObsidianNextcloudsync extends Plugin {
     migrateBookmarksToConfigSync(saved, this.settings);
 
     // syncOnWifiOnly is still a user setting; default it on for mobile's first run (metered data).
-    // The other former mobile/RAM-derived defaults (startup sync, max file size, concurrency) and
-    // the conflict-resolution settings are no longer persisted — they are derived from the platform
-    // or fixed (see platformDefaults / fixedConfig, feature 028), so no normalization happens here.
+    // The conflict-resolution settings (frontmatter strategy, merge-failure policy, mergeable
+    // extensions) are user-editable again (feature 030) and persist via the Object.assign above.
+    // The remaining mobile/RAM-derived defaults (startup sync, max file size, concurrency) stay
+    // platform-derived (see platformDefaults / fixedConfig).
     if (Platform.isMobile && saved.syncOnWifiOnly === undefined) {
       this.settings.syncOnWifiOnly = true;
     }
