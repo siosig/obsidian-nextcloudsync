@@ -99,7 +99,7 @@ describe('SyncEngine.handleConflict — failure-policy actions', () => {
       startupSyncDelaySeconds: 5, networkConcurrency: 8, syncOnWifiOnly: false,
       syncConfigFolder: false,
       configSync: { appearance: false, themesSnippets: false, hotkeys: false, corePlugins: false, bookmarks: false },
-      deviceName: '', logsFolder: '', syncLogEnabled: false, syncLogLevel: 'important',
+      deviceName: '', logsFolder: '', loggingEnabled: false, syncLogEnabled: false, syncLogLevel: 'important',
       debugLogEnabled: false, debugLogLevel: 'error',
       chunkedUploadEnabled: true, fileLockingEnabled: false, bulkUploadEnabled: false,
       autoMergeEnabled: true, maxConflictRegions: 10, frontmatterConflictStrategy: 'conflict',

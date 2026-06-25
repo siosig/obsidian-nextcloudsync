@@ -36,9 +36,10 @@ export function debugLogPath(logsFolder: string, host: string): string {
  */
 export function isActiveOwnLog(
   path: string,
-  opts: { logsFolder: string; host: string; debugLogEnabled: boolean; syncLogEnabled: boolean },
+  opts: { logsFolder: string; host: string; loggingEnabled: boolean },
 ): boolean {
-  if (opts.debugLogEnabled && path === debugLogPath(opts.logsFolder, opts.host)) return true;
-  if (opts.syncLogEnabled && path === syncLogPath(opts.logsFolder, opts.host)) return true;
+  if (!opts.loggingEnabled) return false;
+  if (path === debugLogPath(opts.logsFolder, opts.host)) return true;
+  if (path === syncLogPath(opts.logsFolder, opts.host)) return true;
   return false;
 }

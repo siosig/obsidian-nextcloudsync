@@ -73,6 +73,12 @@ export interface DavSyncSettings {
   deviceName: string;
   /** Vault-relative folder holding both log files. Blank ⇒ vault root. */
   logsFolder: string;
+  /**
+   * Master troubleshooting-logs toggle (feature 028). When on: the sync log records 'all', the
+   * debug log records 'verbose', both written to the vault root. Replaces the former separate
+   * syncLog/debugLog enable + level + folder settings (which are removed in the simplification).
+   */
+  loggingEnabled: boolean;
   /** Master on/off for the per-device sync log. */
   syncLogEnabled: boolean;
   /**
@@ -185,6 +191,7 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   },
   deviceName: '',
   logsFolder: '',
+  loggingEnabled: false,
   syncLogEnabled: false,
   syncLogLevel: 'important',
   debugLogEnabled: false,
