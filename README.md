@@ -177,6 +177,22 @@ Sync interval, Wi-Fi only, Excluded folders, the config-folder toggles, and an
 value or derived automatically from your platform. They are documented here so you
 always know what the plugin is doing.
 
+### Editable settings (initial values)
+
+These are the options you can change. Most start the same on both platforms; a few differ on first run.
+
+| Setting | Desktop | Mobile |
+|---|---|---|
+| Server URL / Username / App password | empty | empty |
+| Sync interval | 15 min | 15 min (disabled — use *Sync now* or *Sync on startup*) |
+| Sync on Wi-Fi only | off | on |
+| Sync config folder (master) | off | off |
+| └ Bookmarks / Other settings | on / on | on / on |
+| Enable logging | off | off |
+| Excluded folders | empty | empty |
+
+> The config-folder category toggles (Bookmarks, Other settings) only take effect once the master *Sync config folder* is on.
+
 ### Fixed values (all platforms)
 
 | Setting | Value |
@@ -234,7 +250,7 @@ These tests exist specifically to prevent sync-inconsistency states — **data l
 ## Limitations
 
 - **End-to-end encryption (E2EE)** relies on the HTTPS transport layer; the plugin does not add a redundant encryption layer of its own. This is a deliberate trade-off favouring maximum transport security and performance.
-- **Config folder sync is opt-in and selective.** Enable **Sync config folder** in settings to sync chosen categories of `.obsidian/` across devices: Appearance, Themes & snippets, Hotkeys, Core plugin settings, and Bookmarks. **Community plugins and the plugin's own sync-state database are never synced** (executable code / device-specific state). A synced change to core-plugin settings may require an Obsidian restart on the other device to take effect.
+- **Config folder sync is opt-in.** Enable **Sync config folder** in settings to sync `.obsidian/` config across devices, chosen with two toggles: **Bookmarks** and **Other settings** (appearance, themes & snippets, hotkeys, and core-plugin settings). **Community plugins and the plugin's own sync-state database are never synced** (executable code / device-specific state). A synced change to core-plugin settings may require an Obsidian restart on the other device to take effect.
 - Designed primarily for Markdown / text Vaults; single files in the hundreds-of-MB range are beyond the v1 design target.
 - Keep the Vault on local storage — don't double-manage it with another cloud sync (e.g. iCloud Drive) at the same time.
 - Nextcloud-specific features require a compatible server version; older or non-Nextcloud servers transparently fall back to core WebDAV sync.
