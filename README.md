@@ -27,9 +27,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.10-beta.4)
+## What's new in this release (0.7.10-beta.5)
 
-- **You choose how conflicts resolve, and Compare works on mobile (0.7.10-beta.4)** — conflict handling is configurable again: pick **Remote / Local / Error** for the frontmatter strategy and for the on-merge-failure policy, and edit the list of **file types eligible for auto-merge** (markdown, text and common code extensions by default; clear it to disable auto-merge). An *Error*-held file resolves later by switching to Remote/Local and re-syncing, or via *Compare with remote*. **Compare with remote now works on mobile** (long-press a file or run the command; the diff stacks vertically on narrow screens), and **Sync on startup defaults ON on mobile** too.
+- **Compare with remote respects the setting toggle on mobile (0.7.10-beta.5)** — the file-menu item and command-palette entry both now check the *Enable Compare* toggle before activating, so disabling the setting takes effect immediately without a plugin restart.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
