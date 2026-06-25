@@ -7,6 +7,7 @@
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { TFolder } from '../support/obsidian';
 import { DavSyncSettings, DirState, RemoteDirInfo, SyncSessionSummary } from '../../../src/types';
+import { FIXED } from '../../../src/sync/fixedConfig';
 
 const CONFIG_DIR = '.obsidian';
 const PLUGIN_DIR = `${CONFIG_DIR}/plugins/nextcloud-sync`;
@@ -190,13 +191,20 @@ describe('SyncEngine.reconcileDirectories — directory create/delete propagatio
     expect(client.createDirectory).toHaveBeenCalledWith('newdir'); // creation still happens
   });
 
-  it('DP-12 lock ON (fileLockingEnabled): wraps the remote delete in lock/unlock', async () => {
-    const client = makeClient({ remoteDirs: ['gone'] });
-    const { engine } = makeEngine({ client, localDirs: [], tracked: [dirState('gone')], settings: settings({ fileLockingEnabled: true }) });
-    await reconcile(engine, makeSummary());
-    expect(client.lockFile).toHaveBeenCalledWith('gone');
-    expect(client.deleteCollection).toHaveBeenCalledWith('gone');
-    expect(client.unlockFile).toHaveBeenCalledWith('gone', 'files_lock/tok');
+  it('DP-12 lock ON (FIXED.fileLockingEnabled): wraps the remote delete in lock/unlock', async () => {
+    // Feature 028: file locking is OFF by FIXED; the lock wiring is dead in production but kept as an
+    // internal branch (could be re-enabled by flipping FIXED). Pin it on here to exercise that branch.
+    FIXED.fileLockingEnabled = true;
+    try {
+      const client = makeClient({ remoteDirs: ['gone'] });
+      const { engine } = makeEngine({ client, localDirs: [], tracked: [dirState('gone')] });
+      await reconcile(engine, makeSummary());
+      expect(client.lockFile).toHaveBeenCalledWith('gone');
+      expect(client.deleteCollection).toHaveBeenCalledWith('gone');
+      expect(client.unlockFile).toHaveBeenCalledWith('gone', 'files_lock/tok');
+    } finally {
+      FIXED.fileLockingEnabled = false;
+    }
   });
 
   it('DP-13 lock OFF: issues no lock but still deletes', async () => {
@@ -208,19 +216,23 @@ describe('SyncEngine.reconcileDirectories — directory create/delete propagatio
   });
 
   it('DP-14 self-healing: one failed delete is counted, never aborts the rest, and still unlocks', async () => {
-    const client = makeClient({
-      remoteDirs: ['boom', 'ok'],
-      deleteImpl: async (p) => { if (p === 'boom') throw new Error('network'); },
-    });
-    const { engine } = makeEngine({
-      client, localDirs: [], tracked: [dirState('boom'), dirState('ok')],
-      settings: settings({ fileLockingEnabled: true }),
-    });
-    const summary = makeSummary();
-    await reconcile(engine, summary);
-    expect(client.deleteCollection).toHaveBeenCalledWith('ok');
-    expect(summary.errorCount).toBe(1);
-    expect(client.unlockFile).toHaveBeenCalledWith('boom', 'files_lock/tok');
+    FIXED.fileLockingEnabled = true;
+    try {
+      const client = makeClient({
+        remoteDirs: ['boom', 'ok'],
+        deleteImpl: async (p) => { if (p === 'boom') throw new Error('network'); },
+      });
+      const { engine } = makeEngine({
+        client, localDirs: [], tracked: [dirState('boom'), dirState('ok')],
+      });
+      const summary = makeSummary();
+      await reconcile(engine, summary);
+      expect(client.deleteCollection).toHaveBeenCalledWith('ok');
+      expect(summary.errorCount).toBe(1);
+      expect(client.unlockFile).toHaveBeenCalledWith('boom', 'files_lock/tok');
+    } finally {
+      FIXED.fileLockingEnabled = false;
+    }
   });
 
   it('DP-15 self-healing: a listing failure skips the session without throwing', async () => {

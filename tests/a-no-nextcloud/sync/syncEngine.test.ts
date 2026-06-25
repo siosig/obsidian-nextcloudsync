@@ -1,5 +1,6 @@
 import { StateDB } from '../../../src/data/StateDB';
 import { DavSyncSettings, FileState, RemoteFileInfo, SyncSessionSummary } from '../../../src/types';
+import { FIXED } from '../../../src/sync/fixedConfig';
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { sha256 } from '../../../src/util/hash';
 
@@ -86,6 +87,10 @@ describe('SyncEngine.handleConflict — failure-policy actions', () => {
   const enc = new TextEncoder();
   const toBuf = (s: string): ArrayBuffer => enc.encode(s).buffer;
 
+  // Feature 028: conflictFailurePolicy is FIXED ('error'). Each case pins it to exercise the
+  // (now production-unreachable) prefer-local / prefer-remote handleConflict branches.
+  afterEach(() => { FIXED.conflictFailurePolicy = 'error'; });
+
   function makeSettings(policy: DavSyncSettings['conflictFailurePolicy']): DavSyncSettings {
     return {
       serverUrl: '', username: '', passwordSecretId: '', syncIntervalMinutes: 0,
@@ -135,6 +140,7 @@ describe('SyncEngine.handleConflict — failure-policy actions', () => {
       downloadFile: jest.fn(async () => toBuf(remoteContent)),
     };
 
+    FIXED.conflictFailurePolicy = policy;
     const opts = {
       app: {}, settings: makeSettings(policy), localAdapter, stateDB,
       statusBar: {}, webdavFactory: {}, pluginDir: '', configDir: '.obsidian',
