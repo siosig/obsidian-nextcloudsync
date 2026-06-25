@@ -125,7 +125,7 @@ export default class ObsidianNextcloudsync extends Plugin {
       name: 'Compare with remote',
       checkCallback: (checking: boolean) => {
         const file = this.app.workspace.getActiveFile();
-        const ok = this.settings.explorerCompareEnabled && file instanceof TFile && !!this.syncEngine;
+        const ok = !!this.settings.explorerCompareEnabled && file instanceof TFile && !!this.syncEngine;
         if (ok && !checking) new CompareModal(this.app, file.path, this.syncEngine!).open();
         return ok;
       },
