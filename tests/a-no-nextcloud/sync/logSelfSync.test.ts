@@ -76,10 +76,11 @@ describe('[SPEC:LOG-1] REPRO: plugin syncs its own debug log → local atomicWri
 
   // FIX (regression guard): the live log is kept out of sync while its toggle is ON, so the local
   // write above never happens for it; turning the toggle OFF makes the now-static file syncable.
-  function excludedWith(opts: { debugLogEnabled: boolean; syncLogEnabled: boolean }, path: string): boolean {
+  // Feature 028: the per-log toggles are unified into a single loggingEnabled flag.
+  function excludedWith(loggingEnabled: boolean, path: string): boolean {
     const settings = {
       configDir: '.obsidian', logsFolder: '_logs',
-      debugLogEnabled: opts.debugLogEnabled, syncLogEnabled: opts.syncLogEnabled,
+      loggingEnabled,
       syncConfigFolder: false,
       configSync: { appearance: false, themesSnippets: false, hotkeys: false, corePlugins: false, bookmarks: false },
     } as unknown as DavSyncSettings;
@@ -88,23 +89,23 @@ describe('[SPEC:LOG-1] REPRO: plugin syncs its own debug log → local atomicWri
       localAdapter: {}, stateDB: {}, statusBar: {}, webdavFactory: {},
       isActiveLogFile: (p: string) => isActiveOwnLog(p, {
         logsFolder: '_logs', host: HOST,
-        debugLogEnabled: opts.debugLogEnabled, syncLogEnabled: opts.syncLogEnabled,
+        loggingEnabled,
       }),
     } as never);
     return (engine as unknown as { isSystemExcluded(p: string): boolean }).isSystemExcluded(path);
   }
 
-  it('excludes this device\'s debug log while Debug log is ON, and syncs it when OFF', () => {
-    expect(excludedWith({ debugLogEnabled: true, syncLogEnabled: false }, DEBUG_LOG)).toBe(true);   // ON → excluded
-    expect(excludedWith({ debugLogEnabled: false, syncLogEnabled: false }, DEBUG_LOG)).toBe(false); // OFF → syncable
+  it('excludes this device\'s debug log while logging is ON, and syncs it when OFF', () => {
+    expect(excludedWith(true, DEBUG_LOG)).toBe(true);   // ON → excluded
+    expect(excludedWith(false, DEBUG_LOG)).toBe(false); // OFF → syncable
   });
 
-  it('excludes this device\'s sync log while Sync log is ON, and syncs it when OFF', () => {
-    expect(excludedWith({ debugLogEnabled: false, syncLogEnabled: true }, SYNC_LOG)).toBe(true);   // ON → excluded
-    expect(excludedWith({ debugLogEnabled: false, syncLogEnabled: false }, SYNC_LOG)).toBe(false); // OFF → syncable
+  it('excludes this device\'s sync log while logging is ON, and syncs it when OFF', () => {
+    expect(excludedWith(true, SYNC_LOG)).toBe(true);   // ON → excluded
+    expect(excludedWith(false, SYNC_LOG)).toBe(false); // OFF → syncable
   });
 
   it('never excludes an ordinary note', () => {
-    expect(excludedWith({ debugLogEnabled: true, syncLogEnabled: true }, 'Notes/a.md')).toBe(false);
+    expect(excludedWith(true, 'Notes/a.md')).toBe(false);
   });
 });

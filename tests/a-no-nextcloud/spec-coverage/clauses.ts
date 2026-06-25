@@ -204,4 +204,6 @@ export const CLAUSES: Clause[] = [
   { id: 'FR-011', source: 'specs/001-nextcloudsync-plugin', layer: 'a' },
   { id: 'FR-019', source: 'specs/001-nextcloudsync-plugin', layer: 'a' },
   { id: 'FR-020', source: 'specs/001-nextcloudsync-plugin', layer: 'a' },
+  // Feature 028 (settings simplification): the README settings-defaults tables match the code.
+  { id: 'SC-005', source: 'specs/028-settings-simplification', layer: 'a' },
 ];
