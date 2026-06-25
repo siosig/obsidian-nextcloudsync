@@ -27,9 +27,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.10-beta.1)
+## What's new in this release (0.7.10-beta.2)
 
-- **New: user-configurable excluded folders (0.7.10-beta.1)** — you can now register vault-relative folders that are never synced (no upload, download, or remote creation), via a new "Excluded folders" section in settings with a folder picker and add/remove controls. Matching is by folder prefix at a folder boundary, and these exclusions are additive on top of the always-excluded system folders (dotfolders, plugins, state DB). This makes it easy to keep folders like `.git` out of sync.
+- **Simplified settings screen (0.7.10-beta.2)** — the settings now show only a small, opinionated set of options (Server URL, sign-in, Sync folder, Sync interval, Wi-Fi only, Excluded folders, the config-folder toggles, and a single *Enable logging* switch). Everything else — File locking, the Sync detail fields, the whole Merge and Debug sections, and Compare-with-remote — was removed and is now a fixed value or derived automatically from your platform, so there is less to misconfigure. The separate sync-log and debug-log toggles collapse into one *Enable logging* switch, and Compare-with-remote stays available on desktop. The defaults are documented in the new **Settings defaults** section of the README so you always know what the plugin is doing.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
