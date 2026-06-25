@@ -16,13 +16,13 @@ export const TOOLTIPS = {
   serverUrl:
     'Full WebDAV endpoint, not just the host. Format: https://<host>/remote.php/dav/files/<user>/. You may append a subfolder (e.g. .../<user>/Documents) to sync there. Entering only https://<host> fails with HTTP 405.',
   username:
-    'Only for manual sign-in — “Log in via browser” fills this for you. Must equal the <user> segment in the Server URL path: your Nextcloud user ID, usually not your email.',
+    'Only for manual sign-in — "Log in via browser" fills this for you. Must equal the <user> segment in the Server URL path: your Nextcloud user ID, usually not your email.',
   appPassword:
-    'Only for manual sign-in — “Log in via browser” stores one for you, so you can skip this. Looks like xxxxx-xxxxx-xxxxx-xxxxx-xxxxx; required when 2FA is on (your normal password is rejected). After linking it there is no “login” action — once Server URL + Username + App password are all set you are signed in, and credentials are verified on the next sync.',
+    'Only for manual sign-in — "Log in via browser" stores one for you, so you can skip this. Looks like xxxxx-xxxxx-xxxxx-xxxxx-xxxxx; required when 2FA is on (your normal password is rejected). After linking it there is no "login" action — once Server URL + Username + App password are all set you are signed in, and credentials are verified on the next sync.',
   loginViaBrowser:
     'Easiest path. Approve once in your browser and it fills Username and stores an App password for you, so you can skip the two manual fields. Polls up to ~3 min. Only the host part of Server URL is needed to start.',
   syncFolder:
-    'Read-only. Fixed to this vault’s name; the whole vault syncs under a remote folder of that name.',
+    "Read-only. Fixed to this vault's name; the whole vault syncs under a remote folder of that name.",
   syncTarget:
     'Read-only preview of the effective remote path (Server URL + vault folder). Confirm this is where you expect the vault to sync.',
   fileLocking:
@@ -49,40 +49,43 @@ export const TOOLTIPS = {
   chunkedUpload:
     'Upload oversized files in chunks instead of skipping them (Nextcloud only).',
 
-  // Config folder section
-  syncConfigFolder:
-    'Opt in to syncing parts of the Obsidian config folder across devices. Community plugins are never synced.',
-  configAppearance: 'Theme mode, fonts and base settings (appearance.json, app.json).',
-  configThemesSnippets: 'Installed themes and CSS snippets (themes/, snippets/). CSS only, no code.',
-  configHotkeys: 'Custom keyboard shortcuts (hotkeys.json).',
-  configCorePlugins:
-    'Enabled core plugins and their settings (core-plugins.json, graph.json…). May need a restart on the other device.',
-  configBookmarks: 'Obsidian bookmarks (bookmarks.json).',
-
-  // Merge section
+  // Conflict resolution section
   autoMerge:
     'Auto-merge conflicts with reconcile-text. Enable Nextcloud version history first; results may be unexpected. (Version history is on by default on Nextcloud; there is no per-user toggle.)',
   frontmatterConflictStrategy:
-    'How to handle differing frontmatter when auto-merging: conflict markers (safest) / local wins / remote wins. The body still merges.',
+    'How to handle a note whose YAML frontmatter differs on both sides. Remote or Local keeps that side and merges the body; Error holds the file for manual resolution.',
   maxConflictRegions:
     'If more regions conflict than this, fall back to inline markers. 0 = never fall back on region count.',
   mergeableExtensions:
-    'Extensions eligible for text merge (e.g. md, txt). Others use the failure policy below. Leave the dot off.',
+    'Comma-separated file extensions eligible for automatic merge. Clear the field to disable auto-merge entirely (every conflict then uses the merge-failure policy).',
+  conflictFailurePolicy:
+    "What to do when an automatic merge fails. Remote overwrites local, Local overwrites remote, Error holds the file. A held file resolves on a later sync once switched to Remote or Local, or via the file's Compare with remote.",
   onMergeFailure:
-    'What to do when a merge can’t cleanly resolve: error/retry (safe), local wins, remote wins, or conflict markers (text only).',
+    "What to do when a merge can't cleanly resolve: error/retry (safe), local wins, remote wins, or conflict markers (text only).",
+
+  // Excluded folders section
+  excludedFolders:
+    'Folders listed here are never synced (folder-prefix match). Dotfolders like .git and the config plugins folder are already excluded by default.',
+  addExcludedFolder:
+    'Pick or type a vault-relative folder to exclude. The path is added to the list below.',
+
+  // Config folder section
+  syncConfigFolder:
+    'Opt in to syncing parts of the Obsidian config folder across devices. Community plugins are never synced.',
+  configBookmarks: 'Obsidian bookmarks (bookmarks.json).',
+  configOthers:
+    'Appearance & base settings, themes and CSS snippets, hotkeys, and core-plugin settings. Core-plugin changes may need a restart on the other device.',
 
   // Debug section
   deviceName:
     'Labels this device in log filenames. Blank = platform+id default. Filesystem-unsafe characters are replaced.',
   logFolder: 'Vault folder for the sync/debug logs. Blank = vault root.',
-  syncLog: 'Append a per-device log of sync operations to nextcloud-sync_sync_<device>.txt.',
-  syncLogLevel: 'Important events only (conflicts/merges/errors) or all operations.',
-  debugLog: 'Append a per-device diagnostic log + settings snapshot. Turn off and delete the file when finished.',
-  debugLogLevel: 'error (failures only) / debug (normal flow) / verbose (most detail).',
+  loggingEnabled:
+    'Write a per-device sync log (all operations) and a verbose debug log to the vault root while troubleshooting. Turn off and delete the log files when done.',
 
   // Maintenance section
   resetVaultIndex:
-    'Clears this device’s sync index (first-install state). No files are deleted; the next sync re-scans.',
+    "Clears this device's sync index (first-install state). No files are deleted; the next sync re-scans.",
   lastSessionSummary:
     'Open the sync status dialog: recent runs, conflicts, retries and errors.',
 } as const;
@@ -95,16 +98,13 @@ export const SERVER_URL_DESC =
 
 /** Supplemental sign-in guidance shown at the top of the credentials area. */
 export const SIGN_IN_HELP =
-  'Two ways to sign in: (A) Log in via browser (recommended) fills Username and App password for you; or (B) enter Username + App password manually — they are alternatives, not both. There is no separate “login” button: once Server URL + Username + App password are set you are signed in and Sync now is enabled; credentials are verified on the next sync.';
+  'Two ways to sign in: (A) Log in via browser (recommended) fills Username and App password for you; or (B) enter Username + App password manually — they are alternatives, not both. There is no separate "login" button: once Server URL + Username + App password are set you are signed in and Sync now is enabled; credentials are verified on the next sync.';
 
 /** Divider label between the recommended path and the manual fields. */
 export const SIGN_IN_MANUAL_DIVIDER = '— or sign in manually —';
 
 /** Config-folder category key → tooltip key. */
 export const CONFIG_CATEGORY_TOOLTIP: Record<string, TooltipKey> = {
-  appearance: 'configAppearance',
-  themesSnippets: 'configThemesSnippets',
-  hotkeys: 'configHotkeys',
-  corePlugins: 'configCorePlugins',
   bookmarks: 'configBookmarks',
+  others: 'configOthers',
 };

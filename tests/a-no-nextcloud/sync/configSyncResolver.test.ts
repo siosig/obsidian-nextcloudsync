@@ -8,15 +8,9 @@ import { ConfigSyncCategories } from '../../../src/types';
 const CONFIG_DIR = '.obsidian';
 const PLUGIN_DIR = `${CONFIG_DIR}/plugins/nextcloud-sync`;
 
+// Feature 029: two categories — Bookmarks and "Other settings" (appearance/themes/hotkeys/core).
 function categories(overrides: Partial<ConfigSyncCategories> = {}): ConfigSyncCategories {
-  return {
-    appearance: false,
-    themesSnippets: false,
-    hotkeys: false,
-    corePlugins: false,
-    bookmarks: false,
-    ...overrides,
-  };
+  return { bookmarks: false, others: false, ...overrides };
 }
 
 /** Minimal in-memory LocalAdapter for enumeration tests. */
@@ -45,7 +39,7 @@ function makeResolver(opts: {
 describe('ConfigSyncResolver.isIncluded', () => {
   // C1: master off → every config path excluded, even with categories that would match.
   it('C1: excludes all config paths when the master toggle is off', () => {
-    const r = makeResolver({ syncConfigFolder: false, configSync: { appearance: true, themesSnippets: true, bookmarks: true } });
+    const r = makeResolver({ syncConfigFolder: false, configSync: { others: true, bookmarks: true } });
     expect(r.isIncluded(`${CONFIG_DIR}/appearance.json`)).toBe(false);
     expect(r.isIncluded(`${CONFIG_DIR}/themes/x.css`)).toBe(false);
     expect(r.isIncluded(`${CONFIG_DIR}/bookmarks.json`)).toBe(false);
@@ -53,58 +47,39 @@ describe('ConfigSyncResolver.isIncluded', () => {
 
   // Not under configDir → never excluded by the resolver (ordinary vault files).
   it('returns false for paths outside the config dir', () => {
-    const r = makeResolver({ syncConfigFolder: true, configSync: { appearance: true } });
+    const r = makeResolver({ syncConfigFolder: true, configSync: { others: true } });
     expect(r.isIncluded('Notes/a.md')).toBe(false);
     expect(r.isUnderConfigDir('Notes/a.md')).toBe(false);
   });
 
   // The config dir entry itself is not a syncable file.
   it('returns false for the config dir itself', () => {
-    const r = makeResolver({ syncConfigFolder: true, configSync: { appearance: true } });
+    const r = makeResolver({ syncConfigFolder: true, configSync: { others: true } });
     expect(r.isIncluded(CONFIG_DIR)).toBe(false);
     expect(r.isUnderConfigDir(CONFIG_DIR)).toBe(true);
   });
 
-  // C2/C3: hard exclusions beat every category, even with ALL categories enabled.
+  // C2/C3: hard exclusions beat every category, even with both categories enabled.
   it('C2/C3: never includes plugins/** or the plugin state DB even with all categories on', () => {
-    const r = makeResolver({
-      syncConfigFolder: true,
-      configSync: { appearance: true, themesSnippets: true, hotkeys: true, corePlugins: true, bookmarks: true },
-    });
+    const r = makeResolver({ syncConfigFolder: true, configSync: { others: true, bookmarks: true } });
     expect(r.isIncluded(`${CONFIG_DIR}/plugins/some-plugin/main.js`)).toBe(false);
     expect(r.isIncluded(`${CONFIG_DIR}/plugins/some-plugin/data.json`)).toBe(false);
     expect(r.isIncluded(`${PLUGIN_DIR}/state.json`)).toBe(false);
     expect(r.isIncluded(`${PLUGIN_DIR}/data.json`)).toBe(false);
   });
 
-  // C4: each category in isolation includes exactly its files and nothing from other categories.
-  it('C4: Appearance includes only appearance.json/app.json', () => {
-    const r = makeResolver({ syncConfigFolder: true, configSync: { appearance: true } });
+  // C4: "Other settings" folds appearance/app, themes & snippets, hotkeys, and core plugins.
+  it('C4: Other settings includes appearance/app, themes & snippets, hotkeys, and core plugins', () => {
+    const r = makeResolver({ syncConfigFolder: true, configSync: { others: true } });
     expect(r.isIncluded(`${CONFIG_DIR}/appearance.json`)).toBe(true);
     expect(r.isIncluded(`${CONFIG_DIR}/app.json`)).toBe(true);
-    expect(r.isIncluded(`${CONFIG_DIR}/hotkeys.json`)).toBe(false);
-    expect(r.isIncluded(`${CONFIG_DIR}/themes/x.css`)).toBe(false);
-  });
-
-  it('C4: Themes & snippets includes themes/** and snippets/** only', () => {
-    const r = makeResolver({ syncConfigFolder: true, configSync: { themesSnippets: true } });
     expect(r.isIncluded(`${CONFIG_DIR}/themes/Cool/theme.css`)).toBe(true);
     expect(r.isIncluded(`${CONFIG_DIR}/snippets/tweak.css`)).toBe(true);
-    expect(r.isIncluded(`${CONFIG_DIR}/appearance.json`)).toBe(false);
-  });
-
-  it('C4: Hotkeys includes only hotkeys.json', () => {
-    const r = makeResolver({ syncConfigFolder: true, configSync: { hotkeys: true } });
     expect(r.isIncluded(`${CONFIG_DIR}/hotkeys.json`)).toBe(true);
-    expect(r.isIncluded(`${CONFIG_DIR}/app.json`)).toBe(false);
-  });
-
-  it('C4: Core plugin settings includes the allowlist but NOT bookmarks.json', () => {
-    const r = makeResolver({ syncConfigFolder: true, configSync: { corePlugins: true } });
     expect(r.isIncluded(`${CONFIG_DIR}/core-plugins.json`)).toBe(true);
     expect(r.isIncluded(`${CONFIG_DIR}/graph.json`)).toBe(true);
     expect(r.isIncluded(`${CONFIG_DIR}/daily-notes.json`)).toBe(true);
-    // bookmarks.json is owned by the Bookmarks category, not Core plugin settings.
+    // bookmarks.json is owned by the Bookmarks category, not Other settings.
     expect(CORE_PLUGIN_CONFIG_FILES).not.toContain('bookmarks.json');
     expect(r.isIncluded(`${CONFIG_DIR}/bookmarks.json`)).toBe(false);
   });
@@ -113,14 +88,12 @@ describe('ConfigSyncResolver.isIncluded', () => {
     const r = makeResolver({ syncConfigFolder: true, configSync: { bookmarks: true } });
     expect(r.isIncluded(`${CONFIG_DIR}/bookmarks.json`)).toBe(true);
     expect(r.isIncluded(`${CONFIG_DIR}/graph.json`)).toBe(false);
+    expect(r.isIncluded(`${CONFIG_DIR}/appearance.json`)).toBe(false);
   });
 
   // C5: device-specific / unknown files excluded even with everything on.
   it('C5: excludes workspace.json and unknown files even with all categories on', () => {
-    const r = makeResolver({
-      syncConfigFolder: true,
-      configSync: { appearance: true, themesSnippets: true, hotkeys: true, corePlugins: true, bookmarks: true },
-    });
+    const r = makeResolver({ syncConfigFolder: true, configSync: { others: true, bookmarks: true } });
     expect(r.isIncluded(`${CONFIG_DIR}/workspace.json`)).toBe(false);
     expect(r.isIncluded(`${CONFIG_DIR}/workspace-mobile.json`)).toBe(false);
     expect(r.isIncluded(`${CONFIG_DIR}/something-unknown.json`)).toBe(false);
@@ -128,13 +101,13 @@ describe('ConfigSyncResolver.isIncluded', () => {
 
   // Relocated config dir must still match (no hardcoded `.obsidian`).
   it('works with a relocated config directory', () => {
-    const r = makeResolver({ syncConfigFolder: true, configSync: { appearance: true }, configDir: '.config-obsidian' });
+    const r = makeResolver({ syncConfigFolder: true, configSync: { others: true }, configDir: '.config-obsidian' });
     expect(r.isIncluded('.config-obsidian/appearance.json')).toBe(true);
     expect(r.isIncluded('.obsidian/appearance.json')).toBe(false);
   });
 
   it('isConfigFolderConflictPath matches included config paths only', () => {
-    const r = makeResolver({ syncConfigFolder: true, configSync: { appearance: true } });
+    const r = makeResolver({ syncConfigFolder: true, configSync: { others: true } });
     expect(r.isConfigFolderConflictPath(`${CONFIG_DIR}/appearance.json`)).toBe(true);
     expect(r.isConfigFolderConflictPath(`${CONFIG_DIR}/workspace.json`)).toBe(false);
     expect(r.isConfigFolderConflictPath('Notes/a.md')).toBe(false);
@@ -143,14 +116,14 @@ describe('ConfigSyncResolver.isIncluded', () => {
 
 describe('ConfigSyncResolver.enumerateIncludedPaths', () => {
   it('returns [] when the master toggle is off', async () => {
-    const r = makeResolver({ syncConfigFolder: false, configSync: { appearance: true } });
+    const r = makeResolver({ syncConfigFolder: false, configSync: { others: true } });
     expect(await r.enumerateIncludedPaths()).toEqual([]);
   });
 
   it('omits allowlist files that do not exist', async () => {
     const adapter = makeAdapter({ files: { [`${CONFIG_DIR}/appearance.json`]: true }, dirs: {} });
-    const r = makeResolver({ syncConfigFolder: true, configSync: { appearance: true }, adapter });
-    // app.json absent → only appearance.json returned.
+    const r = makeResolver({ syncConfigFolder: true, configSync: { others: true }, adapter });
+    // app.json / hotkeys.json / core-plugin files absent → only appearance.json returned.
     expect(await r.enumerateIncludedPaths()).toEqual([`${CONFIG_DIR}/appearance.json`]);
   });
 
@@ -163,7 +136,7 @@ describe('ConfigSyncResolver.enumerateIncludedPaths', () => {
         [`${CONFIG_DIR}/snippets`]: { files: [`${CONFIG_DIR}/snippets/tweak.css`], folders: [] },
       },
     });
-    const r = makeResolver({ syncConfigFolder: true, configSync: { themesSnippets: true }, adapter });
+    const r = makeResolver({ syncConfigFolder: true, configSync: { others: true }, adapter });
     const paths = await r.enumerateIncludedPaths();
     expect(paths).toEqual(expect.arrayContaining([`${CONFIG_DIR}/snippets/tweak.css`, `${CONFIG_DIR}/themes/Cool/theme.css`]));
     expect(paths.some(p => p.includes('/plugins/'))).toBe(false);
@@ -173,9 +146,7 @@ describe('ConfigSyncResolver.enumerateIncludedPaths', () => {
 });
 
 describe('CONFIG_SYNC_CATEGORIES', () => {
-  it('exposes exactly the five settings keys for the UI', () => {
-    expect(CONFIG_SYNC_CATEGORIES.map(c => c.key)).toEqual([
-      'appearance', 'themesSnippets', 'hotkeys', 'corePlugins', 'bookmarks',
-    ]);
+  it('exposes exactly the two settings keys for the UI (feature 029)', () => {
+    expect(CONFIG_SYNC_CATEGORIES.map(c => c.key)).toEqual(['bookmarks', 'others']);
   });
 });

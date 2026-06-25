@@ -27,9 +27,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.9)
+## What's new in this release (0.7.10-beta.7)
 
-- **Fix: notes with very long names failed to sync onto Android (0.7.9)** — files whose name was within the filesystem limit could still fail to download with a `FILE_NOTCREATED` error, because the temporary file used during writing added a suffix that pushed the name over the 255-byte limit (Japanese titles hit this around 80 characters). The temporary file now uses a short fixed-length name, so any note whose own name fits is written reliably; a name that genuinely exceeds the limit now reports a clear "file name too long" message instead of an opaque error.
+- **Restore all 28 settings to the UI (0.7.10-beta.7)** — all settings removed in the 028 simplification (file locking, startup sync, network timeout/concurrency, sync-on-file-change, compare-with-remote, chunk threshold, max file size, chunked upload, auto-merge, max conflict regions, device name, log folder) are now user-editable again. `fixedConfig.ts` has been deleted; `DEFAULT_SETTINGS` is the single source of truth. A new Debug section groups device name, log folder and the logging toggle.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
@@ -62,12 +62,13 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 - **Rename / move tracking** via Nextcloud file IDs — moving a note doesn't re-upload it everywhere.
 - **Trashbin deletes** — remote deletions use the Nextcloud trashbin (recoverable). When a deletion is applied to your local Vault, it follows **your Obsidian "Deleted files" setting** (system trash / move to `.trash` / permanently delete) rather than forcing one behavior; folders and files outside the Vault's tracked notes (e.g. config-folder files) are handled too.
 - **Per-Vault configuration** — each Vault can target a different Nextcloud server / account without state bleeding between them.
+- **Excluded folders** — register Vault-relative folders that are never synced (neither uploaded nor downloaded, and never created on the server). Useful for version-control or tooling folders such as `.git`, and for large media you keep device-local. Matching is a folder-prefix match at a folder boundary, so `Attachments` excludes `Attachments/` and everything under it but not `Attachments-old`. Add or remove entries under **Settings → Excluded folders** (type a path or use the folder picker). Dotfolders (`.git`, the config-folder `plugins/`, the plugin's own state) are already excluded automatically; this list is an additive layer on top.
 - **Periodic auto-sync** with a configurable interval (set to `0` for manual-only), plus a **Sync now** command.
 - **Sync on file change (watch mode)** — optionally sync immediately after you edit a local file (debounced ~2s after you stop typing). Toggle on/off in settings; works alongside the periodic interval.
 - **Resilient retries** — failed files are skipped, queued, and retried next sync with exponential backoff; a dropped Wi-Fi connection resumes automatically.
 - **Standard WebDAV fallback** — works against any WebDAV server (recursive), Nextcloud features auto-disabled.
 - **Filter the sync-status dialog by status** — the status dialog has a checkbox row (Uploaded, Downloaded, Deleted, Merged, Conflicted, Local wins, Remote wins, Error) so you can focus on, say, only conflicts. All on by default; your selection is saved and persists across Obsidian restarts, and applies to every section.
-- **Compare a file with its remote version** *(opt-in)* — enable "Compare with remote (explorer menu)" in settings, then right-click any file in the explorer to open a popup comparing local vs remote modification time, checksum (with a match/mismatch badge), and a line diff. Resolve the difference right there with **push** (overwrite remote with local) or **pull** (overwrite local with remote), each behind a confirmation. The toggle takes effect immediately — no restart.
+- **Compare a file with its remote version** — right-click any file in the explorer (on mobile: long-press, or run the *Compare with remote* command) to open a popup comparing local vs remote modification time, checksum (with a match/mismatch badge), and a line diff. On narrow screens the diff stacks vertically. Resolve the difference right there with **push** (overwrite remote with local) or **pull** (overwrite local with remote), each behind a confirmation.
 - **Per-device logging** — two opt-in logs, written to a folder you pick (a fuzzy folder picker; defaults to the vault root) and named per device so multiple devices never overwrite one another:
   - **Sync log** (`nextcloud-sync_sync_<device>.txt`) — one appended block per sync with the plugin version and all merge-related settings in the header, then one line per operation showing the marker, path, local/remote checksums and sizes. A level switch records *important events only* (conflicts, merges, side-wins, errors) or *all operations*.
   - **Debug log** (`nextcloud-sync_debug_<device>.txt`) — a timestamped diagnostic log with selectable verbosity (error / debug / verbose), the plugin version, and a snapshot of all settings. Useful for troubleshooting on mobile where there's no console. Turn it off and delete the file when finished.
@@ -76,7 +77,7 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 ### Conflict safety (never lose content)
 - **Auto-merge** (`reconcile-text` / diff3) for edits in different regions, including YAML frontmatter when the two sides changed non-overlapping lines (on by default).
 - **Merge scope by extension** — only files with a configurable extension (default `md`, `txt`) are text-merged; other files (images, PDFs, binaries) are never merged and never get markers written into them.
-- **Conflict-resolution policy** for anything that can't be cleanly merged: **Error** (leave both sides untouched, report it, and retry next sync — the default), **Local wins** (overwrite remote with local), **Remote wins** (overwrite local with remote), or **Conflict markers** (Git-style `<<<<<<< LOCAL` / `=======` / `>>>>>>> REMOTE` written into the file; text files only — other files fall back to Error).
+- **Conflict-resolution policy** you choose in settings for anything that can't be cleanly merged — **Remote** (overwrite local with remote), **Local** (overwrite remote with local), or **Error** (leave both sides untouched, report it, and hold — the default). A held file resolves on a later sync once you switch to Remote or Local, or via *Compare with remote*. You also choose the **frontmatter conflict strategy** (Remote/Local/Error) and which **file types are eligible for auto-merge** (markdown, text and common code extensions by default; clear the list to disable auto-merge entirely).
 - **Conflict badge** in the status bar showing the count of unresolved conflicts (clears to normal at zero; pairs well with a `#conflict` tag search).
 
 ### Nextcloud power features
@@ -91,8 +92,7 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 
 Mobile is supported, with a few platform-aware differences (desktop behaviour is unchanged):
 
-- **Automatic sync is off by default on mobile.** The OS suspends background timers, so periodic auto-sync and "sync on file change" are disabled (greyed out). Use **Sync now**, or enable **Sync on startup** (off by default on mobile) to sync once a few seconds after the app opens.
-- **Sync on startup** is a new setting on both platforms (desktop: on, 1 s; mobile: off).
+- **Automatic sync is off by default on mobile.** The OS suspends background timers, so periodic auto-sync and "sync on file change" are disabled (greyed out). Use **Sync now**, or rely on **Sync on startup**, which is on by default on every platform (since 0.7.11) and syncs once a few seconds after the app opens.
 - **Large files are skipped on mobile** above the "Maximum file size" limit (set `0` for unlimited) to avoid out-of-memory crashes; skips are reported.
 - **No progress UI on mobile** — only error notices are shown.
 - **Network concurrency** is configurable; its first-run default is derived from the device's available memory — uniformly on desktop and mobile, with no platform-specific branch: **16** with 8 GB of RAM or more, **8** at 4 GB or more, **4** below that, and **3** when the device doesn't report its memory (common on mobile). Transfers run with bounded parallelism — capped both by this count and by a total in-flight-bytes budget (smaller on mobile) so large files can't exhaust memory — and uploads to the same folder are serialized to avoid server lock contention.
@@ -138,18 +138,9 @@ Your Vault is synced into a folder named after the Vault on the Nextcloud side, 
 
 ## Enabling Nextcloud server-side features
 
-Two power features depend on server-side Nextcloud apps. Each only needs to be enabled **once by a Nextcloud administrator**. The plugin detects them through the capabilities API — if an app is missing, the corresponding feature simply stays inactive (no error).
+One power feature depends on a server-side Nextcloud app. It only needs to be enabled **once by a Nextcloud administrator**. The plugin detects it through the capabilities API — if the app is missing, the feature simply stays inactive (no error).
 
-### File Locking
-
-Locking uses Nextcloud's **Temporary files lock** app (app ID `files_lock`, available since Nextcloud 24; bundled with Nextcloud Hub from v34).
-
-- **Web UI (admin):** sign in as an administrator → profile menu (top-right) → **Apps** → search for **Temporary files lock** → **Enable** (download it first if it isn't installed).
-- **Command line (`occ`)** — run as the web-server user (often `www-data`):
-  ```bash
-  sudo -u www-data php /var/www/nextcloud/occ app:enable files_lock
-  ```
-- Then enable **File Locking (Experimental)** in the plugin settings and re-sync. (Docker: `docker exec -u www-data <container> php occ app:enable files_lock`.)
+> **Lost-update safety needs no setting.** The plugin always sends an `If-Match` precondition on upload, so a file changed on the server by another client is turned into a conflict instead of being silently overwritten — there is no File Locking toggle to configure.
 
 ### Version history
 
@@ -169,11 +160,65 @@ These are not strictly required, but on self-hosted instances they often need at
 - **Trusted domains** — the host you connect to must be listed in `trusted_domains` in `config.php`, otherwise the server rejects requests. Add your domain/IP if needed.
 - **HTTPS & reverse proxy (important for Login Flow v2)** — behind a reverse proxy, set `overwriteprotocol => 'https'`, `overwritehost`, `overwrite.cli.url`, and `trusted_proxies` correctly. If these are wrong, the URLs returned by Login Flow v2 (and downloads) can point to the wrong scheme/host and fail. Always use an `https://` server URL in the plugin.
 - **Upload size limits (for chunked upload / large attachments)** — raise PHP `upload_max_filesize` and `post_max_size`, and the web-server body limit (nginx `client_max_body_size`, e.g. `0` or a large value). Chunked upload sends small chunks, but the final assembly and very large files still hit these limits.
-- **Request timeouts** — for large vaults or big files, increase PHP `max_execution_time` and php-fpm / web-server timeouts (e.g. nginx `fastcgi_read_timeout`). The plugin's own network timeout is configurable in settings.
+- **Request timeouts** — for large vaults or big files, increase PHP `max_execution_time` and php-fpm / web-server timeouts (e.g. nginx `fastcgi_read_timeout`). The plugin uses a fixed 30-second network timeout.
 - **Brute-force protection** — Nextcloud throttles repeated requests from one IP and can return HTTP 429, especially when several devices sync from the same network or after auth errors. If you hit this, whitelist the network in **Administration settings → Security**, or set `auth.bruteforce.protection.enabled`/the IP allow-list in `config.php`.
 - **Background jobs (cron)** — configure Nextcloud's recommended **Cron** background-job mode so version cleanup and other maintenance run reliably.
 - **App passwords & two-factor auth** — never use your main account password; if 2FA is enabled an app password is mandatory. Login Flow v2 issues one for you automatically.
 - **Checksums (optional, recommended)** — the plugin prefers Nextcloud's `oc:checksums` (SHA-256) for change detection and automatically falls back to ETag when they aren't present, so no configuration is required; leaving Nextcloud's default checksum support enabled gives the most accurate detection.
+
+---
+
+## Settings defaults
+
+The settings screen is intentionally minimal: only Server URL, sign-in, Sync folder,
+Sync interval, Wi-Fi only, Excluded folders, the config-folder toggles, and an
+*Enable logging* switch are shown. Every other option was removed and is now a fixed
+value or derived automatically from your platform. They are documented here so you
+always know what the plugin is doing.
+
+### Editable settings (initial values)
+
+These are the options you can change. Most start the same on both platforms; a few differ on first run.
+
+| Setting | Desktop | Mobile |
+|---|---|---|
+| Server URL / Username / App password | empty | empty |
+| Sync interval | 15 min | 15 min (disabled — use *Sync now* or *Sync on startup*) |
+| Sync on Wi-Fi only | off | on |
+| Sync config folder (master) | off | off |
+| └ Bookmarks / Other settings | on / on | on / on |
+| Frontmatter conflict strategy | Error (hold) | Error (hold) |
+| On merge failure | Error (hold) | Error (hold) |
+| Auto-merge file types | md, txt, cpp, py, c, h, hpp, rs, go, ts, js, java, sh | same |
+| Enable logging | off | off |
+| Excluded folders | empty | empty |
+
+> The config-folder category toggles (Bookmarks, Other settings) only take effect once the master *Sync config folder* is on.
+
+### Fixed values (all platforms)
+
+| Setting | Value |
+|---|---|
+| Network timeout | 30 seconds |
+| Startup sync delay | 1 second |
+| Chunk threshold | 50 MB |
+| Chunked upload | on |
+| Bulk upload | on |
+| File locking | off — `If-Match` preconditions provide lost-update safety |
+| Auto merge | on |
+| Max conflict regions | 0 (no region-count fallback) |
+| Compare with remote | on (desktop and mobile) |
+| Log folder | vault root |
+| Device name | auto (`<platform>-<deviceId>`) |
+
+### Platform-derived values
+
+| Setting | Desktop | Mobile |
+|---|---|---|
+| Sync on startup | on | on |
+| Sync on file change | on | off |
+| Maximum file size | unlimited (`0`) | 20 MB |
+| Network concurrency | auto from RAM (≈ 16 on 8 GB+) | ≈ 3 |
 
 ---
 
@@ -204,7 +249,7 @@ These tests exist specifically to prevent sync-inconsistency states — **data l
 ## Limitations
 
 - **End-to-end encryption (E2EE)** relies on the HTTPS transport layer; the plugin does not add a redundant encryption layer of its own. This is a deliberate trade-off favouring maximum transport security and performance.
-- **Config folder sync is opt-in and selective.** Enable **Sync config folder** in settings to sync chosen categories of `.obsidian/` across devices: Appearance, Themes & snippets, Hotkeys, Core plugin settings, and Bookmarks. **Community plugins and the plugin's own sync-state database are never synced** (executable code / device-specific state). A synced change to core-plugin settings may require an Obsidian restart on the other device to take effect.
+- **Config folder sync is opt-in.** Enable **Sync config folder** in settings to sync `.obsidian/` config across devices, chosen with two toggles: **Bookmarks** and **Other settings** (appearance, themes & snippets, hotkeys, and core-plugin settings). **Community plugins and the plugin's own sync-state database are never synced** (executable code / device-specific state). A synced change to core-plugin settings may require an Obsidian restart on the other device to take effect.
 - Designed primarily for Markdown / text Vaults; single files in the hundreds-of-MB range are beyond the v1 design target.
 - Keep the Vault on local storage — don't double-manage it with another cloud sync (e.g. iCloud Drive) at the same time.
 - Nextcloud-specific features require a compatible server version; older or non-Nextcloud servers transparently fall back to core WebDAV sync.

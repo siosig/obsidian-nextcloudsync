@@ -217,6 +217,18 @@
   align-items: baseline;
 }
 
+/* Each row holds two sides (local | remote): side by side on wide screens, stacked on narrow. */
+.ncs-diff-side {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: baseline;
+}
+
+.ncs-diff-side-left {
+  border-right: 1px solid var(--background-modifier-border);
+}
+
 .ncs-diff-gutter {
   width: 32px;
   min-width: 32px;
@@ -250,16 +262,28 @@
   background: transparent;
 }
 
-.ncs-diff-cell-left {
-  border-right: 1px solid var(--background-modifier-border);
-}
-
 .ncs-diff-cell.is-del {
   background: color-mix(in srgb, var(--color-red) 20%, transparent);
 }
 
 .ncs-diff-cell.is-add {
   background: color-mix(in srgb, var(--color-green) 20%, transparent);
+}
+
+/* Narrow screens (mobile): stack the two diff sides vertically instead of side by side. */
+@media (max-width: 600px) {
+  .ncs-diff-row {
+    flex-direction: column;
+  }
+
+  .ncs-diff-side-left {
+    border-right: none;
+    border-bottom: 1px solid var(--background-modifier-border);
+  }
+
+  .ncs-diff-headers {
+    flex-direction: column;
+  }
 }
 
 /* Status-filter chips in the Sync Status dialog (full-width, wraps; readable on mobile) */
