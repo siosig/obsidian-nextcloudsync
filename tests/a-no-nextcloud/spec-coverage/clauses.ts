@@ -187,6 +187,15 @@ export const CLAUSES: Clause[] = [
   { id: 'SG-4', source: 'specs/main/spec.md §9 (guard applies to download and prefer-remote overwrite)', layer: 'a' },
   { id: 'WB-1', source: 'specs/main/spec.md §9 (atomicWriteBinary read-back: size matches ⇒ ok)', layer: 'a' },
   { id: 'WB-2', source: 'specs/main/spec.md §9 (atomicWriteBinary read-back: mismatch/missing ⇒ throws)', layer: 'a' },
+  // --- TN: atomic-write temp-file naming under the 255-byte NAME_MAX (spec 026) ---
+  { id: 'TN-1', source: 'specs/main/spec.md §9 (final name ≤255B always writes; temp suffix length not leaked)', layer: 'a' },
+  { id: 'TN-2', source: 'specs/main/spec.md §9 (temp name length independent of target name length)', layer: 'a' },
+  { id: 'TN-3', source: 'specs/main/spec.md §9 (temp names unique per target within a directory)', layer: 'a' },
+  { id: 'TN-4', source: 'specs/main/spec.md §9 (temp name deterministic for a given target)', layer: 'a' },
+  { id: 'TN-5', source: 'specs/main/spec.md §9 (temp file in target directory ⇒ atomic rename)', layer: 'a' },
+  { id: 'TN-6', source: 'specs/main/spec.md §9 (final name >255B ⇒ friendly name-too-long error)', layer: 'a' },
+  { id: 'TN-7', source: 'specs/main/spec.md §9 (non-length errors pass through untranslated)', layer: 'a' },
+  { id: 'TN-8', source: 'specs/main/spec.md §9 (isSyncTmpPath new+legacy suffix; temp cleaned on failure)', layer: 'a' },
   // --- Core functional requirements asserted at the pure-logic layer ---
   { id: 'FR-001', source: 'specs/001-nextcloudsync-plugin', layer: 'a' },
   { id: 'FR-005', source: 'specs/001-nextcloudsync-plugin', layer: 'a' },

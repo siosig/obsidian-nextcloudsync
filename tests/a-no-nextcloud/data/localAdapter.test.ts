@@ -72,8 +72,10 @@ describe('LocalAdapter', () => {
       const raw = makeAdapter();
       const adapter = new LocalAdapter(raw);
       await adapter.atomicWrite('Notes/hello.md', 'content');
+      // Temp file is a short hashed name in the target's OWN directory (spec 026): its length does
+      // not depend on the target name, so a long final name can't overflow NAME_MAX via the suffix.
       expect(raw.write).toHaveBeenCalledWith(
-        expect.stringContaining('.nextcloudsync.tmp'),
+        expect.stringMatching(/^Notes\/\.[0-9a-z]+\.ncs\.tmp$/),
         'content',
       );
       expect(raw.rename).toHaveBeenCalled();
