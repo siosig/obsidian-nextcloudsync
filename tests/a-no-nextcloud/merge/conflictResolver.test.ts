@@ -1,5 +1,4 @@
-import { ConflictResolver } from '../../../src/sync/ConflictResolver';
-import { DavSyncSettings } from '../../../src/types';
+import { ConflictResolver, MergeConfig } from '../../../src/sync/ConflictResolver';
 import { App, DataAdapter } from 'obsidian';
 
 jest.mock('reconcile-text', () => ({ reconcile: (b: string, l: string, r: string) => l + r }));
@@ -27,36 +26,29 @@ function makeAdapter(store: Record<string, string> = {}): DataAdapter {
   } as unknown as DataAdapter;
 }
 
-type Policy = DavSyncSettings['conflictFailurePolicy'];
+type Policy = MergeConfig['conflictFailurePolicy'];
 
-function makeSettings(
+// Feature 028: ConflictResolver takes a narrow MergeConfig (the former settings are now FIXED).
+// The test builds it directly so every policy / strategy branch stays independently exercised.
+function makeConfig(
   autoMerge = false,
   policy: Policy = 'error',
   mergeableExtensions: string[] = ['md', 'txt'],
-): DavSyncSettings {
+): MergeConfig {
   return {
-    serverUrl: '', username: '', passwordSecretId: '', syncIntervalMinutes: 0,
-    networkTimeoutSeconds: 30, deviceId: 'test-dev-abcd', uploadChunkThresholdMB: 50,
-    maxFileSizeMB: 1024, watchOnChangeEnabled: false,
-    syncOnStartupEnabled: true, startupSyncDelaySeconds: 5, networkConcurrency: 8, syncOnWifiOnly: false,
-    syncConfigFolder: false,
-    configSync: { appearance: false, themesSnippets: false, hotkeys: false, corePlugins: false, bookmarks: false },
-    deviceName: '', logsFolder: '', syncLogEnabled: false, syncLogLevel: 'important',
-    debugLogEnabled: false, debugLogLevel: 'error',
-    chunkedUploadEnabled: true, fileLockingEnabled: false, bulkUploadEnabled: false,
-    autoMergeEnabled: autoMerge, maxConflictRegions: 10,
+    autoMergeEnabled: autoMerge,
+    maxConflictRegions: 10,
     frontmatterConflictStrategy: 'conflict',
     mergeableExtensions,
     conflictFailurePolicy: policy,
-    explorerCompareEnabled: false,
-    excludedFolders: [],
+    deviceId: 'test-dev-abcd',
   };
 }
 
-function makeResolver(settings: DavSyncSettings, store: Record<string, string> = {}): ConflictResolver {
+function makeResolver(config: MergeConfig, store: Record<string, string> = {}): ConflictResolver {
   const { LocalAdapter } = jest.requireActual('../../../src/data/LocalAdapter') as typeof import('../../../src/data/LocalAdapter');
   const adapter = new LocalAdapter(makeAdapter(store));
-  return new ConflictResolver(makeApp(), adapter, settings);
+  return new ConflictResolver(makeApp(), adapter, config);
 }
 
 // Frontmatter that diverges → MergeEngine refuses (strategy 'conflict') → non-clean merge.
@@ -65,13 +57,13 @@ const FM_REMOTE = '---\na: 2\n---\nbody';
 
 describe('ConflictResolver helpers', () => {
   it('hasConflictMarkers detects <<<<<<< marker', () => {
-    const resolver = makeResolver(makeSettings());
+    const resolver = makeResolver(makeConfig());
     expect(resolver.hasConflictMarkers('<<<<<<< LOCAL\nfoo\n=======\nbar\n>>>>>>> REMOTE\n')).toBe(true);
     expect(resolver.hasConflictMarkers('Normal content')).toBe(false);
   });
 
   it('stripConflictTag removes #conflict tag', () => {
-    const resolver = makeResolver(makeSettings());
+    const resolver = makeResolver(makeConfig());
     const result = resolver.stripConflictTag('Content\n#conflict\n');
     expect(result).not.toContain('#conflict');
     expect(result.trim()).toBe('Content');
@@ -80,7 +72,7 @@ describe('ConflictResolver helpers', () => {
 
 describe('ConflictResolver.isMergeable', () => {
   it('matches configured extensions case-insensitively', () => {
-    const r = makeResolver(makeSettings(false, 'error', ['md', 'txt']));
+    const r = makeResolver(makeConfig(false, 'error', ['md', 'txt']));
     expect(r.isMergeable('notes.md')).toBe(true);
     expect(r.isMergeable('NOTES.MD')).toBe(true);
     expect(r.isMergeable('memo.txt')).toBe(true);
@@ -89,14 +81,14 @@ describe('ConflictResolver.isMergeable', () => {
   });
 
   it('treats files without an extension as non-mergeable', () => {
-    const r = makeResolver(makeSettings());
+    const r = makeResolver(makeConfig());
     expect(r.isMergeable('LICENSE')).toBe(false);
     expect(r.isMergeable('archive.')).toBe(false);
     expect(r.isMergeable('.gitignore')).toBe(false); // leading-dot dotfile: name is the "ext" position guard
   });
 
   it('honors a customized extension list (csv added, txt removed)', () => {
-    const r = makeResolver(makeSettings(false, 'error', ['md', 'csv']));
+    const r = makeResolver(makeConfig(false, 'error', ['md', 'csv']));
     expect(r.isMergeable('data.csv')).toBe(true);
     expect(r.isMergeable('memo.txt')).toBe(false);
   });
@@ -104,26 +96,26 @@ describe('ConflictResolver.isMergeable', () => {
 
 describe('ConflictResolver.decide — non-mergeable files (binary)', () => {
   it('error → skip', () => {
-    const r = makeResolver(makeSettings(true, 'error'));
+    const r = makeResolver(makeConfig(true, 'error'));
     expect(r.decide('image.png', '', 'a', 'b')).toEqual({ action: 'skip' });
   });
   it('local-wins → prefer-local', () => {
-    const r = makeResolver(makeSettings(true, 'local-wins'));
+    const r = makeResolver(makeConfig(true, 'local-wins'));
     expect(r.decide('image.png', '', 'a', 'b')).toEqual({ action: 'prefer-local' });
   });
   it('remote-wins → prefer-remote', () => {
-    const r = makeResolver(makeSettings(true, 'remote-wins'));
+    const r = makeResolver(makeConfig(true, 'remote-wins'));
     expect(r.decide('image.png', '', 'a', 'b')).toEqual({ action: 'prefer-remote' });
   });
   it('conflict-markers → skip (never embed markers into binary)', () => {
-    const r = makeResolver(makeSettings(true, 'conflict-markers'));
+    const r = makeResolver(makeConfig(true, 'conflict-markers'));
     expect(r.decide('image.png', '', 'a', 'b')).toEqual({ action: 'skip' });
   });
 });
 
 describe('ConflictResolver.decide — mergeable text, autoMerge ON', () => {
   it('clean merge → write { clean: true }', () => {
-    const r = makeResolver(makeSettings(true, 'error'));
+    const r = makeResolver(makeConfig(true, 'error'));
     // No frontmatter, reconcile mock returns l+r → clean.
     const d = r.decide('notes.md', '', 'local', 'remote');
     expect(d.action).toBe('write');
@@ -131,19 +123,19 @@ describe('ConflictResolver.decide — mergeable text, autoMerge ON', () => {
   });
 
   it('merge refused + error → skip', () => {
-    const r = makeResolver(makeSettings(true, 'error'));
+    const r = makeResolver(makeConfig(true, 'error'));
     expect(r.decide('notes.md', '', FM_LOCAL, FM_REMOTE)).toEqual({ action: 'skip' });
   });
   it('merge refused + local-wins → prefer-local', () => {
-    const r = makeResolver(makeSettings(true, 'local-wins'));
+    const r = makeResolver(makeConfig(true, 'local-wins'));
     expect(r.decide('notes.md', '', FM_LOCAL, FM_REMOTE)).toEqual({ action: 'prefer-local' });
   });
   it('merge refused + remote-wins → prefer-remote', () => {
-    const r = makeResolver(makeSettings(true, 'remote-wins'));
+    const r = makeResolver(makeConfig(true, 'remote-wins'));
     expect(r.decide('notes.md', '', FM_LOCAL, FM_REMOTE)).toEqual({ action: 'prefer-remote' });
   });
   it('merge refused + conflict-markers → write markers { clean: false }', () => {
-    const r = makeResolver(makeSettings(true, 'conflict-markers'));
+    const r = makeResolver(makeConfig(true, 'conflict-markers'));
     const d = r.decide('notes.md', '', FM_LOCAL, FM_REMOTE);
     expect(d.action).toBe('write');
     if (d.action === 'write') {
@@ -156,11 +148,11 @@ describe('ConflictResolver.decide — mergeable text, autoMerge ON', () => {
 
 describe('ConflictResolver.decide — mergeable text, autoMerge OFF', () => {
   it('error → skip (no markers)', () => {
-    const r = makeResolver(makeSettings(false, 'error'));
+    const r = makeResolver(makeConfig(false, 'error'));
     expect(r.decide('notes.md', '', 'local', 'remote')).toEqual({ action: 'skip' });
   });
   it('conflict-markers → write full markers', () => {
-    const r = makeResolver(makeSettings(false, 'conflict-markers'));
+    const r = makeResolver(makeConfig(false, 'conflict-markers'));
     const d = r.decide('notes.md', '', 'local content', 'remote content');
     expect(d.action).toBe('write');
     if (d.action === 'write') {
@@ -174,7 +166,7 @@ describe('ConflictResolver.decide — mergeable text, autoMerge OFF', () => {
 describe('ConflictResolver.resolve (local-side write)', () => {
   it('writes markers to disk for conflict-markers policy when autoMerge is OFF', async () => {
     const store: Record<string, string> = {};
-    const r = makeResolver(makeSettings(false, 'conflict-markers'), store);
+    const r = makeResolver(makeConfig(false, 'conflict-markers'), store);
     const resolved = await r.resolve('notes.md', '', 'local content', 'remote content');
     expect(resolved).toBe(false);
     const written = Object.values(store).find(v => v.includes('<<<<<<<'));
@@ -184,7 +176,7 @@ describe('ConflictResolver.resolve (local-side write)', () => {
 
   it('does NOT write anything for the error policy (skip)', async () => {
     const store: Record<string, string> = {};
-    const r = makeResolver(makeSettings(false, 'error'), store);
+    const r = makeResolver(makeConfig(false, 'error'), store);
     const resolved = await r.resolve('notes.md', '', 'local', 'remote');
     expect(resolved).toBe(false);
     expect(Object.keys(store)).toHaveLength(0);
@@ -193,19 +185,19 @@ describe('ConflictResolver.resolve (local-side write)', () => {
 
 describe('ConflictResolver.computeResolution (pure resolved-content compute)', () => {
   it('skip → keeps local unchanged, clean=false', () => {
-    const r = makeResolver(makeSettings(false, 'error'));
+    const r = makeResolver(makeConfig(false, 'error'));
     const res = r.computeResolution('image.png', '', 'localX', 'remoteY');
     expect(res.content).toBe('localX');
     expect(res.clean).toBe(false);
   });
   it('prefer-local → after = local, clean=true', () => {
-    const r = makeResolver(makeSettings(false, 'local-wins'));
+    const r = makeResolver(makeConfig(false, 'local-wins'));
     const res = r.computeResolution('image.png', '', 'localX', 'remoteY');
     expect(res.content).toBe('localX');
     expect(res.clean).toBe(true);
   });
   it('prefer-remote → after = remote, clean=true', () => {
-    const r = makeResolver(makeSettings(false, 'remote-wins'));
+    const r = makeResolver(makeConfig(false, 'remote-wins'));
     const res = r.computeResolution('image.png', '', 'localX', 'remoteY');
     expect(res.content).toBe('remoteY');
     expect(res.clean).toBe(true);

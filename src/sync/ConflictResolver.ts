@@ -1,10 +1,26 @@
 import { App } from 'obsidian';
-import { ConflictResolution, DavSyncSettings } from '../types';
+import { ConflictResolution } from '../types';
 import { LocalAdapter } from '../data/LocalAdapter';
 import { MergeEngine } from './merge/MergeEngine';
 
 const CONFLICT_TAG = '#conflict';
 const CONFLICT_MARKER_RE = /^<<<<<<< /m;
+
+/**
+ * Merge/conflict parameters the ConflictResolver needs. After the settings simplification
+ * (feature 028) these are no longer user-editable — callers pass the FIXED values. They remain an
+ * explicit input (rather than hard-coded inside the resolver) so the class stays pure and every
+ * policy/strategy branch is independently unit-testable: internal branching is not user freedom.
+ */
+export interface MergeConfig {
+  autoMergeEnabled: boolean;
+  maxConflictRegions: number;
+  frontmatterConflictStrategy: 'local-wins' | 'remote-wins' | 'conflict';
+  mergeableExtensions: string[];
+  conflictFailurePolicy: 'error' | 'local-wins' | 'remote-wins' | 'conflict-markers';
+  /** Device id, used for the conflict-marker byline. */
+  deviceId: string;
+}
 
 export class ConflictResolver {
   private readonly mergeEngine: MergeEngine;
@@ -12,11 +28,11 @@ export class ConflictResolver {
   constructor(
     private readonly app: App,
     private readonly localAdapter: LocalAdapter,
-    private readonly settings: DavSyncSettings,
+    private readonly config: MergeConfig,
   ) {
     this.mergeEngine = new MergeEngine({
-      maxConflictRegions: settings.maxConflictRegions,
-      frontmatterConflictStrategy: settings.frontmatterConflictStrategy,
+      maxConflictRegions: config.maxConflictRegions,
+      frontmatterConflictStrategy: config.frontmatterConflictStrategy,
     });
   }
 
@@ -35,7 +51,7 @@ export class ConflictResolver {
 
   /** Normalize the configured extensions (lowercase, strip leading dots/whitespace, drop empties). */
   private normalizedExtensions(): string[] {
-    const list = this.settings.mergeableExtensions ?? [];
+    const list = this.config.mergeableExtensions ?? [];
     return list
       .map((e) => e.trim().replace(/^\.+/, '').toLowerCase())
       .filter((e) => e.length > 0);
@@ -53,9 +69,9 @@ export class ConflictResolver {
    */
   decide(path: string, base: string, local: string, remote: string): ConflictResolution {
     const mergeable = this.isMergeable(path);
-    const policy = this.settings.conflictFailurePolicy;
+    const policy = this.config.conflictFailurePolicy;
 
-    if (mergeable && this.settings.autoMergeEnabled) {
+    if (mergeable && this.config.autoMergeEnabled) {
       const result = this.mergeEngine.merge(base, local, remote);
       if (result.success && !result.hadConflicts) {
         return { action: 'write', content: result.mergedContent, clean: true };
@@ -112,7 +128,7 @@ export class ConflictResolver {
 
   /** Build full-file conflict-marker content (both versions kept). */
   private buildMarkerContent(local: string, remote: string): string {
-    const deviceSuffix = this.settings.deviceId.slice(-4);
+    const deviceSuffix = this.config.deviceId.slice(-4);
     const dateStr = new Date().toISOString().slice(0, 10);
     const markerLocal = `<<<<<<< LOCAL (${deviceSuffix}, ${dateStr})`;
     const markerRemote = `>>>>>>> REMOTE (${dateStr})`;
