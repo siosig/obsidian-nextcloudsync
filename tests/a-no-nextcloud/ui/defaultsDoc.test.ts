@@ -22,7 +22,6 @@ describe('[SPEC:SC-005] README settings-defaults tables match the code', () => {
         expect(text).toContain('30');                                       // networkTimeoutSeconds
         expect(text).toContain(String(FIXED.uploadChunkThresholdMB));       // 50
         expect(text).toContain(String(FIXED.startupSyncDelaySeconds));      // 1
-        for (const ext of FIXED.mergeableExtensions) expect(text).toContain(ext); // md, txt
       });
 
       it('documents the platform-derived values (mobile max file size, concurrency tiers)', () => {

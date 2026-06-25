@@ -14,9 +14,9 @@ function resolver(overrides: Partial<MergeConfig>): ConflictResolver {
   return new ConflictResolver({} as App, {} as unknown as LocalAdapter, {
     autoMergeEnabled: FIXED.autoMergeEnabled,
     maxConflictRegions: FIXED.maxConflictRegions,
-    frontmatterConflictStrategy: FIXED.frontmatterConflictStrategy,
-    mergeableExtensions: FIXED.mergeableExtensions,
-    conflictFailurePolicy: FIXED.conflictFailurePolicy,
+    frontmatterConflictStrategy: DEFAULT_SETTINGS.frontmatterConflictStrategy,
+    mergeableExtensions: DEFAULT_SETTINGS.mergeableExtensions,
+    conflictFailurePolicy: DEFAULT_SETTINGS.conflictFailurePolicy,
     deviceId: 'conf-device',
     ...overrides,
   });

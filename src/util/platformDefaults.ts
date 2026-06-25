@@ -15,11 +15,12 @@ export function autoMaxFileSizeMB(): number {
 }
 
 /**
- * Sync once on startup. Desktop: true. Mobile: false — background/startup timing is unreliable
- * and a forced sync on every app resume is undesirable on metered connections.
+ * Sync once on startup. Always true on every platform (feature 030): a single sync when the app
+ * opens keeps both devices current without relying on background timing. Mobile users explicitly
+ * asked for startup sync to default ON.
  */
 export function autoSyncOnStartup(): boolean {
-  return !Platform.isMobile;
+  return true;
 }
 
 /**
