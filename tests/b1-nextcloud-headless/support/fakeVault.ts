@@ -93,7 +93,7 @@ export class FakeVault {
       adapter: this.adapter,
       getFiles(): TFile[] {
         return [...store.entries()]
-          .filter(([p]) => !p.endsWith('.nextcloudsync.tmp'))
+          .filter(([p]) => !p.endsWith('.ncs.tmp') && !p.endsWith('.nextcloudsync.tmp'))
           .map(([p, e]) => ({ path: p, stat: { ctime: 0, mtime: e.mtime, size: e.data.byteLength } } as unknown as TFile));
       },
       getAllFolders(): TFolder[] {

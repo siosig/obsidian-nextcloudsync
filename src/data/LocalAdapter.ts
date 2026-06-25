@@ -2,12 +2,66 @@ import { DataAdapter, Notice, Platform, Vault, normalizePath } from 'obsidian';
 
 export interface LocalFileEntry { path: string; size: number; mtime: number; }
 
-const TMP_SUFFIX = '.nextcloudsync.tmp';
+// Atomic-write temp suffix. Kept short on purpose: the temp file lives in the SAME directory as its
+// target, and a filesystem caps each path component at NAME_MAX bytes (255 on ext4/F2FS, i.e. Android
+// internal storage). The temp NAME must not inherit the target's length, or a target that is itself
+// within 255 bytes could still fail to write because `target + suffix` overflows (the FILE_NOTCREATED
+// bug). See `tmpPathFor`. LEGACY_TMP_SUFFIX is only recognised (never produced) so stale temp files
+// from older plugin versions are still ignored by the watcher and cleaned up.
+const TMP_SUFFIX = '.ncs.tmp';
+const LEGACY_TMP_SUFFIX = '.nextcloudsync.tmp';
+const NAME_MAX_BYTES = 255;
 const IGNORE_TIMEOUT_MS = 5000;
 
-/** True for this plugin's own atomic-write temp files (never user content). */
+/** UTF-8 byte length (NAME_MAX is measured in bytes, not UTF-16 code units). */
+function utf8ByteLength(s: string): number {
+  return new TextEncoder().encode(s).length;
+}
+
+/** Deterministic, non-cryptographic 32-bit FNV-1a hash → base36. Collision strength is irrelevant
+ *  here: it only needs to make per-target temp names unique within a directory. */
+function shortHash(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(36);
+}
+
+/**
+ * Temp path for an atomic write: a short, fixed-length hidden name in the target's OWN directory.
+ * Because the name is derived from a hash (not the target name) it stays well within NAME_MAX even
+ * when the target name is near the 255-byte limit, and being in the same directory keeps the final
+ * rename atomic. Distinct targets get distinct temp names; the same target is stable across calls.
+ */
+export function tmpPathFor(targetPath: string): string {
+  const lastSlash = targetPath.lastIndexOf('/');
+  const dir = lastSlash >= 0 ? targetPath.slice(0, lastSlash) : '';
+  const tmpName = `.${shortHash(targetPath)}${TMP_SUFFIX}`;
+  return dir ? `${dir}/${tmpName}` : tmpName;
+}
+
+/**
+ * Translate a raw write error into an actionable one when the target's final name itself exceeds
+ * NAME_MAX (unavoidable: the OS cannot store it). Other errors (e.g. write-back verification) pass
+ * through unchanged so they are never masked. Reactive by design: only consulted from a catch block.
+ */
+function translateNameTooLong(err: unknown, targetPath: string): unknown {
+  const name = targetPath.slice(targetPath.lastIndexOf('/') + 1);
+  const bytes = utf8ByteLength(name);
+  if (bytes > NAME_MAX_BYTES) {
+    return new Error(
+      `File name too long (${bytes} bytes / max ${NAME_MAX_BYTES} bytes): "${name}". Shorten the file name.`,
+    );
+  }
+  return err;
+}
+
+/** True for this plugin's own atomic-write temp files (never user content). Matches the current
+ *  suffix and the legacy one so older stray temp files remain recognised. */
 export function isSyncTmpPath(path: string): boolean {
-  return path.endsWith(TMP_SUFFIX);
+  return path.endsWith(TMP_SUFFIX) || path.endsWith(LEGACY_TMP_SUFFIX);
 }
 
 /**
@@ -62,7 +116,7 @@ export class LocalAdapter {
   /** Atomically write text content: write to tmp → remove existing → rename. */
   async atomicWrite(targetPath: string, content: string): Promise<void> {
     targetPath = normalizePath(targetPath);
-    const tmpPath = targetPath + TMP_SUFFIX;
+    const tmpPath = tmpPathFor(targetPath);
     this.ignore(tmpPath);
     this.ignore(targetPath);
     try {
@@ -76,14 +130,14 @@ export class LocalAdapter {
       if (await this.adapter.exists(tmpPath)) {
         await this.adapter.remove(tmpPath);
       }
-      throw err;
+      throw translateNameTooLong(err, targetPath);
     }
   }
 
   /** Atomically write binary content: write to tmp → remove existing → rename. */
   async atomicWriteBinary(targetPath: string, data: ArrayBuffer): Promise<void> {
     targetPath = normalizePath(targetPath);
-    const tmpPath = targetPath + TMP_SUFFIX;
+    const tmpPath = tmpPathFor(targetPath);
     this.ignore(tmpPath);
     this.ignore(targetPath);
     try {
@@ -105,7 +159,7 @@ export class LocalAdapter {
       if (await this.adapter.exists(tmpPath)) {
         await this.adapter.remove(tmpPath);
       }
-      throw err;
+      throw translateNameTooLong(err, targetPath);
     }
   }
 
@@ -151,7 +205,7 @@ export class LocalAdapter {
 
   /** Remove a tmp file only (never call remove on user files). */
   async removeTmp(tmpPath: string): Promise<void> {
-    if (tmpPath.endsWith(TMP_SUFFIX) && await this.adapter.exists(tmpPath)) {
+    if (isSyncTmpPath(tmpPath) && await this.adapter.exists(tmpPath)) {
       await this.adapter.remove(tmpPath);
     }
   }
