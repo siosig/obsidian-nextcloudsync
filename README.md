@@ -27,9 +27,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.10-beta.6)
+## What's new in this release (0.7.10-beta.7)
 
-- **Fix TypeScript build error: remove stale `explorerCompareEnabled` references (0.7.10-beta.6)** — removes two references to `explorerCompareEnabled` that no longer exist in `DavSyncSettings`, fixing the CI build failure that prevented 0.7.10-beta.5 from being published.
+- **Restore all 28 settings to the UI (0.7.10-beta.7)** — all settings removed in the 028 simplification (file locking, startup sync, network timeout/concurrency, sync-on-file-change, compare-with-remote, chunk threshold, max file size, chunked upload, auto-merge, max conflict regions, device name, log folder) are now user-editable again. `fixedConfig.ts` has been deleted; `DEFAULT_SETTINGS` is the single source of truth. A new Debug section groups device name, log folder and the logging toggle.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
