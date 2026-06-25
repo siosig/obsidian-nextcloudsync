@@ -321,7 +321,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
 
     makeSetting(containerEl)
       .setName('Excluded folders')
-      .setDesc('Folders that are never synced — neither uploaded nor downloaded. Folder-prefix match at a folder boundary: "Attachments" excludes "Attachments/" and everything under it, but not "Attachments-old". Dotfolders (.git, the config plugins folder, the plugin\'s own state) are already excluded automatically.')
+      .setDesc('Folders that are never synced — neither uploaded nor downloaded. Matched by folder prefix at a folder boundary, additive on top of the dotfolders, config plugins folder, and plugin state that are already excluded automatically.')
       .setTooltip(TOOLTIPS.excludedFolders);
 
     const excluded = this.plugin.settings.excludedFolders ?? [];
