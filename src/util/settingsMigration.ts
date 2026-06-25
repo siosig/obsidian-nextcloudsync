@@ -1,6 +1,30 @@
 import { DEFAULT_SETTINGS, DavSyncSettings } from '../types';
 
 /**
+ * Migrate the former five-key configSync ({appearance, themesSnippets, hotkeys, corePlugins,
+ * bookmarks}) into the two-key model ({bookmarks, others}) introduced in feature 029. The four
+ * non-bookmark categories collapse into `others` (enabled if ANY of them was enabled). A profile
+ * already on the two-key shape (has an `others` key) is normalized to booleans. Mutates `settings`.
+ * Run before {@link migrateBookmarksToConfigSync} (which handles the even older `syncBookmarks`).
+ */
+export function migrateConfigSyncCategories(
+  saved: { configSync?: unknown },
+  settings: DavSyncSettings,
+): void {
+  const sc = saved.configSync;
+  if (!sc || typeof sc !== 'object') return; // nothing persisted → keep defaults
+  const obj = sc as Record<string, unknown>;
+  if ('others' in obj) {
+    settings.configSync = { bookmarks: Boolean(obj.bookmarks), others: Boolean(obj.others) };
+    return;
+  }
+  settings.configSync = {
+    bookmarks: Boolean(obj.bookmarks),
+    others: Boolean(obj.appearance) || Boolean(obj.themesSnippets) || Boolean(obj.hotkeys) || Boolean(obj.corePlugins),
+  };
+}
+
+/**
  * Migrate the removed standalone `syncBookmarks` boolean into the new config-folder sync model.
  *
  * Runs once on first upgrade (detected by the new master flag never having been persisted):
@@ -18,13 +42,7 @@ export function migrateBookmarksToConfigSync(
   if (saved.syncConfigFolder !== undefined) return; // already on the new model — don't re-migrate
   if (saved.syncBookmarks === true) {
     settings.syncConfigFolder = true;
-    settings.configSync = {
-      appearance: false,
-      themesSnippets: false,
-      hotkeys: false,
-      corePlugins: false,
-      bookmarks: true,
-    };
+    settings.configSync = { bookmarks: true, others: false };
   }
 }
 
