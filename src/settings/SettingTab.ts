@@ -7,6 +7,7 @@ import { MIN_NEXTCLOUD_VERSION, isSupportedNextcloudVersion } from '../util/vers
 import { CONFIG_SYNC_CATEGORIES } from '../sync/ConfigSyncResolver';
 import { TOOLTIPS, SERVER_URL_DESC, SIGN_IN_HELP, SIGN_IN_MANUAL_DIVIDER, CONFIG_CATEGORY_TOOLTIP } from './tooltips';
 import { makeSetting } from './settingFactory';
+import { normalizeExcludedFolder } from '../util/excludedFolders';
 
 /** Default secret ID in SecretStorage (users can pick a different ID via "Link…"). */
 const DEFAULT_PASSWORD_SECRET_ID = 'obsidian-nextcloudsync-password';
@@ -311,6 +312,61 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
           this.plugin.settings.chunkedUploadEnabled = value;
           await this.plugin.saveSettings();
         }));
+
+    // ── Excluded folders ───────────────────────────────────────────────────────
+    // User-managed list of vault-relative folders that are never synced (feature 027).
+    // Folder-prefix match; additive on top of the permanent dotfolder/plugins/state-DB
+    // hard exclusions. The list re-renders via render() after each add/remove.
+    new Setting(containerEl).setName('Excluded folders').setHeading();
+
+    makeSetting(containerEl)
+      .setName('Excluded folders')
+      .setDesc('Folders that are never synced — neither uploaded nor downloaded. Folder-prefix match at a folder boundary: "Attachments" excludes "Attachments/" and everything under it, but not "Attachments-old". Dotfolders (.git, the config plugins folder, the plugin\'s own state) are already excluded automatically.')
+      .setTooltip(TOOLTIPS.excludedFolders);
+
+    const excluded = this.plugin.settings.excludedFolders ?? [];
+    for (const folder of excluded) {
+      makeSetting(containerEl)
+        .setName(folder)
+        .addExtraButton(btn => btn
+          .setIcon('trash')
+          .setTooltip('Remove')
+          .onClick(async () => {
+            this.plugin.settings.excludedFolders =
+              (this.plugin.settings.excludedFolders ?? []).filter(f => f !== folder);
+            await this.plugin.saveSettings();
+            this.render();
+          }));
+    }
+
+    let excludeInput: TextComponent | null = null;
+    const addExcluded = async (raw: string) => {
+      const norm = normalizeExcludedFolder(raw);
+      if (!norm) { new Notice('Enter a folder path inside the vault.'); return; }
+      const list = this.plugin.settings.excludedFolders ?? [];
+      if (list.includes(norm)) { new Notice(`"${norm}" is already excluded.`); return; }
+      this.plugin.settings.excludedFolders = [...list, norm];
+      await this.plugin.saveSettings();
+      this.render();
+    };
+
+    makeSetting(containerEl)
+      .setName('Add excluded folder')
+      .setDesc('Choose a vault folder to stop syncing. Browse… opens a folder picker; you can also type a vault-relative path.')
+      .setTooltip(TOOLTIPS.addExcludedFolder)
+      .addText(text => {
+        excludeInput = text;
+        text.setPlaceholder('e.g. .git or Attachments/Large media');
+      })
+      .addButton(btn => btn
+        .setButtonText('Browse…')
+        .onClick(() => {
+          new FolderSuggestModal(this.app, (path) => { void addExcluded(path); }).open();
+        }))
+      .addButton(btn => btn
+        .setButtonText('Add')
+        .setCta()
+        .onClick(() => { void addExcluded(excludeInput?.getValue() ?? ''); }));
 
     // ── Config folder (.obsidian) ──────────────────────────────────────────────
     // Category-level opt-in for the config folder (issue #1), modelled on Obsidian native

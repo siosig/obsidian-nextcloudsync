@@ -80,6 +80,12 @@ export const TOOLTIPS = {
   debugLog: 'Append a per-device diagnostic log + settings snapshot. Turn off and delete the file when finished.',
   debugLogLevel: 'error (failures only) / debug (normal flow) / verbose (most detail).',
 
+  // Excluded folders section
+  excludedFolders:
+    'Folders listed here are never synced (folder-prefix match). Dotfolders like .git and the config plugins folder are already excluded by default.',
+  addExcludedFolder:
+    'Pick or type a vault-relative folder to exclude. Browse… opens a folder picker; the path is added to the list below.',
+
   // Maintenance section
   resetVaultIndex:
     'Clears this device’s sync index (first-install state). No files are deleted; the next sync re-scans.',
