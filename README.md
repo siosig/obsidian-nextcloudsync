@@ -68,7 +68,7 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 - **Resilient retries** — failed files are skipped, queued, and retried next sync with exponential backoff; a dropped Wi-Fi connection resumes automatically.
 - **Standard WebDAV fallback** — works against any WebDAV server (recursive), Nextcloud features auto-disabled.
 - **Filter the sync-status dialog by status** — the status dialog has a checkbox row (Uploaded, Downloaded, Deleted, Merged, Conflicted, Local wins, Remote wins, Error) so you can focus on, say, only conflicts. All on by default; your selection is saved and persists across Obsidian restarts, and applies to every section.
-- **Compare a file with its remote version** *(opt-in)* — enable "Compare with remote (explorer menu)" in settings, then right-click any file in the explorer to open a popup comparing local vs remote modification time, checksum (with a match/mismatch badge), and a line diff. Resolve the difference right there with **push** (overwrite remote with local) or **pull** (overwrite local with remote), each behind a confirmation. The toggle takes effect immediately — no restart.
+- **Compare a file with its remote version** — right-click any file in the explorer (on mobile: long-press, or run the *Compare with remote* command) to open a popup comparing local vs remote modification time, checksum (with a match/mismatch badge), and a line diff. On narrow screens the diff stacks vertically. Resolve the difference right there with **push** (overwrite remote with local) or **pull** (overwrite local with remote), each behind a confirmation.
 - **Per-device logging** — two opt-in logs, written to a folder you pick (a fuzzy folder picker; defaults to the vault root) and named per device so multiple devices never overwrite one another:
   - **Sync log** (`nextcloud-sync_sync_<device>.txt`) — one appended block per sync with the plugin version and all merge-related settings in the header, then one line per operation showing the marker, path, local/remote checksums and sizes. A level switch records *important events only* (conflicts, merges, side-wins, errors) or *all operations*.
   - **Debug log** (`nextcloud-sync_debug_<device>.txt`) — a timestamped diagnostic log with selectable verbosity (error / debug / verbose), the plugin version, and a snapshot of all settings. Useful for troubleshooting on mobile where there's no console. Turn it off and delete the file when finished.
@@ -77,7 +77,7 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 ### Conflict safety (never lose content)
 - **Auto-merge** (`reconcile-text` / diff3) for edits in different regions, including YAML frontmatter when the two sides changed non-overlapping lines (on by default).
 - **Merge scope by extension** — only files with a configurable extension (default `md`, `txt`) are text-merged; other files (images, PDFs, binaries) are never merged and never get markers written into them.
-- **Conflict-resolution policy** for anything that can't be cleanly merged: **Error** (leave both sides untouched, report it, and retry next sync — the default), **Local wins** (overwrite remote with local), **Remote wins** (overwrite local with remote), or **Conflict markers** (Git-style `<<<<<<< LOCAL` / `=======` / `>>>>>>> REMOTE` written into the file; text files only — other files fall back to Error).
+- **Conflict-resolution policy** you choose in settings for anything that can't be cleanly merged — **Remote** (overwrite local with remote), **Local** (overwrite remote with local), or **Error** (leave both sides untouched, report it, and hold — the default). A held file resolves on a later sync once you switch to Remote or Local, or via *Compare with remote*. You also choose the **frontmatter conflict strategy** (Remote/Local/Error) and which **file types are eligible for auto-merge** (markdown, text and common code extensions by default; clear the list to disable auto-merge entirely).
 - **Conflict badge** in the status bar showing the count of unresolved conflicts (clears to normal at zero; pairs well with a `#conflict` tag search).
 
 ### Nextcloud power features
@@ -92,8 +92,7 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 
 Mobile is supported, with a few platform-aware differences (desktop behaviour is unchanged):
 
-- **Automatic sync is off by default on mobile.** The OS suspends background timers, so periodic auto-sync and "sync on file change" are disabled (greyed out). Use **Sync now**, or enable **Sync on startup** (off by default on mobile) to sync once a few seconds after the app opens.
-- **Sync on startup** is a new setting on both platforms (desktop: on, 1 s; mobile: off).
+- **Automatic sync is off by default on mobile.** The OS suspends background timers, so periodic auto-sync and "sync on file change" are disabled (greyed out). Use **Sync now**, or rely on **Sync on startup**, which is on by default on every platform (since 0.7.11) and syncs once a few seconds after the app opens.
 - **Large files are skipped on mobile** above the "Maximum file size" limit (set `0` for unlimited) to avoid out-of-memory crashes; skips are reported.
 - **No progress UI on mobile** — only error notices are shown.
 - **Network concurrency** is configurable; its first-run default is derived from the device's available memory — uniformly on desktop and mobile, with no platform-specific branch: **16** with 8 GB of RAM or more, **8** at 4 GB or more, **4** below that, and **3** when the device doesn't report its memory (common on mobile). Transfers run with bounded parallelism — capped both by this count and by a total in-flight-bytes budget (smaller on mobile) so large files can't exhaust memory — and uploads to the same folder are serialized to avoid server lock contention.
@@ -188,6 +187,9 @@ These are the options you can change. Most start the same on both platforms; a f
 | Sync on Wi-Fi only | off | on |
 | Sync config folder (master) | off | off |
 | └ Bookmarks / Other settings | on / on | on / on |
+| Frontmatter conflict strategy | Error (hold) | Error (hold) |
+| On merge failure | Error (hold) | Error (hold) |
+| Auto-merge file types | md, txt, cpp, py, c, h, hpp, rs, go, ts, js, java, sh | same |
 | Enable logging | off | off |
 | Excluded folders | empty | empty |
 
@@ -204,11 +206,8 @@ These are the options you can change. Most start the same on both platforms; a f
 | Bulk upload | on |
 | File locking | off — `If-Match` preconditions provide lost-update safety |
 | Auto merge | on |
-| Frontmatter conflict strategy | conflict markers (safe) |
 | Max conflict regions | 0 (no region-count fallback) |
-| Mergeable extensions | `md`, `txt` |
-| On merge failure | error — leave both sides, retry next sync |
-| Compare with remote (desktop) | on |
+| Compare with remote | on (desktop and mobile) |
 | Log folder | vault root |
 | Device name | auto (`<platform>-<deviceId>`) |
 
@@ -216,7 +215,7 @@ These are the options you can change. Most start the same on both platforms; a f
 
 | Setting | Desktop | Mobile |
 |---|---|---|
-| Sync on startup | on | off |
+| Sync on startup | on | on |
 | Sync on file change | on | off |
 | Maximum file size | unlimited (`0`) | 20 MB |
 | Network concurrency | auto from RAM (≈ 16 on 8 GB+) | ≈ 3 |

@@ -18,7 +18,7 @@ describe('platform-derived defaults (028)', () => {
   describe('mobile (Platform.isMobile = true)', () => {
     beforeEach(() => { Platform.isMobile = true; });
     it('maxFileSize is capped at 20 MB (OOM-safe)', () => expect(autoMaxFileSizeMB()).toBe(20));
-    it('syncOnStartup is off', () => expect(autoSyncOnStartup()).toBe(false));
+    it('syncOnStartup is on (feature 030: startup sync defaults ON on mobile too)', () => expect(autoSyncOnStartup()).toBe(true));
     it('watchOnChange is off', () => expect(autoWatchOnChange()).toBe(false));
   });
 });
