@@ -27,9 +27,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.9)
+## What's new in this release (0.7.10-beta.1)
 
-- **Fix: notes with very long names failed to sync onto Android (0.7.9)** — files whose name was within the filesystem limit could still fail to download with a `FILE_NOTCREATED` error, because the temporary file used during writing added a suffix that pushed the name over the 255-byte limit (Japanese titles hit this around 80 characters). The temporary file now uses a short fixed-length name, so any note whose own name fits is written reliably; a name that genuinely exceeds the limit now reports a clear "file name too long" message instead of an opaque error.
+- **New: user-configurable excluded folders (0.7.10-beta.1)** — you can now register vault-relative folders that are never synced (no upload, download, or remote creation), via a new "Excluded folders" section in settings with a folder picker and add/remove controls. Matching is by folder prefix at a folder boundary, and these exclusions are additive on top of the always-excluded system folders (dotfolders, plugins, state DB). This makes it easy to keep folders like `.git` out of sync.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
