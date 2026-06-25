@@ -2,6 +2,7 @@ import { App, Platform, PluginSettingTab, Setting, Notice, SecretComponent, Butt
 import type ObsidianNextcloudsync from '../main';
 import { LoginFlowError } from '../types';
 import { FolderSuggestModal } from '../ui/FolderSuggestModal';
+import { FolderInputSuggest } from '../ui/FolderInputSuggest';
 import { LoginFlowV2 } from '../auth/LoginFlowV2';
 import { MIN_NEXTCLOUD_VERSION, isSupportedNextcloudVersion } from '../util/version';
 import { CONFIG_SYNC_CATEGORIES } from '../sync/ConfigSyncResolver';
@@ -249,11 +250,18 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
 
     makeSetting(containerEl)
       .setName('Add excluded folder')
-      .setDesc('Choose a vault folder to stop syncing. Browse… opens a folder picker; you can also type a vault-relative path.')
+      .setDesc('Choose a vault folder to stop syncing. Start typing to pick from matching folders, or open the full folder picker.')
       .setTooltip(TOOLTIPS.addExcludedFolder)
       .addText(text => {
         excludeInput = text;
         text.setPlaceholder('e.g. .git or Attachments/Large media');
+        // Inline suggestions: vault folders not already excluded, filtered by what you type.
+        new FolderInputSuggest(
+          this.app,
+          text.inputEl,
+          () => this.plugin.settings.excludedFolders,
+          (path) => { void addExcluded(path); },
+        );
       })
       .addButton(btn => btn
         .setButtonText('Browse…')

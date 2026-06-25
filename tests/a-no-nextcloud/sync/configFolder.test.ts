@@ -44,7 +44,7 @@ function settings(syncConfigFolder: boolean, configSync: Partial<ConfigSyncCateg
   return {
     configDir: CONFIG_DIR,
     syncConfigFolder,
-    configSync: { appearance: false, themesSnippets: false, hotkeys: false, corePlugins: false, bookmarks: false, ...configSync },
+    configSync: { bookmarks: false, others: false, ...configSync },
   } as unknown as DavSyncSettings;
 }
 
@@ -66,7 +66,7 @@ describe('SyncEngine local-scan injection (config folder)', () => {
     const vault = makeEmptyVault(rawAdapter);
     const localAdapter = new LocalAdapter(rawAdapter, vault);
     const engine = new SyncEngine({
-      app: {}, settings: settings(true, { appearance: true }), localAdapter,
+      app: {}, settings: settings(true, { others: true }), localAdapter,
       stateDB: {}, statusBar: {}, webdavFactory: {}, pluginDir: PLUGIN_DIR, configDir: CONFIG_DIR,
     } as never);
 
@@ -74,9 +74,9 @@ describe('SyncEngine local-scan injection (config folder)', () => {
       scanLocalFiles(): Promise<Map<string, unknown>>;
     }).scanLocalFiles();
 
-    expect(scan.has(`${CONFIG_DIR}/appearance.json`)).toBe(true); // appearance ON → injected
+    expect(scan.has(`${CONFIG_DIR}/appearance.json`)).toBe(true); // Other settings ON + on disk → injected
     expect(scan.has(`${CONFIG_DIR}/app.json`)).toBe(false);       // app.json absent on disk
-    expect(scan.has(`${CONFIG_DIR}/hotkeys.json`)).toBe(false);   // hotkeys OFF → never injected
+    expect(scan.has(`${CONFIG_DIR}/hotkeys.json`)).toBe(false);   // hotkeys.json absent on disk
   });
 
   it('injects nothing under the config folder when the master is OFF', async () => {
@@ -87,7 +87,7 @@ describe('SyncEngine local-scan injection (config folder)', () => {
     const vault = makeEmptyVault(rawAdapter);
     const localAdapter = new LocalAdapter(rawAdapter, vault);
     const engine = new SyncEngine({
-      app: {}, settings: settings(false, { appearance: true }), localAdapter,
+      app: {}, settings: settings(false, { others: true }), localAdapter,
       stateDB: {}, statusBar: {}, webdavFactory: {}, pluginDir: PLUGIN_DIR, configDir: CONFIG_DIR,
     } as never);
 
@@ -121,7 +121,7 @@ describe('SyncEngine remote-deletion scope guard (config folder hard exclusions)
     return { invoke, remove };
   }
 
-  const allOn = settings(true, { appearance: true, themesSnippets: true, hotkeys: true, corePlugins: true, bookmarks: true });
+  const allOn = settings(true, { others: true, bookmarks: true });
 
   it('ignores deletion of a community plugin file even with ALL categories on', async () => {
     const h = buildDeletionHarness(allOn);
