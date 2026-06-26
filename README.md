@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.11-beta.1)
+## What's new in this release (0.7.11)
 
-- **Simpler Debug settings (0.7.11-beta.1)** — the Debug section is now a single switch: *Enable logging (troubleshooting)*. The Device name and Log folder fields were removed — the device name is derived automatically and logs always go to the vault root (sync log records all operations, debug log is verbose). Any custom device name / log folder you had set is reset to these defaults on upgrade. This is the first step in progressively removing low-value options to keep the plugin simple.
+- **Simpler Debug settings (0.7.11)** — the Debug section is now a single switch: *Enable logging (troubleshooting)*. The Device name and Log folder fields were removed — the device name is derived automatically and logs always go to the vault root (sync log records all operations, debug log is verbose). Any custom device name / log folder you had set is reset to these defaults on upgrade. This is the first step in progressively removing low-value options to keep the plugin simple.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
