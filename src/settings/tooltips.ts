@@ -77,9 +77,6 @@ export const TOOLTIPS = {
     'Appearance & base settings, themes and CSS snippets, hotkeys, and core-plugin settings. Core-plugin changes may need a restart on the other device.',
 
   // Debug section
-  deviceName:
-    'Labels this device in log filenames. Blank = platform+id default. Filesystem-unsafe characters are replaced.',
-  logFolder: 'Vault folder for the sync/debug logs. Blank = vault root.',
   loggingEnabled:
     'Write a per-device sync log (all operations) and a verbose debug log to the vault root while troubleshooting. Turn off and delete the log files when done.',
 

@@ -47,6 +47,26 @@ export function migrateBookmarksToConfigSync(
 }
 
 /**
+ * Force the two Debug-identity fields back to their auto/fixed sentinels (feature 032). The settings
+ * UI no longer lets the user set a device name or a log folder; every user converges onto the single
+ * path where the device name is derived (`deviceName=''` ⇒ `<platform>-<deviceId>`) and logs are
+ * written to the vault root (`logsFolder=''`). This runs unconditionally on every load, so a value
+ * persisted by an older version is overwritten. Returns true when a non-empty value was present in
+ * the saved data (so the caller can persist the cleanup). Mutates `settings` in place.
+ */
+export function resetDebugIdentityFields(
+  saved: { deviceName?: unknown; logsFolder?: unknown },
+  settings: DavSyncSettings,
+): boolean {
+  const hadCustom =
+    (typeof saved.deviceName === 'string' && saved.deviceName.length > 0) ||
+    (typeof saved.logsFolder === 'string' && saved.logsFolder.length > 0);
+  settings.deviceName = '';
+  settings.logsFolder = '';
+  return hadCustom;
+}
+
+/**
  * Delete persisted settings keys that are no longer part of the schema (e.g. `debugMode`,
  * and the `logLevel` / `syncResultsEnabled` / `syncResultsFolder` fields left behind by an
  * earlier 0.3.0-beta implementation). Mutates `settings` in place and returns the removed keys.

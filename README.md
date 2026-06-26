@@ -27,6 +27,10 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
+> ⚠️ **Heads-up: settings are being streamlined.** Over the next few days, options with little practical value will be progressively removed so the plugin stays simple and hard to misconfigure. Sensible behaviour is derived automatically instead. If a setting you used to see is gone, that is intentional — the plugin now picks the right value for you.
+
+---
+
 ## What's new in this release (0.7.10)
 
 - **Excluded folders, mobile Compare, conflict-failure policy, and more (0.7.10)** — user-configurable excluded folders with inline autocomplete, selectable conflict-failure policy (mark / keep-local / keep-remote / revert), Compare with remote on mobile (vertical diff), startup-sync toggle for mobile, two-category config sync (Bookmarks / Others), and all settings restored to the UI as user-editable fields.
