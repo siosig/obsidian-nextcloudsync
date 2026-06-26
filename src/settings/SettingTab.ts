@@ -2,7 +2,6 @@ import { App, Platform, PluginSettingTab, Setting, Notice, SecretComponent, Butt
 import type ObsidianNextcloudsync from '../main';
 import { LoginFlowError, DavSyncSettings } from '../types';
 import { parseMergeableExtensions, formatMergeableExtensions } from '../util/mergeableExtensions';
-import { FolderSuggestModal } from '../ui/FolderSuggestModal';
 import { FolderInputSuggest } from '../ui/FolderInputSuggest';
 import { LoginFlowV2 } from '../auth/LoginFlowV2';
 import { MIN_NEXTCLOUD_VERSION, isSupportedNextcloudVersion } from '../util/version';
@@ -476,46 +475,12 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
 
     new Setting(containerEl).setName('Debug').setHeading();
 
-    makeSetting(containerEl)
-      .setName('Device name')
-      .setDesc('Names this device in log filenames (nextcloud-sync_sync_<device>.txt). Leave blank to use a platform + id default. Filesystem-unsafe characters are replaced automatically.')
-      .setTooltip(TOOLTIPS.deviceName)
-      .addText(text => text
-        .setPlaceholder(this.plugin.defaultHostToken())
-        .setValue(this.plugin.settings.deviceName)
-        .onChange(async (value) => {
-          this.plugin.settings.deviceName = value;
-          await this.plugin.saveSettings();
-        }));
-
-    let logFolderText: TextComponent | null = null;
-    makeSetting(containerEl)
-      .setName('Log folder')
-      .setDesc('Vault folder where the sync log and debug log are written. Leave blank for the vault root.')
-      .setTooltip(TOOLTIPS.logFolder)
-      .addText(text => {
-        logFolderText = text;
-        text
-          .setPlaceholder('Vault root')
-          .setValue(this.plugin.settings.logsFolder)
-          .onChange(async (value) => {
-            this.plugin.settings.logsFolder = value.replace(/\/+$/, '').trim();
-            await this.plugin.saveSettings();
-          });
-      })
-      .addButton(btn => btn
-        .setButtonText('Browse…')
-        .onClick(() => {
-          new FolderSuggestModal(this.app, (path) => {
-            this.plugin.settings.logsFolder = path;
-            logFolderText?.setValue(path);
-            void this.plugin.saveSettings();
-          }).open();
-        }));
-
+    // The single Debug control. The device name (auto-derived <platform>-<deviceId>) and the log
+    // location (vault root) are fixed — feature 032 removed their inputs to converge every user onto
+    // one path. The sync log (all operations) and debug log (verbose) verbosity are also fixed.
     makeSetting(containerEl)
       .setName('Enable logging (troubleshooting)')
-      .setDesc('Write a per-device sync log and debug log to the vault root while troubleshooting. The sync log records all operations and the debug log is verbose. Turn this off and delete the log files when finished.')
+      .setDesc('Write a per-device sync log and a verbose debug log to the vault root while troubleshooting. The device name is derived automatically and the log location is fixed to the vault root. Turn this off and delete the log files when finished.')
       .setTooltip(TOOLTIPS.loggingEnabled)
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.loggingEnabled)

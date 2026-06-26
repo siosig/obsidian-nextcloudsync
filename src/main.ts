@@ -11,7 +11,7 @@ import { FileLogger } from './util/FileLogger';
 import { isSyncTmpPath, LocalAdapter } from './data/LocalAdapter';
 import { v4 as uuidv4 } from './util/uuid';
 import { hostToken, LogPlatform } from './util/hostToken';
-import { migrateConfigSyncCategories, migrateBookmarksToConfigSync, pruneObsoleteSettings } from './util/settingsMigration';
+import { migrateConfigSyncCategories, migrateBookmarksToConfigSync, pruneObsoleteSettings, resetDebugIdentityFields } from './util/settingsMigration';
 import { debugLogPath, syncLogPath, isActiveOwnLog } from './util/logPaths';
 import { SyncLogWriter, formatResolution } from './log/SyncLogWriter';
 import { autoNetworkConcurrency } from './util/platformDefaults';
@@ -310,11 +310,6 @@ export default class ObsidianNextcloudsync extends Plugin {
     return hostToken(this.settings.deviceName, this.logPlatform(), this.settings.deviceId);
   }
 
-  /** The default host token (Device name blank) — shown as the settings placeholder. */
-  defaultHostToken(): string {
-    return hostToken('', this.logPlatform(), this.settings.deviceId);
-  }
-
   /**
    * Append this session's outcomes to the per-device sync log. The session header carries the
    * binary version and all merge-related settings; each line carries the per-file marker,
@@ -376,11 +371,16 @@ export default class ObsidianNextcloudsync extends Plugin {
       this.settings.networkConcurrency = autoNetworkConcurrency();
     }
 
+    // Feature 032: the Debug section no longer exposes a device name or a log folder. Force both back
+    // to their auto/fixed sentinels so every user converges onto the single path (device name derived,
+    // logs at the vault root), discarding any custom value an older version persisted.
+    const debugReset = resetDebugIdentityFields(saved, this.settings);
+
     // Drop obsolete persisted keys (e.g. the removed `debugMode` and the leftover
     // `logLevel` / `syncResults*` fields from an earlier 0.3.0-beta), then persist the cleaned
-    // settings so data.json no longer carries them.
+    // settings so data.json no longer carries them (or no longer carries a stale Debug identity).
     const removed = pruneObsoleteSettings(this.settings as unknown as Record<string, unknown>);
-    if (removed.length > 0) {
+    if (removed.length > 0 || debugReset) {
       await this.saveSettings();
     }
   }
