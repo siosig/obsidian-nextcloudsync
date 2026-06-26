@@ -206,4 +206,9 @@ export const CLAUSES: Clause[] = [
   { id: 'FR-020', source: 'specs/001-nextcloudsync-plugin', layer: 'a' },
   // Feature 028 (settings simplification): the README settings-defaults tables match the code.
   { id: 'SC-005', source: 'specs/028-settings-simplification', layer: 'a' },
+  // Feature 032 (debug settings reduction): the Debug section is a single toggle; device name is
+  // auto-derived and logs go to the vault root (both fixed); existing custom values reset on load.
+  { id: 'DBG-1', source: 'specs/032-debug-settings-reduction (single Debug toggle)', layer: 'a' },
+  { id: 'DBG-2', source: 'specs/032-debug-settings-reduction (auto device name + vault-root logs)', layer: 'a' },
+  { id: 'DBG-3', source: 'specs/032-debug-settings-reduction (custom values reset to the fixed path)', layer: 'a' },
 ];
