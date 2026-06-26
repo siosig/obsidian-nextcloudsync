@@ -11,6 +11,14 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.11] - 2026-06-26
+
+### Changed
+- Debug settings reduced to a single toggle: the Device name and Log folder fields were removed, leaving only *Enable logging (troubleshooting)*. The device name is now derived automatically and logs always go to the vault root (sync log records all operations, debug log is verbose).
+
+### Migration
+- Any custom device name or log folder previously set is reset to the automatic/vault-root defaults on upgrade, so every install follows the same path. Log files already written to a previous custom folder are left in place.
+
 ## [0.7.10] - 2026-06-26
 
 ### Added
@@ -162,6 +170,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.11]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.11
 [0.7.10]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.10
 [0.7.9]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.9
 [0.7.8]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.8
