@@ -34,6 +34,14 @@ describe('[SPEC:FR-001] settings tooltips coverage', () => {
     }
   });
 
+  it('[SPEC:DBG-1] the Debug section is a single toggle: no device-name or log-folder controls remain', () => {
+    // Feature 032: Device name (auto-derived) and Log folder (vault root) inputs were removed, so
+    // their tooltip catalog entries are gone too. loggingEnabled is the only surviving Debug row.
+    expect('deviceName' in TOOLTIPS).toBe(false);
+    expect('logFolder' in TOOLTIPS).toBe(false);
+    expect('loggingEnabled' in TOOLTIPS).toBe(true);
+  });
+
   it('[SPEC:FR-005] config-folder categories all map to a defined tooltip', () => {
     for (const cat of CONFIG_SYNC_CATEGORIES) {
       const tip = CONFIG_CATEGORY_TOOLTIP[cat.key];
