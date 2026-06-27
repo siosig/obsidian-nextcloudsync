@@ -160,12 +160,17 @@ export const CLAUSES: Clause[] = [
   { id: 'DP-9',  source: 'specs/main/spec.md §8a.1 (delete ordering: deep-first)', layer: 'a' },
   { id: 'DP-10', source: 'specs/main/spec.md §8a.1 (non-empty probe skips delete)', layer: 'a' },
   { id: 'DP-11', source: 'specs/main/spec.md §8a.1 (circuit breaker)', layer: 'a' },
-  { id: 'DP-12', source: 'specs/main/spec.md §8a.1 (lock ON wraps delete)', layer: 'a' },
-  { id: 'DP-13', source: 'specs/main/spec.md §8a.1 (lock OFF no lock)', layer: 'a' },
+  // DP-12 (lock ON wraps delete) removed in feature 033 — file locking is always off (see FX-4).
+  { id: 'DP-13', source: 'specs/main/spec.md §8a.1 (no lock around delete — locking always off, 033)', layer: 'a' },
   { id: 'DP-14', source: 'specs/main/spec.md §8a.1 (self-healing: one failed delete continues)', layer: 'a' },
   { id: 'DP-15', source: 'specs/main/spec.md §8a.1 (self-healing: listing failure skips session)', layer: 'a' },
   { id: 'DP-e2e',       source: 'specs/main/spec.md §8a.1 (cross-device empty-dir pruning e2e)', layer: 'b-1' },
   { id: 'DP-e2e-empty', source: 'specs/main/spec.md §8a.1 (empty dir created on A propagates to remote + B)', layer: 'b-1' },
+  // --- FX: fixed sync config (feature 033 — five low-value settings removed from the UI) ---
+  { id: 'FX-1', source: 'specs/main/spec.md §15 (fixed values: locking off, chunked on, regions unlimited)', layer: 'a' },
+  { id: 'FX-2', source: 'specs/main/spec.md §15 (chunked upload always on, gated by server capability)', layer: 'a' },
+  { id: 'FX-3', source: 'specs/main/spec.md §15 (chunk threshold platform-derived: 50 desktop / 20 mobile)', layer: 'a' },
+  { id: 'FX-4', source: 'specs/main/spec.md §15 (file locking always off; If-Match is the lost-update guard)', layer: 'a' },
   // --- DR: directory rename convergence (spec 021, specs/main/spec.md §8a.2) ---
   { id: 'DR-local',      source: 'specs/main/spec.md §8a.2 (local rename propagates via MOVE + dir reconcile)', layer: 'b-1' },
   { id: 'DR-concurrent', source: 'specs/main/spec.md §8a.2 (concurrent rename vs create converges without data loss)', layer: 'b-1' },
