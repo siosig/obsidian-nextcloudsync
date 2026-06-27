@@ -2,24 +2,18 @@ import { DEFAULT_SETTINGS } from '../../../src/types';
 import { hostToken } from '../../../src/util/hostToken';
 import { syncLogPath, debugLogPath } from '../../../src/util/logPaths';
 
-// Feature 032 (settings restoration): all values formerly in FIXED are now user-editable
-// DavSyncSettings fields. Assert their defaults match the former FIXED values.
-describe('DEFAULT_SETTINGS — formerly-fixed values (032)', () => {
-  it('matches the former settings contract (C2)', () => {
-    expect(DEFAULT_SETTINGS.fileLockingEnabled).toBe(false);
+// Feature 032 restored these as user-editable DavSyncSettings fields. Feature 033 then re-fixed five
+// of them (fileLocking, chunkedUpload, chunkThreshold, maxConflictRegions, explorerCompare) — those
+// now live in src/util/fixedSyncConfig.ts (see fixedSyncConfig.test.ts). The defaults asserted here
+// are the ones that remain user-editable settings.
+describe('DEFAULT_SETTINGS — remaining default contract (C2)', () => {
+  it('matches the settings contract (C2)', () => {
     expect(DEFAULT_SETTINGS.startupSyncDelaySeconds).toBe(1);
     expect(DEFAULT_SETTINGS.networkTimeoutSeconds).toBe(30);
-    expect(DEFAULT_SETTINGS.uploadChunkThresholdMB).toBe(50);
-    expect(DEFAULT_SETTINGS.chunkedUploadEnabled).toBe(true);
     expect(DEFAULT_SETTINGS.bulkUploadEnabled).toBe(true);
     expect(DEFAULT_SETTINGS.autoMergeEnabled).toBe(true);
-    expect(DEFAULT_SETTINGS.maxConflictRegions).toBe(0);
     expect(DEFAULT_SETTINGS.logsFolder).toBe('');
     expect(DEFAULT_SETTINGS.deviceName).toBe('');
-  });
-
-  it('Compare-with-remote defaults OFF (user must opt in)', () => {
-    expect(DEFAULT_SETTINGS.explorerCompareEnabled).toBe(false);
   });
 });
 
