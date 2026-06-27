@@ -26,8 +26,7 @@ export const TOOLTIPS = {
   syncTarget:
     'Read-only preview of the effective remote path (Server URL + vault folder). Confirm this is where you expect the vault to sync.',
   // Sync section
-  syncOnStartup: 'Run one sync shortly after Obsidian starts. Off by default on mobile.',
-  startupSyncDelay: 'How long to wait after startup before that first sync.',
+  startupSyncDelay: 'Seconds to wait after startup before the startup sync. 0 = no startup sync.',
   syncInterval:
     'Auto-sync period. 0 = manual only. Disabled on mobile (the OS suspends background timers).',
   networkTimeout: 'Abort a WebDAV request that takes longer than this.',

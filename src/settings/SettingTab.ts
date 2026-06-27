@@ -183,21 +183,11 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
 
     new Setting(containerEl).setName('Sync').setHeading();
 
-    // Startup sync (both platforms). Default ON desktop / OFF mobile (resolved at first run).
-    makeSetting(containerEl)
-      .setName('Sync on startup')
-      .setDesc('Run one sync shortly after Obsidian starts. On mobile this is off by default.')
-      .setTooltip(TOOLTIPS.syncOnStartup)
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.syncOnStartupEnabled)
-        .onChange(async (value) => {
-          this.plugin.settings.syncOnStartupEnabled = value;
-          await this.plugin.saveSettings();
-        }));
-
+    // Startup sync (both platforms). The former "Sync on startup" toggle is folded into this slider:
+    // 0 = no startup sync, 1–10 = seconds to wait before it. Default 1 (= enabled, 1 s delay).
     this.addNumberSlider(containerEl, {
       name: 'Startup sync delay (seconds)',
-      desc: 'Wait this many seconds after startup before the startup sync.',
+      desc: 'Wait this many seconds after startup before the startup sync. 0 = no startup sync.',
       tooltip: TOOLTIPS.startupSyncDelay,
       ...SLIDER_LIMITS.startupSyncDelay,
       get: () => this.plugin.settings.startupSyncDelaySeconds,
@@ -211,7 +201,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         ? 'Disabled on mobile (the OS suspends background timers). Use "Sync on startup" or "Sync now".'
         : '0 = manual sync only',
       tooltip: TOOLTIPS.syncInterval,
-      min: 0, max: 60, step: 1,
+      ...SLIDER_LIMITS.syncInterval,
       disabled: Platform.isMobile,
       get: () => this.plugin.settings.syncIntervalMinutes,
       set: (v) => { this.plugin.settings.syncIntervalMinutes = v; },

@@ -38,11 +38,10 @@ export interface DavSyncSettings {
   /** Detect local Markdown edits and sync immediately (watch mode). Disabled on mobile. */
   watchOnChangeEnabled: boolean;
   /**
-   * Sync once on startup. Default ON on all platforms (feature 030). Mobile users benefit from
-   * a startup sync to stay current without relying on background timers.
+   * Startup sync delay in seconds, 0–10. 0 = no startup sync; 1–10 = wait that long after startup
+   * before syncing. Default 1 (enabled). Folds the former `syncOnStartupEnabled` toggle (feature 034
+   * rev): default ON on all platforms, mobile included (feature 030).
    */
-  syncOnStartupEnabled: boolean;
-  /** Seconds to wait after startup before the startup sync (when syncOnStartupEnabled). >= 0. */
   startupSyncDelaySeconds: number;
   /** Number of concurrent WebDAV requests. Derived from device RAM on first run if not persisted. */
   networkConcurrency: number;
@@ -131,8 +130,7 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   deviceId: '',
   maxFileSizeMB: 0, // 0 = unlimited (desktop default). Mobile gets a safe cap in loadSettings().
   watchOnChangeEnabled: true, // Mobile first-run: false (applied in loadSettings()).
-  syncOnStartupEnabled: true,
-  startupSyncDelaySeconds: 1,
+  startupSyncDelaySeconds: 1, // 0 = no startup sync; default 1 = enabled with a 1 s delay.
   networkConcurrency: 16, // First-run: overridden by autoNetworkConcurrency() in loadSettings(); persisted value is kept on subsequent loads.
   // Desktop default OFF; mobile's first run flips it ON in loadSettings() (metered data).
   syncOnWifiOnly: false,
