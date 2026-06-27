@@ -11,6 +11,14 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.13] - 2026-06-27
+
+### Changed
+- Folded the separate *Sync on startup* toggle into the *Startup sync delay* slider: `0` now means no startup sync and `1`–`10` s sets the delay. Revised the numeric slider ranges and steps so *Sync interval* steps in 4-minute increments (0–60, where 0 = manual only) and *Network concurrency* runs 0–60 in steps of 4 (0 behaves as 1).
+
+### Migration
+- Existing settings are preserved automatically on upgrade: an install that previously had startup sync turned off keeps it off (delay collapses to 0).
+
 ## [0.7.12] - 2026-06-27
 
 ### Changed
@@ -178,6 +186,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.13]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.13
 [0.7.12]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.12
 [0.7.11]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.11
 [0.7.10]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.10
