@@ -28,6 +28,7 @@ import { RenameTracker } from './RenameTracker';
 import { ConflictResolver } from './ConflictResolver';
 import { ConfigSyncResolver } from './ConfigSyncResolver';
 import { sha256 } from '../util/hash';
+import { FIXED, chunkThresholdMB } from '../util/fixedSyncConfig';
 import { isUnderExcludedFolder } from '../util/excludedFolders';
 import { FileLogger } from '../util/FileLogger';
 import {
@@ -152,8 +153,10 @@ export class SyncEngine {
       const { client, features } = await this.opts.webdavFactory.createClient();
       this.client = client;
       this.features = features;
-      const uploadConfig = { maxFileSizeMB: this.opts.settings.maxFileSizeMB, uploadChunkThresholdMB: this.opts.settings.uploadChunkThresholdMB };
-      this.uploadStrategy = (this.opts.settings.chunkedUploadEnabled && features.isNextcloud)
+      // Feature 033: chunked upload is always on (still gated by server capability), and the chunk
+      // threshold is platform-derived (no user input). Both come from the fixed config, not settings.
+      const uploadConfig = { maxFileSizeMB: this.opts.settings.maxFileSizeMB, uploadChunkThresholdMB: chunkThresholdMB(Platform.isMobile) };
+      this.uploadStrategy = (FIXED.chunkedUploadEnabled && features.isNextcloud)
         ? new ChunkedUploadStrategy(uploadConfig)
         : new SimpleUploadStrategy(uploadConfig);
       this.opts.onFeatures?.(features);
@@ -1066,7 +1069,10 @@ export class SyncEngine {
    * If locked by someone else (423), retries with backoff and throws FileLockedError if not released.
    */
   private async acquireLock(path: string): Promise<string | null> {
-    if (!this.opts.settings.fileLockingEnabled || !this.features?.hasFilesLocking) return null;
+    // Feature 033: file locking is always off — lost-update safety is the always-on If-Match
+    // precondition, without the LOCK/UNLOCK round-trips. The mechanism below is retained but never
+    // engaged from the normal sync path.
+    if (!FIXED.fileLockingEnabled || !this.features?.hasFilesLocking) return null;
     const maxAttempts = 3;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
@@ -1204,7 +1210,9 @@ export class SyncEngine {
 
     const resolver = new ConflictResolver(this.opts.app, this.opts.localAdapter, {
       autoMergeEnabled: this.opts.settings.autoMergeEnabled,
-      maxConflictRegions: this.opts.settings.maxConflictRegions,
+      // Feature 033: max conflict regions is always unlimited (0) — never downgrade a clean merge to
+      // inline markers on region count.
+      maxConflictRegions: FIXED.maxConflictRegions,
       // Feature 030: frontmatter strategy, merge-failure policy and merge-eligible extensions are
       // user-editable again (read live from settings so a change applies on the next sync).
       frontmatterConflictStrategy: this.opts.settings.frontmatterConflictStrategy,
