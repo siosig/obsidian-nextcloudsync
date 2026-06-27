@@ -189,16 +189,10 @@ describe('SyncEngine.reconcileDirectories — directory create/delete propagatio
     expect(client.createDirectory).toHaveBeenCalledWith('newdir'); // creation still happens
   });
 
-  it('DP-12 lock ON (fileLockingEnabled): wraps the remote delete in lock/unlock', async () => {
-    const client = makeClient({ remoteDirs: ['gone'] });
-    const { engine } = makeEngine({ client, localDirs: [], tracked: [dirState('gone')], settings: settings({ fileLockingEnabled: true }) });
-    await reconcile(engine, makeSummary());
-    expect(client.lockFile).toHaveBeenCalledWith('gone');
-    expect(client.deleteCollection).toHaveBeenCalledWith('gone');
-    expect(client.unlockFile).toHaveBeenCalledWith('gone', 'files_lock/tok');
-  });
+  // DP-12 (lock ON wraps the remote delete) was removed in feature 033: file locking is always off,
+  // so the remote delete is never lock-wrapped. DP-13 below is now the only behaviour.
 
-  it('DP-13 lock OFF: issues no lock but still deletes', async () => {
+  it('DP-13 lock OFF (always, feature 033): issues no lock but still deletes', async () => {
     const client = makeClient({ remoteDirs: ['gone'] });
     const { engine } = makeEngine({ client, localDirs: [], tracked: [dirState('gone')], settings: settings() });
     await reconcile(engine, makeSummary());
@@ -206,20 +200,21 @@ describe('SyncEngine.reconcileDirectories — directory create/delete propagatio
     expect(client.deleteCollection).toHaveBeenCalledWith('gone');
   });
 
-  it('DP-14 self-healing: one failed delete is counted, never aborts the rest, and still unlocks', async () => {
+  it('DP-14 self-healing: one failed delete is counted, never aborts the rest', async () => {
     const client = makeClient({
       remoteDirs: ['boom', 'ok'],
       deleteImpl: async (p) => { if (p === 'boom') throw new Error('network'); },
     });
     const { engine } = makeEngine({
       client, localDirs: [], tracked: [dirState('boom'), dirState('ok')],
-      settings: settings({ fileLockingEnabled: true }),
+      settings: settings(),
     });
     const summary = makeSummary();
     await reconcile(engine, summary);
     expect(client.deleteCollection).toHaveBeenCalledWith('ok');
     expect(summary.errorCount).toBe(1);
-    expect(client.unlockFile).toHaveBeenCalledWith('boom', 'files_lock/tok');
+    // Feature 033: no locking, so no unlock either — the self-healing continuation is the assertion.
+    expect(client.lockFile).not.toHaveBeenCalled();
   });
 
   it('DP-15 self-healing: a listing failure skips the session without throwing', async () => {
