@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.12)
+## What's new in this release (0.7.13-beta.1)
 
-- **Five low-value settings removed (0.7.12)** — *File locking*, *Compare with remote (explorer menu)*, *Chunk threshold*, *Chunked upload*, and *Max conflict regions* are gone from settings and pinned to their best fixed behavior: locking is always off (an always-on `If-Match` precondition provides lost-update safety without LOCK/UNLOCK round trips), chunked upload is always on, the chunk threshold is platform-derived (50 MB on desktop, 20 MB on mobile), max conflict regions is always unlimited, and Compare with remote is always available in the explorer menu and command. Any custom values you had set are cleaned up automatically on upgrade. This continues progressively removing low-value options to keep the plugin simple.
+- **Cleaner settings sliders (0.7.13-beta.1)** — the *Startup sync delay*, *Network timeout*, *Network concurrency*, and *Maximum file size* sliders now use clearer ranges and coarser steps, so you reach a sensible value with fewer drags and can't pick extreme or meaningless values: Startup sync delay 0–15 s, Network timeout 15–120 s in 15 s steps, Network concurrency 1–64 in steps of 4, and Maximum file size 0–2048 MB in 16 MB steps. Your existing values are kept as-is and only snap to the nearest step once you move a slider.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
