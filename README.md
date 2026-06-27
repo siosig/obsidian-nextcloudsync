@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.12)
+## What's new in this release (0.7.13-beta.2)
 
-- **Five low-value settings removed (0.7.12)** — *File locking*, *Compare with remote (explorer menu)*, *Chunk threshold*, *Chunked upload*, and *Max conflict regions* are gone from settings and pinned to their best fixed behavior: locking is always off (an always-on `If-Match` precondition provides lost-update safety without LOCK/UNLOCK round trips), chunked upload is always on, the chunk threshold is platform-derived (50 MB on desktop, 20 MB on mobile), max conflict regions is always unlimited, and Compare with remote is always available in the explorer menu and command. Any custom values you had set are cleaned up automatically on upgrade. This continues progressively removing low-value options to keep the plugin simple.
+- **Simpler startup-sync control and tidier slider ranges (0.7.13-beta.2)** — the separate *Sync on startup* toggle is gone: the *Startup sync delay* slider now does both, where **0 = no startup sync** and 1–10 s sets the delay. *Sync interval* now steps in 4-minute increments (0–60, 0 = manual only) and *Network concurrency* runs 0–60 in steps of 4 (0 behaves as 1). Your existing settings are preserved automatically — if you had startup sync turned off, it stays off.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
@@ -204,7 +204,7 @@ These are the options you can change. Most start the same on both platforms; a f
 | Setting | Value |
 |---|---|
 | Network timeout | 30 seconds |
-| Startup sync delay | 1 second |
+| Startup sync delay | 1 second (`0` = no startup sync) |
 | Chunk threshold | 50 MB (desktop) / 20 MB (mobile) |
 | Chunked upload | on |
 | Bulk upload | on |
@@ -219,7 +219,6 @@ These are the options you can change. Most start the same on both platforms; a f
 
 | Setting | Desktop | Mobile |
 |---|---|---|
-| Sync on startup | on | on |
 | Sync on file change | on | off |
 | Maximum file size | unlimited (`0`) | 20 MB |
 | Network concurrency | auto from RAM (≈ 16 on 8 GB+) | ≈ 3 |
