@@ -47,6 +47,31 @@ export function migrateBookmarksToConfigSync(
 }
 
 /**
+ * Fold the removed `syncOnStartupEnabled` toggle into the startup-delay slider, where 0 now means
+ * "no startup sync" (1–10 = seconds to wait). Runs once on upgrade, detected by the old key still
+ * being present in the saved data:
+ *   - `syncOnStartupEnabled === false`          → startup sync was OFF  → set delay to 0 (off).
+ *   - `syncOnStartupEnabled === true` & delay 0 → was "ON, run immediately"; 0 now means OFF, so
+ *     bump to 1 to keep it enabled (the smallest enabled delay).
+ *   - otherwise (ON with delay > 0)             → keep the saved delay unchanged.
+ *
+ * Idempotent: once `syncOnStartupEnabled` has been pruned from data.json (next save), this is a
+ * no-op, so a user who deliberately sets delay 0 in the new model keeps it. Mutates `settings`.
+ * Run before {@link pruneObsoleteSettings} so the now-obsolete `syncOnStartupEnabled` key is dropped.
+ */
+export function migrateStartupToggleToDelay(
+  saved: { syncOnStartupEnabled?: unknown; startupSyncDelaySeconds?: unknown },
+  settings: DavSyncSettings,
+): void {
+  if (saved.syncOnStartupEnabled === undefined) return; // already on the new model — don't re-migrate
+  if (saved.syncOnStartupEnabled === false) {
+    settings.startupSyncDelaySeconds = 0;
+  } else if (saved.startupSyncDelaySeconds === 0) {
+    settings.startupSyncDelaySeconds = 1;
+  }
+}
+
+/**
  * Force the two Debug-identity fields back to their auto/fixed sentinels (feature 032). The settings
  * UI no longer lets the user set a device name or a log folder; every user converges onto the single
  * path where the device name is derived (`deviceName=''` ⇒ `<platform>-<deviceId>`) and logs are

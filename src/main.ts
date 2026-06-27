@@ -11,7 +11,7 @@ import { FileLogger } from './util/FileLogger';
 import { isSyncTmpPath, LocalAdapter } from './data/LocalAdapter';
 import { v4 as uuidv4 } from './util/uuid';
 import { hostToken, LogPlatform } from './util/hostToken';
-import { migrateConfigSyncCategories, migrateBookmarksToConfigSync, pruneObsoleteSettings, resetDebugIdentityFields } from './util/settingsMigration';
+import { migrateConfigSyncCategories, migrateBookmarksToConfigSync, migrateStartupToggleToDelay, pruneObsoleteSettings, resetDebugIdentityFields } from './util/settingsMigration';
 import { debugLogPath, syncLogPath, isActiveOwnLog } from './util/logPaths';
 import { SyncLogWriter, formatResolution } from './log/SyncLogWriter';
 import { autoNetworkConcurrency } from './util/platformDefaults';
@@ -372,6 +372,10 @@ export default class ObsidianNextcloudsync extends Plugin {
       this.settings.networkConcurrency = autoNetworkConcurrency();
     }
 
+    // Feature 034 (rev): the "Sync on startup" toggle was folded into the startup-delay slider
+    // (0 = no startup sync). Convert any persisted toggle state before it is pruned below.
+    migrateStartupToggleToDelay(saved, this.settings);
+
     // Feature 032: the Debug section no longer exposes a device name or a log folder. Force both back
     // to their auto/fixed sentinels so every user converges onto the single path (device name derived,
     // logs at the vault root), discarding any custom value an older version persisted.
@@ -449,9 +453,10 @@ export default class ObsidianNextcloudsync extends Plugin {
     // Periodic auto-sync is desktop-only (mobile OS suspends background timers).
     this.applyAutoSyncInterval();
 
-    // Startup sync: user-configurable. Default ON on all platforms (feature 030).
-    if (this.settings.syncOnStartupEnabled) {
-      const delayMs = Math.max(0, this.settings.startupSyncDelaySeconds) * 1000;
+    // Startup sync: user-configurable via the startup-delay slider (the toggle was folded in).
+    // 0 = no startup sync; 1–10 = seconds to wait before it. Default 1 (enabled, 1 s).
+    if (this.settings.startupSyncDelaySeconds > 0) {
+      const delayMs = this.settings.startupSyncDelaySeconds * 1000;
       window.setTimeout(() => { void this.syncEngine?.syncManual(); }, delayMs);
     }
   }
