@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.13-beta.2)
+## What's new in this release (0.7.13)
 
-- **Simpler startup-sync control and tidier slider ranges (0.7.13-beta.2)** — the separate *Sync on startup* toggle is gone: the *Startup sync delay* slider now does both, where **0 = no startup sync** and 1–10 s sets the delay. *Sync interval* now steps in 4-minute increments (0–60, 0 = manual only) and *Network concurrency* runs 0–60 in steps of 4 (0 behaves as 1). Your existing settings are preserved automatically — if you had startup sync turned off, it stays off.
+- **Simpler startup-sync control and tidier slider ranges (0.7.13)** — the separate *Sync on startup* toggle is gone: the *Startup sync delay* slider now does both, where **0 = no startup sync** and 1–10 s sets the delay. *Sync interval* now steps in 4-minute increments (0–60, 0 = manual only) and *Network concurrency* runs 0–60 in steps of 4 (0 behaves as 1). Your existing settings are preserved automatically — if you had startup sync turned off, it stays off.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
