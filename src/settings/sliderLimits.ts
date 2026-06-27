@@ -7,9 +7,14 @@
 // (specs/main/desktop/settings.html) and spec.md §15.1 mirror these exact values.
 //
 // Invariant: max is a multiple of step for every entry, so the slider never ends
-// on a fractional final step. Defaults that fall off the grid (networkConcurrency
-// derived from RAM, mobile maxFileSizeMB=20) are preserved non-destructively and
-// only snap to the nearest step when the user moves the slider.
+// on a fractional final step. Defaults that fall off the grid (syncIntervalMinutes=15,
+// RAM-derived networkConcurrency values, mobile maxFileSizeMB=20) are preserved
+// non-destructively and only snap to the nearest step when the user moves the slider.
+//
+// Two sliders carry a "0 = off" semantic on top of the limit: startupSyncDelay (0 =
+// no startup sync — folds the former "Sync on startup" toggle) and syncInterval
+// (0 = manual sync only). networkConcurrency exposes 0 too, but its consumers floor
+// it with Math.max(1, …), so 0 means "effectively 1" (kept for a clean 0/4/8/…/60 grid).
 
 export interface SliderLimit {
   readonly min: number;
@@ -18,9 +23,10 @@ export interface SliderLimit {
 }
 
 export const SLIDER_LIMITS = {
-  startupSyncDelay: { min: 0, max: 15, step: 1 },
+  startupSyncDelay: { min: 0, max: 10, step: 1 },
+  syncInterval: { min: 0, max: 60, step: 4 },
   networkTimeout: { min: 15, max: 120, step: 15 },
-  networkConcurrency: { min: 1, max: 64, step: 4 },
+  networkConcurrency: { min: 0, max: 60, step: 4 },
   maxFileSize: { min: 0, max: 2048, step: 16 },
 } as const satisfies Record<string, SliderLimit>;
 
