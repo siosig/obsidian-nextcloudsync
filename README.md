@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.14-beta.1)
+## What's new in this release (0.7.14)
 
-- **Fix slider value truncation on mobile (0.7.14-beta.1)** — multi-digit slider values (e.g. "15", "30") were cut off with ".." on narrow mobile screens. The value label now stays fully visible at all screen widths.
+- **Fix slider value truncation on mobile (0.7.14)** — multi-digit slider values (e.g. "15", "30") were cut off with ".." on narrow mobile screens. The value label now stays fully visible at all screen widths.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
