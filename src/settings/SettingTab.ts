@@ -9,6 +9,7 @@ import { CONFIG_SYNC_CATEGORIES } from '../sync/ConfigSyncResolver';
 import { TOOLTIPS, SERVER_URL_DESC, SIGN_IN_HELP, SIGN_IN_MANUAL_DIVIDER, CONFIG_CATEGORY_TOOLTIP } from './tooltips';
 import { makeSetting } from './settingFactory';
 import { normalizeExcludedFolder } from '../util/excludedFolders';
+import { SLIDER_LIMITS } from './sliderLimits';
 
 /** Default secret ID in SecretStorage (users can pick a different ID via "Link…"). */
 const DEFAULT_PASSWORD_SECRET_ID = 'obsidian-nextcloudsync-password';
@@ -182,23 +183,13 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
 
     new Setting(containerEl).setName('Sync').setHeading();
 
-    // Startup sync (both platforms). Default ON desktop / OFF mobile (resolved at first run).
-    makeSetting(containerEl)
-      .setName('Sync on startup')
-      .setDesc('Run one sync shortly after Obsidian starts. On mobile this is off by default.')
-      .setTooltip(TOOLTIPS.syncOnStartup)
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.syncOnStartupEnabled)
-        .onChange(async (value) => {
-          this.plugin.settings.syncOnStartupEnabled = value;
-          await this.plugin.saveSettings();
-        }));
-
+    // Startup sync (both platforms). The former "Sync on startup" toggle is folded into this slider:
+    // 0 = no startup sync, 1–10 = seconds to wait before it. Default 1 (= enabled, 1 s delay).
     this.addNumberSlider(containerEl, {
       name: 'Startup sync delay (seconds)',
-      desc: 'Wait this many seconds after startup before the startup sync.',
+      desc: 'Wait this many seconds after startup before the startup sync. 0 = no startup sync.',
       tooltip: TOOLTIPS.startupSyncDelay,
-      min: 0, max: 60, step: 1,
+      ...SLIDER_LIMITS.startupSyncDelay,
       get: () => this.plugin.settings.startupSyncDelaySeconds,
       set: (v) => { this.plugin.settings.startupSyncDelaySeconds = v; },
     });
@@ -210,7 +201,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         ? 'Disabled on mobile (the OS suspends background timers). Use "Sync on startup" or "Sync now".'
         : '0 = manual sync only',
       tooltip: TOOLTIPS.syncInterval,
-      min: 0, max: 60, step: 1,
+      ...SLIDER_LIMITS.syncInterval,
       disabled: Platform.isMobile,
       get: () => this.plugin.settings.syncIntervalMinutes,
       set: (v) => { this.plugin.settings.syncIntervalMinutes = v; },
@@ -222,7 +213,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     this.addNumberSlider(containerEl, {
       name: 'Network timeout (seconds)',
       tooltip: TOOLTIPS.networkTimeout,
-      min: 5, max: 120, step: 5,
+      ...SLIDER_LIMITS.networkTimeout,
       get: () => this.plugin.settings.networkTimeoutSeconds,
       set: (v) => { this.plugin.settings.networkTimeoutSeconds = v; },
     });
@@ -231,7 +222,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
       name: 'Network concurrency',
       desc: 'Number of simultaneous WebDAV requests. Higher is faster but uses more memory/connections. Mobile defaults to a lower value.',
       tooltip: TOOLTIPS.networkConcurrency,
-      min: 1, max: 16, step: 1,
+      ...SLIDER_LIMITS.networkConcurrency,
       get: () => this.plugin.settings.networkConcurrency,
       set: (v) => { this.plugin.settings.networkConcurrency = v; },
     });
@@ -274,7 +265,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
       name: 'Maximum file size (MB)',
       desc: 'Files larger than this are skipped with a warning. 0 = unlimited. On mobile a low limit avoids out-of-memory crashes.',
       tooltip: TOOLTIPS.maxFileSize,
-      min: 0, max: 4096, step: 10,
+      ...SLIDER_LIMITS.maxFileSize,
       get: () => this.plugin.settings.maxFileSizeMB,
       set: (v) => { this.plugin.settings.maxFileSizeMB = v; },
     });

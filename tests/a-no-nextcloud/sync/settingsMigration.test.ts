@@ -1,4 +1,4 @@
-import { migrateBookmarksToConfigSync, pruneObsoleteSettings, resetDebugIdentityFields } from '../../../src/util/settingsMigration';
+import { migrateBookmarksToConfigSync, migrateStartupToggleToDelay, pruneObsoleteSettings, resetDebugIdentityFields } from '../../../src/util/settingsMigration';
 import { DEFAULT_SETTINGS, DavSyncSettings } from '../../../src/types';
 
 function freshSettings(): DavSyncSettings {
@@ -80,6 +80,46 @@ describe('migrateBookmarksToConfigSync', () => {
     migrateBookmarksToConfigSync({ syncBookmarks: true, syncConfigFolder: false }, settings);
     expect(settings.syncConfigFolder).toBe(false);
     expect(settings.configSync.bookmarks).toBe(false);
+  });
+});
+
+// Feature 034-rev: the "Sync on startup" toggle was folded into the startup-delay slider, where
+// 0 = no startup sync (1–10 = delay seconds). migrateStartupToggleToDelay converts any persisted
+// toggle state on load, before pruneObsoleteSettings drops the now-obsolete syncOnStartupEnabled key.
+describe('[SPEC:SLD-7] migrateStartupToggleToDelay — fold the startup toggle into the delay slider', () => {
+  it('startup OFF (toggle false) → delay becomes 0 (disabled)', () => {
+    const settings = freshSettings();
+    settings.startupSyncDelaySeconds = 1; // default carried over from DEFAULT_SETTINGS
+    migrateStartupToggleToDelay({ syncOnStartupEnabled: false, startupSyncDelaySeconds: 1 }, settings);
+    expect(settings.startupSyncDelaySeconds).toBe(0);
+  });
+
+  it('startup ON with old "immediate" (delay 0) → delay becomes 1 (kept enabled, smallest delay)', () => {
+    const settings = freshSettings();
+    settings.startupSyncDelaySeconds = 0;
+    migrateStartupToggleToDelay({ syncOnStartupEnabled: true, startupSyncDelaySeconds: 0 }, settings);
+    expect(settings.startupSyncDelaySeconds).toBe(1);
+  });
+
+  it('startup ON with a positive delay → the saved delay is preserved unchanged', () => {
+    const settings = freshSettings();
+    settings.startupSyncDelaySeconds = 7;
+    migrateStartupToggleToDelay({ syncOnStartupEnabled: true, startupSyncDelaySeconds: 7 }, settings);
+    expect(settings.startupSyncDelaySeconds).toBe(7);
+  });
+
+  it('is a no-op on the new model (no syncOnStartupEnabled saved): a deliberate delay 0 stays 0', () => {
+    const settings = freshSettings();
+    settings.startupSyncDelaySeconds = 0;
+    migrateStartupToggleToDelay({ startupSyncDelaySeconds: 0 }, settings);
+    expect(settings.startupSyncDelaySeconds).toBe(0);
+  });
+
+  it('pruneObsoleteSettings drops the obsolete syncOnStartupEnabled key (self-healing)', () => {
+    const settings = { ...DEFAULT_SETTINGS, syncOnStartupEnabled: true } as unknown as Record<string, unknown>;
+    const removed = pruneObsoleteSettings(settings);
+    expect(removed).toContain('syncOnStartupEnabled');
+    expect(settings.syncOnStartupEnabled).toBeUndefined();
   });
 });
 

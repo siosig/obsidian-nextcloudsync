@@ -216,4 +216,16 @@ export const CLAUSES: Clause[] = [
   { id: 'DBG-1', source: 'specs/032-debug-settings-reduction (single Debug toggle)', layer: 'a' },
   { id: 'DBG-2', source: 'specs/032-debug-settings-reduction (auto device name + vault-root logs)', layer: 'a' },
   { id: 'DBG-3', source: 'specs/032-debug-settings-reduction (custom values reset to the fixed path)', layer: 'a' },
+  // Feature 034 (slider range/step): the numeric settings sliders get new min/max/step, sourced from
+  // SLIDER_LIMITS and mirrored by the mockup. Off-grid defaults stay non-destructive. The 034-rev
+  // amendment folds the "Sync on startup" toggle into the startup-delay slider (0 = off) with a
+  // migration, and exposes networkConcurrency 0 (floored to 1 by consumers).
+  { id: 'SLD-1', source: 'specs/main/spec.md §15.1-slider (limits match the contract)', layer: 'a' },
+  { id: 'SLD-2', source: 'specs/main/spec.md §15.1-slider (max % step === 0, no fractional final step)', layer: 'a' },
+  { id: 'SLD-3', source: 'specs/main/spec.md §15.1-slider (on-grid defaults reachable)', layer: 'a' },
+  { id: 'SLD-4', source: 'specs/main/spec.md §15.1-slider (off-grid defaults tolerated, non-destructive)', layer: 'a' },
+  { id: 'SLD-5', source: 'specs/main/spec.md §15.1-slider (sliderLimits is a pure constant module)', layer: 'a' },
+  { id: 'SLD-6', source: 'specs/main/spec.md §15.1-slider (desktop mockup mirrors SLIDER_LIMITS)', layer: 'a' },
+  { id: 'SLD-7', source: 'specs/main/spec.md §15.1-slider (startup-delay 0 = off folds the toggle; migrateStartupToggleToDelay converges saved state)', layer: 'a' },
+  { id: 'SLD-8', source: 'specs/main/spec.md §15.1-slider (networkConcurrency 0 floors to effective 1 at consumers)', layer: 'a' },
 ];
