@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.13-beta.1)
+## What's new in this release (0.7.13-beta.2)
 
-- **Cleaner settings sliders (0.7.13-beta.1)** — the *Startup sync delay*, *Network timeout*, *Network concurrency*, and *Maximum file size* sliders now use clearer ranges and coarser steps, so you reach a sensible value with fewer drags and can't pick extreme or meaningless values: Startup sync delay 0–15 s, Network timeout 15–120 s in 15 s steps, Network concurrency 1–64 in steps of 4, and Maximum file size 0–2048 MB in 16 MB steps. Your existing values are kept as-is and only snap to the nearest step once you move a slider.
+- **Simpler startup-sync control and tidier slider ranges (0.7.13-beta.2)** — the separate *Sync on startup* toggle is gone: the *Startup sync delay* slider now does both, where **0 = no startup sync** and 1–10 s sets the delay. *Sync interval* now steps in 4-minute increments (0–60, 0 = manual only) and *Network concurrency* runs 0–60 in steps of 4 (0 behaves as 1). Your existing settings are preserved automatically — if you had startup sync turned off, it stays off.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
