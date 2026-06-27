@@ -25,9 +25,6 @@ export const TOOLTIPS = {
     "Read-only. Fixed to this vault's name; the whole vault syncs under a remote folder of that name.",
   syncTarget:
     'Read-only preview of the effective remote path (Server URL + vault folder). Confirm this is where you expect the vault to sync.',
-  fileLocking:
-    'Locks each file on the server around every update (extra round trips; needs the Nextcloud files-lock app). Off is safe — if-match preconditions already prevent lost updates.',
-
   // Sync section
   syncOnStartup: 'Run one sync shortly after Obsidian starts. Off by default on mobile.',
   startupSyncDelay: 'How long to wait after startup before that first sync.',
@@ -40,22 +37,14 @@ export const TOOLTIPS = {
     'Skip syncing on cellular (Wi-Fi/wired allowed). Unavailable on iOS (no network-type API).',
   syncOnFileChange:
     'Sync a Markdown file shortly after you stop editing it. Disabled on mobile.',
-  explorerCompare:
-    'Adds a right-click action to compare a file with its remote version (mtime, checksum, diff) and resolve via push/pull.',
-  chunkThreshold:
-    'Files larger than this upload in chunks (Nextcloud only). Smaller files use a single request.',
   maxFileSize:
     'Skip files larger than this. 0 = unlimited. Keep low on mobile to avoid out-of-memory crashes.',
-  chunkedUpload:
-    'Upload oversized files in chunks instead of skipping them (Nextcloud only).',
 
   // Conflict resolution section
   autoMerge:
     'Auto-merge conflicts with reconcile-text. Enable Nextcloud version history first; results may be unexpected. (Version history is on by default on Nextcloud; there is no per-user toggle.)',
   frontmatterConflictStrategy:
     'How to handle a note whose YAML frontmatter differs on both sides. Remote or Local keeps that side and merges the body; Error holds the file for manual resolution.',
-  maxConflictRegions:
-    'If more regions conflict than this, fall back to inline markers. 0 = never fall back on region count.',
   mergeableExtensions:
     'Comma-separated file extensions eligible for automatic merge. Clear the field to disable auto-merge entirely (every conflict then uses the merge-failure policy).',
   conflictFailurePolicy:

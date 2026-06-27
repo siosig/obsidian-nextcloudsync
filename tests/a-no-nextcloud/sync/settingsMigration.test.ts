@@ -117,3 +117,38 @@ describe('pruneObsoleteSettings', () => {
     }
   });
 });
+
+// Feature 033: five low-value settings were removed from the schema. Their persisted values must not
+// influence behavior (behavior reads the fixed config — see fixedSyncConfig.test.ts /
+// uploadStrategySelection.test.ts) and the obsolete keys must be pruned on load (self-healing).
+describe('[SPEC:FX-1] feature 033 — the five removed settings are pruned (self-healing)', () => {
+  const REMOVED = [
+    'explorerCompareEnabled',
+    'fileLockingEnabled',
+    'chunkedUploadEnabled',
+    'uploadChunkThresholdMB',
+    'maxConflictRegions',
+  ] as const;
+
+  it('drops each removed key, even when persisted at a non-default value', () => {
+    const legacy: Record<string, unknown> = {
+      ...DEFAULT_SETTINGS,
+      explorerCompareEnabled: false,
+      fileLockingEnabled: true,
+      chunkedUploadEnabled: false,
+      uploadChunkThresholdMB: 200,
+      maxConflictRegions: 5,
+    };
+    const removed = pruneObsoleteSettings(legacy);
+    for (const key of REMOVED) {
+      expect(removed).toContain(key);
+      expect(legacy[key]).toBeUndefined();
+    }
+  });
+
+  it('is idempotent: a profile without the removed keys prunes nothing', () => {
+    const clean = { ...DEFAULT_SETTINGS } as unknown as Record<string, unknown>;
+    const removed = pruneObsoleteSettings(clean);
+    for (const key of REMOVED) expect(removed).not.toContain(key);
+  });
+});

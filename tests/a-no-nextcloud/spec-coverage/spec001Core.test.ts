@@ -5,13 +5,14 @@ import { resolve } from 'path';
 import { DEFAULT_SETTINGS } from '../../../src/types';
 import { ConflictResolver, MergeConfig } from '../../../src/sync/ConflictResolver';
 import { MergeEngine } from '../../../src/sync/merge/MergeEngine';
+import { FIXED } from '../../../src/util/fixedSyncConfig';
 import type { App } from 'obsidian';
 import type { LocalAdapter } from '../../../src/data/LocalAdapter';
 
 function resolver(overrides: Partial<MergeConfig>): ConflictResolver {
   return new ConflictResolver({} as App, {} as unknown as LocalAdapter, {
     autoMergeEnabled: DEFAULT_SETTINGS.autoMergeEnabled,
-    maxConflictRegions: DEFAULT_SETTINGS.maxConflictRegions,
+    maxConflictRegions: FIXED.maxConflictRegions, // 033: always unlimited
     frontmatterConflictStrategy: DEFAULT_SETTINGS.frontmatterConflictStrategy,
     mergeableExtensions: DEFAULT_SETTINGS.mergeableExtensions,
     conflictFailurePolicy: DEFAULT_SETTINGS.conflictFailurePolicy,
