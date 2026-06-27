@@ -15,6 +15,7 @@ import { migrateConfigSyncCategories, migrateBookmarksToConfigSync, pruneObsolet
 import { debugLogPath, syncLogPath, isActiveOwnLog } from './util/logPaths';
 import { SyncLogWriter, formatResolution } from './log/SyncLogWriter';
 import { autoNetworkConcurrency } from './util/platformDefaults';
+import { FIXED } from './util/fixedSyncConfig';
 
 const MIN_OBSIDIAN_VERSION = '1.11.4';
 
@@ -319,7 +320,7 @@ export default class ObsidianNextcloudsync extends Plugin {
     const resolution = formatResolution({
       failurePolicy: this.settings.conflictFailurePolicy,
       frontmatterStrategy: this.settings.frontmatterConflictStrategy,
-      maxConflictRegions: this.settings.maxConflictRegions,
+      maxConflictRegions: FIXED.maxConflictRegions, // 033: always unlimited
       autoMergeEnabled: this.settings.autoMergeEnabled,
       mergeableExtensions: this.settings.mergeableExtensions,
     });
