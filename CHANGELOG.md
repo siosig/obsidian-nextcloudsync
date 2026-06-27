@@ -11,6 +11,14 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.12] - 2026-06-27
+
+### Changed
+- Removed five low-value settings from the UI and pinned each to its best fixed behavior: file locking is always off (an always-on `If-Match` precondition provides lost-update safety without LOCK/UNLOCK round trips), chunked upload is always on, the chunk threshold is platform-derived (50 MB on desktop, 20 MB on mobile), max conflict regions is always unlimited, and *Compare with remote* is always available in the explorer menu and command.
+
+### Migration
+- Any custom values previously saved for these five settings are cleaned up automatically on upgrade, so every install follows the same single path.
+
 ## [0.7.11] - 2026-06-26
 
 ### Changed
@@ -170,6 +178,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.12]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.12
 [0.7.11]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.11
 [0.7.10]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.10
 [0.7.9]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.9
