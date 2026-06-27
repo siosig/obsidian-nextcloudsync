@@ -34,6 +34,8 @@
 
 .ncs-slider-value {
   margin-right: 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* ── Debug preview modal ─────────────────────────────────────────────────── */
