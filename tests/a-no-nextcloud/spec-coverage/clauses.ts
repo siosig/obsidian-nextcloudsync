@@ -216,4 +216,12 @@ export const CLAUSES: Clause[] = [
   { id: 'DBG-1', source: 'specs/032-debug-settings-reduction (single Debug toggle)', layer: 'a' },
   { id: 'DBG-2', source: 'specs/032-debug-settings-reduction (auto device name + vault-root logs)', layer: 'a' },
   { id: 'DBG-3', source: 'specs/032-debug-settings-reduction (custom values reset to the fixed path)', layer: 'a' },
+  // Feature 034 (slider range/step): the four numeric settings sliders get new min/max/step,
+  // sourced from SLIDER_LIMITS and mirrored by the mockup. Off-grid defaults stay non-destructive.
+  { id: 'SLD-1', source: 'specs/main/spec.md §15.1-slider (limits match the contract)', layer: 'a' },
+  { id: 'SLD-2', source: 'specs/main/spec.md §15.1-slider (max % step === 0, no fractional final step)', layer: 'a' },
+  { id: 'SLD-3', source: 'specs/main/spec.md §15.1-slider (on-grid defaults reachable)', layer: 'a' },
+  { id: 'SLD-4', source: 'specs/main/spec.md §15.1-slider (off-grid defaults tolerated, non-destructive)', layer: 'a' },
+  { id: 'SLD-5', source: 'specs/main/spec.md §15.1-slider (sliderLimits is a pure constant module)', layer: 'a' },
+  { id: 'SLD-6', source: 'specs/main/spec.md §15.1-slider (desktop mockup mirrors SLIDER_LIMITS)', layer: 'a' },
 ];
