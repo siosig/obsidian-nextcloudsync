@@ -177,16 +177,8 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
       .setTooltip(TOOLTIPS.syncTarget);
     targetSetting.descEl.addClass('ncs-break-all');
 
-    makeSetting(containerEl)
-      .setName('File locking (experimental)')
-      .setDesc('⚠️ when enabled, the plugin locks and unlocks each file on the server around every update (extra round trips). Requires the Nextcloud files locking app. Default off — lost-update safety is instead provided by an if-match precondition that turns a remote changed by another client into a conflict, without the locking overhead.')
-      .setTooltip(TOOLTIPS.fileLocking)
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.fileLockingEnabled)
-        .onChange(async (value) => {
-          this.plugin.settings.fileLockingEnabled = value;
-          await this.plugin.saveSettings();
-        }));
+    // Feature 033: the "File locking (experimental)" toggle was removed. Locking is always off —
+    // If-Match optimistic concurrency provides lost-update safety without the LOCK/UNLOCK overhead.
 
     new Setting(containerEl).setName('Sync').setHeading();
 
@@ -274,25 +266,9 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
-    makeSetting(containerEl)
-      .setName('Compare with remote (explorer menu)')
-      .setDesc('Adds a right-click item in the file explorer to compare a file with its remote version (modification time, checksum, diff) and resolve via push/pull. Takes effect immediately (no restart).')
-      .setTooltip(TOOLTIPS.explorerCompare)
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.explorerCompareEnabled)
-        .onChange(async (value) => {
-          this.plugin.settings.explorerCompareEnabled = value;
-          await this.plugin.saveSettings();
-        }));
-
-    this.addNumberSlider(containerEl, {
-      name: 'Chunk threshold (MB)',
-      desc: 'Files larger than this are uploaded in chunks (Nextcloud only). Smaller files use a single request.',
-      tooltip: TOOLTIPS.chunkThreshold,
-      min: 1, max: 500, step: 1,
-      get: () => this.plugin.settings.uploadChunkThresholdMB,
-      set: (v) => { this.plugin.settings.uploadChunkThresholdMB = v; },
-    });
+    // Feature 033: "Compare with remote" is always available (the explorer menu item and the
+    // compare-with-remote command are registered unconditionally in main.ts), and "Chunk threshold"
+    // is removed — the chunk threshold is platform-derived (50 MB desktop / 20 MB mobile).
 
     this.addNumberSlider(containerEl, {
       name: 'Maximum file size (MB)',
@@ -303,16 +279,8 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
       set: (v) => { this.plugin.settings.maxFileSizeMB = v; },
     });
 
-    makeSetting(containerEl)
-      .setName('Chunked upload')
-      .setDesc('Upload large files in chunks instead of skipping them (Nextcloud only).')
-      .setTooltip(TOOLTIPS.chunkedUpload)
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.chunkedUploadEnabled)
-        .onChange(async (value) => {
-          this.plugin.settings.chunkedUploadEnabled = value;
-          await this.plugin.saveSettings();
-        }));
+    // Feature 033: the "Chunked upload" toggle was removed — chunked upload is always on (still
+    // gated by the server-capability probe).
 
     // ── Conflict resolution ─────────────────────────────────────────────────────
     // Feature 030: frontmatter strategy, merge-failure policy and mergeable extensions are
@@ -345,14 +313,8 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
-    this.addNumberSlider(containerEl, {
-      name: 'Max conflict regions (auto merge)',
-      desc: 'If more regions conflict than this threshold, fall back to inline markers. 0 = unlimited (never fall back on region count).',
-      tooltip: TOOLTIPS.maxConflictRegions,
-      min: 0, max: 20, step: 1,
-      get: () => this.plugin.settings.maxConflictRegions,
-      set: (v) => { this.plugin.settings.maxConflictRegions = v; },
-    });
+    // Feature 033: the "Max conflict regions" slider was removed — auto-merge never downgrades a
+    // clean merge to inline markers on region count (always unlimited).
 
     makeSetting(containerEl)
       .setName('On merge failure')

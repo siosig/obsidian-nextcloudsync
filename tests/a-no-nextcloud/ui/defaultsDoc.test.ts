@@ -19,7 +19,7 @@ describe('[SPEC:SC-005] README settings-defaults tables match the code', () => {
 
       it('documents the default values from DEFAULT_SETTINGS', () => {
         expect(text).toContain(String(DEFAULT_SETTINGS.networkTimeoutSeconds));   // 30
-        expect(text).toContain(String(DEFAULT_SETTINGS.uploadChunkThresholdMB));  // 50
+        // Feature 033: chunk threshold is no longer a documented setting (platform-derived fixed value).
         expect(text).toContain(String(DEFAULT_SETTINGS.startupSyncDelaySeconds)); // 1
       });
 
