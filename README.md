@@ -204,7 +204,7 @@ These are the options you can change. Most start the same on both platforms; a f
 | Setting | Value |
 |---|---|
 | Network timeout | 30 seconds |
-| Startup sync delay | 1 second |
+| Startup sync delay | 1 second (`0` = no startup sync) |
 | Chunk threshold | 50 MB (desktop) / 20 MB (mobile) |
 | Chunked upload | on |
 | Bulk upload | on |
@@ -219,7 +219,6 @@ These are the options you can change. Most start the same on both platforms; a f
 
 | Setting | Desktop | Mobile |
 |---|---|---|
-| Sync on startup | on | on |
 | Sync on file change | on | off |
 | Maximum file size | unlimited (`0`) | 20 MB |
 | Network concurrency | auto from RAM (≈ 16 on 8 GB+) | ≈ 3 |
