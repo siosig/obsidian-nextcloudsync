@@ -11,6 +11,11 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.14] - 2026-06-27
+
+### Fixed
+- Fixed slider value truncation on mobile: multi-digit values such as "15" or "30" were clipped to ".." on narrow screens. The value label now uses `flex-shrink: 0; white-space: nowrap` so it stays fully visible at all screen widths.
+
 ## [0.7.13] - 2026-06-27
 
 ### Changed
@@ -186,6 +191,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.14]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.14
 [0.7.13]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.13
 [0.7.12]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.12
 [0.7.11]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.11
