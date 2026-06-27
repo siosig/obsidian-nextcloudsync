@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.11)
+## What's new in this release (0.7.12-beta.1)
 
-- **Simpler Debug settings (0.7.11)** — the Debug section is now a single switch: *Enable logging (troubleshooting)*. The Device name and Log folder fields were removed — the device name is derived automatically and logs always go to the vault root (sync log records all operations, debug log is verbose). Any custom device name / log folder you had set is reset to these defaults on upgrade. This is the first step in progressively removing low-value options to keep the plugin simple.
+- **Five low-value settings removed (0.7.12-beta.1)** — *File locking*, *Compare with remote (explorer menu)*, *Chunk threshold*, *Chunked upload*, and *Max conflict regions* are gone from settings and pinned to their best fixed behavior: locking is always off (an always-on `If-Match` precondition provides lost-update safety without LOCK/UNLOCK round trips), chunked upload is always on, the chunk threshold is platform-derived (50 MB on desktop, 20 MB on mobile), max conflict regions is always unlimited, and Compare with remote is always available in the explorer menu and command. Any custom values you had set are cleaned up automatically on upgrade. This continues progressively removing low-value options to keep the plugin simple.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
