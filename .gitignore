@@ -49,3 +49,4 @@ docs/
 
 # wdio-obsidian-service download cache (b-2)
 .obsidian-cache/
+/tmp/

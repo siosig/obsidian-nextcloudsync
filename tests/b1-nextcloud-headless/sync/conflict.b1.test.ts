@@ -10,12 +10,23 @@
 import { App } from 'obsidian';
 import { DavSyncSettings, DEFAULT_SETTINGS } from '../../../src/types';
 import { LocalAdapter } from '../../../src/data/LocalAdapter';
-import { ConflictResolver } from '../../../src/sync/ConflictResolver';
+import { ConflictResolver, MergeConfig } from '../../../src/sync/ConflictResolver';
+import { FIXED } from '../../../src/util/fixedSyncConfig';
 
 function resolver(overrides: Partial<DavSyncSettings>): ConflictResolver {
   const settings: DavSyncSettings = { ...DEFAULT_SETTINGS, deviceId: 'e2e-test-device', ...overrides };
-  // decide() does not touch app/localAdapter, so minimal stand-ins are fine.
-  return new ConflictResolver({} as App, {} as unknown as LocalAdapter, settings);
+  // decide() does not touch app/localAdapter, so minimal stand-ins are fine. Build MergeConfig the
+  // same way production does (main.ts/SyncEngine.ts): settings + the fixed maxConflictRegions (033
+  // removed it from DavSyncSettings — it is always unlimited).
+  const config: MergeConfig = {
+    autoMergeEnabled: settings.autoMergeEnabled,
+    maxConflictRegions: FIXED.maxConflictRegions,
+    frontmatterConflictStrategy: settings.frontmatterConflictStrategy,
+    mergeableExtensions: settings.mergeableExtensions,
+    conflictFailurePolicy: settings.conflictFailurePolicy,
+    deviceId: settings.deviceId,
+  };
+  return new ConflictResolver({} as App, {} as unknown as LocalAdapter, config);
 }
 
 // Non-overlapping edits → reconcile-text produces a clean merge.

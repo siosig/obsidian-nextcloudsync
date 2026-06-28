@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.14)
+## What's new in this release (0.7.15-beta.1)
 
-- **Fix slider value truncation on mobile (0.7.14)** — multi-digit slider values (e.g. "15", "30") were cut off with ".." on narrow mobile screens. The value label now stays fully visible at all screen widths.
+- **Apply the Maximum file size limit to downloads too (0.7.15-beta.1)** — the "Maximum file size" setting now guards downloads as well as uploads. A remote file larger than the limit is skipped before it is fetched (using the size the server reports), so a huge note can no longer crash the app by being pulled into memory on mobile. The skip is non-destructive: raising the limit lets the next sync download the file normally.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
@@ -87,7 +87,7 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 ### Nextcloud power features
 - **Login Flow v2** — set up with a browser approval instead of manually issuing and pasting an app password. Credentials are stored in Obsidian's secret credentials store, **never in plain text** in `data.json`.
 - **Server version history** — for the active note, list every revision the server holds (newest first) and restore any of them atomically, with confirmation. The restored content syncs back cleanly without triggering an infinite conflict loop.
-- **Chunked upload** — large attachments (images, PDFs, audio) above the chunk threshold are split and uploaded resumably; interrupted uploads never publish a partial file, and completion is checksum-verified. A separate absolute `maxFileSizeMB` cap guards memory.
+- **Chunked upload** — large attachments (images, PDFs, audio) above the chunk threshold are split and uploaded resumably; interrupted uploads never publish a partial file, and completion is checksum-verified. A separate absolute `maxFileSizeMB` cap guards memory in **both directions** — oversized files are skipped on upload *and* on download (the download size is taken from the server's PROPFIND, so the body is never fetched).
 - **Lost-update safety without locking** — every update carries an always-on `If-Match` precondition: a remote changed by another client returns 412, which the engine turns into a conflict (download remote + resolve). This replaces per-file WebDAV LOCK/UNLOCK round trips, so server-side file locking is intentionally never used.
 
 ---
@@ -97,7 +97,7 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 Mobile is supported, with a few platform-aware differences (desktop behaviour is unchanged):
 
 - **Automatic sync is off by default on mobile.** The OS suspends background timers, so periodic auto-sync and "sync on file change" are disabled (greyed out). Use **Sync now**, or rely on **Sync on startup**, which is on by default on every platform (since 0.7.11) and syncs once a few seconds after the app opens.
-- **Large files are skipped on mobile** above the "Maximum file size" limit (set `0` for unlimited) to avoid out-of-memory crashes; skips are reported.
+- **Large files are skipped on mobile** in **both directions (upload and download)** above the "Maximum file size" limit (set `0` for unlimited) to avoid out-of-memory crashes; skips are reported.
 - **No progress UI on mobile** — only error notices are shown.
 - **Network concurrency** is configurable; its first-run default is derived from the device's available memory — uniformly on desktop and mobile, with no platform-specific branch: **16** with 8 GB of RAM or more, **8** at 4 GB or more, **4** below that, and **3** when the device doesn't report its memory (common on mobile). Transfers run with bounded parallelism — capped both by this count and by a total in-flight-bytes budget (smaller on mobile) so large files can't exhaust memory — and uploads to the same folder are serialized to avoid server lock contention.
 - **Sync on Wi-Fi only** skips on cellular (Android/desktop). **Not available on iOS** (no network-type API), where the toggle is disabled.
