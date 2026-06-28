@@ -37,7 +37,7 @@ export const TOOLTIPS = {
   syncOnFileChange:
     'Sync a Markdown file shortly after you stop editing it. Disabled on mobile.',
   maxFileSize:
-    'Skip files larger than this. 0 = unlimited. Keep low on mobile to avoid out-of-memory crashes.',
+    'Skip files larger than this in both directions — uploads and downloads. 0 = unlimited. Keep low on mobile to avoid out-of-memory crashes.',
 
   // Conflict resolution section
   autoMerge:
