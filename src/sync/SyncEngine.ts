@@ -34,7 +34,7 @@ import { FileLogger } from '../util/FileLogger';
 import {
   isCellularBlocked, SIGNATURE_SAFETY_WINDOW_MS, MAX_HASH_SIZE,
   MAX_INFLIGHT_BYTES_DESKTOP, MAX_INFLIGHT_BYTES_MOBILE, massDeleteLimit, FORCE_FULL_SCAN_EVERY,
-  isAnomalousRemoteContent,
+  isAnomalousRemoteContent, isOverFileSizeLimit,
 } from '../util/limits';
 import { createLimiter, ByteSemaphore } from '../util/ConcurrencyLimiter';
 import { isSafeVaultRelativePath } from '../network/remotePath';
@@ -431,6 +431,24 @@ export class SyncEngine {
       const remote = await this.fetchRemoteInfo(path);
       if (!remote) return this.compareWithoutRemote(local, 'remote-missing');
 
+      // Size guard (spec 035, FR-011): never fetch an oversized remote body just to diff it (the
+      // fetch itself can OOM on Android). Show the metadata comparison (sizes/mtimes) but no line
+      // diff — the same shape as a binary/non-text file (remoteText null, diffAvailable false).
+      if (this.isRemoteOverSizeLimit(remote)) {
+        const sizeMB = remote.size / 1024 / 1024;
+        new Notice(
+          `⚠️ File too large to preview: ${path} (${sizeMB.toFixed(1)} MB > ${this.opts.settings.maxFileSizeMB} MB)`,
+        );
+        return {
+          ...local, state: 'ok', remoteExists: true,
+          remoteMtime: remote.lastModified ?? null,
+          remoteChecksum: remote.checksum ?? null,
+          checksumMatch: local.localChecksum != null && remote.checksum != null && local.localChecksum === remote.checksum,
+          remoteText: null, diffAvailable: false,
+          remoteSize: remote.size ?? null,
+        };
+      }
+
       const remoteBytes = await this.client!.downloadFile(path);
       // Hash the actual bytes (not the server-reported checksum) so checksumMatch is guaranteed
       // consistent with the diff: identical bytes ⇔ match ⇔ empty diff.
@@ -509,6 +527,14 @@ export class SyncEngine {
     const { client } = await this.ensureClient();
     const remote = await this.fetchRemoteInfo(path);
     if (!remote) throw new Error(`Remote file not found: ${path}`);
+
+    // Size guard (spec 035, FR-011): refuse a manual pull of an oversized remote (the download would
+    // risk OOM). Surface a clear error to the caller (symmetric with pushLocalToRemote throwing on an
+    // oversized upload). Local file and StateDB are left untouched.
+    if (this.isRemoteOverSizeLimit(remote)) {
+      const sizeMB = remote.size / 1024 / 1024;
+      throw new Error(`File too large to download (${sizeMB.toFixed(1)} MB > ${this.opts.settings.maxFileSizeMB} MB): ${path}`);
+    }
 
     const remoteData = await client.downloadFile(path);
     await this.opts.localAdapter.atomicWriteBinary(path, remoteData);
@@ -1142,10 +1168,40 @@ export class SyncEngine {
     await this.opts.stateDB.save();
   }
 
+  /**
+   * Download-side size guard (spec 035, symmetric with the upload strategies' `isOverFileSizeLimit`).
+   * Decides — BEFORE issuing a GET — whether a remote file exceeds `maxFileSizeMB`, using the size the
+   * server advertised in PROPFIND (`RemoteFileInfo.size`, getcontentlength) as the source of truth. No
+   * body is fetched. `maxFileSizeMB` of 0 means unlimited. This is the single decision point shared by
+   * every remote-body fetch path (normal download, deletion-vs-edit restore, conflict, compare, pull):
+   * `requestUrl` buffers the whole body in memory and Android base64-encodes it, so a large remote file
+   * would OOM the app (issue #8). The threshold logic is reused from upload so both directions agree.
+   */
+  private isRemoteOverSizeLimit(remote: RemoteFileInfo): boolean {
+    return isOverFileSizeLimit(remote.size, this.opts.settings.maxFileSizeMB);
+  }
+
+  /** User-facing notice for a download skipped by the size guard (mirrors the upload "too large" notice). */
+  private warnDownloadSkipped(path: string, sizeBytes: number): void {
+    const sizeMB = sizeBytes / 1024 / 1024;
+    new Notice(
+      `⚠️ File too large to download: ${path} (${sizeMB.toFixed(1)} MB > ${this.opts.settings.maxFileSizeMB} MB)`,
+    );
+  }
+
   private async downloadFile(
     remote: RemoteFileInfo, remoteId: string,
     idType: FileState['idType'], summary: SyncSessionSummary,
   ): Promise<void> {
+    // Size guard (spec 035): skip oversized remote files BEFORE the GET. Covers the normal
+    // remote→local download AND the local-delete-vs-remote-edit restore path (both route here). Leave
+    // local + Base untouched and do NOT queue a retry: a permanent skip until the cap is raised (then
+    // the next reconcile re-detects remote-changed and downloads it — self-healing). Not an error.
+    if (this.isRemoteOverSizeLimit(remote)) {
+      this.warnDownloadSkipped(remote.path, remote.size);
+      void this.opts.logger?.log(`download: SKIPPED over size limit (${remote.size}B > ${this.opts.settings.maxFileSizeMB}MB) → ${remote.path}`);
+      return;
+    }
     const data = await this.client!.downloadFile(remote.path);
     // Server-anomaly guard (spec 025): refuse to overwrite local with content whose byte length does
     // not match the size the server advertised (0-byte / truncated body on a buggy/inconsistent
@@ -1184,6 +1240,18 @@ export class SyncEngine {
     path: string, base: FileState | undefined, remote: RemoteFileInfo,
     remoteId: string, idType: FileState['idType'], summary: SyncSessionSummary,
   ): Promise<void> {
+    // Size guard (spec 035, FR-010): a both-sides conflict needs the remote body to merge, but an
+    // oversized remote cannot be fetched without risking OOM. Skip the download, keep local untouched,
+    // and flag the file conflicted so the UI surfaces it. Do NOT queue a retry — re-fetching would
+    // fail the same way every sync until the cap is raised; raising it lets the next sync merge
+    // normally (self-healing). Leave the StateDB Base hashes untouched so the divergence persists.
+    if (this.isRemoteOverSizeLimit(remote)) {
+      this.warnDownloadSkipped(path, remote.size);
+      if (base) this.opts.stateDB.setFile({ ...base, isConflicted: true });
+      void this.opts.logger?.log(`conflict: remote over size limit (${remote.size}B > ${this.opts.settings.maxFileSizeMB}MB), skipped → ${path}`);
+      return;
+    }
+
     // Capture local mtime BEFORE writing the merge result so we can compute max(local, remote).
     const localStatBefore = await this.opts.localAdapter.stat(path);
     const localMtimeBefore = localStatBefore?.mtime ?? 0;

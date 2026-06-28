@@ -192,6 +192,15 @@ export const CLAUSES: Clause[] = [
   { id: 'SG-4', source: 'specs/main/spec.md §9 (guard applies to download and prefer-remote overwrite)', layer: 'a' },
   { id: 'WB-1', source: 'specs/main/spec.md §9 (atomicWriteBinary read-back: size matches ⇒ ok)', layer: 'a' },
   { id: 'WB-2', source: 'specs/main/spec.md §9 (atomicWriteBinary read-back: mismatch/missing ⇒ throws)', layer: 'a' },
+  // --- DSG: download-side Maximum file size guard (spec 035, specs/main/spec.md §9) ---
+  { id: 'DSG-1', source: 'specs/main/spec.md §9 (sync download skips oversized remote before GET; no fetch/write/Base/retry, not an error)', layer: 'a' },
+  { id: 'DSG-2', source: 'specs/main/spec.md §9 (delete-vs-edit restore routes through the same download guard)', layer: 'a' },
+  { id: 'DSG-3', source: 'specs/main/spec.md §9 (conflict both-changed × oversized remote: skip, keep local, flag conflicted, no retry)', layer: 'a' },
+  { id: 'DSG-4', source: 'specs/main/spec.md §9 (compare/diff preview oversized: no body fetch, metadata only)', layer: 'a' },
+  { id: 'DSG-5', source: 'specs/main/spec.md §9 (manual pull oversized: throws clear error, no fetch)', layer: 'a' },
+  { id: 'DSG-6', source: 'specs/main/spec.md §9 (maxFileSizeMB=0 unlimited: downloads regardless of size)', layer: 'a' },
+  { id: 'DSG-7', source: 'specs/main/spec.md §9 (size exactly at cap is allowed — boundary)', layer: 'a' },
+  { id: 'DSG-8', source: 'specs/main/spec.md §9 (self-healing: raising the cap downloads the once-skipped file)', layer: 'a' },
   // --- TN: atomic-write temp-file naming under the 255-byte NAME_MAX (spec 026) ---
   { id: 'TN-1', source: 'specs/main/spec.md §9 (final name ≤255B always writes; temp suffix length not leaked)', layer: 'a' },
   { id: 'TN-2', source: 'specs/main/spec.md §9 (temp name length independent of target name length)', layer: 'a' },
