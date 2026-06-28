@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.14)
+## What's new in this release (0.7.15-beta.1)
 
-- **Fix slider value truncation on mobile (0.7.14)** — multi-digit slider values (e.g. "15", "30") were cut off with ".." on narrow mobile screens. The value label now stays fully visible at all screen widths.
+- **Apply the Maximum file size limit to downloads too (0.7.15-beta.1)** — the "Maximum file size" setting now guards downloads as well as uploads. A remote file larger than the limit is skipped before it is fetched (using the size the server reports), so a huge note can no longer crash the app by being pulled into memory on mobile. The skip is non-destructive: raising the limit lets the next sync download the file normally.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
