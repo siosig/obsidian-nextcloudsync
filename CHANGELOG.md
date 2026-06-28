@@ -11,6 +11,11 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.15] - 2026-06-29
+
+### Changed
+- The "Maximum file size" setting now applies to downloads as well as uploads. A remote file larger than the limit is skipped before it is fetched — using the size the server advertises in PROPFIND (`getcontentlength`) as the source of truth — so a large note can no longer crash the app by being buffered into memory on mobile (issue #8). The skip is non-destructive and self-healing: raising the limit lets the next sync download the file normally.
+
 ## [0.7.14] - 2026-06-27
 
 ### Fixed
@@ -191,6 +196,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.15]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.15
 [0.7.14]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.14
 [0.7.13]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.13
 [0.7.12]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.12
