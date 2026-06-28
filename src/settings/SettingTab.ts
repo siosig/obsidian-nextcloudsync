@@ -263,7 +263,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
 
     this.addNumberSlider(containerEl, {
       name: 'Maximum file size (MB)',
-      desc: 'Files larger than this are skipped with a warning. 0 = unlimited. On mobile a low limit avoids out-of-memory crashes.',
+      desc: 'Files larger than this are skipped with a warning, in both directions (upload and download). 0 = unlimited. On mobile a low limit avoids out-of-memory crashes.',
       tooltip: TOOLTIPS.maxFileSize,
       ...SLIDER_LIMITS.maxFileSize,
       get: () => this.plugin.settings.maxFileSizeMB,
