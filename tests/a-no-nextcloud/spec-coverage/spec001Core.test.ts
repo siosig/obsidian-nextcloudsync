@@ -5,17 +5,14 @@ import { resolve } from 'path';
 import { DEFAULT_SETTINGS } from '../../../src/types';
 import { ConflictResolver, MergeConfig } from '../../../src/sync/ConflictResolver';
 import { MergeEngine } from '../../../src/sync/merge/MergeEngine';
-import { FIXED } from '../../../src/util/fixedSyncConfig';
 import type { App } from 'obsidian';
 import type { LocalAdapter } from '../../../src/data/LocalAdapter';
 
 function resolver(overrides: Partial<MergeConfig>): ConflictResolver {
   return new ConflictResolver({} as App, {} as unknown as LocalAdapter, {
-    autoMergeEnabled: DEFAULT_SETTINGS.autoMergeEnabled,
-    maxConflictRegions: FIXED.maxConflictRegions, // 033: always unlimited
-    frontmatterConflictStrategy: DEFAULT_SETTINGS.frontmatterConflictStrategy,
-    mergeableExtensions: DEFAULT_SETTINGS.mergeableExtensions,
-    conflictFailurePolicy: DEFAULT_SETTINGS.conflictFailurePolicy,
+    autoMergeFileTypes: DEFAULT_SETTINGS.autoMergeFileTypes,
+    autoMergeFileStrategy: DEFAULT_SETTINGS.autoMergeFileStrategy,
+    otherFileStrategy: DEFAULT_SETTINGS.otherFileStrategy,
     deviceId: 'conf-device',
     ...overrides,
   });
@@ -35,12 +32,14 @@ describe('spec 001 — core requirements', () => {
     expect(manifest.minAppVersion).toBe('1.11.4');
   });
 
-  it('FR-008: a conflict preserves BOTH sides (conflict-markers keep local and remote)', () => {
-    // With markers, both the local and remote text must survive in the written content.
-    const r = resolver({ autoMergeEnabled: false, mergeableExtensions: ['md'], conflictFailurePolicy: 'conflict-markers' });
-    const d = r.decide('n.md', 'base\n', 'LOCAL-ONLY\n', 'REMOTE-ONLY\n');
+  it('FR-008: a conflict preserves BOTH sides (conflict markers keep local and remote)', () => {
+    // Merge strategy on a text file whose frontmatter diverges → full-file conflict markers, so both
+    // the local and remote text survive in the written content.
+    const r = resolver({ autoMergeFileTypes: ['md'], autoMergeFileStrategy: 'merge' });
+    const d = r.decide('n.md', '', '---\nk: 1\n---\nLOCAL-ONLY\n', '---\nk: 2\n---\nREMOTE-ONLY\n');
     expect(d.action).toBe('write');
     if (d.action === 'write') {
+      expect(d.clean).toBe(false);
       expect(d.content).toContain('LOCAL-ONLY');
       expect(d.content).toContain('REMOTE-ONLY');
     }
@@ -48,16 +47,16 @@ describe('spec 001 — core requirements', () => {
 
   // ---- Finalized: spec updated to match the implementation (D4/D5) ----
 
-  it('FR-013 (finalized): auto-merge defaults to ON', () => {
-    // Finalized D4: autoMerge is on by default (README: "on by default"); the value of the
-    // plugin is loss-less automatic merge of non-overlapping edits.
-    expect(DEFAULT_SETTINGS.autoMergeEnabled).toBe(true);
+  it('FR-013 (finalized): the Auto Merge File strategy defaults to Merge', () => {
+    // Feature 037: the autoMerge toggle became a per-type strategy; the default is still merge, so
+    // the plugin's value — loss-less automatic merge of non-overlapping edits — is unchanged.
+    expect(DEFAULT_SETTINGS.autoMergeFileStrategy).toBe('merge');
   });
 
   it('FR-010 (finalized): YAML frontmatter is auto-merged (non-overlapping lines merge cleanly)', () => {
     // Finalized D5: frontmatter is IN scope for auto-merge — non-overlapping frontmatter
     // edits (different keys) merge cleanly via diff3; only same-line divergence conflicts.
-    const engine = new MergeEngine({ maxConflictRegions: 0, frontmatterConflictStrategy: 'conflict' });
+    const engine = new MergeEngine({ maxConflictRegions: 0 });
     // Keep the two changed keys on non-adjacent lines: line-based diff3 merges distinct
     // lines cleanly, but adjacent changed lines collapse into one (conflicting) hunk.
     const base = '---\nk1: a\nmid: x\nk2: b\n---\nbody\n';

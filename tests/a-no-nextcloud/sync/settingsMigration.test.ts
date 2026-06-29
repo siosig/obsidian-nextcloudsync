@@ -1,9 +1,79 @@
-import { migrateBookmarksToConfigSync, migrateStartupToggleToDelay, pruneObsoleteSettings, resetDebugIdentityFields } from '../../../src/util/settingsMigration';
+import { migrateBookmarksToConfigSync, migrateStartupToggleToDelay, migrateConflictSettingsToStrategies, pruneObsoleteSettings, resetDebugIdentityFields } from '../../../src/util/settingsMigration';
 import { DEFAULT_SETTINGS, DavSyncSettings } from '../../../src/types';
 
 function freshSettings(): DavSyncSettings {
   return { ...DEFAULT_SETTINGS, configSync: { ...DEFAULT_SETTINGS.configSync } };
 }
+
+// Feature 037 (R3): the three removed conflict settings fold into the per-type strategy model, then
+// the obsolete keys are pruned (self-healing). CSF-11.
+describe('[SPEC:CSF-11] migrateConflictSettingsToStrategies — old conflict settings → per-type strategies', () => {
+  it('[SPEC:CSF-11] carries mergeableExtensions → autoMergeFileTypes and autoMergeEnabled:true → merge', () => {
+    const s = freshSettings();
+    migrateConflictSettingsToStrategies(
+      { autoMergeEnabled: true, conflictFailurePolicy: 'error', mergeableExtensions: ['md', 'csv'] }, s,
+    );
+    expect(s.autoMergeFileTypes).toEqual(['md', 'csv']);
+    expect(s.autoMergeFileStrategy).toBe('merge');
+    expect(s.otherFileStrategy).toBe('latest-mtime'); // error → default latest-mtime for Other File
+  });
+
+  it('[SPEC:CSF-11] autoMergeEnabled:false + local-wins/remote-wins map to the matching win strategy', () => {
+    const a = freshSettings();
+    migrateConflictSettingsToStrategies({ autoMergeEnabled: false, conflictFailurePolicy: 'local-wins' }, a);
+    expect(a.autoMergeFileStrategy).toBe('local-win');
+    expect(a.otherFileStrategy).toBe('local-win');
+
+    const b = freshSettings();
+    migrateConflictSettingsToStrategies({ autoMergeEnabled: false, conflictFailurePolicy: 'remote-wins' }, b);
+    expect(b.autoMergeFileStrategy).toBe('remote-win');
+    expect(b.otherFileStrategy).toBe('remote-win');
+  });
+
+  it('[SPEC:CSF-11] autoMergeEnabled:false + conflict-markers/error → merge (auto file) and latest-mtime (other)', () => {
+    const s = freshSettings();
+    migrateConflictSettingsToStrategies({ autoMergeEnabled: false, conflictFailurePolicy: 'conflict-markers' }, s);
+    expect(s.autoMergeFileStrategy).toBe('merge'); // markers give manual room → keep merge
+    expect(s.otherFileStrategy).toBe('latest-mtime');
+  });
+
+  it('[SPEC:CSF-11] frontmatterConflictStrategy is discarded (no new field tracks it)', () => {
+    const s = freshSettings();
+    migrateConflictSettingsToStrategies(
+      { autoMergeEnabled: true, conflictFailurePolicy: 'error', frontmatterConflictStrategy: 'local-wins' } as never, s,
+    );
+    expect(s).not.toHaveProperty('frontmatterConflictStrategy');
+  });
+
+  it('[SPEC:CSF-11] a fresh install (no old keys) keeps DEFAULT_SETTINGS', () => {
+    const s = freshSettings();
+    migrateConflictSettingsToStrategies({}, s);
+    expect(s.autoMergeFileStrategy).toBe(DEFAULT_SETTINGS.autoMergeFileStrategy);
+    expect(s.otherFileStrategy).toBe(DEFAULT_SETTINGS.otherFileStrategy);
+    expect(s.autoMergeFileTypes).toEqual(DEFAULT_SETTINGS.autoMergeFileTypes);
+  });
+
+  it('[SPEC:CSF-11] is idempotent: a profile already on the new model is not overwritten', () => {
+    const s = freshSettings();
+    s.autoMergeFileStrategy = 'remote-win';
+    migrateConflictSettingsToStrategies(
+      { autoMergeFileStrategy: 'remote-win', autoMergeEnabled: true } as never, s,
+    );
+    expect(s.autoMergeFileStrategy).toBe('remote-win'); // untouched
+  });
+
+  it('[SPEC:CSF-11] pruneObsoleteSettings drops the three obsolete keys (self-healing)', () => {
+    const s = freshSettings() as unknown as Record<string, unknown>;
+    s.autoMergeEnabled = true;
+    s.conflictFailurePolicy = 'error';
+    s.frontmatterConflictStrategy = 'conflict';
+    s.mergeableExtensions = ['md'];
+    const removed = pruneObsoleteSettings(s);
+    expect(removed).toEqual(expect.arrayContaining([
+      'autoMergeEnabled', 'conflictFailurePolicy', 'frontmatterConflictStrategy', 'mergeableExtensions',
+    ]));
+  });
+});
 
 // Feature 032: the Debug section no longer exposes a device name or a log folder. On every load both
 // are forced back to the auto/fixed sentinel ('' ⇒ derived device name / vault-root logs), so every
