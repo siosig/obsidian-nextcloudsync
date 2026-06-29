@@ -38,6 +38,23 @@
   flex-shrink: 0;
 }
 
+/* Editable numeric input paired with each settings slider (spec 036): keyboard entry of exact
+   values the coarse slider step cannot reach. Fixed, non-shrinking width so narrow (mobile)
+   setting panes never overflow; the slider beside it absorbs the remaining width. */
+.ncs-slider-num {
+  width: 4.5em;
+  flex: 0 0 auto;
+  margin-right: 10px;
+  text-align: right;
+}
+
+@media (max-width: 480px) {
+  .ncs-slider-num {
+    width: 4em;
+    margin-right: 8px;
+  }
+}
+
 /* ── Debug preview modal ─────────────────────────────────────────────────── */
 .ncs-debug-modal {
   width: min(900px, 95vw);
