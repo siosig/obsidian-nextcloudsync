@@ -72,6 +72,60 @@ export function migrateStartupToggleToDelay(
 }
 
 /**
+ * Migrate the three removed conflict settings (autoMergeEnabled / conflictFailurePolicy /
+ * frontmatterConflictStrategy + mergeableExtensions) into the feature 037 per-type strategy model
+ * ({autoMergeFileTypes, autoMergeFileStrategy, otherFileStrategy}). Mapping (research R3):
+ *   - autoMergeFileTypes  ← mergeableExtensions (role continues; values carried over verbatim)
+ *   - autoMergeFileStrategy ← autoMergeEnabled=true → 'merge'; =false → conflictFailurePolicy
+ *       (local-wins→local-win / remote-wins→remote-win / conflict-markers|error → 'merge', since the
+ *        new model has no hold/error and Merge still surfaces markers for manual resolution)
+ *   - otherFileStrategy   ← conflictFailurePolicy (local-wins→local-win / remote-wins→remote-win /
+ *        conflict-markers|error|absent → 'latest-mtime', the default; Other File has no merge/markers)
+ *   - frontmatterConflictStrategy → discarded (Merge marks diverging frontmatter as a conflict, FR-005)
+ *
+ * Idempotent: once `autoMergeFileStrategy` has been persisted (next save), this is a no-op, so a
+ * deliberate new-model choice is never overwritten. A profile with none of the old keys is a fresh
+ * install and keeps DEFAULT_SETTINGS. Mutates `settings`; run before {@link pruneObsoleteSettings}.
+ */
+export function migrateConflictSettingsToStrategies(
+  saved: {
+    autoMergeEnabled?: unknown;
+    conflictFailurePolicy?: unknown;
+    mergeableExtensions?: unknown;
+    autoMergeFileStrategy?: unknown;
+  },
+  settings: DavSyncSettings,
+): void {
+  if (saved.autoMergeFileStrategy !== undefined) return; // already on the new model
+  const hasOld =
+    saved.autoMergeEnabled !== undefined ||
+    saved.conflictFailurePolicy !== undefined ||
+    saved.mergeableExtensions !== undefined;
+  if (!hasOld) return; // fresh install → keep DEFAULT_SETTINGS
+
+  if (Array.isArray(saved.mergeableExtensions)) {
+    settings.autoMergeFileTypes = saved.mergeableExtensions.filter(
+      (e): e is string => typeof e === 'string',
+    );
+  }
+  const policy = saved.conflictFailurePolicy;
+  settings.autoMergeFileStrategy =
+    saved.autoMergeEnabled === false
+      ? policy === 'local-wins'
+        ? 'local-win'
+        : policy === 'remote-wins'
+          ? 'remote-win'
+          : 'merge'
+      : 'merge';
+  settings.otherFileStrategy =
+    policy === 'local-wins'
+      ? 'local-win'
+      : policy === 'remote-wins'
+        ? 'remote-win'
+        : 'latest-mtime';
+}
+
+/**
  * Force the two Debug-identity fields back to their auto/fixed sentinels (feature 032). The settings
  * UI no longer lets the user set a device name or a log folder; every user converges onto the single
  * path where the device name is derived (`deviceName=''` ⇒ `<platform>-<deviceId>`) and logs are

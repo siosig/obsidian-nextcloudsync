@@ -11,7 +11,9 @@ describe('DEFAULT_SETTINGS — remaining default contract (C2)', () => {
     expect(DEFAULT_SETTINGS.startupSyncDelaySeconds).toBe(1);
     expect(DEFAULT_SETTINGS.networkTimeoutSeconds).toBe(30);
     expect(DEFAULT_SETTINGS.bulkUploadEnabled).toBe(true);
-    expect(DEFAULT_SETTINGS.autoMergeEnabled).toBe(true);
+    // Feature 037: the autoMergeEnabled toggle was replaced by per-type strategies.
+    expect(DEFAULT_SETTINGS.autoMergeFileStrategy).toBe('merge');
+    expect(DEFAULT_SETTINGS.otherFileStrategy).toBe('latest-mtime');
     expect(DEFAULT_SETTINGS.logsFolder).toBe('');
     expect(DEFAULT_SETTINGS.deviceName).toBe('');
   });

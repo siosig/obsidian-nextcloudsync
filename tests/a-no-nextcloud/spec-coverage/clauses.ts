@@ -94,6 +94,20 @@ export const CLAUSES: Clause[] = [
   // to the maxConflictRegions breaker, so body conflicts reach conflictFailurePolicy when the cap is
   // exceeded. Verified at layer a (mergeEngine.test.ts).
   { id: 'CF-14', source: 'specs/main/spec.md §6.2 / §18 (F5 resolved)', layer: 'a' },
+  // --- CSF: conflict strategy by file type (feature 037) ---
+  { id: 'CSF-1', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md', layer: 'a' },
+  { id: 'CSF-2', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md', layer: 'a' },
+  { id: 'CSF-3', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md', layer: 'a' },
+  { id: 'CSF-4', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md (FR-005a)', layer: 'a' },
+  { id: 'CSF-5', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md (FR-005b / SC-009)', layer: 'a' },
+  { id: 'CSF-6', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md', layer: 'a' },
+  { id: 'CSF-7', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md', layer: 'a' },
+  { id: 'CSF-8', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md', layer: 'a' },
+  { id: 'CSF-9', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md (FR-009)', layer: 'a' },
+  { id: 'CSF-10', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md', layer: 'a' },
+  { id: 'CSF-11', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md (R3 migration)', layer: 'a' },
+  { id: 'CSF-12', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md (FR-013)', layer: 'a' },
+  { id: 'CSF-13', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md (FR-010)', layer: 'a' },
   // --- RT: retry queue ---
   // retryQueue enqueue policy (specs/main/spec.md §6.3): NetworkError → retry, other errors → record only.
   // Verified at layer a via the real processFileWithRetry wiring (retryQueue.test.ts).
@@ -201,6 +215,14 @@ export const CLAUSES: Clause[] = [
   { id: 'DSG-6', source: 'specs/main/spec.md §9 (maxFileSizeMB=0 unlimited: downloads regardless of size)', layer: 'a' },
   { id: 'DSG-7', source: 'specs/main/spec.md §9 (size exactly at cap is allowed — boundary)', layer: 'a' },
   { id: 'DSG-8', source: 'specs/main/spec.md §9 (self-healing: raising the cap downloads the once-skipped file)', layer: 'a' },
+  // --- SNI: slider numeric input (spec 036) ---
+  { id: 'SNI-1', source: 'specs/036-slider-numeric-input (numeric input clamps out-of-range to bounds)', layer: 'a' },
+  { id: 'SNI-2', source: 'specs/036-slider-numeric-input (invalid/empty/NaN input reverts to current value)', layer: 'a' },
+  { id: 'SNI-3', source: 'specs/036-slider-numeric-input (off-grid integers in range accepted)', layer: 'a' },
+  { id: 'SNI-4', source: 'specs/036-slider-numeric-input (decimals rounded to integers then clamped)', layer: 'a' },
+  { id: 'SNI-5', source: 'specs/036-slider-numeric-input (slider<->numeric input two-way sync)', layer: 'a', waiver: 'DOM wiring verified via quickstart manual check; logic core covered by SNI-1..4' },
+  { id: 'SNI-6', source: 'specs/036-slider-numeric-input (numeric input commits on blur/Enter, not per keystroke)', layer: 'a', waiver: 'DOM event wiring verified via quickstart manual check' },
+  { id: 'SNI-11', source: 'specs/036-slider-numeric-input (existing 5 sliders ranges/defaults unchanged)', layer: 'a' },
   // --- TN: atomic-write temp-file naming under the 255-byte NAME_MAX (spec 026) ---
   { id: 'TN-1', source: 'specs/main/spec.md §9 (final name ≤255B always writes; temp suffix length not leaked)', layer: 'a' },
   { id: 'TN-2', source: 'specs/main/spec.md §9 (temp name length independent of target name length)', layer: 'a' },
