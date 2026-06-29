@@ -39,6 +39,18 @@ describe('[SPEC:SLD-1] slider limits match the contract', () => {
   });
 });
 
+describe('[SPEC:SNI-11] feature 036 leaves the existing five sliders unchanged', () => {
+  // Adding the numeric input + chunk threshold must not alter any existing slider's range.
+  const UNCHANGED: Array<keyof typeof SLIDER_LIMITS> = [
+    'startupSyncDelay', 'syncInterval', 'networkTimeout', 'networkConcurrency', 'maxFileSize',
+  ];
+  for (const key of UNCHANGED) {
+    it(`${key} range/step is unchanged`, () => {
+      expect(SLIDER_LIMITS[key]).toEqual(EXPECTED[key]);
+    });
+  }
+});
+
 describe('[SPEC:SLD-2] max is a whole multiple of step (no fractional final step)', () => {
   for (const [key, limit] of Object.entries(SLIDER_LIMITS)) {
     it(`${key}: max % step === 0`, () => {
