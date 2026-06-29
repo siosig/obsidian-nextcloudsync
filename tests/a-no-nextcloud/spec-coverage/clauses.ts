@@ -94,6 +94,20 @@ export const CLAUSES: Clause[] = [
   // to the maxConflictRegions breaker, so body conflicts reach conflictFailurePolicy when the cap is
   // exceeded. Verified at layer a (mergeEngine.test.ts).
   { id: 'CF-14', source: 'specs/main/spec.md §6.2 / §18 (F5 resolved)', layer: 'a' },
+  // --- CSF: conflict strategy by file type (feature 037) ---
+  { id: 'CSF-1', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md', layer: 'a' },
+  { id: 'CSF-2', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md', layer: 'a' },
+  { id: 'CSF-3', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md', layer: 'a' },
+  { id: 'CSF-4', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md (FR-005a)', layer: 'a' },
+  { id: 'CSF-5', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md (FR-005b / SC-009)', layer: 'a' },
+  { id: 'CSF-6', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md', layer: 'a' },
+  { id: 'CSF-7', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md', layer: 'a' },
+  { id: 'CSF-8', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md', layer: 'a' },
+  { id: 'CSF-9', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md (FR-009)', layer: 'a' },
+  { id: 'CSF-10', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md', layer: 'a' },
+  { id: 'CSF-11', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md (R3 migration)', layer: 'a' },
+  { id: 'CSF-12', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md (FR-013)', layer: 'a' },
+  { id: 'CSF-13', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md (FR-010)', layer: 'a' },
   // --- RT: retry queue ---
   // retryQueue enqueue policy (specs/main/spec.md §6.3): NetworkError → retry, other errors → record only.
   // Verified at layer a via the real processFileWithRetry wiring (retryQueue.test.ts).

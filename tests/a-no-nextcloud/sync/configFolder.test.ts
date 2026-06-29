@@ -1,6 +1,6 @@
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { LocalAdapter } from '../../../src/data/LocalAdapter';
-import { DavSyncSettings, ConfigSyncCategories, SyncSessionSummary } from '../../../src/types';
+import { DavSyncSettings, DEFAULT_SETTINGS, ConfigSyncCategories, SyncSessionSummary, RemoteFileInfo, FileState } from '../../../src/types';
 import { DataAdapter, Vault } from 'obsidian';
 
 function makeDataAdapter(overrides: Partial<DataAdapter> = {}): DataAdapter {
@@ -139,5 +139,68 @@ describe('SyncEngine remote-deletion scope guard (config folder hard exclusions)
     const h = buildDeletionHarness(allOn);
     await h.invoke(`${CONFIG_DIR}/appearance.json`);
     expect(h.remove).toHaveBeenCalledTimes(1); // in scope → legitimate deletion proceeds
+  });
+});
+
+// Feature 037 FR-013: the old config-folder newest-wins special branch in handleConflict was removed.
+// A `.obsidian` JSON conflict now flows through the single dispatch as an Other File: its extension
+// (json) is not in autoMergeFileTypes, so it takes otherFileStrategy (default latest-mtime), which is
+// JSON-safe (never writes conflict markers). Equal mtime → no-op, re-evaluated next sync (self-healing).
+describe('[SPEC:CSF-12] config JSON conflict resolves via Other File / latest-mtime (no special branch)', () => {
+  const enc2 = new TextEncoder();
+  const toBuf2 = (s: string): ArrayBuffer => enc2.encode(s).buffer;
+
+  function harness(localMtime: number, remoteMtime: number) {
+    const setFile = jest.fn();
+    const atomicWriteBinary = jest.fn(async () => undefined);
+    const localAdapter = {
+      stat: jest.fn(async () => ({ size: 7, mtime: localMtime })),
+      read: jest.fn(async () => '{"a":1}'),
+      readBinary: jest.fn(async () => toBuf2('{"a":1}')),
+      atomicWrite: jest.fn(async () => undefined),
+      atomicWriteBinary,
+      setMtime: jest.fn(async () => undefined),
+    };
+    const stateDB = { setFile, getFile: jest.fn(() => undefined) };
+    const client = { downloadFile: jest.fn(async () => toBuf2('{"a":2}')) };
+    const upload = jest.fn(async () => 'uploaded' as const);
+    const engine = new SyncEngine({
+      app: {}, settings: { ...DEFAULT_SETTINGS, deviceId: 'dev-abcd' }, localAdapter, stateDB,
+      statusBar: {}, webdavFactory: {}, pluginDir: PLUGIN_DIR, configDir: CONFIG_DIR,
+    } as never);
+    (engine as unknown as { client: unknown }).client = client;
+    (engine as unknown as { uploadStrategy: unknown }).uploadStrategy = { upload };
+    const remote: RemoteFileInfo = {
+      path: `${CONFIG_DIR}/appearance.json`, fileId: 'f', checksum: 'c', etag: 'e',
+      size: toBuf2('{"a":2}').byteLength, lastModified: remoteMtime,
+    };
+    const invoke = (base: FileState | undefined, summary: SyncSessionSummary) =>
+      (engine as unknown as {
+        handleConflict(p: string, b: FileState | undefined, r: RemoteFileInfo, id: string, t: FileState['idType'], s: SyncSessionSummary): Promise<void>;
+      }).handleConflict(`${CONFIG_DIR}/appearance.json`, base, remote, 'c', 'sha256', summary);
+    return { invoke, atomicWriteBinary, upload, setFile };
+  }
+
+  it('[SPEC:CSF-12] remote newer → local overwritten by remote (no markers, JSON-safe)', async () => {
+    const h = harness(1000, 2000);
+    const summary = makeSummary();
+    await h.invoke(undefined, summary);
+    expect(h.atomicWriteBinary).toHaveBeenCalledTimes(1);
+    expect(summary.downloadedCount).toBe(1);
+  });
+
+  it('[SPEC:CSF-12] equal mtime → no-op success (converges next sync, no error, not conflicted)', async () => {
+    const base: FileState = {
+      path: `${CONFIG_DIR}/appearance.json`, localHash: 'lh', remoteId: 'rh', idType: 'sha256',
+      size: 7, mtime: 1500, remoteFileId: 'f', isConflicted: false,
+    };
+    const h = harness(1500, 1500);
+    const summary = makeSummary();
+    await h.invoke(base, summary);
+    expect(h.atomicWriteBinary).not.toHaveBeenCalled();
+    expect(h.upload).not.toHaveBeenCalled();
+    expect(summary.errorCount).toBe(0);
+    expect(summary.conflictedCount).toBe(0);
+    expect(h.setFile).not.toHaveBeenCalled();
   });
 });

@@ -11,11 +11,10 @@ import { FileLogger } from './util/FileLogger';
 import { isSyncTmpPath, LocalAdapter } from './data/LocalAdapter';
 import { v4 as uuidv4 } from './util/uuid';
 import { hostToken, LogPlatform } from './util/hostToken';
-import { migrateConfigSyncCategories, migrateBookmarksToConfigSync, migrateStartupToggleToDelay, pruneObsoleteSettings, resetDebugIdentityFields } from './util/settingsMigration';
+import { migrateConfigSyncCategories, migrateBookmarksToConfigSync, migrateStartupToggleToDelay, migrateConflictSettingsToStrategies, pruneObsoleteSettings, resetDebugIdentityFields } from './util/settingsMigration';
 import { debugLogPath, syncLogPath, isActiveOwnLog } from './util/logPaths';
 import { SyncLogWriter, formatResolution } from './log/SyncLogWriter';
 import { autoNetworkConcurrency } from './util/platformDefaults';
-import { FIXED } from './util/fixedSyncConfig';
 
 const MIN_OBSIDIAN_VERSION = '1.11.4';
 
@@ -318,11 +317,9 @@ export default class ObsidianNextcloudsync extends Plugin {
    */
   private async appendSyncLog(entries: SyncHistoryEntry[], summary: SyncSessionSummary): Promise<void> {
     const resolution = formatResolution({
-      failurePolicy: this.settings.conflictFailurePolicy,
-      frontmatterStrategy: this.settings.frontmatterConflictStrategy,
-      maxConflictRegions: FIXED.maxConflictRegions, // 033: always unlimited
-      autoMergeEnabled: this.settings.autoMergeEnabled,
-      mergeableExtensions: this.settings.mergeableExtensions,
+      autoMergeFileStrategy: this.settings.autoMergeFileStrategy,
+      otherFileStrategy: this.settings.otherFileStrategy,
+      autoMergeFileTypes: this.settings.autoMergeFileTypes,
     });
     await this.syncLogWriter.append(entries, {
       at: summary.startedAt,
@@ -375,6 +372,11 @@ export default class ObsidianNextcloudsync extends Plugin {
     // Feature 034 (rev): the "Sync on startup" toggle was folded into the startup-delay slider
     // (0 = no startup sync). Convert any persisted toggle state before it is pruned below.
     migrateStartupToggleToDelay(saved, this.settings);
+
+    // Feature 037: fold the three removed conflict settings (autoMergeEnabled / conflictFailurePolicy
+    // / frontmatterConflictStrategy + mergeableExtensions) into the per-type strategy model before the
+    // obsolete keys are pruned below.
+    migrateConflictSettingsToStrategies(saved, this.settings);
 
     // Feature 032: the Debug section no longer exposes a device name or a log folder. Force both back
     // to their auto/fixed sentinels so every user converges onto the single path (device name derived,

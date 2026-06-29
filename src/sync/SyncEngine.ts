@@ -17,6 +17,7 @@ import {
   FeatureUnsupportedError,
   PreconditionFailedError,
   RemoteCompareResult,
+  ConflictResolution,
 } from '../types';
 import { isSyncTmpPath, LocalAdapter } from '../data/LocalAdapter';
 import { StateDB } from '../data/StateDB';
@@ -556,12 +557,12 @@ export class SyncEngine {
     await this.opts.historyStore?.save();
   }
 
-  /** True when `path`'s extension is in the configured mergeable (text) extensions. */
+  /** True when `path`'s extension is an Auto Merge File type (used for Compare's text-diff eligibility). */
   private textEligible(path: string): boolean {
     const dot = path.lastIndexOf('.');
     if (dot < 0) return false;
     const ext = path.slice(dot + 1).toLowerCase();
-    return this.opts.settings.mergeableExtensions.includes(ext);
+    return this.opts.settings.autoMergeFileTypes.includes(ext);
   }
 
   /** Fetch a single remote file's metadata via PROPFIND; null when the remote file is absent. */
@@ -1252,53 +1253,60 @@ export class SyncEngine {
       return;
     }
 
-    // Capture local mtime BEFORE writing the merge result so we can compute max(local, remote).
+    // Capture local stat (size + mtime) BEFORE writing any merge result: needed both for the
+    // max(local, remote) mtime stamp on a merge write and for the biggest-size / latest-mtime
+    // deterministic strategies (feature 037).
     const localStatBefore = await this.opts.localAdapter.stat(path);
     const localMtimeBefore = localStatBefore?.mtime ?? 0;
+    const localSizeBefore = localStatBefore?.size ?? 0;
 
-    // Config-folder files (appearance.json, etc.) are JSON state, not authored prose: writing
-    // text conflict markers would corrupt the JSON and stop Obsidian reading the setting. Resolve
-    // these by newest-wins (most recent mtime), reusing the prefer-local/prefer-remote paths so
-    // markers/merge are never applied. Equal mtime → remote-wins (stable tiebreak).
-    if (this.configSync.isConfigFolderConflictPath(path)) {
-      if ((remote.lastModified || 0) >= localMtimeBefore) {
-        const remoteData = await this.client!.downloadFile(remote.path);
-        void this.opts.logger?.log(`conflict(config): remote newer, pulling → ${path}`);
-        await this.resolveByPreferRemote(path, remote, remoteData, remoteId, idType, summary);
-      } else {
-        void this.opts.logger?.log(`conflict(config): local newer, pushing → ${path}`);
-        await this.resolveByPreferLocal(path, remote, summary);
-      }
-      return;
-    }
-
-    const localContent = await this.opts.localAdapter.read(path);
-    const remoteData = await this.client!.downloadFile(remote.path);
-    const remoteContent = new TextDecoder().decode(remoteData);
-
+    // Feature 037: a single per-type strategy replaces the former three conflict settings. The
+    // ConflictResolver classifies the path (Auto Merge File / Other File) and applies its strategy.
+    // Config-folder JSON (appearance.json, etc.) has no special branch any more: its extension is not
+    // in autoMergeFileTypes, so it falls to `otherFileStrategy` (default latest-mtime = newest-wins),
+    // which never writes markers — JSON-safe, single path (FR-013).
     const resolver = new ConflictResolver(this.opts.app, this.opts.localAdapter, {
-      autoMergeEnabled: this.opts.settings.autoMergeEnabled,
-      // Feature 033: max conflict regions is always unlimited (0) — never downgrade a clean merge to
-      // inline markers on region count.
-      maxConflictRegions: FIXED.maxConflictRegions,
-      // Feature 030: frontmatter strategy, merge-failure policy and merge-eligible extensions are
-      // user-editable again (read live from settings so a change applies on the next sync).
-      frontmatterConflictStrategy: this.opts.settings.frontmatterConflictStrategy,
-      mergeableExtensions: this.opts.settings.mergeableExtensions,
-      conflictFailurePolicy: this.opts.settings.conflictFailurePolicy,
+      autoMergeFileTypes: this.opts.settings.autoMergeFileTypes,
+      autoMergeFileStrategy: this.opts.settings.autoMergeFileStrategy,
+      otherFileStrategy: this.opts.settings.otherFileStrategy,
       deviceId: this.opts.settings.deviceId,
     });
-    const decision = resolver.decide(path, '', localContent, remoteContent);
+    const ctx = {
+      localSize: localSizeBefore,
+      remoteSize: remote.size,
+      localMtime: localMtimeBefore,
+      remoteMtime: remote.lastModified || 0,
+    };
+
+    // Only the `merge` strategy needs the decoded text of both sides; the deterministic strategies
+    // decide from size/mtime alone, so defer the remote download until we know it is required.
+    let remoteData: ArrayBuffer | undefined;
+    let decision: ConflictResolution;
+    if (resolver.strategyFor(path) === 'merge') {
+      const localContent = await this.opts.localAdapter.read(path);
+      remoteData = await this.client!.downloadFile(remote.path);
+      const remoteContent = new TextDecoder().decode(remoteData);
+      decision = resolver.decide(path, '', localContent, remoteContent, ctx);
+    } else {
+      decision = resolver.decide(path, '', '', '', ctx);
+    }
 
     switch (decision.action) {
-      case 'skip':
-        // Failure policy 'error' (or non-text × conflict-markers fallback): touch NEITHER side.
-        // Leave the StateDB hashes untouched so the next sync re-detects the divergence; only flag
-        // the entry as conflicted (for the UI). Count as an error and retry within this session.
-        this.recordError(summary, path, new Error('Unresolved conflict — both sides left untouched (failure policy: error)'));
-        this.retryQueue.push(path);
+      case 'safe-hold':
+        // Non-text file under the merge strategy (FR-005a): writing conflict markers would corrupt
+        // it, so leave BOTH sides untouched and only flag the entry conflicted. NOT an error and NOT
+        // retried; the StateDB Base hashes stay as-is so the divergence persists for manual resolution.
         if (base) this.opts.stateDB.setFile({ ...base, isConflicted: true });
-        void this.opts.logger?.log(`conflict: skipped (policy=error), left both sides untouched → ${path}`);
+        summary.conflictedCount++;
+        this.recordHistory(path, 'conflicted');
+        void this.opts.logger?.log(`conflict: non-text under merge → safe-hold, both sides untouched → ${path}`);
+        return;
+
+      case 'no-op':
+        // Deterministic tie — equal size (biggest-size) or equal mtime (latest-mtime) — FR-009: leave
+        // BOTH sides untouched, do NOT flag conflicted, do NOT count an error. The next sync
+        // re-evaluates once either side changes (self-healing); the StateDB is left untouched.
+        void this.opts.logger?.log(`conflict: deterministic tie → no-op, both sides untouched → ${path}`);
         return;
 
       case 'prefer-local':
@@ -1306,6 +1314,7 @@ export class SyncEngine {
         return;
 
       case 'prefer-remote':
+        if (!remoteData) remoteData = await this.client!.downloadFile(remote.path);
         await this.resolveByPreferRemote(path, remote, remoteData, remoteId, idType, summary);
         return;
 

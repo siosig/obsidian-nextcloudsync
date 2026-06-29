@@ -106,38 +106,41 @@ describeLive('Layer B — cross-device sync invariants', (getEnv) => {
     expect(await remoteText('inv6-a.md')).toBe('edited-by-M\n');
   }, 180_000);
 
-  it('INV-7 concurrent create same-path (conflict-markers): both versions preserved, converges, no churn', async () => {
-    // autoMerge OFF so the failure policy (markers) actually fires; with autoMerge ON the two creates
-    // would be auto-merged instead (also lossless, but a different path tested by INV-9).
-    const over: Partial<DavSyncSettings> = { autoMergeEnabled: false, conflictFailurePolicy: 'conflict-markers' };
+  it('INV-7 concurrent create same-path (merge): both versions preserved, converges, no churn', async () => {
+    // Feature 037: the Auto Merge File strategy (merge) reconciles the two creates losslessly — both
+    // single-line bodies are kept (verified: reconcile('', 'D-content\n', 'M-content\n') keeps both).
+    const over: Partial<DavSyncSettings> = { autoMergeFileStrategy: 'merge', autoMergeFileTypes: ['md'] };
     const d = dev('inv7-D', over); const m = dev('inv7-M', over);
     d.vault.seedLocal('inv7.md', 'D-content\n');
     m.vault.seedLocal('inv7.md', 'M-content\n');
     await d.sync();                                  // remote = D-content
-    await m.sync();                                  // M: remote exists, no base → conflict → markers
+    await m.sync();                                  // M: remote exists, no base → conflict → merge
     const mLocal = m.vault.readLocal('inv7.md')!;
-    expect(/^<<<<<<< /m.test(mLocal) || mLocal.includes('#conflict')).toBe(true);
     expect(mLocal).toContain('D-content');
     expect(mLocal).toContain('M-content');           // no data loss: both kept
     expect(await remoteText('inv7.md')).toBe(mLocal); // pushed → converged
-    await assertNoChurn(m, 'inv7-M');                 // critic #6: marker file does not re-upload forever
+    await assertNoChurn(m, 'inv7-M');                 // critic #6: merged file does not re-upload forever
   }, 120_000);
 
-  it('INV-8 non-mergeable (binary) conflict + conflict-markers: NO marker injection, file intact', async () => {
-    const over: Partial<DavSyncSettings> = { conflictFailurePolicy: 'conflict-markers' };
+  it('INV-8 non-text conflict under merge: NO marker injection, file intact, flagged (FR-005a safe-hold)', async () => {
+    // Feature 037: "binary" is content-detected (NUL byte), not extension-based, so use real binary
+    // bytes; .bin is registered as an auto-merge type so the merge strategy runs and safe-holds it.
+    const NUL = String.fromCharCode(0);
+    const over: Partial<DavSyncSettings> = { autoMergeFileTypes: ['md', 'bin'], autoMergeFileStrategy: 'merge' };
     const d = dev('inv8-D', over); const m = dev('inv8-M', over);
-    d.vault.seedLocal('anchor.md', 'a'); d.vault.seedLocal('inv8.bin', 'BIN-base');
+    d.vault.seedLocal('anchor.md', 'a'); d.vault.seedLocal('inv8.bin', `BIN${NUL}base`);
     await d.sync(); await m.sync();
-    d.vault.seedLocal('inv8.bin', 'BIN-from-D'); await d.sync();
-    m.vault.seedLocal('inv8.bin', 'BIN-from-M'); await m.sync();   // conflict on non-mergeable
+    d.vault.seedLocal('inv8.bin', `BIN${NUL}from-D`); await d.sync();
+    m.vault.seedLocal('inv8.bin', `BIN${NUL}from-M`); await m.sync();   // conflict on non-text → safe-hold
     const mBin = m.vault.readLocal('inv8.bin')!;
-    expect(mBin).toBe('BIN-from-M');                 // untouched: no markers written into a binary
+    expect(mBin).toBe(`BIN${NUL}from-M`);            // untouched: no markers written into a binary
     expect(mBin).not.toContain('<<<<<<<');
     expect(m.stateDB.getFile('inv8.bin')?.isConflicted ?? false).toBe(true);
   }, 120_000);
 
   it('INV-9 auto-merge of concurrent frontmatter + body edits: both survive, no duplication, converges', async () => {
-    const over: Partial<DavSyncSettings> = { autoMergeEnabled: true, frontmatterConflictStrategy: 'local-wins' };
+    // Feature 037: one-sided frontmatter change merges cleanly via diff3 (no frontmatter strategy knob).
+    const over: Partial<DavSyncSettings> = { autoMergeFileStrategy: 'merge', autoMergeFileTypes: ['md'] };
     const d = dev('inv9-D', over); const m = dev('inv9-M', over);
     const base = '---\ntitle: base\n---\n\nbody line one\nbody line two\n';
     d.vault.seedLocal('inv9.md', base); await d.sync(); await m.sync();
@@ -153,8 +156,8 @@ describeLive('Layer B — cross-device sync invariants', (getEnv) => {
   }, 150_000);
 
   it('INV-10 opposite/identical aggressive policies converge (no infinite ping-pong)', async () => {
-    // Both local-wins is the worst oscillation candidate; prove it converges (last-writer-wins) + stable.
-    const over: Partial<DavSyncSettings> = { autoMergeEnabled: false, conflictFailurePolicy: 'local-wins' };
+    // Both local-win is the worst oscillation candidate; prove it converges (last-writer-wins) + stable.
+    const over: Partial<DavSyncSettings> = { autoMergeFileStrategy: 'local-win', autoMergeFileTypes: ['md'] };
     const d = dev('inv10-D', over); const m = dev('inv10-M', over);
     d.vault.seedLocal('inv10.md', 'base\n'); await d.sync(); await m.sync();
     d.vault.seedLocal('inv10.md', 'D-edit\n'); m.vault.seedLocal('inv10.md', 'M-edit\n');
