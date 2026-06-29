@@ -79,9 +79,9 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 - **Reset the Vault index** *(Settings → Maintenance)* — clear this device's sync tracking index back to its first-install state (behind a confirmation) so the next sync re-scans everything. No Vault or remote files are deleted; use it to recover from inconsistent sync state.
 
 ### Conflict safety (never lose content)
-- **Auto-merge** (`reconcile-text` / diff3) for edits in different regions, including YAML frontmatter when the two sides changed non-overlapping lines (on by default).
-- **Merge scope by extension** — only files with a configurable extension (default `md`, `txt`) are text-merged; other files (images, PDFs, binaries) are never merged and never get markers written into them.
-- **Conflict-resolution policy** you choose in settings for anything that can't be cleanly merged — **Remote** (overwrite local with remote), **Local** (overwrite remote with local), or **Error** (leave both sides untouched, report it, and hold — the default). A held file resolves on a later sync once you switch to Remote or Local, or via *Compare with remote*. You also choose the **frontmatter conflict strategy** (Remote/Local/Error) and which **file types are eligible for auto-merge** (markdown, text and common code extensions by default; clear the list to disable auto-merge entirely).
+- **A strategy per file type.** You pick **which extensions are "auto merge files"** (markdown, text and common code extensions by default) and a conflict strategy for each side: an **Auto merge file strategy** and an **Other file strategy** (everything else — images, PDFs, config JSON). Every conflict is always decided — there is no hold/error mode.
+- **Merge** (`reconcile-text` / diff3, the default for auto merge files) integrates edits in different regions, including YAML frontmatter when the two sides changed non-overlapping lines. A text conflict is written as conflict markers; a non-text file is left untouched and flagged (never corrupted with markers).
+- **Deterministic strategies** for anything else: **Latest modified** (keep the newer side — the default for other files), **Biggest size** (keep the larger), **Local wins**, or **Remote wins**. A size/mtime tie is left untouched and re-evaluated on the next sync. Keep Nextcloud version history on so an overwritten side is recoverable; *Compare with remote* lets you resolve any file by hand.
 - **Conflict badge** in the status bar showing the count of unresolved conflicts (clears to normal at zero; pairs well with a `#conflict` tag search).
 
 ### Nextcloud power features
@@ -191,9 +191,9 @@ These are the options you can change. Most start the same on both platforms; a f
 | Sync on Wi-Fi only | off | on |
 | Sync config folder (master) | off | off |
 | └ Bookmarks / Other settings | on / on | on / on |
-| Frontmatter conflict strategy | Error (hold) | Error (hold) |
-| On merge failure | Error (hold) | Error (hold) |
-| Auto-merge file types | md, txt, cpp, py, c, h, hpp, rs, go, ts, js, java, sh | same |
+| Auto merge file types | md, txt, cpp, py, c, h, hpp, rs, go, ts, js, java, sh | same |
+| Auto merge file strategy | Merge | Merge |
+| Other file strategy | Latest modified | Latest modified |
 | Enable logging | off | off |
 | Excluded folders | empty | empty |
 
@@ -209,7 +209,6 @@ These are the options you can change. Most start the same on both platforms; a f
 | Chunked upload | on |
 | Bulk upload | on |
 | File locking | off — `If-Match` preconditions provide lost-update safety |
-| Auto merge | on |
 | Max conflict regions | 0 (no region-count fallback) |
 | Compare with remote | on (desktop and mobile) |
 | Log folder | vault root |
