@@ -31,9 +31,10 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.16-beta.2)
+## What's new in this release (0.7.16)
 
-- **A conflict-resolution strategy per file type (0.7.16-beta.2)** — the three old conflict settings collapse into a clearer model: pick which extensions are "auto merge files" plus a strategy for each side (an **Auto merge file strategy** and an **Other file strategy**). Choose **Merge** (3-way), **Latest modified**, **Biggest size**, **Local wins** or **Remote wins**; every conflict is always decided. Merge now leaves binary files untouched instead of corrupting them with markers, and a new guard stops a rare merge bug from duplicating content.
+- **A conflict-resolution strategy per file type (0.7.16)** — the three old conflict settings collapse into a clearer model: pick which extensions are "auto merge files" plus a strategy for each side (an **Auto merge file strategy** and an **Other file strategy**). Choose **Merge** (3-way), **Latest modified**, **Biggest size**, **Local wins** or **Remote wins**; every conflict is always decided. Merge now leaves binary files untouched instead of corrupting them with markers, and a new guard stops a rare merge bug from duplicating content.
+- **Type exact values into the settings sliders (0.7.16)** — every numeric settings slider now has an editable number box beside it, so you can type an exact value with the keyboard instead of fighting the slider's coarse step. Values outside the allowed range are clamped, invalid entries revert to the previous value, and the box and slider stay in sync.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 

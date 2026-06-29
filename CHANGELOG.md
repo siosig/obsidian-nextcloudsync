@@ -11,6 +11,15 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.16] - 2026-06-30
+
+### Changed
+- Conflict resolution is now chosen per file type. The three former settings (auto-merge toggle, frontmatter conflict strategy, merge-failure policy) collapse into an **Auto merge file types** list plus an **Auto merge file strategy** and an **Other file strategy**. Each strategy is one of Merge (3-way), Latest modified, Biggest size, Local wins, or Remote wins; every conflict is always decided (no hold/error mode). A size/mtime tie is left untouched and re-evaluated next sync. Old settings migrate automatically and the obsolete keys are pruned.
+- Under the Merge strategy, a non-text (binary) file is left untouched and flagged instead of having conflict markers written into it, and an expansion guard downgrades a merge that would duplicate content (a rare empty-base reconcile bug) to a conflict rather than writing the corrupted result.
+
+### Added
+- Every numeric settings slider now has an editable number box beside it, so an exact value can be typed with the keyboard. Out-of-range values are clamped, invalid entries revert to the previous value, and the box and slider stay in sync.
+
 ## [0.7.15] - 2026-06-29
 
 ### Changed
@@ -196,6 +205,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.16]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.16
 [0.7.15]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.15
 [0.7.14]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.14
 [0.7.13]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.13
