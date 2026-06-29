@@ -7,8 +7,8 @@ const ctx: SyncLogContext = {
   at: Date.parse('2026-06-18T00:00:00.000Z'),
   version: '0.2.10',
   resolution: formatResolution({
-    failurePolicy: 'error', frontmatterStrategy: 'conflict',
-    maxConflictRegions: 0, autoMergeEnabled: true, mergeableExtensions: ['md', 'txt'],
+    autoMergeFileStrategy: 'merge', otherFileStrategy: 'latest-mtime',
+    autoMergeFileTypes: ['md', 'txt'],
   }),
   level: 'important',
 };
@@ -45,12 +45,10 @@ describe('formatBytes', () => {
 });
 
 describe('formatResolution', () => {
-  it('reports 0 max regions as unlimited and includes all knobs', () => {
-    expect(ctx.resolution).toContain('autoMerge=on');
-    expect(ctx.resolution).toContain('failure=error');
-    expect(ctx.resolution).toContain('frontmatter=conflict');
-    expect(ctx.resolution).toContain('maxRegions=unlimited');
-    expect(ctx.resolution).toContain('mergeable=md/txt');
+  it('reports the per-type strategies and the auto-merge file types (feature 037)', () => {
+    expect(ctx.resolution).toContain('autoMergeFile=merge');
+    expect(ctx.resolution).toContain('otherFile=latest-mtime');
+    expect(ctx.resolution).toContain('autoMergeTypes=md/txt');
   });
 });
 
@@ -64,7 +62,7 @@ describe('renderSyncLogBlock', () => {
     const block = renderSyncLogBlock([entry({ op: 'merged' })], ctx);
     expect(block).toContain('## Sync 2026-06-18T00:00:00.000Z');
     expect(block).toContain('v0.2.10');
-    expect(block).toContain('maxRegions=unlimited');
+    expect(block).toContain('autoMergeFile=merge');
   });
 
   it('formats a per-op line with marker, path, checksums and sizes', () => {

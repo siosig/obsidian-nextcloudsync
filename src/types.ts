@@ -20,6 +20,18 @@ export interface ConfigSyncCategories {
   others: boolean;
 }
 
+/**
+ * Conflict-resolution strategy for one file type (feature 037). A single per-type choice replaces the
+ * former three conflict settings (autoMergeEnabled / conflictFailurePolicy / frontmatterConflictStrategy).
+ *   merge        — 3-way merge: clean → merged, text conflict → markers, non-text → safe-hold (FR-005a)
+ *   biggest-size — keep the larger side, overwrite the smaller (size tie → no-op success, FR-009)
+ *   latest-mtime — keep the newer side, overwrite the older (mtime tie → no-op success, FR-009)
+ *   local-win    — always keep the local side, overwrite remote
+ *   remote-win   — always keep the remote side, overwrite local
+ * `merge` is valid only for Auto Merge File types; Other File types use the four deterministic ones.
+ */
+export type SyncStrategy = 'merge' | 'biggest-size' | 'latest-mtime' | 'local-win' | 'remote-win';
+
 export interface DavSyncSettings {
   serverUrl: string;
   username: string;
@@ -73,31 +85,24 @@ export interface DavSyncSettings {
   logsFolder: string;
   /** Master on/off for all log output (sync log + debug log). */
   loggingEnabled: boolean;
-  autoMergeEnabled: boolean;
   // Feature 033: maxConflictRegions was removed (always unlimited; fixed in fixedSyncConfig.ts).
   /**
-   * Frontmatter conflict strategy (feature 030, restored from the 028 fixed value). When a note's
-   * YAML frontmatter differs on both sides during a merge: 'remote-wins' / 'local-wins' take that
-   * side's frontmatter and continue the body merge; 'conflict' treats it as unmergeable and routes
-   * the whole file to `conflictFailurePolicy`. UI labels: Remote / Local / Error (= conflict).
+   * File extensions classified as "Auto Merge File" (feature 037; continues the role of the former
+   * `mergeableExtensions`). Lowercase, no leading dot. A conflict on a file whose extension is in
+   * this list is resolved with `autoMergeFileStrategy`; every other file (including extensionless
+   * files) uses `otherFileStrategy`. An empty list routes ALL files through `otherFileStrategy`.
    */
-  frontmatterConflictStrategy: 'remote-wins' | 'local-wins' | 'conflict';
+  autoMergeFileTypes: string[];
   /**
-   * What to do when an automatic merge fails (feature 030, restored from the 028 fixed value):
-   * 'remote-wins' overwrites local with the remote copy, 'local-wins' overwrites remote with the
-   * local copy, 'error' leaves both sides untouched and flags the file as conflicted (sync held).
-   * A held file resolves on a later sync once this is switched to remote/local-wins, or via the
-   * Compare-with-remote Push/Pull. 'conflict-markers' (Git-style markers) stays in the type for the
-   * internal ConflictResolver branch and the b1 policy matrix, but the settings UI offers only the
-   * three Remote/Local/Error choices (so the user-facing freedom is three).
+   * Conflict strategy for Auto Merge File types (feature 037). Default `merge`. All five strategies
+   * are valid here. When `merge`: clean 3-way → merged, text conflict → markers, non-text → safe-hold.
    */
-  conflictFailurePolicy: 'remote-wins' | 'local-wins' | 'error' | 'conflict-markers';
+  autoMergeFileStrategy: SyncStrategy;
   /**
-   * File extensions eligible for automatic 3-way merge (feature 030, restored from the 028 fixed
-   * value). Lowercase, no leading dot. An empty list disables auto-merge entirely — every conflict
-   * then routes straight to `conflictFailurePolicy` instead of attempting a merge.
+   * Conflict strategy for every other file type (feature 037). Default `latest-mtime`. `merge` is not
+   * offered here — only the four deterministic strategies (biggest-size / latest-mtime / local/remote-win).
    */
-  mergeableExtensions: string[];
+  otherFileStrategy: Exclude<SyncStrategy, 'merge'>;
   // Feature 033: explorerCompareEnabled was removed. The "Compare with remote" explorer menu item and
   // command are registered unconditionally in main.ts, so no setting gates them.
   /**
@@ -147,16 +152,12 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   deviceName: '',
   logsFolder: '',
   loggingEnabled: false,
-  autoMergeEnabled: true,
-  // Conflict strategies (feature 030): defaults match the former 028 fixed values, so existing
-  // users see unchanged behaviour until they pick a side. 'conflict'/'error' = the cautious
-  // "hold and let me decide" default.
-  frontmatterConflictStrategy: 'conflict',
-  conflictFailurePolicy: 'error',
-  // Auto-merge file types (feature 030): user-editable. Markdown/text plus common code extensions
-  // are pre-registered; clearing the list entirely disables auto-merge (every conflict then routes
-  // straight to conflictFailurePolicy). Normalized to lowercase without a leading dot on save.
-  mergeableExtensions: ['md', 'txt', 'cpp', 'py', 'c', 'h', 'hpp', 'rs', 'go', 'ts', 'js', 'java', 'sh'],
+  // Conflict strategies (feature 037): a single per-type choice. Defaults reproduce the prior felt
+  // behaviour — Auto Merge File types attempt a 3-way merge, everything else takes the newer side.
+  // Clearing autoMergeFileTypes routes every file through otherFileStrategy (no merge attempted).
+  autoMergeFileTypes: ['md', 'txt', 'cpp', 'py', 'c', 'h', 'hpp', 'rs', 'go', 'ts', 'js', 'java', 'sh'],
+  autoMergeFileStrategy: 'merge',
+  otherFileStrategy: 'latest-mtime',
   excludedFolders: [],
   // Explicit `undefined` keeps the key in the allowlist used by pruneObsoleteSettings (so a saved
   // selection is never pruned) while meaning "no saved selection → all statuses shown".
@@ -267,18 +268,25 @@ export interface MergeResult {
 }
 
 /**
- * The action a ConflictResolver decides on for a conflicting file. The decision is pure
- * (no I/O); SyncEngine.handleConflict executes the corresponding network/disk operations.
+ * The action a ConflictResolver decides on for a conflicting file (feature 037). The decision is pure
+ * (no I/O); SyncEngine.handleConflict executes the corresponding network/disk operations. Every
+ * conflict is decided — there is no user-selectable "hold/error" strategy (FR-010).
  *   write         — write `content` locally (clean merge or marker-embedded text), then converge to server
- *   skip          — leave BOTH sides untouched (error policy, or non-text × conflict-markers fallback)
  *   prefer-local  — overwrite the remote with the local copy
  *   prefer-remote — overwrite the local with the remote copy
+ *   safe-hold     — non-text / unmergeable under `merge`: leave BOTH sides untouched and flag the file
+ *                   conflicted, writing NO markers (binary-safe, FR-005a). Not an error; resolves on a
+ *                   later sync once a side changes or the user resolves it.
+ *   no-op         — deterministic-strategy tie (equal size for biggest-size / equal mtime for
+ *                   latest-mtime): leave BOTH sides untouched, NOT conflicted, success (FR-009).
+ *                   Re-evaluated on the next sync.
  */
 export type ConflictResolution =
   | { action: 'write'; content: string; clean: boolean }
-  | { action: 'skip' }
   | { action: 'prefer-local' }
-  | { action: 'prefer-remote' };
+  | { action: 'prefer-remote' }
+  | { action: 'safe-hold' }
+  | { action: 'no-op' };
 
 /** One recorded sync error: the file it happened on (empty for session-level errors) and why. */
 export interface SyncErrorDetail {
