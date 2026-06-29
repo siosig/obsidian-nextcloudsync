@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.15)
+## What's new in this release (0.7.16-beta.1)
 
-- **Apply the Maximum file size limit to downloads too (0.7.15)** — the "Maximum file size" setting now guards downloads as well as uploads. A remote file larger than the limit is skipped before it is fetched (using the size the server reports), so a huge note can no longer crash the app by being pulled into memory on mobile. The skip is non-destructive: raising the limit lets the next sync download the file normally.
+- **Type exact values into the settings sliders (0.7.16-beta.1)** — every numeric settings slider now has an editable number box beside it, so you can type an exact value with the keyboard instead of fighting the slider's coarse step (which on touch could only land on, say, 0 or 16 MB). Values outside the allowed range are clamped, invalid entries revert to the previous value, and the box and slider stay in sync.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
