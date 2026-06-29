@@ -201,6 +201,14 @@ export const CLAUSES: Clause[] = [
   { id: 'DSG-6', source: 'specs/main/spec.md §9 (maxFileSizeMB=0 unlimited: downloads regardless of size)', layer: 'a' },
   { id: 'DSG-7', source: 'specs/main/spec.md §9 (size exactly at cap is allowed — boundary)', layer: 'a' },
   { id: 'DSG-8', source: 'specs/main/spec.md §9 (self-healing: raising the cap downloads the once-skipped file)', layer: 'a' },
+  // --- SNI: slider numeric input (spec 036) ---
+  { id: 'SNI-1', source: 'specs/036-slider-numeric-input (numeric input clamps out-of-range to bounds)', layer: 'a' },
+  { id: 'SNI-2', source: 'specs/036-slider-numeric-input (invalid/empty/NaN input reverts to current value)', layer: 'a' },
+  { id: 'SNI-3', source: 'specs/036-slider-numeric-input (off-grid integers in range accepted)', layer: 'a' },
+  { id: 'SNI-4', source: 'specs/036-slider-numeric-input (decimals rounded to integers then clamped)', layer: 'a' },
+  { id: 'SNI-5', source: 'specs/036-slider-numeric-input (slider<->numeric input two-way sync)', layer: 'a', waiver: 'DOM wiring verified via quickstart manual check; logic core covered by SNI-1..4' },
+  { id: 'SNI-6', source: 'specs/036-slider-numeric-input (numeric input commits on blur/Enter, not per keystroke)', layer: 'a', waiver: 'DOM event wiring verified via quickstart manual check' },
+  { id: 'SNI-11', source: 'specs/036-slider-numeric-input (existing 5 sliders ranges/defaults unchanged)', layer: 'a' },
   // --- TN: atomic-write temp-file naming under the 255-byte NAME_MAX (spec 026) ---
   { id: 'TN-1', source: 'specs/main/spec.md §9 (final name ≤255B always writes; temp suffix length not leaked)', layer: 'a' },
   { id: 'TN-2', source: 'specs/main/spec.md §9 (temp name length independent of target name length)', layer: 'a' },
