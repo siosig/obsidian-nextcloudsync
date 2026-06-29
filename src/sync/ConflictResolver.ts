@@ -1,25 +1,47 @@
 import { App } from 'obsidian';
-import { ConflictResolution } from '../types';
+import { ConflictResolution, SyncStrategy } from '../types';
 import { LocalAdapter } from '../data/LocalAdapter';
 import { MergeEngine } from './merge/MergeEngine';
+import { FIXED } from '../util/fixedSyncConfig';
 
 const CONFLICT_TAG = '#conflict';
 const CONFLICT_MARKER_RE = /^<<<<<<< /m;
 
 /**
- * Merge/conflict parameters the ConflictResolver needs. After the settings simplification
- * (feature 028) these are no longer user-editable — callers pass the FIXED values. They remain an
- * explicit input (rather than hard-coded inside the resolver) so the class stays pure and every
- * policy/strategy branch is independently unit-testable: internal branching is not user freedom.
+ * Conflict-resolution parameters the ConflictResolver needs (feature 037). The three former conflict
+ * settings (autoMergeEnabled / conflictFailurePolicy / frontmatterConflictStrategy) collapsed into a
+ * single per-type strategy: a file is classified as an Auto Merge File (its extension is in
+ * `autoMergeFileTypes`) or Other File, and the matching strategy is applied. These are an explicit
+ * input (not read from settings inside the resolver) so the class stays pure and every branch is
+ * independently unit-testable: internal branching is not user freedom.
  */
 export interface MergeConfig {
-  autoMergeEnabled: boolean;
-  maxConflictRegions: number;
-  frontmatterConflictStrategy: 'local-wins' | 'remote-wins' | 'conflict';
-  mergeableExtensions: string[];
-  conflictFailurePolicy: 'error' | 'local-wins' | 'remote-wins' | 'conflict-markers';
+  autoMergeFileTypes: string[];
+  autoMergeFileStrategy: SyncStrategy;
+  otherFileStrategy: Exclude<SyncStrategy, 'merge'>;
   /** Device id, used for the conflict-marker byline. */
   deviceId: string;
+}
+
+/**
+ * Size/mtime of both sides, needed by the deterministic biggest-size / latest-mtime strategies
+ * (FR-006/FR-007). Passed in by SyncEngine (which has the local stat and the RemoteFileInfo) so the
+ * resolver stays pure — it performs no I/O. Absent only for merge / local-win / remote-win callers.
+ */
+export interface ConflictContext {
+  localSize: number;
+  remoteSize: number;
+  localMtime: number;
+  remoteMtime: number;
+}
+
+/**
+ * A decoded string is "non-text" when it carries a NUL byte (the standard binary signal git uses;
+ * real text never contains U+0000) or a U+FFFD replacement char (invalid UTF-8 replaced at decode).
+ * Used to keep the `merge` strategy from writing conflict markers into binary files (FR-005a).
+ */
+export function isLikelyBinary(s: string): boolean {
+  return s.includes('\u0000') || s.includes('\uFFFD');
 }
 
 export class ConflictResolver {
@@ -30,28 +52,32 @@ export class ConflictResolver {
     private readonly localAdapter: LocalAdapter,
     private readonly config: MergeConfig,
   ) {
-    this.mergeEngine = new MergeEngine({
-      maxConflictRegions: config.maxConflictRegions,
-      frontmatterConflictStrategy: config.frontmatterConflictStrategy,
-    });
+    // maxConflictRegions is a fixed value (feature 033, always unlimited); a clean merge is never
+    // downgraded to inline markers on region count alone — the expansion guard (FR-005b) handles the
+    // real failure mode (reconcile bloat on an empty base).
+    this.mergeEngine = new MergeEngine({ maxConflictRegions: FIXED.maxConflictRegions });
   }
 
   /**
-   * True when `path`'s extension is configured as mergeable (case-insensitive).
-   * Files without an extension, or whose extension is not in `mergeableExtensions`,
-   * are never merged.
+   * True when `path`'s extension is configured as an Auto Merge File type (case-insensitive).
+   * Files without an extension, or whose extension is not in `autoMergeFileTypes`, are Other Files.
    */
-  isMergeable(path: string): boolean {
+  isAutoMergeFile(path: string): boolean {
     const dot = path.lastIndexOf('.');
     const slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
-    if (dot <= slash || dot === path.length - 1) return false; // no extension
+    if (dot <= slash || dot === path.length - 1) return false; // no extension → Other File
     const ext = path.slice(dot + 1).toLowerCase();
     return this.normalizedExtensions().includes(ext);
   }
 
+  /** The SyncStrategy that applies to `path` after Auto Merge File / Other File classification (CSF-1). */
+  strategyFor(path: string): SyncStrategy {
+    return this.isAutoMergeFile(path) ? this.config.autoMergeFileStrategy : this.config.otherFileStrategy;
+  }
+
   /** Normalize the configured extensions (lowercase, strip leading dots/whitespace, drop empties). */
   private normalizedExtensions(): string[] {
-    const list = this.config.mergeableExtensions ?? [];
+    const list = this.config.autoMergeFileTypes ?? [];
     return list
       .map((e) => e.trim().replace(/^\.+/, '').toLowerCase())
       .filter((e) => e.length > 0);
@@ -61,58 +87,65 @@ export class ConflictResolver {
    * Decide what to do with a conflicting file. PURE: performs no disk or network I/O.
    * SyncEngine.handleConflict executes the corresponding operations for the returned action.
    *
-   * Flow:
-   *   1. mergeable && autoMerge → attempt merge; clean result → { write, clean:true }.
-   *   2. Otherwise apply conflictFailurePolicy:
-   *      'error' → skip; 'local-wins' → prefer-local; 'remote-wins' → prefer-remote;
-   *      'conflict-markers' → write markers for mergeable text, else skip (error fallback).
+   * Classify by extension → apply the type's SyncStrategy:
+   *   merge        → 3-way: clean → write{clean}, text conflict → write markers, non-text → safe-hold
+   *   biggest-size → larger side prefer (equal → no-op), needs `ctx`
+   *   latest-mtime → newer side prefer  (equal → no-op), needs `ctx`
+   *   local-win / remote-win → prefer-local / prefer-remote
    */
-  decide(path: string, base: string, local: string, remote: string): ConflictResolution {
-    const mergeable = this.isMergeable(path);
-    const policy = this.config.conflictFailurePolicy;
-
-    if (mergeable && this.config.autoMergeEnabled) {
-      const result = this.mergeEngine.merge(base, local, remote);
-      if (result.success && !result.hadConflicts) {
-        return { action: 'write', content: result.mergedContent, clean: true };
-      }
-      if (policy === 'conflict-markers') {
-        if (result.success && result.hadConflicts) {
-          // Partial merge: keep the merged body and tag it for the user to finish.
-          const tagged = result.mergedContent.trimEnd() + '\n' + CONFLICT_TAG + '\n';
-          return { action: 'write', content: tagged, clean: false };
-        }
-        // Merge refused (e.g. diverging frontmatter): embed full-file conflict markers.
-        return { action: 'write', content: this.buildMarkerContent(local, remote), clean: false };
-      }
-      // Other policies are resolved by the switch below.
-    }
-
-    switch (policy) {
-      case 'local-wins':
+  decide(
+    path: string, base: string, local: string, remote: string, ctx?: ConflictContext,
+  ): ConflictResolution {
+    switch (this.strategyFor(path)) {
+      case 'merge':
+        return this.decideMerge(base, local, remote);
+      case 'local-win':
         return { action: 'prefer-local' };
-      case 'remote-wins':
+      case 'remote-win':
         return { action: 'prefer-remote' };
-      case 'conflict-markers':
-        // Reached when not (mergeable && autoMerge): mergeable-but-autoMerge-off, or non-mergeable.
-        if (!mergeable) return { action: 'skip' }; // never embed markers into binary → error fallback
-        return { action: 'write', content: this.buildMarkerContent(local, remote), clean: false };
-      case 'error':
-      default:
-        return { action: 'skip' };
+      case 'biggest-size':
+        return this.decideByComparison(ctx?.localSize, ctx?.remoteSize);
+      case 'latest-mtime':
+        return this.decideByComparison(ctx?.localMtime, ctx?.remoteMtime);
     }
+  }
+
+  /** merge strategy: 3-way merge with binary safe-hold (FR-005a) and conflict markers for text. */
+  private decideMerge(base: string, local: string, remote: string): ConflictResolution {
+    // Non-text content cannot carry conflict markers without corruption → leave both sides, flag
+    // conflicted, write nothing (FR-005a). The merge engine is text-only.
+    if (isLikelyBinary(local) || isLikelyBinary(remote)) {
+      return { action: 'safe-hold' };
+    }
+    const result = this.mergeEngine.merge(base, local, remote);
+    if (result.success && !result.hadConflicts) {
+      return { action: 'write', content: result.mergedContent, clean: true };
+    }
+    // Merge refused (diverging frontmatter) or the expansion guard fired (FR-005b): the reconcile
+    // result is untrustworthy, so write full-file conflict markers for the user to resolve (FR-005).
+    return { action: 'write', content: this.buildMarkerContent(local, remote), clean: false };
+  }
+
+  /**
+   * biggest-size / latest-mtime: prefer the larger metric (local > remote → keep local). Equal → tie
+   * no-op success (FR-009). Missing context (should not happen from SyncEngine) falls back to safe-hold.
+   */
+  private decideByComparison(localMetric?: number, remoteMetric?: number): ConflictResolution {
+    if (localMetric === undefined || remoteMetric === undefined) return { action: 'safe-hold' };
+    if (localMetric === remoteMetric) return { action: 'no-op' };
+    return localMetric > remoteMetric ? { action: 'prefer-local' } : { action: 'prefer-remote' };
   }
 
   /**
    * Compute the content a resolution would write, WITHOUT touching disk (pure). Mirrors decide()'s
    * decision so callers can compute the resolved content independently of the write path.
-   * For skip → keep local (no change); prefer-local → local; prefer-remote → remote.
+   * For safe-hold / no-op → keep local (no change); prefer-local → local; prefer-remote → remote.
    * `clean` is true only when the outcome leaves no markers / unresolved state.
    */
   computeResolution(
-    path: string, base: string, local: string, remote: string,
+    path: string, base: string, local: string, remote: string, ctx?: ConflictContext,
   ): { content: string; clean: boolean; conflictRegions: number } {
-    const decision = this.decide(path, base, local, remote);
+    const decision = this.decide(path, base, local, remote, ctx);
     switch (decision.action) {
       case 'write':
         return { content: decision.content, clean: decision.clean, conflictRegions: decision.clean ? 0 : -1 };
@@ -120,7 +153,10 @@ export class ConflictResolver {
         return { content: local, clean: true, conflictRegions: 0 };
       case 'prefer-remote':
         return { content: remote, clean: true, conflictRegions: 0 };
-      case 'skip':
+      case 'no-op':
+        // Tie: both sides left as-is; not conflicted (success).
+        return { content: local, clean: true, conflictRegions: 0 };
+      case 'safe-hold':
       default:
         return { content: local, clean: false, conflictRegions: -1 };
     }
@@ -143,12 +179,14 @@ export class ConflictResolver {
 
   /**
    * Resolve the LOCAL side of a conflict to disk for the `write` action (clean merge or markers).
-   * For skip / prefer-local / prefer-remote, the resolution involves network I/O and is performed
-   * by SyncEngine.handleConflict; this method does nothing and returns false for those.
+   * For safe-hold / no-op / prefer-local / prefer-remote, the resolution involves network I/O and is
+   * performed by SyncEngine.handleConflict; this method does nothing and returns false for those.
    * Returns true only when auto-merge fully resolved with no markers remaining.
    */
-  async resolve(path: string, base: string, local: string, remote: string): Promise<boolean> {
-    const decision = this.decide(path, base, local, remote);
+  async resolve(
+    path: string, base: string, local: string, remote: string, ctx?: ConflictContext,
+  ): Promise<boolean> {
+    const decision = this.decide(path, base, local, remote, ctx);
     if (decision.action === 'write') {
       await this.localAdapter.atomicWrite(path, decision.content);
       return decision.clean;
