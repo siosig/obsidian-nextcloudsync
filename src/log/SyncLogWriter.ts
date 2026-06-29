@@ -61,19 +61,15 @@ function remoteColumn(e: SyncHistoryEntry): string {
   return annotate ? `${hash}(${e.remoteIdType})` : hash;
 }
 
-/** Format all merge-related settings shown in the session header. */
+/** Format the conflict-resolution settings shown in the session header (feature 037). */
 export function formatResolution(opts: {
-  failurePolicy: string;
-  frontmatterStrategy: string;
-  maxConflictRegions: number;
-  autoMergeEnabled: boolean;
-  mergeableExtensions: string[];
+  autoMergeFileStrategy: string;
+  otherFileStrategy: string;
+  autoMergeFileTypes: string[];
 }): string {
-  const regions = opts.maxConflictRegions === 0 ? 'unlimited' : String(opts.maxConflictRegions);
-  const exts = opts.mergeableExtensions.length > 0 ? opts.mergeableExtensions.join('/') : '(none)';
-  return `merge: autoMerge=${opts.autoMergeEnabled ? 'on' : 'off'} `
-    + `failure=${opts.failurePolicy} frontmatter=${opts.frontmatterStrategy} `
-    + `maxRegions=${regions} mergeable=${exts}`;
+  const types = opts.autoMergeFileTypes.length > 0 ? opts.autoMergeFileTypes.join('/') : '(none)';
+  return `conflict: autoMergeFile=${opts.autoMergeFileStrategy} `
+    + `otherFile=${opts.otherFileStrategy} autoMergeTypes=${types}`;
 }
 
 /**

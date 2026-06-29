@@ -7,8 +7,6 @@ const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
 
 interface MergeEngineOptions {
   maxConflictRegions: number;
-  /** What to do when frontmatter differs. Default 'conflict' inserts markers for the whole file. */
-  frontmatterConflictStrategy?: 'local-wins' | 'remote-wins' | 'conflict';
 }
 
 export class MergeEngine {
@@ -44,12 +42,9 @@ export class MergeEngine {
       if (fmResult.success && fmResult.conflictRegions === 0) {
         mergedFm = fmResult.mergedContent;
       } else {
-        const strategy = this.opts.frontmatterConflictStrategy ?? 'conflict';
-        if (strategy === 'conflict') {
-          // Cannot reconcile frontmatter → mark the whole file (caller embeds conflict markers).
-          return { success: false, mergedContent: local, hadConflicts: true, conflictRegions: -1 };
-        }
-        mergedFm = strategy === 'local-wins' ? localFm : remoteFm;
+        // Cannot reconcile diverging frontmatter → the whole file is a conflict (feature 037, FR-005):
+        // the caller embeds conflict markers for text, or holds a non-text file untouched (FR-005a).
+        return { success: false, mergedContent: local, hadConflicts: true, conflictRegions: -1 };
       }
     }
 
@@ -66,6 +61,26 @@ export class MergeEngine {
     // 5. Circuit breaker: content loss detection (< 50% of the longer original body).
     const maxOriginal = Math.max(localBody.length, remoteBody.length);
     if (maxOriginal > 0 && result.mergedContent.length < maxOriginal * 0.5) {
+      return { success: false, mergedContent: local, hadConflicts: true, conflictRegions: result.conflictRegions };
+    }
+
+    // 5b. Expansion circuit breaker (feature 037, FR-005b). The 3-way merge here runs with an EMPTY
+    // base (the State DB stores only hashes, never base content — true-base support is feature 038),
+    // so reconcile-text can DUPLICATE shared blocks: the known data-bloat bug. Two cheap, base-free
+    // signals catch it and downgrade the result to a conflict (markers for text / safe-hold for
+    // non-text) rather than writing the corrupted body:
+    //   (1) length overflow — a true union of two texts can never exceed their combined length, so a
+    //       longer result is unambiguous duplication;
+    //   (2) an immediately-repeated multi-line block — the visible fingerprint of the reconcile bug.
+    // (2) can false-positive on genuinely repetitive prose, but only downgrades to a (non-destructive)
+    // conflict the user resolves — never silent corruption. Removed once 038 supplies a real base.
+    // Only the reconcile clean path (hadConflicts === false) is guarded: the diff3 fallback already
+    // emits conflict markers and is intentionally longer, so it must not trip the length check.
+    if (
+      !result.hadConflicts &&
+      (result.mergedContent.length > localBody.length + remoteBody.length ||
+        hasRepeatedBlock(result.mergedContent))
+    ) {
       return { success: false, mergedContent: local, hadConflicts: true, conflictRegions: result.conflictRegions };
     }
 
@@ -109,4 +124,31 @@ export class MergeEngine {
     if (!m) return { frontmatter: '', body: content };
     return { frontmatter: m[0], body: content.slice(m[0].length).trimStart() };
   }
+}
+
+/** Largest block length checked for immediate repetition — bounds cost on large files. */
+const MAX_REPEAT_BLOCK = 64;
+
+/**
+ * True when `text` contains a block of ≥2 non-blank lines immediately followed by an identical block
+ * (e.g. `…\nA\nB\nA\nB\n…`). This is the visible fingerprint of reconcile-text duplicating a shared
+ * region when merging with an empty base (feature 037 FR-005b). We only check immediate repetition
+ * (offset == block length), which is the bug's signature, and bound the block length for performance.
+ */
+function hasRepeatedBlock(text: string): boolean {
+  const lines = text.split('\n');
+  const n = lines.length;
+  for (let i = 0; i < n; i++) {
+    const maxK = Math.min(MAX_REPEAT_BLOCK, Math.floor((n - i) / 2));
+    for (let k = 2; k <= maxK; k++) {
+      let dup = true;
+      let hasContent = false;
+      for (let j = 0; j < k; j++) {
+        if (lines[i + j] !== lines[i + k + j]) { dup = false; break; }
+        if (lines[i + j].trim().length > 0) hasContent = true;
+      }
+      if (dup && hasContent) return true;
+    }
+  }
+  return false;
 }

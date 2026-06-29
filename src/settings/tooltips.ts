@@ -39,17 +39,13 @@ export const TOOLTIPS = {
   maxFileSize:
     'Skip files larger than this in both directions — uploads and downloads. 0 = unlimited. Keep low on mobile to avoid out-of-memory crashes.',
 
-  // Conflict resolution section
-  autoMerge:
-    'Auto-merge conflicts with reconcile-text. Enable Nextcloud version history first; results may be unexpected. (Version history is on by default on Nextcloud; there is no per-user toggle.)',
-  frontmatterConflictStrategy:
-    'How to handle a note whose YAML frontmatter differs on both sides. Remote or Local keeps that side and merges the body; Error holds the file for manual resolution.',
-  mergeableExtensions:
-    'Comma-separated file extensions eligible for automatic merge. Clear the field to disable auto-merge entirely (every conflict then uses the merge-failure policy).',
-  conflictFailurePolicy:
-    "What to do when an automatic merge fails. Remote overwrites local, Local overwrites remote, Error holds the file. A held file resolves on a later sync once switched to Remote or Local, or via the file's Compare with remote.",
-  onMergeFailure:
-    "What to do when a merge can't cleanly resolve: error/retry (safe), local wins, remote wins, or conflict markers (text only).",
+  // Conflict resolution section (feature 037)
+  autoMergeFileTypes:
+    'Comma-separated file extensions treated as Auto merge files (these use the Auto merge file strategy). Every other extension — and extensionless files — use the Other file strategy. Clear the field to route every file through the Other file strategy.',
+  autoMergeFileStrategy:
+    'Conflict strategy for Auto merge files. Merge does a 3-way merge with reconcile-text (clean → merged, text conflict → conflict markers, non-text → left untouched and flagged). The other four pick one side deterministically. Keep Nextcloud version history on so an overwritten side is recoverable.',
+  otherFileStrategy:
+    'Conflict strategy for every other file. Latest modified keeps the side with the newer modification time — beware: clock skew between devices can let an older edit overwrite a newer one with no prompt. Biggest size keeps the larger file; Local/Remote wins always keep that side. A size or mtime tie is left untouched and re-evaluated next sync.',
 
   // Excluded folders section
   excludedFolders:

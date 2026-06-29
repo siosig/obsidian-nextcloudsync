@@ -82,14 +82,14 @@ describe('StateDB integration with SyncEngine logic', () => {
   });
 });
 
-describe('SyncEngine.handleConflict — failure-policy actions', () => {
+describe('SyncEngine.handleConflict — strategy actions (feature 037)', () => {
   const enc = new TextEncoder();
   const toBuf = (s: string): ArrayBuffer => enc.encode(s).buffer;
 
-  // Feature 030: conflictFailurePolicy is a user setting again. Each case sets it on the settings
-  // object to exercise the prefer-local / prefer-remote / error handleConflict branches.
-  function makeSettings(policy: DavSyncSettings['conflictFailurePolicy']): DavSyncSettings {
-    return { ...DEFAULT_SETTINGS, deviceId: 'dev-abcd', conflictFailurePolicy: policy };
+  // Feature 037: a per-type strategy decides every conflict. Each case sets the relevant strategy
+  // (otherFileStrategy for image.png, or autoMergeFileTypes+autoMergeFileStrategy to route it to merge).
+  function makeSettings(over: Partial<DavSyncSettings>): DavSyncSettings {
+    return { ...DEFAULT_SETTINGS, deviceId: 'dev-abcd', ...over };
   }
 
   function makeSummary(): SyncSessionSummary {
@@ -104,7 +104,12 @@ describe('SyncEngine.handleConflict — failure-policy actions', () => {
     size: 6, lastModified: 2000,
   };
 
-  function buildHarness(policy: DavSyncSettings['conflictFailurePolicy'], localContent: string, remoteContent: string) {
+  function buildHarness(
+    settingsOver: Partial<DavSyncSettings>, localContent: string, remoteContent: string,
+    opts: { localMtime?: number; remoteMtime?: number } = {},
+  ) {
+    const localMtime = opts.localMtime ?? 1000;
+    const remoteMtime = opts.remoteMtime ?? 2000;
     const setFile = jest.fn();
     const atomicWrite = jest.fn(async () => undefined);
     const atomicWriteBinary = jest.fn(async () => undefined);
@@ -112,7 +117,7 @@ describe('SyncEngine.handleConflict — failure-policy actions', () => {
     const upload = jest.fn(async () => 'uploaded' as const);
 
     const localAdapter = {
-      stat: jest.fn(async () => ({ size: localContent.length, mtime: 1000 })),
+      stat: jest.fn(async () => ({ size: enc.encode(localContent).byteLength, mtime: localMtime })),
       read: jest.fn(async () => localContent),
       readBinary: jest.fn(async () => toBuf(localContent)),
       atomicWrite,
@@ -124,17 +129,19 @@ describe('SyncEngine.handleConflict — failure-policy actions', () => {
       downloadFile: jest.fn(async () => toBuf(remoteContent)),
     };
 
-    const opts = {
-      app: {}, settings: makeSettings(policy), localAdapter, stateDB,
+    const opts2 = {
+      app: {}, settings: makeSettings(settingsOver), localAdapter, stateDB,
       statusBar: {}, webdavFactory: {}, pluginDir: '', configDir: '.obsidian',
     };
-    const engine = new SyncEngine(opts as never);
+    const engine = new SyncEngine(opts2 as never);
     (engine as unknown as { client: unknown }).client = client;
     (engine as unknown as { uploadStrategy: unknown }).uploadStrategy = { upload };
 
     // remote.size must match the body length so the spec-025 server-anomaly guard (advertised vs
     // received) does not refuse the prefer-remote overwrite in these conflict tests.
-    const harnessRemote: RemoteFileInfo = { ...remote, size: new TextEncoder().encode(remoteContent).byteLength };
+    const harnessRemote: RemoteFileInfo = {
+      ...remote, size: enc.encode(remoteContent).byteLength, lastModified: remoteMtime,
+    };
     const invoke = (base: FileState | undefined, summary: SyncSessionSummary) =>
       (engine as unknown as {
         handleConflict(p: string, b: FileState | undefined, r: RemoteFileInfo, id: string, t: FileState['idType'], s: SyncSessionSummary): Promise<void>;
@@ -143,32 +150,8 @@ describe('SyncEngine.handleConflict — failure-policy actions', () => {
     return { engine, invoke, setFile, atomicWrite, atomicWriteBinary, upload, client, localAdapter };
   }
 
-  it('error policy → skip: touches neither side, counts error, leaves StateDB hashes intact', async () => {
-    const h = buildHarness('error', 'local-text', 'remote-text');
-    const base: FileState = {
-      path: 'image.png', localHash: 'lh', remoteId: 'rh', idType: 'sha256',
-      size: 10, mtime: 1000, remoteFileId: 'fid-1', isConflicted: false,
-    };
-    const summary = makeSummary();
-    await h.invoke(base, summary);
-
-    expect(h.upload).not.toHaveBeenCalled();
-    expect(h.atomicWrite).not.toHaveBeenCalled();
-    expect(h.atomicWriteBinary).not.toHaveBeenCalled();
-    expect(summary.errorCount).toBe(1);
-    expect(summary.mergedCount).toBe(0);
-    expect(summary.conflictedCount).toBe(0);
-    // The error detail is recorded for the sync-status dialog.
-    expect(summary.errors).toHaveLength(1);
-    expect(summary.errors[0].path).toBe('image.png');
-    // StateDB entry only flagged conflicted; hashes unchanged so the next sync re-detects.
-    expect(h.setFile).toHaveBeenCalledWith(expect.objectContaining({
-      path: 'image.png', localHash: 'lh', remoteId: 'rh', isConflicted: true,
-    }));
-  });
-
-  it('local-wins → prefer-local: uploads local, marks both sides converged (localHash)', async () => {
-    const h = buildHarness('local-wins', 'local-text', 'remote-text');
+  it('local-win → prefer-local: uploads local, marks both sides converged (localHash)', async () => {
+    const h = buildHarness({ otherFileStrategy: 'local-win' }, 'local-text', 'remote-text');
     const summary = makeSummary();
     await h.invoke(undefined, summary);
 
@@ -181,8 +164,8 @@ describe('SyncEngine.handleConflict — failure-policy actions', () => {
     expect(arg.idType).toBe('sha256');
   });
 
-  it('remote-wins → prefer-remote: overwrites local with remote, marks converged', async () => {
-    const h = buildHarness('remote-wins', 'local-text', 'remote-text');
+  it('remote-win → prefer-remote: overwrites local with remote, marks converged', async () => {
+    const h = buildHarness({ otherFileStrategy: 'remote-win' }, 'local-text', 'remote-text');
     const summary = makeSummary();
     await h.invoke(undefined, summary);
 
@@ -194,8 +177,73 @@ describe('SyncEngine.handleConflict — failure-policy actions', () => {
     expect(arg.remoteId).toBe('rem-checksum');
   });
 
+  it('latest-mtime → prefers the newer side (remote newer here → overwrites local)', async () => {
+    const h = buildHarness({ otherFileStrategy: 'latest-mtime' }, 'local-text', 'remote-text',
+      { localMtime: 1000, remoteMtime: 2000 });
+    const summary = makeSummary();
+    await h.invoke(undefined, summary);
+
+    expect(h.atomicWriteBinary).toHaveBeenCalledTimes(1);
+    expect(h.upload).not.toHaveBeenCalled();
+    expect(summary.downloadedCount).toBe(1);
+  });
+
+  it('biggest-size → prefers the larger side (local larger here → uploads local)', async () => {
+    const h = buildHarness({ otherFileStrategy: 'biggest-size' }, 'local-text-is-longer', 'remote');
+    const summary = makeSummary();
+    await h.invoke(undefined, summary);
+
+    expect(h.upload).toHaveBeenCalledTimes(1);
+    expect(h.atomicWriteBinary).not.toHaveBeenCalled();
+    expect(summary.uploadedCount).toBe(1);
+  });
+
+  it('tie (latest-mtime, equal mtime) → no-op: both sides untouched, not conflicted, not an error', async () => {
+    const base: FileState = {
+      path: 'image.png', localHash: 'lh', remoteId: 'rh', idType: 'sha256',
+      size: 10, mtime: 1500, remoteFileId: 'fid-1', isConflicted: false,
+    };
+    const h = buildHarness({ otherFileStrategy: 'latest-mtime' }, 'local-text', 'remote-text',
+      { localMtime: 1500, remoteMtime: 1500 });
+    const summary = makeSummary();
+    await h.invoke(base, summary);
+
+    expect(h.upload).not.toHaveBeenCalled();
+    expect(h.atomicWrite).not.toHaveBeenCalled();
+    expect(h.atomicWriteBinary).not.toHaveBeenCalled();
+    expect(summary.errorCount).toBe(0);
+    expect(summary.conflictedCount).toBe(0);
+    // StateDB untouched: the next sync re-evaluates the tie (self-healing).
+    expect(h.setFile).not.toHaveBeenCalled();
+  });
+
+  it('merge on non-text → safe-hold: both sides untouched, flagged conflicted, NOT an error (FR-005a)', async () => {
+    const base: FileState = {
+      path: 'image.png', localHash: 'lh', remoteId: 'rh', idType: 'sha256',
+      size: 10, mtime: 1000, remoteFileId: 'fid-1', isConflicted: false,
+    };
+    // png is routed to the merge strategy, but the bytes are binary (NUL) → safe-hold, no markers.
+    const nul = String.fromCharCode(0);
+    const h = buildHarness(
+      { autoMergeFileTypes: ['png'], autoMergeFileStrategy: 'merge' },
+      `local${nul}bin`, `remote${nul}bin`,
+    );
+    const summary = makeSummary();
+    await h.invoke(base, summary);
+
+    expect(h.upload).not.toHaveBeenCalled();
+    expect(h.atomicWrite).not.toHaveBeenCalled();
+    expect(h.atomicWriteBinary).not.toHaveBeenCalled();
+    expect(summary.errorCount).toBe(0);
+    expect(summary.conflictedCount).toBe(1);
+    // Flagged conflicted, hashes unchanged so the divergence persists for manual resolution.
+    expect(h.setFile).toHaveBeenCalledWith(expect.objectContaining({
+      path: 'image.png', localHash: 'lh', remoteId: 'rh', isConflicted: true,
+    }));
+  });
+
   it('prefer-local upload failure → keeps conflict unresolved, counts error, no converged StateDB write', async () => {
-    const h = buildHarness('local-wins', 'local-text', 'remote-text');
+    const h = buildHarness({ otherFileStrategy: 'local-win' }, 'local-text', 'remote-text');
     h.upload.mockRejectedValueOnce(new Error('network down'));
     const summary = makeSummary();
     await h.invoke(undefined, summary);
@@ -207,25 +255,26 @@ describe('SyncEngine.handleConflict — failure-policy actions', () => {
     expect(h.setFile).not.toHaveBeenCalled();
   });
 
-  // Feature 030 core requirement: a file held by the 'error' policy must be resolvable simply by
-  // switching the policy to remote/local-wins and syncing again (the held entry's hashes are
-  // unchanged, so the same divergence is re-detected and now overwritten).
-  it('SH self-healing: a file held by error is overwritten once the policy switches to remote-wins', async () => {
+  // SC-004 self-healing: a latest-mtime tie is a non-destructive no-op and re-evaluates next sync —
+  // once one side becomes newer, the same divergence resolves deterministically.
+  it('SH self-healing: a latest-mtime tie is a no-op, then resolves once a side becomes newer', async () => {
     const base: FileState = {
       path: 'image.png', localHash: 'lh', remoteId: 'rh', idType: 'sha256',
-      size: 10, mtime: 1000, remoteFileId: 'fid-1', isConflicted: false,
+      size: 10, mtime: 1500, remoteFileId: 'fid-1', isConflicted: false,
     };
 
-    // 1st sync — error policy holds the file (skip): nothing overwritten, flagged conflicted.
-    const held = buildHarness('error', 'local-text', 'remote-text');
+    // 1st sync — equal mtime → no-op: nothing overwritten, not flagged, StateDB untouched.
+    const tied = buildHarness({ otherFileStrategy: 'latest-mtime' }, 'local-text', 'remote-text',
+      { localMtime: 1500, remoteMtime: 1500 });
     const s1 = makeSummary();
-    await held.invoke(base, s1);
-    expect(held.atomicWriteBinary).not.toHaveBeenCalled();
-    expect(s1.errorCount).toBe(1);
-    expect(held.setFile).toHaveBeenCalledWith(expect.objectContaining({ isConflicted: true }));
+    await tied.invoke(base, s1);
+    expect(tied.atomicWriteBinary).not.toHaveBeenCalled();
+    expect(s1.errorCount).toBe(0);
+    expect(tied.setFile).not.toHaveBeenCalled();
 
-    // User switches to remote-wins; the same divergence now resolves by overwriting local.
-    const resolved = buildHarness('remote-wins', 'local-text', 'remote-text');
+    // 2nd sync — remote is now newer; the same divergence resolves by overwriting local.
+    const resolved = buildHarness({ otherFileStrategy: 'latest-mtime' }, 'local-text', 'remote-text',
+      { localMtime: 1500, remoteMtime: 3000 });
     const s2 = makeSummary();
     await resolved.invoke(base, s2);
     expect(resolved.atomicWriteBinary).toHaveBeenCalledTimes(1);
