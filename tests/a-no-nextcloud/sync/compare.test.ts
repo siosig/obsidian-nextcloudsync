@@ -38,7 +38,7 @@ function makeEngine(cfg: Cfg) {
   };
 
   const engine = new SyncEngine({
-    settings: { mergeableExtensions: ['md', 'txt'], fileLockingEnabled: false },
+    settings: { autoMergeFileTypes: ['md', 'txt'], fileLockingEnabled: false },
     localAdapter,
   } as never);
   (engine as unknown as { client: unknown }).client = client;

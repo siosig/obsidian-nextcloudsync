@@ -275,62 +275,51 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     // gated by the server-capability probe). The chunk threshold is platform-derived (no setting).
 
     // ── Conflict resolution ─────────────────────────────────────────────────────
-    // Feature 030: frontmatter strategy, merge-failure policy and mergeable extensions are
-    // user-editable. "Error" holds the file; switch to Remote/Local and re-sync, or use the
-    // file's "Compare with remote" Push/Pull, to resolve.
+    // Feature 037: a single per-type strategy. A file whose extension is in "Auto merge file types"
+    // uses "Auto merge file strategy" (Merge available); every other file uses "Other file strategy"
+    // (the four deterministic strategies). Every conflict is always decided — there is no hold/error.
     new Setting(containerEl).setName('Conflict resolution').setHeading();
 
     makeSetting(containerEl)
-      .setName('Auto merge (experimental)')
-      .setDesc('⚠️ when enabled, conflicts are auto-merged using reconcile-text. Results may be unexpected. Ensure Nextcloud version history is enabled before activating.')
-      .setTooltip(TOOLTIPS.autoMerge)
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.autoMergeEnabled)
-        .onChange(async (value) => {
-          this.plugin.settings.autoMergeEnabled = value;
-          await this.plugin.saveSettings();
-        }));
-
-    makeSetting(containerEl)
-      .setName('Frontmatter conflict strategy')
-      .setDesc('How to handle a note whose frontmatter differs on both sides. Keep one side and merge the body, or hold the file to resolve it yourself.')
-      .setTooltip(TOOLTIPS.frontmatterConflictStrategy)
-      .addDropdown(dd => dd
-        .addOption('remote-wins', 'Remote')
-        .addOption('local-wins', 'Local')
-        .addOption('conflict', 'Error')
-        .setValue(this.plugin.settings.frontmatterConflictStrategy)
-        .onChange(async (value) => {
-          this.plugin.settings.frontmatterConflictStrategy = value as DavSyncSettings['frontmatterConflictStrategy'];
-          await this.plugin.saveSettings();
-        }));
-
-    // Feature 033: the "Max conflict regions" slider was removed — auto-merge never downgrades a
-    // clean merge to inline markers on region count (always unlimited).
-
-    makeSetting(containerEl)
-      .setName('On merge failure')
-      .setDesc('What to do when an automatic merge cannot complete: overwrite with one side, or hold the file. A held file resolves on a later sync once you pick a side, or via the file\'s compare-with-remote command.')
-      .setTooltip(TOOLTIPS.conflictFailurePolicy)
-      .addDropdown(dd => dd
-        .addOption('remote-wins', 'Remote')
-        .addOption('local-wins', 'Local')
-        .addOption('error', 'Error')
-        .setValue(this.plugin.settings.conflictFailurePolicy)
-        .onChange(async (value) => {
-          this.plugin.settings.conflictFailurePolicy = value as DavSyncSettings['conflictFailurePolicy'];
-          await this.plugin.saveSettings();
-        }));
-
-    makeSetting(containerEl)
-      .setName('Auto-merge file types')
-      .setDesc('Comma-separated file extensions eligible for automatic merge, such as md, txt or py. Clear the field to disable auto-merge entirely — every conflict then uses the merge-failure policy above.')
-      .setTooltip(TOOLTIPS.mergeableExtensions)
+      .setName('Auto merge file types')
+      .setDesc('Comma-separated file extensions treated as "auto merge files", such as md, txt or py. These use the auto merge file strategy below; every other file uses the other file strategy. Clear the field to route every file through the other file strategy.')
+      .setTooltip(TOOLTIPS.autoMergeFileTypes)
       .addText(text => text
         .setPlaceholder('Comma-separated extensions')
-        .setValue(formatMergeableExtensions(this.plugin.settings.mergeableExtensions))
+        .setValue(formatMergeableExtensions(this.plugin.settings.autoMergeFileTypes))
         .onChange(async (value) => {
-          this.plugin.settings.mergeableExtensions = parseMergeableExtensions(value);
+          this.plugin.settings.autoMergeFileTypes = parseMergeableExtensions(value);
+          await this.plugin.saveSettings();
+        }));
+
+    makeSetting(containerEl)
+      .setName('Auto merge file strategy')
+      .setDesc('How to resolve a conflict on an auto merge file. Merge attempts a 3-way merge (clean → merged, text conflict → markers, non-text → held untouched); the others pick one side deterministically.')
+      .setTooltip(TOOLTIPS.autoMergeFileStrategy)
+      .addDropdown(dd => dd
+        .addOption('merge', 'Merge')
+        .addOption('biggest-size', 'Biggest size')
+        .addOption('latest-mtime', 'Latest modified')
+        .addOption('local-win', 'Local wins')
+        .addOption('remote-win', 'Remote wins')
+        .setValue(this.plugin.settings.autoMergeFileStrategy)
+        .onChange(async (value) => {
+          this.plugin.settings.autoMergeFileStrategy = value as DavSyncSettings['autoMergeFileStrategy'];
+          await this.plugin.saveSettings();
+        }));
+
+    makeSetting(containerEl)
+      .setName('Other file strategy')
+      .setDesc('How to resolve a conflict on every other file (images, PDFs, config JSON, …). Latest modified keeps the newer side; Biggest size keeps the larger; Local/remote wins always keep that side.')
+      .setTooltip(TOOLTIPS.otherFileStrategy)
+      .addDropdown(dd => dd
+        .addOption('biggest-size', 'Biggest size')
+        .addOption('latest-mtime', 'Latest modified')
+        .addOption('local-win', 'Local wins')
+        .addOption('remote-win', 'Remote wins')
+        .setValue(this.plugin.settings.otherFileStrategy)
+        .onChange(async (value) => {
+          this.plugin.settings.otherFileStrategy = value as DavSyncSettings['otherFileStrategy'];
           await this.plugin.saveSettings();
         }));
 

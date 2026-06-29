@@ -1,21 +1,18 @@
-// Layer B — full orthogonal matrix of conflict-resolution settings across TWO devices (live server).
+// Layer B — full matrix of conflict-resolution STRATEGIES across TWO devices (live server).
 //
-// Cross-product (2 × 3 × 4 = 24 combinations):
-//   - autoMergeEnabled:          On | Off
-//   - frontmatterConflictStrategy: conflict | local-wins | remote-wins
-//   - conflictFailurePolicy:     error | local-wins | remote-wins | conflict-markers
-//
-// Each combination runs the same 2-device conflict on its OWN file and asserts the resolved outcome
-// plus convergence/stability on a follow-up sync. The conflict is engineered to be FRONTMATTER-ONLY
-// (identical body, diverging `title`) so every combination has a single deterministic expected
-// outcome derived from spec §6.2/§6.3 (see expectedWinner()).
-//
-// Notes the matrix surfaces (intentional, spec-consistent degeneracies):
-//   - autoMerge=Off (modelled in 030 as an empty mergeable list) ⇒ MergeEngine is skipped, so
-//     frontmatterConflictStrategy is a NO-OP and conflictFailurePolicy decides directly. A
-//     non-mergeable file cannot receive conflict markers, so the conflict-markers policy → skip.
-//   - autoMerge=On with frontmatterStrategy ∈ {local-wins, remote-wins} resolves the frontmatter
-//     cleanly, so the failure policy never fires (clean auto-merge).
+// Feature 037 replaced the old 2×3×4 policy cross-product with a single per-type strategy. This
+// matrix exercises every strategy on its OWN file and asserts the resolved outcome plus
+// convergence/stability on a follow-up sync. The conflict is FRONTMATTER-ONLY (identical body,
+// diverging `title`) with EQUAL-LENGTH documents, so each strategy has one deterministic outcome
+// derived from ConflictResolver.decide (unit-verified in tests/a-no-nextcloud):
+//   - Auto Merge File (case-*.md, extension in autoMergeFileTypes):
+//       merge         → both titles diverge from base ⇒ unmergeable frontmatter ⇒ conflict markers
+//       biggest-size  → equal length ⇒ tie ⇒ no-op (both untouched, not conflicted, FR-009)
+//       latest-mtime  → M syncs last (newer) ⇒ M wins
+//       local-win     → M (the resolving device's local copy)
+//       remote-win    → D
+//   - Other File (case-*.md with an EMPTY autoMergeFileTypes ⇒ everything is Other File):
+//       biggest-size / latest-mtime / local-win / remote-win as above (no merge for Other File)
 //
 // Manual only (pnpm test:b1 -- conflictPolicyMatrix); skips without .env NEXTCLOUD_*.
 import { describeLive } from '../support/env';
@@ -24,61 +21,41 @@ import { cleanupWorkspace, IsolatedWorkspace } from '../support/isolation';
 import { NextcloudClient } from '../../../src/network/NextcloudClient';
 import { makeDevice } from '../support/engineDevice';
 import { decodeBuf } from '../support/helpers';
-import { DavSyncSettings } from '../../../src/types';
+import { DavSyncSettings, SyncStrategy } from '../../../src/types';
 
-type AutoMerge = boolean;
-type FmStrategy = DavSyncSettings['frontmatterConflictStrategy']; // 'conflict'|'local-wins'|'remote-wins'
-type FailPolicy = DavSyncSettings['conflictFailurePolicy'];       // 'error'|'local-wins'|'remote-wins'|'conflict-markers'
-type Winner = 'M' | 'D' | 'markers' | 'skip';
+type Winner = 'M' | 'D' | 'markers' | 'tie';
 
-const FM_STRATEGIES: FmStrategy[] = ['conflict', 'local-wins', 'remote-wins'];
-const FAIL_POLICIES: FailPolicy[] = ['error', 'local-wins', 'remote-wins', 'conflict-markers'];
+interface Combo { i: number; kind: 'auto' | 'other'; strategy: SyncStrategy; winner: Winner; }
 
-/**
- * Expected resolution outcome for the frontmatter-only conflict, derived from ConflictResolver.decide:
- * - autoMerge ON: frontmatter local/remote-wins ⇒ clean merge to that side; frontmatter=conflict ⇒
- *   the failure policy decides (error→skip, local→M, remote→D, conflict-markers→markers).
- * - autoMerge OFF: MergeEngine skipped ⇒ failure policy decides directly (frontmatter strategy ignored).
- */
-function expectedWinner(autoMerge: AutoMerge, fm: FmStrategy, policy: FailPolicy): Winner {
-  if (autoMerge) {
-    if (fm === 'local-wins') return 'M';
-    if (fm === 'remote-wins') return 'D';
-    // fm === 'conflict' → merge has a frontmatter conflict → failure policy:
-  }
-  switch (policy) {
-    case 'local-wins': return 'M';
-    case 'remote-wins': return 'D';
-    // Feature 030: "auto-merge off" is modelled by an empty mergeable list (the file is
-    // non-mergeable). A non-mergeable file cannot receive conflict markers, so the
-    // conflict-markers policy degenerates to skip — only a mergeable file gets markers.
-    case 'conflict-markers': return autoMerge ? 'markers' : 'skip';
-    case 'error': default: return 'skip';
+function autoWinner(s: SyncStrategy): Winner {
+  switch (s) {
+    case 'merge': return 'markers';        // both sides changed the same frontmatter line ⇒ unmergeable
+    case 'biggest-size': return 'tie';     // equal-length docs ⇒ size tie ⇒ no-op
+    case 'latest-mtime': return 'M';       // M resolves last ⇒ newer
+    case 'local-win': return 'M';
+    case 'remote-win': return 'D';
   }
 }
 
-interface Combo { i: number; autoMerge: AutoMerge; fm: FmStrategy; policy: FailPolicy; winner: Winner; }
+const AUTO_STRATEGIES: SyncStrategy[] = ['merge', 'biggest-size', 'latest-mtime', 'local-win', 'remote-win'];
+const OTHER_STRATEGIES: Exclude<SyncStrategy, 'merge'>[] = ['biggest-size', 'latest-mtime', 'local-win', 'remote-win'];
+
 const COMBOS: Combo[] = (() => {
   const out: Combo[] = [];
   let i = 0;
-  for (const autoMerge of [true, false]) {
-    for (const fm of FM_STRATEGIES) {
-      for (const policy of FAIL_POLICIES) {
-        out.push({ i: i++, autoMerge, fm, policy, winner: expectedWinner(autoMerge, fm, policy) });
-      }
-    }
-  }
+  for (const strategy of AUTO_STRATEGIES) out.push({ i: i++, kind: 'auto', strategy, winner: autoWinner(strategy) });
+  for (const strategy of OTHER_STRATEGIES) out.push({ i: i++, kind: 'other', strategy, winner: autoWinner(strategy) });
   return out;
 })();
 
-// Frontmatter-only conflict: same body, diverging `title`.
+// Frontmatter-only conflict: same body, diverging `title`, EQUAL length on both sides.
 const fileFor = (c: Combo): string => `case-${c.i}.md`;
 const doc = (title: string): string => `---\ntitle: ${title}\n---\n\nshared body line\n`;
 const BASE = doc('base');
-const D_DOC = doc('from-D');
-const M_DOC = doc('from-M');
+const D_DOC = doc('frm-D'); // equal length to M_DOC
+const M_DOC = doc('frm-M');
 
-describeLive('Layer B — conflict-resolution settings matrix (2 devices, 24 combinations)', (getEnv) => {
+describeLive('Layer B — conflict-resolution strategy matrix (2 devices, feature 037)', (getEnv) => {
   let ws: IsolatedWorkspace;
   let baseClient: NextcloudClient;
 
@@ -95,18 +72,14 @@ describeLive('Layer B — conflict-resolution settings matrix (2 devices, 24 com
   const remote = (path: string): Promise<string> => baseClient.downloadFile(path).then(decodeBuf);
 
   it.each(COMBOS)(
-    'combo %#: autoMerge=$autoMerge fm=$fm policy=$policy → winner=$winner',
+    'combo %#: kind=$kind strategy=$strategy → winner=$winner',
     async (c) => {
       const env = getEnv();
       const path = fileFor(c);
-      const over: Partial<DavSyncSettings> = {
-        // Feature 030: autoMergeEnabled is FIXED true; "auto-merge off" is expressed by an empty
-        // mergeable list (isMergeable=false ⇒ MergeEngine skipped) — spec-equivalent for this
-        // frontmatter-only matrix. Markdown files merge only when 'md' is in the list.
-        mergeableExtensions: c.autoMerge ? ['md'] : [],
-        frontmatterConflictStrategy: c.fm,
-        conflictFailurePolicy: c.policy,
-      };
+      const over: Partial<DavSyncSettings> =
+        c.kind === 'auto'
+          ? { autoMergeFileTypes: ['md'], autoMergeFileStrategy: c.strategy }
+          : { autoMergeFileTypes: [], otherFileStrategy: c.strategy as Exclude<SyncStrategy, 'merge'> };
       // Both devices share the conflict-resolution settings; M is the device that resolves on sync.
       const d = makeDevice(env, ws.remoteBase, `D-${c.i}`, over);
       const m = makeDevice(env, ws.remoteBase, `M-${c.i}`, over);
@@ -122,7 +95,7 @@ describeLive('Layer B — conflict-resolution settings matrix (2 devices, 24 com
       await d.sync();
       expect(await remote(path)).toBe(D_DOC);
 
-      // M makes its OWN divergent frontmatter edit, then syncs → conflict resolved per the combo.
+      // M makes its OWN divergent frontmatter edit, then syncs → conflict resolved per the strategy.
       m.vault.seedLocal(path, M_DOC);
       await m.sync();
 
@@ -130,31 +103,29 @@ describeLive('Layer B — conflict-resolution settings matrix (2 devices, 24 com
       const rRemote = await remote(path);
       const isConflicted = m.stateDB.getFile(path)?.isConflicted ?? false;
 
-      // ── Assert the resolved outcome for this combination ──────────────────────────────────
+      // ── Assert the resolved outcome for this strategy ──────────────────────────────────────
       if (c.winner === 'M') {
-        // Local content wins on BOTH sides (prefer-local or clean frontmatter local-wins).
-        expect(mLocal).toContain('from-M');
-        expect(mLocal).not.toContain('from-D');
+        expect(mLocal).toContain('frm-M');
+        expect(mLocal).not.toContain('frm-D');
         expect(rRemote).toBe(mLocal);          // converged: remote == local
         expect(isConflicted).toBe(false);
       } else if (c.winner === 'D') {
-        expect(mLocal).toContain('from-D');
-        expect(mLocal).not.toContain('from-M');
+        expect(mLocal).toContain('frm-D');
+        expect(mLocal).not.toContain('frm-M');
         expect(rRemote).toBe(mLocal);
         expect(isConflicted).toBe(false);
       } else if (c.winner === 'markers') {
         // Conflict markers / #conflict tag: BOTH versions preserved (no data loss), pushed to remote.
         expect(mLocal === rRemote).toBe(true);
         expect(/^<<<<<<< /m.test(mLocal) || mLocal.includes('#conflict')).toBe(true);
-        expect(mLocal).toContain('from-M');
-        expect(mLocal).toContain('from-D');
+        expect(mLocal).toContain('frm-M');
+        expect(mLocal).toContain('frm-D');
         expect(isConflicted).toBe(true);
       } else {
-        // 'skip' (failure policy=error): both sides left UNTOUCHED, entry flagged conflicted.
+        // 'tie' (size tie under biggest-size): both sides UNTOUCHED, NOT conflicted, not an error.
         expect(mLocal).toBe(M_DOC);            // local unchanged
         expect(rRemote).toBe(D_DOC);           // remote unchanged
-        expect(mLocal).not.toBe(rRemote);      // still diverged (no data loss either side)
-        expect(isConflicted).toBe(true);
+        expect(isConflicted).toBe(false);      // FR-009: a tie is a success, not a held conflict
       }
 
       // ── Convergence / stability: a second M sync must not churn (no re-resolution side effects) ──
