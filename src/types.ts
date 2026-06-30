@@ -265,6 +265,12 @@ export interface MergeResult {
   mergedContent: string;
   hadConflicts: boolean;
   conflictRegions: number;
+  /**
+   * Feature 039 (FR-039-5): the merged output contains NESTED/stacked plugin conflict markers — the
+   * fingerprint of marker re-entrancy that the upstream guard somehow missed. The caller must
+   * safe-hold (write nothing, push nothing) instead of persisting the corrupt body. Optional/additive.
+   */
+  hold?: boolean;
 }
 
 /**

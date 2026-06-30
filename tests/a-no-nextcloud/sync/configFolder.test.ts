@@ -161,7 +161,8 @@ describe('[SPEC:CSF-12] config JSON conflict resolves via Other File / latest-mt
       atomicWriteBinary,
       setMtime: jest.fn(async () => undefined),
     };
-    const stateDB = { setFile, getFile: jest.fn(() => undefined) };
+    const setRemoteRootEtag = jest.fn();
+    const stateDB = { setFile, getFile: jest.fn(() => undefined), setRemoteRootEtag };
     const client = { downloadFile: jest.fn(async () => toBuf2('{"a":2}')) };
     const upload = jest.fn(async () => 'uploaded' as const);
     const engine = new SyncEngine({
@@ -178,7 +179,7 @@ describe('[SPEC:CSF-12] config JSON conflict resolves via Other File / latest-mt
       (engine as unknown as {
         handleConflict(p: string, b: FileState | undefined, r: RemoteFileInfo, id: string, t: FileState['idType'], s: SyncSessionSummary): Promise<void>;
       }).handleConflict(`${CONFIG_DIR}/appearance.json`, base, remote, 'c', 'sha256', summary);
-    return { invoke, atomicWriteBinary, upload, setFile };
+    return { invoke, atomicWriteBinary, upload, setFile, setRemoteRootEtag };
   }
 
   it('[SPEC:CSF-12] remote newer → local overwritten by remote (no markers, JSON-safe)', async () => {
@@ -202,5 +203,8 @@ describe('[SPEC:CSF-12] config JSON conflict resolves via Other File / latest-mt
     expect(summary.errorCount).toBe(0);
     expect(summary.conflictedCount).toBe(0);
     expect(h.setFile).not.toHaveBeenCalled();
+    // ES-11: the tie must invalidate the root-ETag short-circuit so the next sync re-scans instead of
+    // rebuilding from stale State and silently uploading the local JSON over the remote.
+    expect(h.setRemoteRootEtag).toHaveBeenCalledWith(null);
   });
 });

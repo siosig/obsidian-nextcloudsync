@@ -124,7 +124,8 @@ describe('SyncEngine.handleConflict — strategy actions (feature 037)', () => {
       atomicWriteBinary,
       setMtime,
     };
-    const stateDB = { setFile, getFile: jest.fn(() => undefined) };
+    const setRemoteRootEtag = jest.fn();
+    const stateDB = { setFile, getFile: jest.fn(() => undefined), setRemoteRootEtag };
     const client = {
       downloadFile: jest.fn(async () => toBuf(remoteContent)),
     };
@@ -147,7 +148,7 @@ describe('SyncEngine.handleConflict — strategy actions (feature 037)', () => {
         handleConflict(p: string, b: FileState | undefined, r: RemoteFileInfo, id: string, t: FileState['idType'], s: SyncSessionSummary): Promise<void>;
       }).handleConflict('image.png', base, harnessRemote, 'rem-checksum', 'sha256', summary);
 
-    return { engine, invoke, setFile, atomicWrite, atomicWriteBinary, upload, client, localAdapter };
+    return { engine, invoke, setFile, setRemoteRootEtag, atomicWrite, atomicWriteBinary, upload, client, localAdapter };
   }
 
   it('local-win → prefer-local: uploads local, marks both sides converged (localHash)', async () => {
@@ -215,6 +216,11 @@ describe('SyncEngine.handleConflict — strategy actions (feature 037)', () => {
     expect(summary.conflictedCount).toBe(0);
     // StateDB untouched: the next sync re-evaluates the tie (self-healing).
     expect(h.setFile).not.toHaveBeenCalled();
+    // ES-11: a tie leaves the sides DIVERGENT with no counter raised, so finalizeScan's convergence
+    // gate cannot disarm the root-ETag short-circuit. The no-op must invalidate the stored root ETag
+    // itself, or the next sync would rebuild from stale State and silently upload the local side over
+    // the remote (data loss). Regression for conflictPolicyMatrix.b1 combo 1/5.
+    expect(h.setRemoteRootEtag).toHaveBeenCalledWith(null);
   });
 
   it('merge on non-text → safe-hold: both sides untouched, flagged conflicted, NOT an error (FR-005a)', async () => {

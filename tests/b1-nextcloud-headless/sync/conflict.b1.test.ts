@@ -67,11 +67,20 @@ describe('Layer B — conflict resolution (CF)', () => {
     expect(r.decide('n.md', DIVERGED.base, DIVERGED.local, DIVERGED.remote).action).toBe('prefer-remote');
   });
 
-  it('CF-6 merge ON + mergeable diverging text still reaches a clean write (reconcile force-merges)', () => {
+  it('CF-6 merge ON + SAME-line divergence with a real base → conflict markers, both sides kept (feature 039 base-aware 3-way)', () => {
+    // DIVERGED edits the only line differently on both sides. Before feature 039, reconcile-text
+    // silently force-merged this into a "clean" result (it never surfaces conflicts). With a REAL base
+    // (038) the base-aware diff3 path (039 P3) correctly detects the same-line conflict and writes
+    // single-level markers instead of a silent merge — no data loss, no false "clean".
     const r = resolver({ autoMergeFileStrategy: 'merge', autoMergeFileTypes: ['md'] });
     const d = r.decide('n.md', DIVERGED.base, DIVERGED.local, DIVERGED.remote);
     expect(d.action).toBe('write');
-    if (d.action === 'write') expect(d.clean).toBe(true);
+    if (d.action === 'write') {
+      expect(d.clean).toBe(false);
+      expect(d.content).toContain('local edit');
+      expect(d.content).toContain('remote edit');
+      expect((d.content.match(/^<<<<<<< LOCAL/gm) || []).length).toBe(1);
+    }
   });
 
   it('CF-7 merge on a non-text file → safe-hold (no markers written)', () => {
