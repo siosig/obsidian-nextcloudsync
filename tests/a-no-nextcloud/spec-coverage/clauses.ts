@@ -199,6 +199,7 @@ export const CLAUSES: Clause[] = [
   { id: 'ES-8',  source: 'specs/main/spec.md §8a.5 (FORCE_FULL_SCAN_EVERY forces a real scan, resets count)', layer: 'a' },
   { id: 'ES-9',  source: 'specs/main/spec.md §8a.5 (remoteRootEtag/skipCount persist + pre-023 back-compat)', layer: 'a' },
   { id: 'ES-10', source: 'specs/main/spec.md §8a.5 (short-circuit also skips getDirectories∞ via rebuilt dirs)', layer: 'a' },
+  { id: 'ES-11', source: 'specs/main/spec.md §8a.5 (tie no-op invalidates root ETag → next sync re-scans; no silent local-wins upload)', layer: 'a' },
   // --- SG/WB: download safety guards (spec 025, specs/main/spec.md §9) ---
   { id: 'SG-1', source: 'specs/main/spec.md §9 (advertised size > received ⇒ anomalous remote)', layer: 'a' },
   { id: 'SG-2', source: 'specs/main/spec.md §9 (anomalous download refused: no overwrite, Base kept, retry)', layer: 'a' },
