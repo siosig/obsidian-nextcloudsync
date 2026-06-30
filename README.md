@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.18-beta.1)
+## What's new in this release (0.7.18)
 
-- **More accurate conflict merges and an end to runaway conflict-marker growth (0.7.18-beta.1)** — when the same note is edited on two devices, the plugin now uses the last-synced version as a true 3-way merge base, so automatic merges are cleaner and lose fewer edits. It also stops a re-entrancy loop where existing conflict markers were re-merged on every sync, which previously made affected notes grow without bound. A related data-safety fix ensures a no-op "tie" no longer short-circuits a needed re-sync that could otherwise drop changes.
+- **More accurate conflict merges and an end to runaway conflict-marker growth (0.7.18)** — when the same note is edited on two devices, the plugin now uses the last-synced version as a true 3-way merge base, so automatic merges are cleaner and lose fewer edits. It also stops a re-entrancy loop where existing conflict markers were re-merged on every sync, which previously made affected notes grow without bound. A related data-safety fix ensures a no-op "tie" no longer short-circuits a needed re-sync that could otherwise drop changes.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
