@@ -86,6 +86,17 @@ export class MergeEngine {
 
     // 6. Re-attach the resolved frontmatter.
     const merged = mergedFm ? `${mergedFm}\n${result.mergedContent}` : result.mergedContent;
+
+    // 6b. Nested-marker backstop (feature 039, FR-039-5, P2). The re-entrancy guard in
+    // ConflictResolver.decideMerge already refuses to merge inputs that carry plugin markers, so a
+    // well-formed single-level output is expected. If the output nonetheless contains STACKED plugin
+    // markers (a second `<<<<<<< LOCAL` before the prior region's `>>>>>>> REMOTE` close), some path
+    // bypassed the guard — never persist or push that corrupt body. Signal `hold` so the caller
+    // safe-holds. Length-independent, so it does NOT false-positive on a legitimate single-level
+    // marker output (whose size naturally exceeds max(local,remote)).
+    if (hasNestedConflictMarkers(merged)) {
+      return { success: false, mergedContent: local, hadConflicts: true, conflictRegions: result.conflictRegions, hold: true };
+    }
     return { ...result, mergedContent: merged };
   }
 
@@ -106,6 +117,19 @@ export class MergeEngine {
    * If reconcile cannot produce text, fall back to diff3 entirely (markers + count).
    */
   private mergeText(base: string, local: string, remote: string): MergeResult {
+    // Feature 039 (P3): with a REAL base (feature 038 now seeds one), diff3 is a TRUE 3-way merge —
+    // non-overlapping edits merge cleanly and only genuine SAME-line edits surface as conflicts. Prefer
+    // it: it both reduces false conflicts AND, unlike reconcile-text (which always reports
+    // conflictRegions:0 and silently concatenates), it actually detects real same-line conflicts so the
+    // caller writes proper markers. reconcile-text stays the fallback ONLY for an EMPTY base (migration
+    // / a first conflict before 038 has seeded a base), where diff3 degrades to a 2-way guess.
+    if (base.length > 0) {
+      const d = this.fallbackStrategy.merge(base, local, remote);
+      if (d.conflictRegions >= 0) {
+        return { success: true, mergedContent: d.mergedContent, hadConflicts: d.hadConflicts, conflictRegions: d.conflictRegions };
+      }
+      // diff3 itself failed (conflictRegions < 0) → fall through to the reconcile path below.
+    }
     const reconciled = this.primaryStrategy.merge(base, local, remote);
     if (!reconciled.success || reconciled.conflictRegions < 0) {
       return this.fallbackStrategy.merge(base, local, remote);
@@ -124,6 +148,27 @@ export class MergeEngine {
     if (!m) return { frontmatter: '', body: content };
     return { frontmatter: m[0], body: content.slice(m[0].length).trimStart() };
   }
+}
+
+/**
+ * Feature 039 (FR-039-5): true when `content` contains NESTED/stacked plugin conflict markers — a
+ * second opening marker (`<<<<<<< LOCAL`) appears before the current region's closing marker
+ * (`>>>>>>> REMOTE`). That is the fingerprint of marker re-entrancy (a marked file fed back into the
+ * merge and re-wrapped). A single well-formed region (one LOCAL open … one REMOTE close) is NOT
+ * nested, and a note that merely contains a bare `<<<<<<< HEAD` content line is ignored — only THIS
+ * plugin's marker lines (`^<<<<<<< LOCAL` / `^>>>>>>> REMOTE`) are tracked.
+ */
+export function hasNestedConflictMarkers(content: string): boolean {
+  let open = false;
+  for (const line of content.split('\n')) {
+    if (line.startsWith('<<<<<<< LOCAL')) {
+      if (open) return true; // a second open before the prior region closed → nested
+      open = true;
+    } else if (line.startsWith('>>>>>>> REMOTE')) {
+      open = false;
+    }
+  }
+  return false;
 }
 
 /** Largest block length checked for immediate repetition — bounds cost on large files. */

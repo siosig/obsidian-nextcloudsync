@@ -3,9 +3,18 @@ import { ConflictResolution, SyncStrategy } from '../types';
 import { LocalAdapter } from '../data/LocalAdapter';
 import { MergeEngine } from './merge/MergeEngine';
 import { FIXED } from '../util/fixedSyncConfig';
+import { isAutoMergeFileType } from '../util/mergeableExtensions';
 
 const CONFLICT_TAG = '#conflict';
 const CONFLICT_MARKER_RE = /^<<<<<<< /m;
+
+/**
+ * Feature 039 (FR-039-4): detect THIS plugin's OWN conflict markers — the start line written by
+ * `buildMarkerContent` / Diff3Strategy (`<<<<<<< LOCAL …`) or its closing line (`>>>>>>> REMOTE …`).
+ * Stricter than CONFLICT_MARKER_RE (`^<<<<<<< `, which matches any `<<<<<<< whatever`): a user may
+ * legitimately write a bare `<<<<<<< HEAD` in a note, and that must NOT trip the re-entrancy guard.
+ */
+const REENTRANT_MARKER_RE = /^(?:<<<<<<< LOCAL|>>>>>>> REMOTE)/m;
 
 /**
  * Conflict-resolution parameters the ConflictResolver needs (feature 037). The three former conflict
@@ -63,24 +72,12 @@ export class ConflictResolver {
    * Files without an extension, or whose extension is not in `autoMergeFileTypes`, are Other Files.
    */
   isAutoMergeFile(path: string): boolean {
-    const dot = path.lastIndexOf('.');
-    const slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
-    if (dot <= slash || dot === path.length - 1) return false; // no extension → Other File
-    const ext = path.slice(dot + 1).toLowerCase();
-    return this.normalizedExtensions().includes(ext);
+    return isAutoMergeFileType(path, this.config.autoMergeFileTypes);
   }
 
   /** The SyncStrategy that applies to `path` after Auto Merge File / Other File classification (CSF-1). */
   strategyFor(path: string): SyncStrategy {
     return this.isAutoMergeFile(path) ? this.config.autoMergeFileStrategy : this.config.otherFileStrategy;
-  }
-
-  /** Normalize the configured extensions (lowercase, strip leading dots/whitespace, drop empties). */
-  private normalizedExtensions(): string[] {
-    const list = this.config.autoMergeFileTypes ?? [];
-    return list
-      .map((e) => e.trim().replace(/^\.+/, '').toLowerCase())
-      .filter((e) => e.length > 0);
   }
 
   /**
@@ -117,7 +114,20 @@ export class ConflictResolver {
     if (isLikelyBinary(local) || isLikelyBinary(remote)) {
       return { action: 'safe-hold' };
     }
+    // Feature 039 (FR-039-1/2, R2): if EITHER side already carries this plugin's conflict markers,
+    // merging would re-wrap the existing markers in NEW markers and duplicate shared blocks — the
+    // geometric re-entrancy loop that corrupted real files. Do NOT merge: safe-hold (both untouched,
+    // flagged conflicted, nothing pushed) until the user resolves by removing the markers. Self-healing:
+    // once the markers are gone the inputs are clean again and the normal merge below resumes.
+    if (REENTRANT_MARKER_RE.test(local) || REENTRANT_MARKER_RE.test(remote)) {
+      return { action: 'safe-hold' };
+    }
     const result = this.mergeEngine.merge(base, local, remote);
+    // Feature 039 (FR-039-5, P2): the merge produced nested/stacked markers (corruption fingerprint) →
+    // never write or push it; hold for the user instead of growing the file further.
+    if (result.hold) {
+      return { action: 'safe-hold' };
+    }
     if (result.success && !result.hadConflicts) {
       return { action: 'write', content: result.mergedContent, clean: true };
     }
