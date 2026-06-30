@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.17-beta.1)
+## What's new in this release (0.7.17)
 
-- **Fix the settings sliders' numeric box on mobile (0.7.17-beta.1)** — on phones the editable number box added in 0.7.16 expanded to the full row and pushed the slider off-screen. It is now pinned to a compact width so both the number box and the slider stay visible and usable.
+- **Fix the settings sliders' numeric box on mobile (0.7.17)** — on phones the editable number box added in 0.7.16 expanded to the full row and pushed the slider off-screen. It is now pinned to a compact width so both the number box and the slider stay visible and usable.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
