@@ -3,6 +3,7 @@ import { ConflictResolution, SyncStrategy } from '../types';
 import { LocalAdapter } from '../data/LocalAdapter';
 import { MergeEngine } from './merge/MergeEngine';
 import { FIXED } from '../util/fixedSyncConfig';
+import { isAutoMergeFileType } from '../util/mergeableExtensions';
 
 const CONFLICT_TAG = '#conflict';
 const CONFLICT_MARKER_RE = /^<<<<<<< /m;
@@ -63,24 +64,12 @@ export class ConflictResolver {
    * Files without an extension, or whose extension is not in `autoMergeFileTypes`, are Other Files.
    */
   isAutoMergeFile(path: string): boolean {
-    const dot = path.lastIndexOf('.');
-    const slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
-    if (dot <= slash || dot === path.length - 1) return false; // no extension → Other File
-    const ext = path.slice(dot + 1).toLowerCase();
-    return this.normalizedExtensions().includes(ext);
+    return isAutoMergeFileType(path, this.config.autoMergeFileTypes);
   }
 
   /** The SyncStrategy that applies to `path` after Auto Merge File / Other File classification (CSF-1). */
   strategyFor(path: string): SyncStrategy {
     return this.isAutoMergeFile(path) ? this.config.autoMergeFileStrategy : this.config.otherFileStrategy;
-  }
-
-  /** Normalize the configured extensions (lowercase, strip leading dots/whitespace, drop empties). */
-  private normalizedExtensions(): string[] {
-    const list = this.config.autoMergeFileTypes ?? [];
-    return list
-      .map((e) => e.trim().replace(/^\.+/, '').toLowerCase())
-      .filter((e) => e.length > 0);
   }
 
   /**

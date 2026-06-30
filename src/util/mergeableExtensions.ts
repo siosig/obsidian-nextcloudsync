@@ -25,3 +25,20 @@ export function parseMergeableExtensions(input: string): string[] {
 export function formatMergeableExtensions(exts: readonly string[]): string {
   return exts.join(', ');
 }
+
+/**
+ * True when `path`'s extension is one of the configured Auto Merge File types (case-insensitive).
+ * A file without an extension is an Other File. Single source of truth for the Auto Merge File /
+ * Other File classification, shared by ConflictResolver (which strategy applies) and SyncEngine
+ * (whether to keep a merge base for the file, feature 038).
+ */
+export function isAutoMergeFileType(path: string, autoMergeFileTypes: readonly string[]): boolean {
+  const dot = path.lastIndexOf('.');
+  const slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+  if (dot <= slash || dot === path.length - 1) return false; // no extension → Other File
+  const ext = path.slice(dot + 1).toLowerCase();
+  return (autoMergeFileTypes ?? [])
+    .map((e) => e.trim().replace(/^\.+/, '').toLowerCase())
+    .filter((e) => e.length > 0)
+    .includes(ext);
+}
