@@ -21,6 +21,8 @@ import {
 } from '../types';
 import { isSyncTmpPath, LocalAdapter } from '../data/LocalAdapter';
 import { StateDB } from '../data/StateDB';
+import type { MergeBaseStore } from '../data/MergeBaseStore';
+import { isAutoMergeFileType } from '../util/mergeableExtensions';
 import { SyncHistoryStore } from '../data/SyncHistoryStore';
 import { IStatusBar } from '../ui/StatusBarItem';
 import { WebDAVFactory } from '../network/WebDAVFactory';
@@ -64,6 +66,8 @@ interface SyncEngineOptions {
   settings: DavSyncSettings;
   localAdapter: LocalAdapter;
   stateDB: StateDB;
+  /** Last-synced bodies used as the 3-way merge base (feature 038). Optional (absent in some tests). */
+  baseStore?: MergeBaseStore;
   statusBar: IStatusBar;
   /** Persisted per-file sync-history log for the status dialog. Optional (absent in some tests). */
   historyStore?: SyncHistoryStore;
@@ -300,6 +304,7 @@ export class SyncEngine {
       }
     }
     this.opts.stateDB.deleteFile(path);
+    this.dropMergeBase(path); // feature 038: file gone → drop its merge base
     this.opts.stateDB.requestSave(); // coalesced watch-mode save (P0-B)
     await this.opts.historyStore?.save();
   }
@@ -335,6 +340,28 @@ export class SyncEngine {
   /** Persist any pending debounced state save now (call from the plugin's onunload). */
   async flushState(): Promise<void> {
     await this.opts.stateDB.flush();
+    await this.opts.baseStore?.flush();
+  }
+
+  /**
+   * Feature 038: record the last-synced body of `path` as the 3-way merge base, but ONLY for Auto
+   * Merge File types (text) — bases for binary / Other Files are pointless and skipped (FR-005).
+   * Called at every convergence point (download / upload / clean merge / one-side-wins / initial
+   * seed). The read side (handleConflict) uses the same `isAutoMergeFileType` classification so the
+   * two never disagree (FR-009). Persistence is coalesced via the store's debounced save.
+   */
+  private recordMergeBase(path: string, content: string): void {
+    if (!this.opts.baseStore) return;
+    if (!isAutoMergeFileType(path, this.opts.settings.autoMergeFileTypes)) return;
+    this.opts.baseStore.set(path, content);
+    this.opts.baseStore.requestSave();
+  }
+
+  /** Drop the merge base for `path` on deletion so it does not leak (feature 038, FR-004). */
+  private dropMergeBase(path: string): void {
+    if (!this.opts.baseStore) return;
+    this.opts.baseStore.delete(path);
+    this.opts.baseStore.requestSave();
   }
 
   /**
@@ -1030,6 +1057,7 @@ export class SyncEngine {
         if (!(err instanceof NetworkError && err.status === 404)) throw err;
       }
       this.opts.stateDB.deleteFile(remote.path);
+      this.dropMergeBase(remote.path); // feature 038: local deletion propagated → drop merge base
     } else if (serverHash && serverHash !== base.localHash) {
       // Server copy diverged after our base → restore it locally so a remote edit is never dropped.
       void this.opts.logger?.log(`conflict(local-delete vs remote-edit): restoring remote → ${remote.path}`);
@@ -1087,6 +1115,8 @@ export class SyncEngine {
       size: stat.size, mtime: stat.mtime,
       remoteFileId: remote.fileId, isConflicted: false,
     }, remote.lastModified));
+    // Feature 038: remote now equals the local body we just uploaded → it is the new merge base.
+    this.recordMergeBase(path, new TextDecoder().decode(data));
   }
 
   // ── US4: Lock acquire/release ──────────────────────────────────────────────
@@ -1235,6 +1265,8 @@ export class SyncEngine {
       size: remote.size, mtime,
       remoteFileId: remote.fileId, isConflicted: false,
     }, remote.lastModified));
+    // Feature 038: local now equals the remote body → that body is the new merge base.
+    this.recordMergeBase(remote.path, new TextDecoder().decode(data));
   }
 
   private async handleConflict(
@@ -1286,7 +1318,12 @@ export class SyncEngine {
       const localContent = await this.opts.localAdapter.read(path);
       remoteData = await this.client!.downloadFile(remote.path);
       const remoteContent = new TextDecoder().decode(remoteData);
-      decision = resolver.decide(path, '', localContent, remoteContent, ctx);
+      // Feature 038: pass the stored common ancestor (last-synced body) as the 3-way merge base so
+      // reconcile does not duplicate blocks both sides share. Empty when no base is known yet
+      // (migration / first conflict); the expansion guard (037) then prevents a corrupt write and the
+      // next convergence seeds the base (self-healing).
+      const base = this.opts.baseStore?.get(path) ?? '';
+      decision = resolver.decide(path, base, localContent, remoteContent, ctx);
     } else {
       decision = resolver.decide(path, '', '', '', ctx);
     }
@@ -1379,6 +1416,10 @@ export class SyncEngine {
     if (clean) {
       summary.mergedCount++;
       this.recordHistory(path, 'merged', undefined, mergeDetail);
+      // Feature 038: a clean merge that reached the server means both sides now hold the merged
+      // content → it is the new common ancestor. If the upload failed (retry queued), the sides have
+      // NOT converged yet, so do not advance the base.
+      if (uploaded) this.recordMergeBase(path, content);
     } else {
       summary.conflictedCount++;
       this.recordHistory(path, 'conflicted', undefined, mergeDetail);
@@ -1425,6 +1466,8 @@ export class SyncEngine {
       size: stat?.size ?? localData.byteLength, mtime,
       remoteFileId: remote.fileId, isConflicted: false,
     }, remote.lastModified));
+    // Feature 038: both sides now hold the local body → it is the new merge base.
+    this.recordMergeBase(path, new TextDecoder().decode(localData));
     void this.opts.logger?.log(`conflict: resolved by prefer-local (remote overwritten) → ${path}`);
   }
 
@@ -1465,6 +1508,8 @@ export class SyncEngine {
       size: remote.size, mtime,
       remoteFileId: remote.fileId, isConflicted: false,
     }, remote.lastModified));
+    // Feature 038: both sides now hold the remote body → it is the new merge base.
+    this.recordMergeBase(path, new TextDecoder().decode(remoteData));
     void this.opts.logger?.log(`conflict: resolved by prefer-remote (local overwritten) → ${path}`);
   }
 
@@ -1506,6 +1551,7 @@ export class SyncEngine {
       return;
     }
     this.opts.stateDB.deleteFile(path);
+    this.dropMergeBase(path); // feature 038: remote deletion applied locally → drop merge base
   }
 
   private async processLocalModifications(
@@ -1610,6 +1656,7 @@ export class SyncEngine {
         }
       }
       this.opts.stateDB.deleteFile(path);
+      this.dropMergeBase(path); // feature 038: local deletion propagated to remote → drop merge base
     }
 
     // Full-scan only: detect REMOTE deletions by absence. A previously-synced file still present
@@ -1859,6 +1906,11 @@ export class SyncEngine {
           this.recordHistory(path, 'uploaded');
           const stat = await this.opts.localAdapter.stat(path);
           this.opts.stateDB.setFile(await this.withLocalSignature({ path, localHash, remoteId: localHash, idType: 'sha256', size: lf.size, mtime: stat?.mtime ?? 0, remoteFileId: null, isConflicted: false }));
+          // Feature 038: the initial-sync upload also converges this file → seed its merge base.
+          // This batch uploads via uploadStrategy directly (not uploadFile), so it needs its own
+          // recordMergeBase; without it a file first pushed by initial sync has no base and a later
+          // concurrent edit duplicates shared blocks (caught by the M-first b1 matrix case).
+          this.recordMergeBase(path, new TextDecoder().decode(data));
         } catch (err) { this.recordError(summary, path, err); this.retryQueue.push(path); }
         this.tickProgress();
       },
