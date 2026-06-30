@@ -39,18 +39,32 @@
 }
 
 /* Editable numeric input paired with each settings slider (spec 036): keyboard entry of exact
-   values the coarse slider step cannot reach. Fixed, non-shrinking width so narrow (mobile)
-   setting panes never overflow; the slider beside it absorbs the remaining width. */
-.ncs-slider-num {
+   values the coarse slider step cannot reach. Fixed, non-shrinking width so the slider beside it
+   keeps the remaining width.
+   IMPORTANT (mobile fix): Obsidian phone CSS forces bare inputs to full width via
+   `.is-phone .setting-item-control input { width: 100%; margin: 0 }` (specificity 0,2,1). Without a
+   stronger selector the numeric box expands to the whole row and pushes the slider off-screen. These
+   selectors (0,2,1 desktop / 0,3,1 phone) outrank it and pin the box to a compact width. */
+.setting-item-control input.ncs-slider-num,
+.is-phone .setting-item-control input.ncs-slider-num {
+  flex: 0 0 4.5em;
   width: 4.5em;
-  flex: 0 0 auto;
-  margin-right: 10px;
+  min-width: 4.5em;
+  margin: 0 10px 0 0;
   text-align: right;
 }
 
+/* Let the paired slider take the remaining width and shrink instead of overflowing. */
+.setting-item-control .slider {
+  min-width: 0;
+}
+
 @media (max-width: 480px) {
-  .ncs-slider-num {
+  .setting-item-control input.ncs-slider-num,
+  .is-phone .setting-item-control input.ncs-slider-num {
+    flex-basis: 4em;
     width: 4em;
+    min-width: 4em;
     margin-right: 8px;
   }
 }
