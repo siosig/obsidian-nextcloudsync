@@ -9,6 +9,7 @@ import { CompareModal } from './ui/CompareModal';
 import { confirmModal } from './ui/ConfirmModal';
 import { FileLogger } from './util/FileLogger';
 import { isSyncTmpPath, LocalAdapter } from './data/LocalAdapter';
+import type { MergeBaseStore } from './data/MergeBaseStore';
 import { v4 as uuidv4 } from './util/uuid';
 import { hostToken, LogPlatform } from './util/hostToken';
 import { migrateConfigSyncCategories, migrateBookmarksToConfigSync, migrateStartupToggleToDelay, migrateConflictSettingsToStrategies, pruneObsoleteSettings, resetDebugIdentityFields } from './util/settingsMigration';
@@ -23,6 +24,8 @@ export default class ObsidianNextcloudsync extends Plugin {
   syncEngine?: SyncEngine;
   /** Shared with SyncEngine; its ignore list marks the plugin's own writes for the watchers. */
   localAdapter?: LocalAdapter;
+  /** Merge base store (feature 038); flushed on unload so a debounced base write is not lost. */
+  baseStore?: MergeBaseStore;
   /** Diagnostic file logger (writes a per-device debug log while the debug log is enabled). */
   logger!: FileLogger;
   /** Per-device sync-log writer (appends one block per sync when the sync log is enabled). */
@@ -345,6 +348,7 @@ export default class ObsidianNextcloudsync extends Plugin {
     // any pending debounced state save so a coalesced watch-mode update is not lost on teardown (phase 2).
     this.syncEngine?.requestStop();
     void this.syncEngine?.flushState();
+    void this.baseStore?.flush();
     this.localAdapter?.dispose();
   }
 
@@ -398,6 +402,7 @@ export default class ObsidianNextcloudsync extends Plugin {
 
   async initSyncEngine(): Promise<void> {
     const { StateDB } = await import('./data/StateDB');
+    const { MergeBaseStore } = await import('./data/MergeBaseStore');
     const { SyncHistoryStore } = await import('./data/SyncHistoryStore');
     const { StatusBarItem } = await import('./ui/StatusBarItem');
     const { NoticeStatusBar } = await import('./ui/NoticeStatusBar');
@@ -409,6 +414,10 @@ export default class ObsidianNextcloudsync extends Plugin {
     const pluginDir = `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
     const stateDB = new StateDB(this.app.vault.adapter, pluginDir, this.settings.deviceId);
     await stateDB.load();
+    // Feature 038: last-synced bodies (merge base) for true 3-way conflict merges. Separate file.
+    const baseStore = new MergeBaseStore(this.app.vault.adapter, pluginDir, this.settings.deviceId);
+    await baseStore.load();
+    this.baseStore = baseStore;
     const historyStore = new SyncHistoryStore(this.app.vault.adapter, pluginDir);
     await historyStore.load();
 
@@ -427,6 +436,7 @@ export default class ObsidianNextcloudsync extends Plugin {
       settings: this.settings,
       localAdapter,
       stateDB,
+      baseStore,
       statusBar,
       historyStore,
       webdavFactory,
