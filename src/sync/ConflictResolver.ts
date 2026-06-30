@@ -9,6 +9,14 @@ const CONFLICT_TAG = '#conflict';
 const CONFLICT_MARKER_RE = /^<<<<<<< /m;
 
 /**
+ * Feature 039 (FR-039-4): detect THIS plugin's OWN conflict markers — the start line written by
+ * `buildMarkerContent` / Diff3Strategy (`<<<<<<< LOCAL …`) or its closing line (`>>>>>>> REMOTE …`).
+ * Stricter than CONFLICT_MARKER_RE (`^<<<<<<< `, which matches any `<<<<<<< whatever`): a user may
+ * legitimately write a bare `<<<<<<< HEAD` in a note, and that must NOT trip the re-entrancy guard.
+ */
+const REENTRANT_MARKER_RE = /^(?:<<<<<<< LOCAL|>>>>>>> REMOTE)/m;
+
+/**
  * Conflict-resolution parameters the ConflictResolver needs (feature 037). The three former conflict
  * settings (autoMergeEnabled / conflictFailurePolicy / frontmatterConflictStrategy) collapsed into a
  * single per-type strategy: a file is classified as an Auto Merge File (its extension is in
@@ -106,7 +114,20 @@ export class ConflictResolver {
     if (isLikelyBinary(local) || isLikelyBinary(remote)) {
       return { action: 'safe-hold' };
     }
+    // Feature 039 (FR-039-1/2, R2): if EITHER side already carries this plugin's conflict markers,
+    // merging would re-wrap the existing markers in NEW markers and duplicate shared blocks — the
+    // geometric re-entrancy loop that corrupted real files. Do NOT merge: safe-hold (both untouched,
+    // flagged conflicted, nothing pushed) until the user resolves by removing the markers. Self-healing:
+    // once the markers are gone the inputs are clean again and the normal merge below resumes.
+    if (REENTRANT_MARKER_RE.test(local) || REENTRANT_MARKER_RE.test(remote)) {
+      return { action: 'safe-hold' };
+    }
     const result = this.mergeEngine.merge(base, local, remote);
+    // Feature 039 (FR-039-5, P2): the merge produced nested/stacked markers (corruption fingerprint) →
+    // never write or push it; hold for the user instead of growing the file further.
+    if (result.hold) {
+      return { action: 'safe-hold' };
+    }
     if (result.success && !result.hadConflicts) {
       return { action: 'write', content: result.mergedContent, clean: true };
     }

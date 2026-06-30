@@ -239,6 +239,18 @@ export const CLAUSES: Clause[] = [
   { id: 'MB-12', source: 'specs/038-merge-base-store (MergeBaseStore persistence round-trip)', layer: 'a' },
   { id: 'MB-13', source: 'specs/038-merge-base-store (base/file mismatch converges next sync; guard is the backstop)', layer: 'a', waiver: 'crash-consistency convergence covered by MB-3/MB-4 self-healing; no separate forced-crash harness' },
   { id: 'MB-14', source: 'specs/038-merge-base-store (no new DavSyncSettings key)', layer: 'a' },
+  // --- MM: merge-marker re-entrancy guard + nested-marker backstop + base-aware 3-way (spec 039) ---
+  { id: 'MM-1', source: 'specs/039-merge-marker-reentrancy (local already has plugin markers → safe-hold, no merge)', layer: 'a' },
+  { id: 'MM-2', source: 'specs/039-merge-marker-reentrancy (remote already has plugin markers → safe-hold)', layer: 'a' },
+  { id: 'MM-3', source: 'specs/039-merge-marker-reentrancy (markers removed → merge resumes single-level; self-healing)', layer: 'a' },
+  { id: 'MM-4', source: 'specs/039-merge-marker-reentrancy (both sides carry markers → safe-hold, never wrap markers in markers)', layer: 'a' },
+  { id: 'MM-5', source: 'specs/039-merge-marker-reentrancy (bare git-style <<<<<<< HEAD in prose is NOT re-entrant; no false positive)', layer: 'a' },
+  { id: 'MM-6', source: 'specs/039-merge-marker-reentrancy (nested/stacked plugin markers detected)', layer: 'a' },
+  { id: 'MM-7', source: 'specs/039-merge-marker-reentrancy (single well-formed region NOT flagged nested; no false positive)', layer: 'a' },
+  { id: 'MM-8', source: 'specs/039-merge-marker-reentrancy (real base + non-overlapping edits → clean merge keeping both, no markers)', layer: 'a' },
+  { id: 'MM-9', source: 'specs/039-merge-marker-reentrancy (real base + same-line edits → single-level conflict markers)', layer: 'a' },
+  { id: 'MM-10', source: 'specs/039-merge-marker-reentrancy (empty base → legacy reconcile path preserved, no crash)', layer: 'a' },
+  { id: 'MM-11', source: 'specs/039-merge-marker-reentrancy (b1: 2 devices same-file concurrent edit → markers → re-sync stays non-expanding, non-nested)', layer: 'b-1', waiver: 'live-server e2e; a-layer MM-1..10 prove the guard/backstop/3-way logic deterministically' },
   // --- TN: atomic-write temp-file naming under the 255-byte NAME_MAX (spec 026) ---
   { id: 'TN-1', source: 'specs/main/spec.md §9 (final name ≤255B always writes; temp suffix length not leaked)', layer: 'a' },
   { id: 'TN-2', source: 'specs/main/spec.md §9 (temp name length independent of target name length)', layer: 'a' },
