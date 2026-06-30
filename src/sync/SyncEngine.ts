@@ -1344,6 +1344,15 @@ export class SyncEngine {
         // BOTH sides untouched, do NOT flag conflicted, do NOT count an error. The next sync
         // re-evaluates once either side changes (self-healing); the StateDB is left untouched.
         void this.opts.logger?.log(`conflict: deterministic tie → no-op, both sides untouched → ${path}`);
+        // Root-ETag short-circuit safety (spec 023 §8a.5): a tie deliberately leaves the two sides
+        // DIVERGENT (local ≠ remote) with the StateDB untouched and nothing pushed — so the remote root
+        // ETag is unchanged and no summary counter rises. Unlike the conflicted / error / retry
+        // outcomes, finalizeScan's convergence gate cannot see this standing divergence. If the
+        // short-circuit stayed armed, the next sync would rebuild the remote listing from the stale
+        // StateDB, misread the tie as a local-only change, and silently upload the local side —
+        // overwriting the other device's edit (data loss). Force a real scan next time so the tie is
+        // re-detected. Self-healing: once a real scan converges, it re-arms the short-circuit.
+        this.opts.stateDB.setRemoteRootEtag(null);
         return;
 
       case 'prefer-local':
