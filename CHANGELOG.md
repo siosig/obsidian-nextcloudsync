@@ -11,6 +11,13 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.18] - 2026-06-30
+
+### Fixed
+- Conflict merges are now more accurate: when the same note is edited on two devices, the plugin uses the last-synced version as a true 3-way merge base, so automatic merges are cleaner and lose fewer edits.
+- Stopped a re-entrancy loop where existing conflict markers were re-merged on every sync, which previously made affected notes grow without bound.
+- A no-op "tie" no longer short-circuits a needed re-sync via the root-ETag fast path, closing a path that could drop changes.
+
 ## [0.7.17] - 2026-06-30
 
 ### Fixed
@@ -210,6 +217,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.18]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.18
 [0.7.17]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.17
 [0.7.16]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.16
 [0.7.15]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.15
