@@ -11,6 +11,11 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.19] - 2026-07-01
+
+### Changed
+- Frontmatter merge is now semantic: array fields (`tags`, `aliases`, `related`, …) are union-merged across devices with deduplication; scalar fields (`title`, `status`, …) are resolved by 3-way comparison — a one-sided change auto-resolves, a true conflict is decided by a new configurable policy (latest-modified / remote-wins / local-wins, default: latest-modified). Notes without frontmatter are unaffected. The policy is exposed as "Frontmatter scalar conflict [experimental]" in the Conflict Resolution section of settings.
+
 ## [0.7.18] - 2026-06-30
 
 ### Fixed
@@ -217,6 +222,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.19]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.19
 [0.7.18]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.18
 [0.7.17]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.17
 [0.7.16]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.16
