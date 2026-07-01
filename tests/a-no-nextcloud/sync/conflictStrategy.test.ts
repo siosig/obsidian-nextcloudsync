@@ -49,15 +49,14 @@ describe('[SPEC:CSF-2] merge clean → merged (real reconcile)', () => {
 });
 
 describe('[SPEC:CSF-3] merge text conflict → markers', () => {
-  it('[SPEC:CSF-3] diverging frontmatter is unmergeable → full-file conflict markers (both sides kept)', () => {
+  it('[SPEC:CSF-3] diverging scalar frontmatter → semantic merge, clean resolution (feature 040)', () => {
+    // Feature 040: scalar frontmatter conflicts are resolved by policy (default: remote-win).
+    // k:1 vs k:2 with no ctx → remote wins → k:2. Body reconcile-merged. Result: clean.
     const r = resolver(makeConfig('merge'));
     const d = r.decide('note.md', '', '---\nk: 1\n---\nbody A', '---\nk: 2\n---\nbody B');
     expect(d.action).toBe('write');
     if (d.action === 'write') {
-      expect(d.clean).toBe(false);
-      expect(d.content).toContain('<<<<<<< LOCAL');
-      expect(d.content).toContain('=======');
-      expect(d.content).toContain('>>>>>>> REMOTE');
+      expect(d.content).toContain('k: 2');
     }
   });
 });
