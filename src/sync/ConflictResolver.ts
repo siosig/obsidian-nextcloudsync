@@ -1,5 +1,5 @@
 import { App } from 'obsidian';
-import { ConflictResolution, SyncStrategy } from '../types';
+import { ConflictResolution, FrontmatterScalarPolicy, MergeContext, SyncStrategy } from '../types';
 import { LocalAdapter } from '../data/LocalAdapter';
 import { MergeEngine } from './merge/MergeEngine';
 import { FIXED } from '../util/fixedSyncConfig';
@@ -30,6 +30,8 @@ export interface MergeConfig {
   otherFileStrategy: Exclude<SyncStrategy, 'merge'>;
   /** Device id, used for the conflict-marker byline. */
   deviceId: string;
+  /** Scalar frontmatter conflict resolution policy (feature 040, Experimental). Defaults to 'latest-mtime' when absent. */
+  frontmatterScalarPolicy?: FrontmatterScalarPolicy;
 }
 
 /**
@@ -95,7 +97,7 @@ export class ConflictResolver {
   ): ConflictResolution {
     switch (this.strategyFor(path)) {
       case 'merge':
-        return this.decideMerge(base, local, remote);
+        return this.decideMerge(base, local, remote, ctx);
       case 'local-win':
         return { action: 'prefer-local' };
       case 'remote-win':
@@ -108,7 +110,7 @@ export class ConflictResolver {
   }
 
   /** merge strategy: 3-way merge with binary safe-hold (FR-005a) and conflict markers for text. */
-  private decideMerge(base: string, local: string, remote: string): ConflictResolution {
+  private decideMerge(base: string, local: string, remote: string, ctx?: ConflictContext): ConflictResolution {
     // Non-text content cannot carry conflict markers without corruption → leave both sides, flag
     // conflicted, write nothing (FR-005a). The merge engine is text-only.
     if (isLikelyBinary(local) || isLikelyBinary(remote)) {
@@ -122,7 +124,14 @@ export class ConflictResolver {
     if (REENTRANT_MARKER_RE.test(local) || REENTRANT_MARKER_RE.test(remote)) {
       return { action: 'safe-hold' };
     }
-    const result = this.mergeEngine.merge(base, local, remote);
+    const mergeCtx: MergeContext | undefined = ctx
+      ? {
+          frontmatterScalarPolicy: this.config.frontmatterScalarPolicy ?? 'latest-mtime',
+          localMtime: ctx.localMtime,
+          remoteMtime: ctx.remoteMtime,
+        }
+      : undefined;
+    const result = this.mergeEngine.merge(base, local, remote, mergeCtx);
     // Feature 039 (FR-039-5, P2): the merge produced nested/stacked markers (corruption fingerprint) →
     // never write or push it; hold for the user instead of growing the file further.
     if (result.hold) {

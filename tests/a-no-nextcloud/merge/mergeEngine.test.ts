@@ -22,12 +22,15 @@ jest.mock('node-diff3', () => ({
 const opts = { maxConflictRegions: 3 };
 
 describe('MergeEngine', () => {
-  it('returns success=false when frontmatter differs', () => {
+  it('union-merges differing frontmatter tag arrays (feature 040)', () => {
+    // Previously returned success=false; now semantic merge union-merges array fields.
     const engine = new MergeEngine(opts);
-    const local = '---\ntags: [a]\n---\nBody';
-    const remote = '---\ntags: [b]\n---\nBody';
+    const local = '---\ntags:\n  - a\n---\nBody';
+    const remote = '---\ntags:\n  - b\n---\nBody';
     const result = engine.merge('', local, remote);
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
+    expect(result.mergedContent).toContain('a');
+    expect(result.mergedContent).toContain('b');
   });
 
   it('merges body when frontmatter is identical', () => {

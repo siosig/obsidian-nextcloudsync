@@ -119,14 +119,16 @@ describe('ConflictResolver.decide — merge strategy', () => {
     if (d.action === 'write') expect(d.clean).toBe(true);
   });
 
-  it('CSF-3 diverging frontmatter -> write conflict markers { clean: false }', () => {
+  it('CSF-3 diverging scalar frontmatter -> semantic merge (clean: true, feature 040)', () => {
+    // Feature 040: scalar frontmatter conflicts are now resolved by policy instead of markers.
+    // FM_LOCAL has a:1, FM_REMOTE has a:2, body is identical 'body'.
+    // Policy defaults to remote-win (no ctx) → a:2, body unchanged → clean merge.
     const r = makeResolver(makeConfig('merge'));
     const d = r.decide('notes.md', '', FM_LOCAL, FM_REMOTE);
     expect(d.action).toBe('write');
     if (d.action === 'write') {
-      expect(d.clean).toBe(false);
-      expect(d.content).toContain('<<<<<<< LOCAL');
-      expect(d.content).toContain('>>>>>>> REMOTE');
+      expect(d.clean).toBe(true);
+      expect(d.content).toContain('a: 2');
     }
   });
 
