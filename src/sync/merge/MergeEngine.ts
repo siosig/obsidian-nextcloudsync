@@ -1,7 +1,8 @@
-import { MergeResult } from '../../types';
+import { MergeContext, MergeResult } from '../../types';
 import { IMergeStrategy } from './IMergeStrategy';
 import { ReconcileTextStrategy } from './ReconcileTextStrategy';
 import { Diff3Strategy } from './Diff3Strategy';
+import { FrontmatterMergeStrategy } from './FrontmatterMergeStrategy';
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
 
@@ -12,10 +13,12 @@ interface MergeEngineOptions {
 export class MergeEngine {
   private readonly primaryStrategy: IMergeStrategy;
   private readonly fallbackStrategy: IMergeStrategy;
+  private readonly fmStrategy: FrontmatterMergeStrategy;
 
   constructor(private readonly opts: MergeEngineOptions) {
     this.primaryStrategy = new ReconcileTextStrategy();
     this.fallbackStrategy = new Diff3Strategy();
+    this.fmStrategy = new FrontmatterMergeStrategy();
   }
 
   /**
@@ -23,7 +26,7 @@ export class MergeEngine {
    * Returns a MergeResult describing the outcome.
    * Returns success=false if frontmatter conflicts or circuit breakers trigger.
    */
-  merge(base: string, local: string, remote: string): MergeResult {
+  merge(base: string, local: string, remote: string, ctx?: MergeContext): MergeResult {
     // 1. Separate frontmatter from body on all three sides.
     const { frontmatter: localFm, body: localBody } = this.splitFrontmatter(local);
     const { frontmatter: remoteFm, body: remoteBody } = this.splitFrontmatter(remote);
@@ -34,17 +37,22 @@ export class MergeEngine {
     if (localFm === remoteFm) {
       mergedFm = localFm; // identical on both sides
     } else {
-      // Merge the frontmatter line-by-line with diff3 (NOT reconcile-text, which would silently
-      // concatenate and could duplicate YAML keys). Accept it only when it merges cleanly (no
-      // conflicting regions — i.e. the two sides changed different lines); otherwise fall back
-      // to the configured strategy.
-      const fmResult = this.fallbackStrategy.merge(baseFm, localFm, remoteFm);
-      if (fmResult.success && fmResult.conflictRegions === 0) {
-        mergedFm = fmResult.mergedContent;
+      // Attempt semantic union merge (feature 040): array fields union-merge, scalars 3-way resolve.
+      // Falls back to diff3 when the YAML cannot be parsed (e.g. malformed frontmatter).
+      const fmSemantic = this.fmStrategy.merge(baseFm, localFm, remoteFm, ctx);
+      if (fmSemantic.success) {
+        mergedFm = fmSemantic.frontmatter;
       } else {
-        // Cannot reconcile diverging frontmatter → the whole file is a conflict (feature 037, FR-005):
-        // the caller embeds conflict markers for text, or holds a non-text file untouched (FR-005a).
-        return { success: false, mergedContent: local, hadConflicts: true, conflictRegions: -1 };
+        // Semantic merge not applicable → try line-level diff3.
+        // Accept only a clean (zero-conflict) diff3 result; any conflict means the whole file fails.
+        const fmResult = this.fallbackStrategy.merge(baseFm, localFm, remoteFm);
+        if (fmResult.success && fmResult.conflictRegions === 0) {
+          mergedFm = fmResult.mergedContent;
+        } else {
+          // Cannot reconcile diverging frontmatter → the whole file is a conflict (feature 037, FR-005):
+          // the caller embeds conflict markers for text, or holds a non-text file untouched (FR-005a).
+          return { success: false, mergedContent: local, hadConflicts: true, conflictRegions: -1 };
+        }
       }
     }
 
