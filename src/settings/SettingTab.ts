@@ -323,6 +323,20 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
+    makeSetting(containerEl)
+      .setName('Frontmatter scalar conflict [Experimental]')
+      .setDesc('When both devices change the same scalar frontmatter field (e.g. title or status) to different values, choose which side wins. Array fields (tags, aliases, …) always union-merge and are unaffected by this setting.')
+      .setTooltip(TOOLTIPS.frontmatterScalarConflictPolicy)
+      .addDropdown(dd => dd
+        .addOption('latest-mtime', 'Latest modified')
+        .addOption('remote-win', 'Remote wins')
+        .addOption('local-win', 'Local wins')
+        .setValue(this.plugin.settings.frontmatterScalarConflictPolicy)
+        .onChange(async (value) => {
+          this.plugin.settings.frontmatterScalarConflictPolicy = value as DavSyncSettings['frontmatterScalarConflictPolicy'];
+          await this.plugin.saveSettings();
+        }));
+
     // ── Excluded folders ───────────────────────────────────────────────────────
     // User-managed list of vault-relative folders that are never synced (feature 027).
     // Folder-prefix match; additive on top of the permanent dotfolder/plugins/state-DB

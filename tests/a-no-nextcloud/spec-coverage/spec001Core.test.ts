@@ -32,14 +32,13 @@ describe('spec 001 — core requirements', () => {
     expect(manifest.minAppVersion).toBe('1.11.4');
   });
 
-  it('FR-008: a conflict preserves BOTH sides (conflict markers keep local and remote)', () => {
-    // Merge strategy on a text file whose frontmatter diverges → full-file conflict markers, so both
-    // the local and remote text survive in the written content.
+  it('FR-008: a conflict preserves BOTH sides (feature 040: frontmatter merged semantically, body preserved)', () => {
+    // Feature 040: scalar frontmatter (k:1 vs k:2) is now resolved by policy (remote-win default).
+    // Both body sections (LOCAL-ONLY, REMOTE-ONLY) are preserved via reconcile-text merge.
     const r = resolver({ autoMergeFileTypes: ['md'], autoMergeFileStrategy: 'merge' });
     const d = r.decide('n.md', '', '---\nk: 1\n---\nLOCAL-ONLY\n', '---\nk: 2\n---\nREMOTE-ONLY\n');
     expect(d.action).toBe('write');
     if (d.action === 'write') {
-      expect(d.clean).toBe(false);
       expect(d.content).toContain('LOCAL-ONLY');
       expect(d.content).toContain('REMOTE-ONLY');
     }

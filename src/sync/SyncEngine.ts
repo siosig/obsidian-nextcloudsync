@@ -1302,6 +1302,7 @@ export class SyncEngine {
       autoMergeFileStrategy: this.opts.settings.autoMergeFileStrategy,
       otherFileStrategy: this.opts.settings.otherFileStrategy,
       deviceId: this.opts.settings.deviceId,
+      frontmatterScalarPolicy: this.opts.settings.frontmatterScalarConflictPolicy,
     });
     const ctx = {
       localSize: localSizeBefore,
