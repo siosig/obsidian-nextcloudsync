@@ -324,8 +324,8 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         }));
 
     makeSetting(containerEl)
-      .setName('Frontmatter scalar conflict [Experimental]')
-      .setDesc('When both devices change the same scalar frontmatter field (e.g. title or status) to different values, choose which side wins. Array fields (tags, aliases, …) always union-merge and are unaffected by this setting.')
+      .setName('Frontmatter scalar conflict [experimental]')
+      .setDesc('When both devices change the same scalar frontmatter field (e.g. Title or status) to different values, choose which side wins. Array fields (tags, aliases, …) always union-merge and are unaffected by this setting.')
       .setTooltip(TOOLTIPS.frontmatterScalarConflictPolicy)
       .addDropdown(dd => dd
         .addOption('latest-mtime', 'Latest modified')
