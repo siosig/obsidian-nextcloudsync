@@ -47,6 +47,10 @@ export const TOOLTIPS = {
   otherFileStrategy:
     'Conflict strategy for every other file. Latest modified keeps the side with the newer modification time — beware: clock skew between devices can let an older edit overwrite a newer one with no prompt. Biggest size keeps the larger file; Local/Remote wins always keep that side. A size or mtime tie is left untouched and re-evaluated next sync.',
 
+  // Conflict resolution — Experimental (feature 040)
+  frontmatterScalarConflictPolicy:
+    'Experimental. When both sides changed the same scalar frontmatter field (e.g. title or status) to different values, this policy decides the winner. "Latest modified" uses the file modification time — beware clock skew between devices. Array fields (tags, aliases, …) always union-merge regardless of this setting.',
+
   // Excluded folders section
   excludedFolders:
     'Folders listed here are never synced (folder-prefix match). Dotfolders like .git and the config plugins folder are already excluded by default.',
