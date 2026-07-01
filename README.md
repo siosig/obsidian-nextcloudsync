@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.18)
+## What's new in this release (0.7.19-beta.1)
 
-- **More accurate conflict merges and an end to runaway conflict-marker growth (0.7.18)** — when the same note is edited on two devices, the plugin now uses the last-synced version as a true 3-way merge base, so automatic merges are cleaner and lose fewer edits. It also stops a re-entrancy loop where existing conflict markers were re-merged on every sync, which previously made affected notes grow without bound. A related data-safety fix ensures a no-op "tie" no longer short-circuits a needed re-sync that could otherwise drop changes.
+- **Semantic frontmatter merge — no more false conflicts on tags and status (0.7.19-beta.1)** — array fields like `tags`, `aliases`, and `related` are now union-merged (both sides kept, duplicates removed). Scalar fields like `title` and `status` use 3-way comparison: a change on only one side is resolved automatically; when both sides differ, the winner is chosen by a new configurable policy (latest-modified / remote-wins / local-wins). Notes without frontmatter are unaffected. The setting appears as "Frontmatter scalar conflict [Experimental]" in the Conflict Resolution section.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
