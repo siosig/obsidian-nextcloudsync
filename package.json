@@ -28,6 +28,7 @@
     "@secretlint/secretlint-rule-pattern": "^13.0.2",
     "@secretlint/secretlint-rule-preset-recommend": "^13.0.2",
     "@types/jest": "^30.0.0",
+    "@types/js-yaml": "^4.0.9",
     "@types/mocha": "^10.0.10",
     "@types/node": "^26.0.0",
     "@wdio/cli": "^9.29.0",
@@ -48,6 +49,7 @@
     "wdio-obsidian-service": "^3.1.1"
   },
   "dependencies": {
+    "js-yaml": "^5.2.0",
     "node-diff3": "^3.2.1",
     "reconcile-text": "^0.12.1"
   }
