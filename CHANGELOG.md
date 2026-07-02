@@ -11,6 +11,14 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.20] - 2026-07-02
+
+### Fixed
+- Conflicts caused by a leftover conflict-marker line (a lone `<<<<<<< LOCAL` or `>>>>>>> REMOTE` from an incomplete manual resolution) no longer dead-lock. Such a file used to re-conflict on every sync forever because it was held without ever being pushed; it is now merged normally, converges, and removes the stray marker from both local and remote (self-heal). Complete marker sets and nested markers are still held as before.
+
+### Added
+- Per-file force resolution in the Sync status dialog: each conflicted file gets a dropdown (Use remote / Use local / Latest modified / Biggest size) and an Apply button that resolves it immediately. Ties (equal modification time / size) do nothing; failures leave the file conflicted.
+
 ## [0.7.19] - 2026-07-01
 
 ### Changed
@@ -222,6 +230,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.20]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.20
 [0.7.19]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.19
 [0.7.18]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.18
 [0.7.17]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.17
