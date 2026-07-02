@@ -6,6 +6,7 @@ import { VersionHistoryModal } from './ui/VersionHistoryModal';
 import { SyncStatusModal } from './ui/SyncStatusModal';
 import { StatusFilterState, makeDefaultFilterState, serializeFilter, deserializeFilter } from './ui/statusFilter';
 import { CompareModal } from './ui/CompareModal';
+import { applyForceResolution, ForceChoice } from './ui/forceResolution';
 import { confirmModal } from './ui/ConfirmModal';
 import { FileLogger } from './util/FileLogger';
 import { isSyncTmpPath, LocalAdapter } from './data/LocalAdapter';
@@ -242,6 +243,15 @@ export default class ObsidianNextcloudsync extends Plugin {
       () => {
         this.settings.statusFilter = serializeFilter(this.statusFilterState);
         void this.saveSettings();
+      },
+      // Feature 041: force-resolve one conflicted file now. Failures surface as a Notice and leave the
+      // file conflicted (the modal re-renders either way); a tie (equal mtime/size) is a silent no-op.
+      async (path: string, choice: ForceChoice) => {
+        try {
+          await applyForceResolution(this.syncEngine!, path, choice);
+        } catch (err) {
+          new Notice(`Could not resolve "${path}": ${(err as Error).message}`);
+        }
       },
     ).open();
   }
