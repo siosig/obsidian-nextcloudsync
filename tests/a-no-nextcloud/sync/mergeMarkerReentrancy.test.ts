@@ -129,3 +129,42 @@ describe('[SPEC:MM-8..MM-10] base-aware 3-way merge (feature 039, P3)', () => {
     expect(d.action).toBe('write');
   });
 });
+
+// Feature 041 (OM-*): a LONE half-marker left by an incomplete manual resolution must NOT be treated
+// as re-entrant. Feature 039 dropped such files to a permanent safe-hold that never pushes, so the
+// orphan line survived on the server and the file re-conflicted every sync forever (a real deadlock:
+// a daily note ending in a bare `>>>>>>> REMOTE (…)` line). It must fall through to the normal merge,
+// which converges to single-level output and (once pushed) removes the orphan — self-heal.
+describe('[SPEC:OM-1..OM-4] orphan-marker self-heal (feature 041)', () => {
+  const ORPHAN_CLOSE = 'shared body\nmore text\n>>>>>>> REMOTE (2026-06-30)\n';
+  const ORPHAN_OPEN = '<<<<<<< LOCAL (abcd, 2026-06-30)\nshared body\nmore text\n';
+
+  it('[SPEC:OM-1] LOCAL with a lone closing marker → NOT safe-hold, merges (self-heal)', () => {
+    const d = resolver().decide('note.md', '', ORPHAN_CLOSE, 'shared body\nremote change\n');
+    expect(d.action).toBe('write');
+    if (d.action === 'write') expect(markerDepth(d.content)).toBeLessThanOrEqual(1);
+  });
+
+  it('[SPEC:OM-2] LOCAL with a lone opening marker → NOT safe-hold, merges', () => {
+    const d = resolver().decide('note.md', '', ORPHAN_OPEN, 'shared body\nremote change\n');
+    expect(d.action).toBe('write');
+    if (d.action === 'write') expect(markerDepth(d.content)).toBeLessThanOrEqual(1);
+  });
+
+  it('[SPEC:OM-3] REMOTE with a lone closing marker → NOT safe-hold, merges', () => {
+    const d = resolver().decide('note.md', '', 'shared body\nlocal change\n', ORPHAN_CLOSE);
+    expect(d.action).toBe('write');
+  });
+
+  it('[SPEC:OM-4] convergence: identical orphan on both sides merges to a marker-free clean result', () => {
+    // Both devices hold the same leftover orphan line and no other divergence → clean merge, and the
+    // merged output no longer carries a plugin marker set (the orphan is plain text that survives once,
+    // not re-wrapped). Pushing this converges both sides and clears the deadlock.
+    const d = resolver().decide('note.md', 'shared body\n', ORPHAN_CLOSE, ORPHAN_CLOSE);
+    expect(d.action).toBe('write');
+    if (d.action === 'write') {
+      expect(d.clean).toBe(true);
+      expect(markerDepth(d.content)).toBeLessThanOrEqual(1);
+    }
+  });
+});
