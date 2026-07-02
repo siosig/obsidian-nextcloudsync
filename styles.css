@@ -144,6 +144,37 @@
   cursor: default;
 }
 
+/* Feature 041: a conflict row carries the (clickable) path plus a force-resolution dropdown + Apply.
+   Flex with wrap so the controls sit beside the path on desktop and drop below it on narrow (mobile)
+   widths — no fixed 4-button strip that would overflow. The row itself is not clickable (only the
+   path span is), so reset the pointer cursor inherited from .ncs-status-row. */
+.ncs-conflict-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  cursor: default;
+}
+
+.ncs-conflict-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  cursor: pointer;
+  word-break: break-all;
+}
+
+.ncs-conflict-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.ncs-conflict-select {
+  max-width: 160px;
+}
+
 /* Recent-activity (24h) history: bounded height with an always-visible vertical scrollbar
    so a long list stays compact and its scroll position is obvious. */
 .ncs-history-list {
