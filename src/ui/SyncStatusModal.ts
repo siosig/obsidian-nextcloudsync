@@ -1,5 +1,6 @@
 import { App, Modal, Setting } from 'obsidian';
 import { SyncErrorDetail, SyncFileOp, SyncHistoryEntry } from '../types';
+import { FORCE_CHOICES, ForceChoice } from './forceResolution';
 import {
   ALL_FILTER_OPS,
   filterReport,
@@ -42,6 +43,13 @@ export class SyncStatusModal extends Modal {
     private readonly filterState: StatusFilterState = makeDefaultFilterState(),
     /** Called after every filter toggle so the host can persist the selection (FR-011/013). */
     private readonly onFilterChange?: () => void,
+    /**
+     * Feature 041: force-resolve one conflicted file with the chosen action (executed immediately).
+     * When omitted, the conflict list stays click-to-open only (no per-file controls). The host is
+     * responsible for surfacing any failure (Notice) and leaving the file conflicted; this modal just
+     * re-renders afterwards to reflect the new state.
+     */
+    private readonly onForceResolve?: (path: string, choice: ForceChoice) => Promise<void>,
   ) {
     super(app);
   }
@@ -91,8 +99,7 @@ export class SyncStatusModal extends Modal {
 
     this.addHistorySection(filtered.history);
 
-    this.addFileSection('⚠️ Conflicts', filtered.conflictedFiles,
-      'Files with unresolved conflict markers. Open one to resolve it (search #conflict too).');
+    this.addConflictSection(filtered.conflictedFiles);
     this.addFileSection('✗ Queued for retry', filtered.retryFiles,
       'Files that failed and will be retried on the next sync.');
     this.addErrorSection(filtered.errors);
@@ -206,6 +213,48 @@ export class SyncStatusModal extends Modal {
           this.close();
         });
       }
+    }
+  }
+
+  /**
+   * Conflicts section. Each row shows the (clickable) path plus — when `onForceResolve` is wired — a
+   * force-resolution dropdown (remote / local / latest modified / biggest size) and an Apply button
+   * that executes the choice immediately and re-renders (feature 041). Without `onForceResolve` it
+   * degrades to a plain click-to-open list.
+   */
+  private addConflictSection(files: string[]): void {
+    if (files.length === 0) return;
+    const { contentEl } = this;
+    new Setting(contentEl).setName(`⚠️ Conflicts (${files.length})`).setHeading();
+    contentEl.createEl('p', {
+      text: this.onForceResolve
+        ? 'Files still in conflict. Open one to resolve it by hand, or pick an action and Apply to force-resolve it now.'
+        : 'Files still in conflict. Open one to resolve it by hand.',
+      cls: 'setting-item-description',
+    });
+
+    const list = contentEl.createEl('div', { cls: 'ncs-status-list' });
+    for (const path of files) {
+      const row = list.createEl('div', { cls: 'ncs-status-row ncs-conflict-row' });
+      const nameEl = row.createEl('span', { text: path, cls: 'ncs-conflict-path' });
+      nameEl.addEventListener('click', () => {
+        void this.app.workspace.openLinkText(path, '', false);
+        this.close();
+      });
+      if (!this.onForceResolve) continue;
+
+      // Per-file force resolution: a dropdown of the four actions + an Apply button. Executes now and
+      // re-renders; a resolved file drops out of the list because its conflicted flag is cleared.
+      const controls = row.createEl('div', { cls: 'ncs-conflict-controls' });
+      const select = controls.createEl('select', { cls: 'dropdown ncs-conflict-select' });
+      for (const c of FORCE_CHOICES) select.createEl('option', { text: c.label, value: c.id });
+      const applyBtn = controls.createEl('button', { text: 'Apply', cls: 'ncs-conflict-apply' });
+      applyBtn.addEventListener('click', () => {
+        applyBtn.disabled = true;
+        // The host handles failures (Notice) and never rejects here; re-render reflects the new state
+        // (a still-conflicted file stays listed, a resolved one disappears).
+        void this.onForceResolve!(path, select.value as ForceChoice).then(() => this.render());
+      });
     }
   }
 

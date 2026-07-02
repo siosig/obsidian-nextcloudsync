@@ -9,12 +9,35 @@ const CONFLICT_TAG = '#conflict';
 const CONFLICT_MARKER_RE = /^<<<<<<< /m;
 
 /**
- * Feature 039 (FR-039-4): detect THIS plugin's OWN conflict markers — the start line written by
- * `buildMarkerContent` / Diff3Strategy (`<<<<<<< LOCAL …`) or its closing line (`>>>>>>> REMOTE …`).
+ * Feature 039 (FR-039-4): match THIS plugin's OWN conflict-marker lines — the opening line written by
+ * `buildMarkerContent` / Diff3Strategy (`<<<<<<< LOCAL …`) and its closing line (`>>>>>>> REMOTE …`).
  * Stricter than CONFLICT_MARKER_RE (`^<<<<<<< `, which matches any `<<<<<<< whatever`): a user may
  * legitimately write a bare `<<<<<<< HEAD` in a note, and that must NOT trip the re-entrancy guard.
  */
-const REENTRANT_MARKER_RE = /^(?:<<<<<<< LOCAL|>>>>>>> REMOTE)/m;
+const OPEN_MARKER_RE = /^<<<<<<< LOCAL/m;
+const CLOSE_MARKER_RE = /^>>>>>>> REMOTE/m;
+
+/**
+ * Feature 041: `content` carries a COMPLETE plugin marker set — BOTH an opening `<<<<<<< LOCAL` line
+ * and a closing `>>>>>>> REMOTE` line. Only a complete set is the re-entrancy risk: merging it would
+ * re-wrap the existing markers in new markers and duplicate the shared block (the geometric-growth
+ * loop feature 039 guards against). A lone half-marker (see {@link hasOrphanMarker}) is NOT that risk.
+ */
+export function hasCompleteMarkerSet(content: string): boolean {
+  return OPEN_MARKER_RE.test(content) && CLOSE_MARKER_RE.test(content);
+}
+
+/**
+ * Feature 041: `content` carries an ORPHAN half-marker — exactly ONE of the opening / closing plugin
+ * marker lines, not both. This happens when a user resolves a conflict manually but forgets to delete
+ * the trailing `>>>>>>> REMOTE` line (or the leading `<<<<<<< LOCAL` line). Such a leftover must NOT
+ * be treated as re-entrant: doing so drops the file to a permanent safe-hold that never pushes, so the
+ * orphan line survives on the server and the file re-conflicts every sync forever. Instead it is fed
+ * through the normal 3-way merge, which converges and pushes the cleaned content (self-heal).
+ */
+export function hasOrphanMarker(content: string): boolean {
+  return OPEN_MARKER_RE.test(content) !== CLOSE_MARKER_RE.test(content);
+}
 
 /**
  * Conflict-resolution parameters the ConflictResolver needs (feature 037). The three former conflict
@@ -116,12 +139,20 @@ export class ConflictResolver {
     if (isLikelyBinary(local) || isLikelyBinary(remote)) {
       return { action: 'safe-hold' };
     }
-    // Feature 039 (FR-039-1/2, R2): if EITHER side already carries this plugin's conflict markers,
-    // merging would re-wrap the existing markers in NEW markers and duplicate shared blocks — the
-    // geometric re-entrancy loop that corrupted real files. Do NOT merge: safe-hold (both untouched,
-    // flagged conflicted, nothing pushed) until the user resolves by removing the markers. Self-healing:
-    // once the markers are gone the inputs are clean again and the normal merge below resumes.
-    if (REENTRANT_MARKER_RE.test(local) || REENTRANT_MARKER_RE.test(remote)) {
+    // Feature 039 (FR-039-1/2, R2) + feature 041: if EITHER side already carries a COMPLETE plugin
+    // marker set (opening AND closing lines), merging would re-wrap the existing markers in NEW markers
+    // and duplicate shared blocks — the geometric re-entrancy loop that corrupted real files. Do NOT
+    // merge: safe-hold (both untouched, flagged conflicted, nothing pushed) until the user resolves by
+    // removing the markers. Self-healing: once the markers are gone the inputs are clean again and the
+    // normal merge below resumes.
+    //
+    // A LONE half-marker (only `<<<<<<< LOCAL` or only `>>>>>>> REMOTE`, from an incomplete manual
+    // resolution) is deliberately NOT treated as re-entrant: it is not the geometric-growth risk, and
+    // treating it as one drops the file to a permanent safe-hold that never pushes — so the orphan line
+    // survives on the server and the file re-conflicts every sync forever (the deadlock feature 041
+    // fixes). Such input falls through to the normal 3-way merge, which converges and pushes the
+    // cleaned content (self-heal). Orphan detection is logged by SyncEngine.handleConflict.
+    if (hasCompleteMarkerSet(local) || hasCompleteMarkerSet(remote)) {
       return { action: 'safe-hold' };
     }
     const mergeCtx: MergeContext | undefined = ctx
