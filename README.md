@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.19)
+## What's new in this release (0.7.20-beta.1)
 
-- **Semantic frontmatter merge — no more false conflicts on tags and status (0.7.19)** — array fields like `tags`, `aliases`, and `related` are now union-merged (both sides kept, duplicates removed). Scalar fields like `title` and `status` use 3-way comparison: a change on only one side is resolved automatically; when both sides differ, the winner is chosen by a new configurable policy (latest-modified / remote-wins / local-wins). Notes without frontmatter are unaffected. The setting appears as "Frontmatter scalar conflict [experimental]" in the Conflict Resolution section.
+- **Stuck conflicts now heal themselves, plus one-tap conflict resolution (0.7.20-beta.1)** — a note that got stuck re-conflicting on every sync (caused by a leftover conflict marker line from an incomplete manual edit) is now merged normally and converges on its own, removing the stray marker from both sides. The Sync status dialog also gains a per-file control on each conflicted file: pick **Use remote**, **Use local**, **Latest modified**, or **Biggest size** and press **Apply** to resolve it immediately.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
