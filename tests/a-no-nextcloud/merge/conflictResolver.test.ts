@@ -1,4 +1,4 @@
-import { ConflictResolver, MergeConfig, ConflictContext, isLikelyBinary } from '../../../src/sync/ConflictResolver';
+import { ConflictResolver, MergeConfig, ConflictContext, isLikelyBinary, hasCompleteMarkerSet, hasOrphanMarker } from '../../../src/sync/ConflictResolver';
 import { SyncStrategy } from '../../../src/types';
 import { App, DataAdapter } from 'obsidian';
 
@@ -135,6 +135,57 @@ describe('ConflictResolver.decide — merge strategy', () => {
   it('CSF-4 non-text under merge -> safe-hold (no markers written)', () => {
     const r = makeResolver(makeConfig('merge', 'latest-mtime', ['png']));
     expect(r.decide('image.png', '', binLocal, binRemote)).toEqual({ action: 'safe-hold' });
+  });
+});
+
+// Feature 041: only a COMPLETE plugin marker set is re-entrant; a lone half-marker (from an incomplete
+// manual resolution) must fall through to a normal merge so it self-heals instead of dead-locking.
+describe('ConflictResolver.decide — feature 041 orphan-marker self-heal', () => {
+  const COMPLETE = '<<<<<<< LOCAL (abcd, 2026-06-30)\na\n=======\nb\n>>>>>>> REMOTE (2026-06-30)\n';
+  const ORPHAN_CLOSE = 'body content\n>>>>>>> REMOTE (2026-06-30)\n';
+  const ORPHAN_OPEN = '<<<<<<< LOCAL (abcd, 2026-06-30)\nbody content\n';
+
+  it('lone closing marker -> NOT safe-hold (routed to merge)', () => {
+    const r = makeResolver(makeConfig('merge'));
+    // local carries an orphan closing marker, remote differs → merge decides (write), never safe-hold.
+    expect(r.decide('notes.md', '', ORPHAN_CLOSE, 'different remote').action).toBe('write');
+  });
+
+  it('lone opening marker -> NOT safe-hold (routed to merge)', () => {
+    const r = makeResolver(makeConfig('merge'));
+    expect(r.decide('notes.md', '', ORPHAN_OPEN, 'different remote').action).toBe('write');
+  });
+
+  it('orphan on the REMOTE side is also routed to merge (not safe-hold)', () => {
+    const r = makeResolver(makeConfig('merge'));
+    expect(r.decide('notes.md', '', 'clean local', ORPHAN_CLOSE).action).toBe('write');
+  });
+
+  it('COMPLETE marker set -> still safe-hold (feature 039 preserved)', () => {
+    const r = makeResolver(makeConfig('merge'));
+    expect(r.decide('notes.md', '', COMPLETE, 'different remote')).toEqual({ action: 'safe-hold' });
+  });
+
+  it('legitimate `<<<<<<< HEAD` prose is neither complete nor orphan (no false safe-hold)', () => {
+    const r = makeResolver(makeConfig('merge'));
+    // A user note that literally contains git-style `<<<<<<< HEAD` must merge normally.
+    expect(r.decide('notes.md', '', '<<<<<<< HEAD\nfoo', 'bar').action).toBe('write');
+  });
+
+  it('hasCompleteMarkerSet: both lines required', () => {
+    expect(hasCompleteMarkerSet(COMPLETE)).toBe(true);
+    expect(hasCompleteMarkerSet(ORPHAN_CLOSE)).toBe(false);
+    expect(hasCompleteMarkerSet(ORPHAN_OPEN)).toBe(false);
+    expect(hasCompleteMarkerSet('<<<<<<< HEAD\nfoo')).toBe(false);
+    expect(hasCompleteMarkerSet('plain text')).toBe(false);
+  });
+
+  it('hasOrphanMarker: exactly one marker line (XOR)', () => {
+    expect(hasOrphanMarker(ORPHAN_CLOSE)).toBe(true);
+    expect(hasOrphanMarker(ORPHAN_OPEN)).toBe(true);
+    expect(hasOrphanMarker(COMPLETE)).toBe(false);
+    expect(hasOrphanMarker('plain text')).toBe(false);
+    expect(hasOrphanMarker('<<<<<<< HEAD\nfoo')).toBe(false);
   });
 });
 

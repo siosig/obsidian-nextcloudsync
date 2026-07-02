@@ -28,7 +28,7 @@ import { IStatusBar } from '../ui/StatusBarItem';
 import { WebDAVFactory } from '../network/WebDAVFactory';
 import { IWebDAVClient } from '../network/IWebDAVClient';
 import { RenameTracker } from './RenameTracker';
-import { ConflictResolver } from './ConflictResolver';
+import { ConflictResolver, hasOrphanMarker } from './ConflictResolver';
 import { ConfigSyncResolver } from './ConfigSyncResolver';
 import { sha256 } from '../util/hash';
 import { FIXED, chunkThresholdMB } from '../util/fixedSyncConfig';
@@ -1324,6 +1324,13 @@ export class SyncEngine {
       // (migration / first conflict); the expansion guard (037) then prevents a corrupt write and the
       // next convergence seeds the base (self-healing).
       const base = this.opts.baseStore?.get(path) ?? '';
+      // Feature 041: a lone half-marker left by an incomplete manual resolution used to trap the file
+      // in a permanent safe-hold (never pushed → the orphan line survived on the server → re-conflict
+      // every sync). It is now merged normally and self-heals; record that we bypassed the re-entrancy
+      // guard so the recovery is visible in the debug log.
+      if (hasOrphanMarker(localContent) || hasOrphanMarker(remoteContent)) {
+        void this.opts.logger?.log(`conflict: orphan marker detected, bypassing re-entrancy guard (self-heal) → ${path}`);
+      }
       decision = resolver.decide(path, base, localContent, remoteContent, ctx);
     } else {
       decision = resolver.decide(path, '', '', '', ctx);
