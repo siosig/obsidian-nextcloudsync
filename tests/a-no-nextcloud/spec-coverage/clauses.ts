@@ -251,6 +251,18 @@ export const CLAUSES: Clause[] = [
   { id: 'MM-9', source: 'specs/039-merge-marker-reentrancy (real base + same-line edits → single-level conflict markers)', layer: 'a' },
   { id: 'MM-10', source: 'specs/039-merge-marker-reentrancy (empty base → legacy reconcile path preserved, no crash)', layer: 'a' },
   { id: 'MM-11', source: 'specs/039-merge-marker-reentrancy (b1: 2 devices same-file concurrent edit → markers → re-sync stays non-expanding, non-nested)', layer: 'b-1', waiver: 'live-server e2e; a-layer MM-1..10 prove the guard/backstop/3-way logic deterministically' },
+  // --- OM: orphan-marker self-heal (spec 041, FR-001..006) ---
+  { id: 'OM-1', source: 'specs/041-orphan-marker-selfheal-force-resolve (lone closing marker → NOT safe-hold, merges/self-heals)', layer: 'a' },
+  { id: 'OM-2', source: 'specs/041-orphan-marker-selfheal-force-resolve (lone opening marker → NOT safe-hold, merges)', layer: 'a' },
+  { id: 'OM-3', source: 'specs/041-orphan-marker-selfheal-force-resolve (orphan on the remote side → NOT safe-hold, merges)', layer: 'a' },
+  { id: 'OM-4', source: 'specs/041-orphan-marker-selfheal-force-resolve (identical orphan both sides → clean marker-free convergence)', layer: 'a' },
+  // --- FRC: per-file force conflict resolution from the status dialog (spec 041, FR-007..016) ---
+  { id: 'FRC-1', source: 'specs/041-orphan-marker-selfheal-force-resolve (remote → pull, overwrite local with remote)', layer: 'a' },
+  { id: 'FRC-2', source: 'specs/041-orphan-marker-selfheal-force-resolve (local → push, overwrite remote with local)', layer: 'a' },
+  { id: 'FRC-3', source: 'specs/041-orphan-marker-selfheal-force-resolve (latest modified → newer side wins via push/pull)', layer: 'a' },
+  { id: 'FRC-4', source: 'specs/041-orphan-marker-selfheal-force-resolve (biggest size → bigger side wins via push/pull)', layer: 'a' },
+  { id: 'FRC-5', source: 'specs/041-orphan-marker-selfheal-force-resolve (tie equal mtime/size → no-op, no notice)', layer: 'a' },
+  { id: 'FRC-6', source: 'specs/041-orphan-marker-selfheal-force-resolve (overwrite failure propagates → file stays conflicted)', layer: 'a' },
   // --- TN: atomic-write temp-file naming under the 255-byte NAME_MAX (spec 026) ---
   { id: 'TN-1', source: 'specs/main/spec.md §9 (final name ≤255B always writes; temp suffix length not leaked)', layer: 'a' },
   { id: 'TN-2', source: 'specs/main/spec.md §9 (temp name length independent of target name length)', layer: 'a' },
