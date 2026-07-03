@@ -6,7 +6,7 @@ import { VersionHistoryModal } from './ui/VersionHistoryModal';
 import { SyncStatusModal } from './ui/SyncStatusModal';
 import { StatusFilterState, makeDefaultFilterState, serializeFilter, deserializeFilter } from './ui/statusFilter';
 import { CompareModal } from './ui/CompareModal';
-import { applyForceResolution, ForceChoice } from './ui/forceResolution';
+import { applyForceResolution, applyBulkForceResolution, FORCE_CHOICES, ForceChoice } from './ui/forceResolution';
 import { confirmModal } from './ui/ConfirmModal';
 import { FileLogger } from './util/FileLogger';
 import { isSyncTmpPath, LocalAdapter } from './data/LocalAdapter';
@@ -252,6 +252,24 @@ export default class ObsidianNextcloudsync extends Plugin {
         } catch (err) {
           new Notice(`Could not resolve "${path}": ${(err as Error).message}`);
         }
+      },
+      // Feature 042: force-resolve every currently-listed conflict with one chosen action. The
+      // host owns the confirmation (destructive, irreversible) and the single aggregate result
+      // Notice; applyBulkForceResolution itself never rejects (per-file failures are tallied).
+      async (choice: ForceChoice, paths: string[]) => {
+        const n = paths.length;
+        const label = FORCE_CHOICES.find(c => c.id === choice)?.label ?? choice;
+        const ok = await confirmModal(this.app, {
+          title: 'Resolve all conflicts',
+          message: `Force-resolve all ${n} conflicts using "${label}"? This overwrites files and cannot be undone.`,
+          cta: 'Apply to all',
+          cancel: 'Cancel',
+          destructive: true,
+        });
+        if (!ok) return;
+        const { resolved, noop, failed } = await applyBulkForceResolution(this.syncEngine!, paths, choice);
+        new Notice(`Resolved ${resolved} of ${n} conflicts`
+          + (noop ? `; ${noop} unchanged` : '') + (failed ? `; ${failed} failed` : ''));
       },
     ).open();
   }
