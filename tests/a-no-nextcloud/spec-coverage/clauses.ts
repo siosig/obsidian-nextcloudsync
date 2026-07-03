@@ -31,6 +31,13 @@ const SF_AGG = 'sync-folder subcategory aggregated under CG/SF-1; dedicated spli
 // via the skipped test's title — the coverage scanner now ignores skipped-test traceability.
 const DEFER_HARNESS = 'b-1 e2e deferred (it.skip) — engine-level, needs a SyncEngine harness';
 const DEFER_SERVER = 'b-1 e2e deferred (it.skip) — cannot force the required live-server condition from a test';
+// spec 042 (bulk conflict resolution): jest runs with testEnvironment: 'node' (no `document`, no real
+// Modal/Setting instantiation — same constraint as SNI-5/SNI-6 and the FRC UI clauses), so
+// SyncStatusModal DOM rendering + main.ts host-wiring clauses are waived to the b-2 UI layer /
+// quickstart manual check; the pure batch-logic core they depend on is covered by BRC-1..7/9.
+const BRC_DOM =
+  'DOM/host wiring verified via quickstart manual check (specs/042-bulk-resolve-conflicts/quickstart.md); ' +
+  'batch logic core covered by BRC-1..7,9 (forceResolution.test.ts, layer a)';
 
 export const CLAUSES: Clause[] = [
   // --- CN: connection/auth ---
@@ -263,6 +270,35 @@ export const CLAUSES: Clause[] = [
   { id: 'FRC-4', source: 'specs/041-orphan-marker-selfheal-force-resolve (biggest size → bigger side wins via push/pull)', layer: 'a' },
   { id: 'FRC-5', source: 'specs/041-orphan-marker-selfheal-force-resolve (tie equal mtime/size → no-op, no notice)', layer: 'a' },
   { id: 'FRC-6', source: 'specs/041-orphan-marker-selfheal-force-resolve (overwrite failure propagates → file stays conflicted)', layer: 'a' },
+  // --- BRC: bulk conflict resolution from the status dialog (spec 042, contracts/bulk-resolve.md) ---
+  // BRC-1..7 and BRC-9 are the pure `applyBulkForceResolution` fan-out (src/ui/forceResolution.ts),
+  // verified directly at layer a (forceResolution.test.ts, tagged [SPEC:BRC-*]). BRC-8/10..21 are
+  // SyncStatusModal DOM rendering + main.ts host wiring (see BRC_DOM above), waived to the b-2 UI
+  // layer / quickstart manual check.
+  { id: 'BRC-1', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-005 / SC-003: bulk outcome === per-file outcome)', layer: 'a' },
+  { id: 'BRC-2', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-013: sequential processing, paths order)', layer: 'a' },
+  { id: 'BRC-3', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-013 / SC-004: per-file rejection caught, batch continues)', layer: 'a' },
+  { id: 'BRC-4', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (resolved+noop+failed === paths.length invariant)', layer: 'a' },
+  { id: 'BRC-5', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (edge: empty paths list → {0,0,0}, engine untouched)', layer: 'a' },
+  { id: 'BRC-6', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (edge: N=1 tallies into a single bucket)', layer: 'a' },
+  { id: 'BRC-7', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-009: batch promise never rejects)', layer: 'a' },
+  { id: 'BRC-8', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-001 / mockup: bulk row placed after heading+description, before per-file list)', layer: 'a', waiver: BRC_DOM },
+  // BRC-9's DOM row-label count (FR-004/SC-002) is a rendering concern (waived, see BRC_DOM), but its
+  // "count = the filtered target set, not an arbitrary set" invariant is exercised directly by the
+  // tagged forceResolution.test.ts case (filterReport-derived subset drives applyBulkForceResolution).
+  { id: 'BRC-9', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-004 / SC-002: count === filtered.conflictedFiles.length)', layer: 'a' },
+  { id: 'BRC-10', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-002: bulk dropdown iterates the same FORCE_CHOICES array as the per-file dropdown)', layer: 'a', waiver: 'single-source-of-truth verified by "FORCE_CHOICES lists the four options in order" (forceResolution.test.ts); DOM iteration itself is ' + BRC_DOM },
+  { id: 'BRC-11', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-003 / mockup: mod-warning button + ncs-bulk-conflict-row container)', layer: 'a', waiver: BRC_DOM },
+  { id: 'BRC-12', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-010: bulk row rendered only when onBulkForceResolve is provided — capability gate)', layer: 'a', waiver: BRC_DOM },
+  { id: 'BRC-13', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-006: per-file rows/controls unchanged alongside the bulk row)', layer: 'a', waiver: BRC_DOM },
+  { id: 'BRC-14', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (edge: N=0 never renders the bulk row, addConflictSection early-return)', layer: 'a', waiver: BRC_DOM },
+  { id: 'BRC-15', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-011: click guard — disabled button no-ops, else disable then invoke callback)', layer: 'a', waiver: BRC_DOM },
+  { id: 'BRC-16', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-008 / FR-009: re-render on settle, click handler never throws)', layer: 'a', waiver: BRC_DOM },
+  { id: 'BRC-17', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-012: confirmModal destructive:true reused; decline/dismiss touches no file)', layer: 'a', waiver: BRC_DOM },
+  { id: 'BRC-18', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-012 / Key Entities: confirm message states count N + action, not limited to last sync)', layer: 'a', waiver: BRC_DOM },
+  { id: 'BRC-19', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-014: exactly one aggregate Notice after the batch, never one per file)', layer: 'a', waiver: BRC_DOM },
+  { id: 'BRC-20', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-007: engine loop iterates only the filtered paths set)', layer: 'a', waiver: BRC_DOM },
+  { id: 'BRC-21', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (SC-006 / FR-006: existing per-file onForceResolve wiring unchanged — no regression to feature 041)', layer: 'a', waiver: BRC_DOM },
   // --- TN: atomic-write temp-file naming under the 255-byte NAME_MAX (spec 026) ---
   { id: 'TN-1', source: 'specs/main/spec.md §9 (final name ≤255B always writes; temp suffix length not leaked)', layer: 'a' },
   { id: 'TN-2', source: 'specs/main/spec.md §9 (temp name length independent of target name length)', layer: 'a' },
