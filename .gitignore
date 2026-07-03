@@ -31,6 +31,7 @@ coverage/
 Thumbs.db
 .vscode/
 .idea/
+.serena/
 
 # --- Development-only files (excluded from the public plugin repository) ---
 refs/
