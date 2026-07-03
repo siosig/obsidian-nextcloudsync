@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.21-beta.1)
+## What's new in this release (0.7.21-beta.2)
 
-- **New FAQ: scoped Nextcloud Public Link Share auth (0.7.21-beta.1)** — added a FAQ entry explaining how to authenticate with a Public Link Share (username = share token, app password = share password) instead of granting the plugin full account access, and clarifying that the App password's "ID" is a local Obsidian Secret Storage key that's never sent to the server.
+- **Resolve every conflict in one action (0.7.21-beta.2)** — the Sync status dialog's Conflicts section gains an **"Apply to all N conflicts"** control above the per-file list. Pick one action (Use remote / Use local / Latest modified / Biggest size) and force-resolve every currently-listed conflict at once, instead of clicking Apply on each row — handy when a sync leaves dozens of files conflicted. It asks for a single confirmation first, applies the choice to each file, and reports how many were resolved, unchanged, or failed. The per-file controls are unchanged.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
