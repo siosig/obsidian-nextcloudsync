@@ -83,3 +83,43 @@ async function dispatchByMetric(
   await engine.pullRemoteToLocal(path);
   return 'applied';
 }
+
+/**
+ * Feature 042: aggregate result of a bulk force-resolution over a target set. Every tally is derived
+ * from the per-file `ForceOutcome` `applyForceResolution` would produce for that same path, so the
+ * batch introduces no new resolution semantics — only sequencing and failure isolation.
+ */
+export interface BulkOutcome {
+  /** Files where an overwrite ran and the conflict cleared (per-file ForceOutcome 'applied'). */
+  resolved: number;
+  /** Files that tied on the chosen metric ('noop') — no overwrite, left conflicted. */
+  noop: number;
+  /** Files whose per-file resolution threw — left conflicted (batch did not abort). */
+  failed: number;
+}
+
+/**
+ * Apply one force-resolution choice to every path in `paths`, SEQUENTIALLY, tallying the outcome.
+ * Reuses `applyForceResolution` per file (no new resolution semantics) — each path gets exactly the
+ * outcome a standalone `applyForceResolution(engine, path, choice)` call would produce (FR-005/BRC-1).
+ * Processing is strictly sequential (FR-013/BRC-2): each file's push/pull settles before the next
+ * file's resolution starts. A per-file rejection is caught and counted as `failed`; the batch
+ * continues with the remaining paths (FR-013/BRC-3) — this function itself never rejects (FR-009/BRC-7).
+ */
+export async function applyBulkForceResolution(
+  engine: CompareEngine,
+  paths: string[],
+  choice: ForceChoice,
+): Promise<BulkOutcome> {
+  const result: BulkOutcome = { resolved: 0, noop: 0, failed: 0 };
+  for (const path of paths) {
+    try {
+      const outcome = await applyForceResolution(engine, path, choice);
+      if (outcome === 'applied') result.resolved++;
+      else result.noop++;
+    } catch {
+      result.failed++;
+    }
+  }
+  return result;
+}

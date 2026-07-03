@@ -175,6 +175,23 @@
   max-width: 160px;
 }
 
+/* Feature 042: bulk-resolve row above the per-file conflict list. Styled as a Setting so it reads
+   as a deliberate, higher-level action distinct from the compact per-file rows below it. */
+.ncs-bulk-conflict-row {
+  background: var(--background-secondary);
+  border-radius: var(--radius-s, 4px);
+  padding: 4px 12px;
+  margin-bottom: 8px;
+}
+
+.ncs-bulk-conflict-row .setting-item-name {
+  font-size: var(--font-ui-small);
+}
+
+.ncs-bulk-conflict-row .setting-item-description {
+  font-size: var(--font-ui-smaller);
+}
+
 /* Recent-activity (24h) history: bounded height with an always-visible vertical scrollbar
    so a long list stays compact and its scroll position is obvious. */
 .ncs-history-list {
