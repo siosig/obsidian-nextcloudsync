@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.20)
+## What's new in this release (0.7.21-beta.1)
 
-- **Stuck conflicts now heal themselves, plus one-tap conflict resolution (0.7.20)** — a note that got stuck re-conflicting on every sync (caused by a leftover conflict marker line from an incomplete manual edit) is now merged normally and converges on its own, removing the stray marker from both sides. The Sync status dialog also gains a per-file control on each conflicted file: pick **Use remote**, **Use local**, **Latest modified**, or **Biggest size** and press **Apply** to resolve it immediately.
+- **New FAQ: scoped Nextcloud Public Link Share auth (0.7.21-beta.1)** — added a FAQ entry explaining how to authenticate with a Public Link Share (username = share token, app password = share password) instead of granting the plugin full account access, and clarifying that the App password's "ID" is a local Obsidian Secret Storage key that's never sent to the server.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
