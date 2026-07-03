@@ -50,6 +50,16 @@ export class SyncStatusModal extends Modal {
      * re-renders afterwards to reflect the new state.
      */
     private readonly onForceResolve?: (path: string, choice: ForceChoice) => Promise<void>,
+    /**
+     * Feature 042: force-resolve every currently-listed conflict at once with a single chosen
+     * action. Responsibility split (BRC): the HOST owns the "are you sure?" confirmation and the
+     * single aggregate result Notice ("Resolved N of M conflicts..."); this MODAL only hands the
+     * host the filtered target path set (the same array backing the list below), disables the
+     * Apply button while the batch runs, and re-renders once the host's promise settles. When
+     * omitted, no bulk row is rendered (capability gate — same click-to-open-only degradation as
+     * `onForceResolve` omitted for per-file rows).
+     */
+    private readonly onBulkForceResolve?: (choice: ForceChoice, paths: string[]) => Promise<void>,
   ) {
     super(app);
   }
@@ -220,7 +230,9 @@ export class SyncStatusModal extends Modal {
    * Conflicts section. Each row shows the (clickable) path plus — when `onForceResolve` is wired — a
    * force-resolution dropdown (remote / local / latest modified / biggest size) and an Apply button
    * that executes the choice immediately and re-renders (feature 041). Without `onForceResolve` it
-   * degrades to a plain click-to-open list.
+   * degrades to a plain click-to-open list. When `onBulkForceResolve` is also wired, a single
+   * "Apply to all N conflicts" row is rendered above the per-file list, targeting this same
+   * (already-filtered) `files` array (feature 042).
    */
   private addConflictSection(files: string[]): void {
     if (files.length === 0) return;
@@ -232,6 +244,27 @@ export class SyncStatusModal extends Modal {
         : 'Files still in conflict. Open one to resolve it by hand.',
       cls: 'setting-item-description',
     });
+
+    // Feature 042 (BRC-12): bulk-resolve row, gated on onBulkForceResolve, sitting above the
+    // per-file list. It targets exactly the filtered set passed to this method.
+    if (this.onBulkForceResolve) {
+      const bulkRow = contentEl.createDiv({ cls: 'setting-item ncs-bulk-conflict-row' });
+      const info = bulkRow.createDiv({ cls: 'setting-item-info' });
+      info.createDiv({ cls: 'setting-item-name', text: `Apply to all ${files.length} conflicts` });
+      info.createDiv({
+        cls: 'setting-item-description',
+        text: 'Applies the chosen action to every conflicted file currently listed below.',
+      });
+      const control = bulkRow.createDiv({ cls: 'setting-item-control' });
+      const select = control.createEl('select', { cls: 'dropdown ncs-conflict-select' });
+      for (const c of FORCE_CHOICES) select.createEl('option', { text: c.label, value: c.id });
+      const applyBtn = control.createEl('button', { text: 'Apply to all', cls: 'ncs-conflict-apply mod-warning' });
+      applyBtn.addEventListener('click', () => {
+        if (applyBtn.disabled) return;
+        applyBtn.disabled = true;
+        void this.onBulkForceResolve!(select.value as ForceChoice, files).then(() => this.render());
+      });
+    }
 
     const list = contentEl.createEl('div', { cls: 'ncs-status-list' });
     for (const path of files) {
