@@ -140,6 +140,22 @@ Your Vault is synced into a folder named after the Vault on the Nextcloud side, 
 
 ---
 
+## FAQ
+
+**Can I use a scoped Nextcloud Public Link Share instead of granting full account access?**
+
+Yes. If you'd rather not hand the plugin an app password with full account access, you can share a single directory as a **Public Link Share with username/password** on the Nextcloud side, then point the plugin at it:
+
+- **Server URL:** `https://<host>/public.php/webdav/`
+- **Username:** the share token (the part of the share link after `/s/`)
+- **App password:** the share's password
+
+One point of confusion here: when you click **Link…** to store the app password, you're asked for an **ID** and a **value**. The **ID is a local storage key inside Obsidian's encrypted Secret Storage — it is never sent to the server**, so it can be anything (e.g. `default`); it's restricted to lowercase letters/digits/dashes because that's an Obsidian platform constraint, not something this plugin controls. The actual share password goes in the **value**, which accepts any characters. Put the share token in the **Username** field, not in the ID field.
+
+Note: version history / restore and chunked upload are optional convenience features layered on top of core sync; they haven't been verified against Public Link Share endpoints and may not work there. Basic upload/download sync is unaffected.
+
+---
+
 ## Enabling Nextcloud server-side features
 
 One power feature depends on a server-side Nextcloud app. It only needs to be enabled **once by a Nextcloud administrator**. The plugin detects it through the capabilities API — if the app is missing, the feature simply stays inactive (no error).
