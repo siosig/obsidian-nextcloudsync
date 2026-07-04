@@ -23,6 +23,9 @@ const MIN_OBSIDIAN_VERSION = '1.11.4';
 export default class ObsidianNextcloudsync extends Plugin {
   settings!: DavSyncSettings;
   syncEngine?: SyncEngine;
+
+  /** True while a Pull-mirror (feature 045) is running, to guard against double-invocation. */
+  private mirrorInProgress = false;
   /** Shared with SyncEngine; its ignore list marks the plugin's own writes for the watchers. */
   localAdapter?: LocalAdapter;
   /** Merge base store (feature 038); flushed on unload so a debounced base write is not lost. */
@@ -306,6 +309,59 @@ export default class ObsidianNextcloudsync extends Plugin {
       new Notice('Vault index reset. The next sync will perform a full re-scan.');
     } catch (err) {
       new Notice(`❌ Failed to reset the Vault index: ${(err as Error).message}`, 6000);
+    }
+  }
+
+  /**
+   * Maintenance action (feature 045): mirror this device from the remote — overwrite the local vault
+   * to exactly match the remote (download everything the remote has, delete local files/folders the
+   * remote lacks via the Obsidian trash setting). Shows the download/delete counts for confirmation
+   * before applying; cancelling is a no-op. Bypasses the mass-delete breaker but aborts if the remote
+   * listing cannot be obtained (zero deletions). Works only when the sync engine is configured.
+   */
+  async runRemoteMirror(): Promise<void> {
+    const engine = this.syncEngine;
+    if (!engine) {
+      new Notice('Sign in to Nextcloud before mirroring from the remote.', 6000);
+      return;
+    }
+    if (this.mirrorInProgress) return; // guard against double-invocation
+    this.mirrorInProgress = true;
+    try {
+      await engine.abortAndWait();
+
+      const plan = await engine.planRemoteMirror();
+      if (!plan.ok) {
+        new Notice(`❌ Mirror aborted: ${plan.reason ?? 'could not read the remote'} (no files were changed).`, 8000);
+        return;
+      }
+
+      const deleteCount = plan.deleteFiles.length + plan.deleteDirs.length;
+      const confirmed = await confirmModal(this.app, {
+        title: 'Mirror from remote',
+        message:
+          `This will make this device exactly match the remote:\n\n` +
+          `• Download: ${plan.downloads.length} file(s)\n` +
+          `• Delete locally: ${deleteCount} file(s)/folder(s) not on the remote ` +
+          `(moved to your Obsidian trash — recoverable)\n\n` +
+          `Unsynced local changes will be discarded. This cannot be undone except from the trash.`,
+        cta: 'Mirror from remote',
+        cancel: 'Cancel',
+        destructive: true,
+      });
+      if (!confirmed) return; // no-op (FR-004)
+
+      const result = await engine.applyRemoteMirror(plan);
+      const base = `Mirror complete — downloaded ${result.downloaded}, deleted ${result.deleted}` +
+        (result.skipped ? `, skipped ${result.skipped}` : '') +
+        (result.errors.length ? `, errors ${result.errors.length}` : '') + '.';
+      // Mobile has no progress UI, so the completion Notice is the only feedback (FR-013). Desktop
+      // shows it too; the sync status dialog already reflects StateDB going forward.
+      new Notice(result.errors.length ? `⚠️ ${base}` : `✅ ${base}`, result.errors.length ? 8000 : 5000);
+    } catch (err) {
+      new Notice(`❌ Mirror from remote failed: ${(err as Error).message}`, 8000);
+    } finally {
+      this.mirrorInProgress = false;
     }
   }
 
