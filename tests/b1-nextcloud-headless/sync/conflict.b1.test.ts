@@ -50,11 +50,14 @@ describe('Layer B — conflict resolution (CF)', () => {
     expect(r.decide('n.pdf', '', '', '', ctx({ localMtime: 5000, remoteMtime: 1000 })).action).toBe('prefer-local');
   });
 
-  it('CF-3 merge + diverging frontmatter → write markers (not clean)', () => {
+  it('CF-3 merge + diverging frontmatter scalar → structural merge (clean, no markers)', () => {
+    // Feature 043 (HFM-6/HFM-9): a frontmatter scalar conflict is resolved by the
+    // frontmatterScalarConflictPolicy, never text-diffed — so no conflict markers land inside
+    // the `---` block and the write is clean. (Body is identical here, only the scalar diverges.)
     const r = resolver({ autoMergeFileStrategy: 'merge', autoMergeFileTypes: ['md'] });
     const d = r.decide('n.md', '', '---\nk: 1\n---\nbody', '---\nk: 2\n---\nbody');
     expect(d.action).toBe('write');
-    if (d.action === 'write') expect(d.clean).toBe(false);
+    if (d.action === 'write') expect(d.clean).toBe(true);
   });
 
   it('CF-4 auto merge file + local-win → prefer-local', () => {
