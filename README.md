@@ -31,10 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.22)
+## What's new in this release (0.7.23-beta.1)
 
-- **Folder changes now sync instantly in watch mode (0.7.22)** — with **Sync on file change** on, creating, deleting, or renaming a **folder** now propagates to the server right away (create → the folder is made, delete → it goes to the trash, rename → it is moved), just like files already did. The status bar shows when a change is being pushed, and the setting's description now correctly says it covers files *and* folders and all of create/edit/delete/rename (desktop only).
-- **New "Mirror from remote" maintenance action (0.7.22)** — a new button under **Settings → Maintenance** forces this device's vault to exactly match the remote: it downloads everything the remote has and deletes local files and folders the remote no longer has (moved to your Obsidian trash, so removals are recoverable). A confirmation first shows how many files will be downloaded and deleted; unsynced local changes are discarded. It bypasses the mass-delete safety limit (you have explicitly declared the remote authoritative) but aborts without deleting anything if the remote listing can't be fully read. Handy for making a device follow the remote after migrating from another sync tool, where a normal sync otherwise trips the mass-delete breaker.
+- **Sync interval now reads honestly on mobile (0.7.23-beta.1)** — periodic auto-sync never runs on mobile (the OS suspends background timers), but the **Sync interval** slider still showed the desktop default of 15 minutes even while greyed out, as if a timed sync were active. On a fresh mobile install the interval now defaults to **0 (manual only)**, so the disabled slider matches what actually happens. Desktop is unchanged, and any interval you have already set is preserved.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
