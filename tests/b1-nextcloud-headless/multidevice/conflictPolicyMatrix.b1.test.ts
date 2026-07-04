@@ -6,7 +6,9 @@
 // diverging `title`) with EQUAL-LENGTH documents, so each strategy has one deterministic outcome
 // derived from ConflictResolver.decide (unit-verified in tests/a-no-nextcloud):
 //   - Auto Merge File (case-*.md, extension in autoMergeFileTypes):
-//       merge         → both titles diverge from base ⇒ unmergeable frontmatter ⇒ conflict markers
+//       merge         → both titles diverge from base, but a frontmatter scalar conflict is resolved
+//                       by frontmatterScalarConflictPolicy (default latest-mtime), never text-diffed
+//                       (feature 043, HFM-6/HFM-9) ⇒ M (newer) wins cleanly, NO markers
 //       biggest-size  → equal length ⇒ tie ⇒ no-op (both untouched, not conflicted, FR-009)
 //       latest-mtime  → M syncs last (newer) ⇒ M wins
 //       local-win     → M (the resolving device's local copy)
@@ -29,7 +31,7 @@ interface Combo { i: number; kind: 'auto' | 'other'; strategy: SyncStrategy; win
 
 function autoWinner(s: SyncStrategy): Winner {
   switch (s) {
-    case 'merge': return 'markers';        // both sides changed the same frontmatter line ⇒ unmergeable
+    case 'merge': return 'M';              // 043 (HFM-6/9): frontmatter scalar conflict → scalar policy (default latest-mtime) picks newer side (M), clean, no markers
     case 'biggest-size': return 'tie';     // equal-length docs ⇒ size tie ⇒ no-op
     case 'latest-mtime': return 'M';       // M resolves last ⇒ newer
     case 'local-win': return 'M';
