@@ -13,7 +13,7 @@ import { isSyncTmpPath, LocalAdapter } from './data/LocalAdapter';
 import type { MergeBaseStore } from './data/MergeBaseStore';
 import { v4 as uuidv4 } from './util/uuid';
 import { hostToken, LogPlatform } from './util/hostToken';
-import { migrateConfigSyncCategories, migrateBookmarksToConfigSync, migrateStartupToggleToDelay, migrateConflictSettingsToStrategies, pruneObsoleteSettings, resetDebugIdentityFields } from './util/settingsMigration';
+import { migrateConfigSyncCategories, migrateBookmarksToConfigSync, migrateStartupToggleToDelay, migrateConflictSettingsToStrategies, pruneObsoleteSettings, resetDebugIdentityFields, applyMobileFirstRunDefaults } from './util/settingsMigration';
 import { debugLogPath, syncLogPath, isActiveOwnLog } from './util/logPaths';
 import { SyncLogWriter, formatResolution } from './log/SyncLogWriter';
 import { autoNetworkConcurrency } from './util/platformDefaults';
@@ -455,9 +455,7 @@ export default class ObsidianNextcloudsync extends Plugin {
     migrateBookmarksToConfigSync(saved, this.settings);
     // Mobile first-run defaults: override before pruning so they are persisted immediately.
     if (Platform.isMobile) {
-      if (saved.syncOnWifiOnly === undefined) this.settings.syncOnWifiOnly = true;
-      if (saved.maxFileSizeMB === undefined)  this.settings.maxFileSizeMB = 20;
-      if (saved.watchOnChangeEnabled === undefined) this.settings.watchOnChangeEnabled = false;
+      applyMobileFirstRunDefaults(saved, this.settings);
     }
     // networkConcurrency: derived from device RAM on first run (the persisted value is kept as-is).
     if (saved.networkConcurrency === undefined) {
