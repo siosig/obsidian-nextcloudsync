@@ -31,9 +31,10 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.20)
+## What's new in this release (0.7.21-beta.3)
 
-- **Stuck conflicts now heal themselves, plus one-tap conflict resolution (0.7.20)** — a note that got stuck re-conflicting on every sync (caused by a leftover conflict marker line from an incomplete manual edit) is now merged normally and converges on its own, removing the stray marker from both sides. The Sync status dialog also gains a per-file control on each conflicted file: pick **Use remote**, **Use local**, **Latest modified**, or **Biggest size** and press **Apply** to resolve it immediately.
+- **Frontmatter merges no longer corrupt notes or pile up tags (0.7.21-beta.3)** — the frontmatter (YAML properties) part of a conflict is now resolved as structured data, never as text. Conflict markers (`<<<<<<<` / `>>>>>>>`) can no longer land inside a note's `---` block (which used to break Obsidian's Properties and re-nest on the next sync), and list fields (tags, aliases, related) merge as a true 3‑way set: a tag deleted on one device is now actually removed instead of resurrecting, near‑duplicate spellings (`#tag` vs `tag`) collapse to one, and out‑of‑band changes made by server‑side tools propagate correctly.
+- **"Use remote" / "Use local" recover a real clean version (0.7.21-beta.3)** — when a text conflict wrote merge markers into a note, force‑resolving it from the Sync status dialog used to just re‑sync the marker‑filled content while clearing the warning. Now the plugin snapshots both clean sides at conflict time, so "Use remote", "Use local", "Latest modified" and "Biggest size" restore a genuine marker‑free version and only clear the conflict once the note is actually clean. No new settings.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
