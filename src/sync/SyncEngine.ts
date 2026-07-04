@@ -523,9 +523,13 @@ export class SyncEngine {
    * user explicitly declared the remote authoritative; this path simply never calls `massDeleteLimit`.
    */
   async planRemoteMirror(): Promise<MirrorPlan> {
-    const client = this.client;
-    if (!client) {
-      return buildMirrorPlan([], [], [], () => false, false, 'Not signed in — cannot mirror from remote.');
+    // Lazily build (and cache) the WebDAV client + features, exactly like a normal sync does — the
+    // client is only created on first sync, so a mirror invoked before any sync must connect here.
+    let client: IWebDAVClient;
+    try {
+      ({ client } = await this.ensureClient());
+    } catch (err) {
+      return buildMirrorPlan([], [], [], () => false, false, `Not connected to the server: ${(err as Error).message}`);
     }
 
     // 1. Authoritative remote listing (no short-circuit). Failure ⇒ abort gate (zero deletions).
