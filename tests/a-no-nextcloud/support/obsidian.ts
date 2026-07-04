@@ -1,4 +1,6 @@
 // Obsidian API mock for Jest
+import { load, dump } from 'js-yaml';
+
 export class Plugin {
   app: App;
   manifest: PluginManifest;
@@ -221,6 +223,100 @@ export interface ButtonComponent {
 
 export function normalizePath(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+/g, '/');
+}
+
+/**
+ * Test double for Obsidian's `parseYaml`. Wraps js-yaml's `load`. Obsidian returns
+ * `null` for empty / whitespace-only input; this js-yaml build throws on empty input,
+ * so we short-circuit that case to preserve Obsidian's contract.
+ */
+export function parseYaml(s: string): any {
+  if (s == null) return null;
+  if (s.trim() === '') return null;
+  return load(s);
+}
+
+/**
+ * Test double for Obsidian's `stringifyYaml`. Wraps js-yaml's `dump`. `lineWidth: -1`
+ * disables line folding so arrays / long scalars serialize deterministically (matching
+ * Obsidian's own stable output and keeping round-trips lossless).
+ */
+export function stringifyYaml(obj: any): string {
+  return dump(obj, { lineWidth: -1 });
+}
+
+/** Mirror of Obsidian's `FrontMatterInfo` (obsidian.d.ts). */
+export interface FrontMatterInfo {
+  /** Whether this file has a frontmatter block. */
+  exists: boolean;
+  /** String representation of the frontmatter (the YAML between the `---` fences, excluding them). */
+  frontmatter: string;
+  /** Start of the frontmatter contents (excluding the opening `---`). */
+  from: number;
+  /** End of the frontmatter contents (excluding the closing `---`). */
+  to: number;
+  /** Offset where the frontmatter block ends (including the closing `---` and its newline). */
+  contentStart: number;
+}
+
+/**
+ * Test double for Obsidian's `getFrontMatterInfo`. Recognizes a leading `---` fenced
+ * YAML block only (a `---` appearing later in the body is a thematic break, never a
+ * fence). CRLF and LF line endings are both accepted. `from`/`to` bound the inner YAML
+ * text; `contentStart` is where the note body begins after the closing fence.
+ */
+export function getFrontMatterInfo(content: string): FrontMatterInfo {
+  const none: FrontMatterInfo = { exists: false, frontmatter: '', from: 0, to: 0, contentStart: 0 };
+  if (content == null) return none;
+  // Opening fence must be at the very start: `---` (optional trailing spaces) then a newline.
+  const open = /^---[^\S\r\n]*\r?\n/.exec(content);
+  if (!open) return none;
+  const from = open[0].length;
+  const rest = content.slice(from);
+  // Empty frontmatter: the closing fence immediately follows the opening one.
+  const immediate = /^---[^\S\r\n]*(?:\r?\n|$)/.exec(rest);
+  if (immediate) {
+    return { exists: true, frontmatter: '', from, to: from, contentStart: from + immediate[0].length };
+  }
+  // Otherwise the closing fence is the first `---` line after the opening fence.
+  const close = /\r?\n---[^\S\r\n]*(?:\r?\n|$)/.exec(rest);
+  if (!close) return none; // unterminated block: not valid frontmatter
+  const to = from + close.index;
+  const contentStart = from + close.index + close[0].length;
+  return { exists: true, frontmatter: content.slice(from, to), from, to, contentStart };
+}
+
+/**
+ * Test double for Obsidian's `parseFrontMatterStringArray`. Given an already-parsed
+ * frontmatter object and a key (string or RegExp), returns the value normalized to a
+ * string array: a single scalar becomes a one-element array, inline (`[a, b]`) and
+ * block YAML lists both arrive here as arrays, each entry is coerced to string,
+ * trimmed, and a leading `#` (tag sigil) is stripped. Returns `null` when the key is
+ * absent or its value is null. Duplicates are intentionally preserved (callers dedup).
+ */
+export function parseFrontMatterStringArray(frontmatter: any, key: string | RegExp): string[] | null {
+  if (frontmatter == null || typeof frontmatter !== 'object') return null;
+  let value: any = null;
+  if (key instanceof RegExp) {
+    for (const k of Object.keys(frontmatter)) {
+      if (key.test(k)) { value = frontmatter[k]; break; }
+    }
+  } else if (Object.prototype.hasOwnProperty.call(frontmatter, key)) {
+    value = frontmatter[key];
+  }
+  if (value == null) return null;
+  const items = Array.isArray(value) ? value : [value];
+  const out: string[] = [];
+  for (const item of items) {
+    if (item == null) continue;
+    let s: string;
+    if (typeof item === 'string') s = item;
+    else if (typeof item === 'number' || typeof item === 'boolean') s = String(item);
+    else continue;
+    s = s.trim().replace(/^#/, '');
+    if (s.length > 0) out.push(s);
+  }
+  return out;
 }
 
 // Mutable platform flags so tests can simulate desktop / iOS / Android.
