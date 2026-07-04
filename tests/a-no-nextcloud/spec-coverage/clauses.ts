@@ -387,4 +387,14 @@ export const CLAUSES: Clause[] = [
   { id: 'CSS-B1-1', source: 'specs/044-conflict-clean-snapshot (live 2-device: marker conflict → Use remote recovers clean remote, both converge)', layer: 'b-1' },
   { id: 'CSS-B1-2', source: 'specs/044-conflict-clean-snapshot (live 2-device: marker conflict → Use local recovers clean local, both converge)', layer: 'b-1' },
   { id: 'CSS-B1-3', source: 'specs/044-conflict-clean-snapshot (live: after recovery, a further no-edit sync converges — no marker growth, no snapshot leak)', layer: 'b-1' },
+  // Feature 045 (Remote-authoritative Pull mirror): a Maintenance "Mirror from remote" button forces
+  // this device's vault to exactly match the remote — download what the remote has, delete local-only
+  // files/folders (via the Obsidian trash setting, recoverable), skip content-identical files. Bypasses
+  // the mass-delete breaker COUNT limit but gates on a COMPLETE remote listing.
+  { id: 'MIR-1', source: 'specs/045-remote-mirror-pull/spec.md (FR-002/005/006/007/010/016: buildMirrorPlan classifies download / delete files+folders(child→parent) / skip; exclusions honored; counts for the dialog)', layer: 'a' },
+  { id: 'MIR-2', source: 'specs/045-remote-mirror-pull/spec.md (FR-009/SC-005: listing-completeness gate — an incomplete/failed remote listing yields ok:false and zero deletions)', layer: 'a' },
+  { id: 'MIR-3', source: 'specs/045-remote-mirror-pull/spec.md (FR-008/011/SC-002: applyRemoteMirror deletes local-only via trash, reconciles StateDB to the remote (converges to zero diff), and bypasses the mass-delete breaker count limit)', layer: 'a' },
+  { id: 'MIR-B1-1', source: 'specs/045-remote-mirror-pull (live: mass local-only download+delete not halted by the breaker; vault ends equal to the remote)', layer: 'b-1', waiver: 'deferred b-1 end-to-end stub (it.skip): needs a live Nextcloud; validated manually via quickstart until executed' },
+  { id: 'MIR-B1-2', source: 'specs/045-remote-mirror-pull (live: local-only folder deletion incl. empty, child→parent; listing-failure gate performs zero deletions)', layer: 'b-1', waiver: 'deferred b-1 end-to-end stub (it.skip): needs a live Nextcloud; validated manually via quickstart until executed' },
+  { id: 'MIR-B1-3', source: 'specs/045-remote-mirror-pull (live: the sync immediately after a mirror converges with zero upload/download/delete — self-healing)', layer: 'b-1', waiver: 'deferred b-1 end-to-end stub (it.skip): needs a live Nextcloud; validated manually via quickstart until executed' },
 ];

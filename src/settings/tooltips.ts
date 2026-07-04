@@ -71,6 +71,8 @@ export const TOOLTIPS = {
   // Maintenance section
   resetVaultIndex:
     "Clears this device's sync index (first-install state). No files are deleted; the next sync re-scans.",
+  mirrorFromRemote:
+    'Overwrite this device to match the remote exactly: download everything the remote has and delete local files/folders it lacks (via your Obsidian trash setting, recoverable). A confirmation shows the counts first. Destructive.',
   lastSessionSummary:
     'Open the sync status dialog: recent runs, conflicts, retries and errors.',
 } as const;
