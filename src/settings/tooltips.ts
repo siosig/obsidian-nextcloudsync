@@ -35,7 +35,7 @@ export const TOOLTIPS = {
   syncOnWifiOnly:
     'Skip syncing on cellular (Wi-Fi/wired allowed). Unavailable on iOS (no network-type API).',
   syncOnFileChange:
-    'Sync a Markdown file shortly after you stop editing it. Disabled on mobile.',
+    'Immediately sync a file or folder after you create, edit, delete, or rename it. Deletions and renames propagate too. Desktop only.',
   maxFileSize:
     'Skip files larger than this in both directions — uploads and downloads. 0 = unlimited. Keep low on mobile to avoid out-of-memory crashes.',
 
@@ -71,6 +71,8 @@ export const TOOLTIPS = {
   // Maintenance section
   resetVaultIndex:
     "Clears this device's sync index (first-install state). No files are deleted; the next sync re-scans.",
+  mirrorFromRemote:
+    'Overwrite this device to match the remote exactly: download everything the remote has and delete local files/folders it lacks (via your Obsidian trash setting, recoverable). A confirmation shows the counts first. Destructive.',
   lastSessionSummary:
     'Open the sync status dialog: recent runs, conflicts, retries and errors.',
 } as const;

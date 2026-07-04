@@ -248,7 +248,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
       .setName('Sync on file change')
       .setDesc(Platform.isMobile
         ? 'Disabled on mobile (the OS suspends background work). Use "Sync on startup" or "Sync now".'
-        : 'Immediately sync when a local Markdown file is modified (a short delay after you stop editing). Works alongside the periodic sync interval.')
+        : 'Immediately sync a file or folder right after you create, edit, delete, or rename it (a short delay after you stop editing a file). Deletions and renames propagate too. Works alongside the periodic sync interval. Desktop only.')
       .setTooltip(TOOLTIPS.syncOnFileChange)
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.watchOnChangeEnabled && !Platform.isMobile)
@@ -460,6 +460,18 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         .setClass('mod-warning')
         .onClick(() => {
           void this.plugin.resetVaultIndex();
+        }));
+
+    makeSetting(containerEl)
+      .setName('Mirror from remote')
+      .setDesc('Force this device\'s vault to exactly match the remote: download everything the remote has, and delete local files and folders that are not on the remote (honoring your Obsidian "deleted files" setting, so removals are recoverable). Unsynced local changes are discarded. A confirmation shows how many files will be downloaded and deleted before anything happens. Use this to make a device follow the remote after migrating from another sync tool.')
+      .setTooltip(TOOLTIPS.mirrorFromRemote)
+      .addButton(btn => btn
+        .setButtonText('Mirror from remote')
+        // `mod-warning` is the destructive-button class; setDestructive() needs 1.13.0 > minAppVersion.
+        .setClass('mod-warning')
+        .onClick(() => {
+          void this.plugin.runRemoteMirror();
         }));
 
     makeSetting(containerEl)

@@ -1,4 +1,4 @@
-import { App, Plugin, Notice, Platform, TFile, TAbstractFile, debounce } from 'obsidian';
+import { App, Plugin, Notice, Platform, TFile, TFolder, TAbstractFile, debounce } from 'obsidian';
 import { DavSyncSettings, DEFAULT_SETTINGS, FeatureUnsupportedError, SyncHistoryEntry, SyncSessionSummary } from './types';
 import { NextcloudSyncSettingTab } from './settings/SettingTab';
 import { SyncEngine } from './sync/SyncEngine';
@@ -23,6 +23,9 @@ const MIN_OBSIDIAN_VERSION = '1.11.4';
 export default class ObsidianNextcloudsync extends Plugin {
   settings!: DavSyncSettings;
   syncEngine?: SyncEngine;
+
+  /** True while a Pull-mirror (feature 045) is running, to guard against double-invocation. */
+  private mirrorInProgress = false;
   /** Shared with SyncEngine; its ignore list marks the plugin's own writes for the watchers. */
   localAdapter?: LocalAdapter;
   /** Merge base store (feature 038); flushed on unload so a debounced base write is not lost. */
@@ -173,22 +176,29 @@ export default class ObsidianNextcloudsync extends Plugin {
         pendingUploads.add(file.path);
         debouncedUpload();
       }));
+      // Feature 046: folders (TFolder) propagate immediately via single-folder ops; files keep the
+      // debounced upload path. watchOn() is the master gate (false on mobile via loadSettings).
+      const watchOn = (): boolean => this.settings.watchOnChangeEnabled;
       this.registerEvent(this.app.vault.on('create', (file: TAbstractFile) => {
-        if (!guard(file) || isOwnSyncEvent(file.path)) return;
+        if (!watchOn() || isOwnSyncEvent(file.path)) return;
+        if (file instanceof TFolder) { void this.syncEngine?.createSingleFolder(file.path); return; }
+        if (!(file instanceof TFile)) return;
         pendingUploads.add(file.path);
         debouncedUpload();
       }));
       this.registerEvent(this.app.vault.on('delete', (file: TAbstractFile) => {
-        if (!guard(file)) return;
+        if (!watchOn()) return;
         pendingUploads.delete(file.path); // cancel any pending upload for this path
         if (isOwnSyncEvent(file.path)) return; // e.g. atomic write replacing the old copy
+        if (file instanceof TFolder) { void this.syncEngine?.deleteSingleFolder(file.path); return; }
         void this.syncEngine?.deleteSingleFile(file.path);
       }));
       this.registerEvent(this.app.vault.on('rename', (file: TAbstractFile, oldPath: string) => {
-        if (!guard(file)) return;
+        if (!watchOn()) return;
         pendingUploads.delete(oldPath);
         // tmp → target renames are the tail of the plugin's own atomic writes.
         if (isOwnSyncEvent(oldPath) || isOwnSyncEvent(file.path)) return;
+        if (file instanceof TFolder) { void this.syncEngine?.renameSingleFolder(oldPath, file.path); return; }
         void this.syncEngine?.renameSingleFile(oldPath, file.path);
       }));
     });
@@ -306,6 +316,56 @@ export default class ObsidianNextcloudsync extends Plugin {
       new Notice('Vault index reset. The next sync will perform a full re-scan.');
     } catch (err) {
       new Notice(`❌ Failed to reset the Vault index: ${(err as Error).message}`, 6000);
+    }
+  }
+
+  /**
+   * Maintenance action (feature 045): mirror this device from the remote — overwrite the local vault
+   * to exactly match the remote (download everything the remote has, delete local files/folders the
+   * remote lacks via the Obsidian trash setting). Shows the download/delete counts for confirmation
+   * before applying; cancelling is a no-op. Bypasses the mass-delete breaker but aborts if the remote
+   * listing cannot be obtained (zero deletions). Works only when the sync engine is configured.
+   */
+  async runRemoteMirror(): Promise<void> {
+    const engine = this.syncEngine;
+    if (!engine) {
+      new Notice('Sign in to Nextcloud before mirroring from the remote.', 6000);
+      return;
+    }
+    if (this.mirrorInProgress) return; // guard against double-invocation
+    this.mirrorInProgress = true;
+    try {
+      await engine.abortAndWait();
+
+      const plan = await engine.planRemoteMirror();
+      if (!plan.ok) {
+        new Notice(`❌ Mirror aborted: ${plan.reason ?? 'could not read the remote'} (no files were changed).`, 8000);
+        return;
+      }
+
+      const deleteCount = plan.deleteFiles.length + plan.deleteDirs.length;
+      const confirmed = await confirmModal(this.app, {
+        title: 'Mirror from remote',
+        message:
+          `This will make this device exactly match the remote:\n\n` +
+          `• Download: ${plan.downloads.length} file(s)\n` +
+          `• Delete locally: ${deleteCount} file(s)/folder(s) not on the remote ` +
+          `(moved to your Obsidian trash — recoverable)\n\n` +
+          `Unsynced local changes will be discarded. This cannot be undone except from the trash.`,
+        cta: 'Mirror from remote',
+        cancel: 'Cancel',
+        destructive: true,
+      });
+      if (!confirmed) return; // no-op (FR-004)
+
+      // Progress + result are surfaced by the sync engine through the SAME status-bar surface as a
+      // normal "Sync now": a live progress bar on desktop and a single "🔄 Syncing… N/total" → result
+      // toast on mobile (driven inside applyRemoteMirror via setStatus/setProgress/setSyncComplete).
+      await engine.applyRemoteMirror(plan);
+    } catch (err) {
+      new Notice(`❌ Mirror from remote failed: ${(err as Error).message}`, 8000);
+    } finally {
+      this.mirrorInProgress = false;
     }
   }
 
