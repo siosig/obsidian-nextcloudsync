@@ -11,6 +11,11 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.23] - 2026-07-04
+
+### Fixed
+- The **Sync interval** slider now reads honestly on mobile. Periodic auto-sync never runs on mobile (the OS suspends background timers), yet the slider still showed the desktop default of 15 minutes while greyed out, as if a timed sync were active. On a fresh mobile install the interval now defaults to 0 (manual only), so the disabled slider matches actual behavior. Desktop is unchanged, and any interval already set is preserved.
+
 ## [0.7.22] - 2026-07-04
 
 ### Added
@@ -245,6 +250,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.23]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.23
 [0.7.22]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.22
 [0.7.21]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.21
 [0.7.20]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.20
