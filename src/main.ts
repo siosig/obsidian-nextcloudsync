@@ -1,4 +1,4 @@
-import { App, Plugin, Notice, Platform, TFile, TAbstractFile, debounce } from 'obsidian';
+import { App, Plugin, Notice, Platform, TFile, TFolder, TAbstractFile, debounce } from 'obsidian';
 import { DavSyncSettings, DEFAULT_SETTINGS, FeatureUnsupportedError, SyncHistoryEntry, SyncSessionSummary } from './types';
 import { NextcloudSyncSettingTab } from './settings/SettingTab';
 import { SyncEngine } from './sync/SyncEngine';
@@ -176,22 +176,29 @@ export default class ObsidianNextcloudsync extends Plugin {
         pendingUploads.add(file.path);
         debouncedUpload();
       }));
+      // Feature 046: folders (TFolder) propagate immediately via single-folder ops; files keep the
+      // debounced upload path. watchOn() is the master gate (false on mobile via loadSettings).
+      const watchOn = (): boolean => this.settings.watchOnChangeEnabled;
       this.registerEvent(this.app.vault.on('create', (file: TAbstractFile) => {
-        if (!guard(file) || isOwnSyncEvent(file.path)) return;
+        if (!watchOn() || isOwnSyncEvent(file.path)) return;
+        if (file instanceof TFolder) { void this.syncEngine?.createSingleFolder(file.path); return; }
+        if (!(file instanceof TFile)) return;
         pendingUploads.add(file.path);
         debouncedUpload();
       }));
       this.registerEvent(this.app.vault.on('delete', (file: TAbstractFile) => {
-        if (!guard(file)) return;
+        if (!watchOn()) return;
         pendingUploads.delete(file.path); // cancel any pending upload for this path
         if (isOwnSyncEvent(file.path)) return; // e.g. atomic write replacing the old copy
+        if (file instanceof TFolder) { void this.syncEngine?.deleteSingleFolder(file.path); return; }
         void this.syncEngine?.deleteSingleFile(file.path);
       }));
       this.registerEvent(this.app.vault.on('rename', (file: TAbstractFile, oldPath: string) => {
-        if (!guard(file)) return;
+        if (!watchOn()) return;
         pendingUploads.delete(oldPath);
         // tmp → target renames are the tail of the plugin's own atomic writes.
         if (isOwnSyncEvent(oldPath) || isOwnSyncEvent(file.path)) return;
+        if (file instanceof TFolder) { void this.syncEngine?.renameSingleFolder(oldPath, file.path); return; }
         void this.syncEngine?.renameSingleFile(oldPath, file.path);
       }));
     });
