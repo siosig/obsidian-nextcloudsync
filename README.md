@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.23-beta.1)
+## What's new in this release (0.7.23)
 
-- **Sync interval now reads honestly on mobile (0.7.23-beta.1)** — periodic auto-sync never runs on mobile (the OS suspends background timers), but the **Sync interval** slider still showed the desktop default of 15 minutes even while greyed out, as if a timed sync were active. On a fresh mobile install the interval now defaults to **0 (manual only)**, so the disabled slider matches what actually happens. Desktop is unchanged, and any interval you have already set is preserved.
+- **Sync interval now reads honestly on mobile (0.7.23)** — periodic auto-sync never runs on mobile (the OS suspends background timers), but the **Sync interval** slider still showed the desktop default of 15 minutes even while greyed out, as if a timed sync were active. On a fresh mobile install the interval now defaults to **0 (manual only)**, so the disabled slider matches what actually happens. Desktop is unchanged, and any interval you have already set is preserved.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
