@@ -22,6 +22,8 @@ import {
 import { isSyncTmpPath, LocalAdapter } from '../data/LocalAdapter';
 import { StateDB } from '../data/StateDB';
 import type { MergeBaseStore } from '../data/MergeBaseStore';
+import type { CleanSideStore } from '../data/CleanSideStore';
+import type { CleanSideMetrics } from '../ui/compareResolution';
 import { isAutoMergeFileType } from '../util/mergeableExtensions';
 import { SyncHistoryStore } from '../data/SyncHistoryStore';
 import { IStatusBar } from '../ui/StatusBarItem';
@@ -68,6 +70,11 @@ interface SyncEngineOptions {
   stateDB: StateDB;
   /** Last-synced bodies used as the 3-way merge base (feature 038). Optional (absent in some tests). */
   baseStore?: MergeBaseStore;
+  /**
+   * Captured clean sides of marker-conflicted notes, so force-resolution recovers a real clean
+   * version rather than the marker content (feature 044). Optional (absent in some tests).
+   */
+  cleanSideStore?: CleanSideStore;
   statusBar: IStatusBar;
   /** Persisted per-file sync-history log for the status dialog. Optional (absent in some tests). */
   historyStore?: SyncHistoryStore;
@@ -305,6 +312,7 @@ export class SyncEngine {
     }
     this.opts.stateDB.deleteFile(path);
     this.dropMergeBase(path); // feature 038: file gone → drop its merge base
+    this.dropCleanSnapshot(path); // feature 044: file gone → drop any captured clean sides
     this.opts.stateDB.requestSave(); // coalesced watch-mode save (P0-B)
     await this.opts.historyStore?.save();
   }
@@ -341,6 +349,7 @@ export class SyncEngine {
   async flushState(): Promise<void> {
     await this.opts.stateDB.flush();
     await this.opts.baseStore?.flush();
+    await this.opts.cleanSideStore?.flush();
   }
 
   /**
@@ -362,6 +371,113 @@ export class SyncEngine {
     if (!this.opts.baseStore) return;
     this.opts.baseStore.delete(path);
     this.opts.baseStore.requestSave();
+  }
+
+  /**
+   * Feature 044: capture the two CLEAN sides of a note at conflict-detection time, before a marker
+   * write overwrites them. Only called on the marker-write path (clean:false). Metrics are the clean
+   * sides' own mtime/size, used later by the Latest/Biggest force-resolution choices.
+   */
+  private captureCleanSides(
+    path: string, local: string, remote: string,
+    localMtime: number, localSize: number, remoteInfo: RemoteFileInfo,
+  ): void {
+    if (!this.opts.cleanSideStore) return;
+    this.opts.cleanSideStore.set(path, {
+      local, remote,
+      localMtime, remoteMtime: remoteInfo.lastModified || 0,
+      localSize, remoteSize: remoteInfo.size,
+    });
+    this.opts.cleanSideStore.requestSave();
+  }
+
+  /** Drop the captured clean sides for `path` (on resolution / convergence / deletion) — no leak (044). */
+  private dropCleanSnapshot(path: string): void {
+    if (!this.opts.cleanSideStore) return;
+    if (this.opts.cleanSideStore.get(path) === undefined) return;
+    this.opts.cleanSideStore.delete(path);
+    this.opts.cleanSideStore.requestSave();
+  }
+
+  /**
+   * Feature 044 self-heal safety net: after a sync, drop the captured clean sides of any path that is
+   * no longer marker-conflicted in StateDB (converged via a prefer-side / clean-merge / hand-resolve /
+   * download). This keeps captures bounded to currently-conflicted files (FR-008/SC-003) regardless of
+   * which convergence path ran, without threading a drop into every call site.
+   */
+  private sweepResolvedSnapshots(): void {
+    const store = this.opts.cleanSideStore;
+    if (!store) return;
+    for (const path of store.paths()) {
+      if (!this.opts.stateDB.getFile(path)?.isConflicted) this.dropCleanSnapshot(path);
+    }
+  }
+
+  /**
+   * Feature 044 recovery: the captured clean-side metrics for a marker-conflicted `path`, or null when
+   * no snapshot exists. Force-resolution uses this to decide whether to recover from the snapshot
+   * (present) or fall back to current-content push/pull (absent). Implements CompareEngine (044).
+   */
+  cleanSideMetrics(path: string): CleanSideMetrics | null {
+    const snap = this.opts.cleanSideStore?.get(path);
+    if (!snap) return null;
+    return { localMtime: snap.localMtime, remoteMtime: snap.remoteMtime, localSize: snap.localSize, remoteSize: snap.remoteSize };
+  }
+
+  /** Feature 044 recovery: restore the captured clean REMOTE side (or fall back to pull if none). */
+  async applyCleanRemote(path: string): Promise<void> {
+    const snap = this.opts.cleanSideStore?.get(path);
+    if (!snap) { await this.pullRemoteToLocal(path); return; }
+    await this.applyCleanSide(path, snap.remote, 'remote');
+  }
+
+  /** Feature 044 recovery: restore the captured clean LOCAL side (or fall back to push if none). */
+  async applyCleanLocal(path: string): Promise<void> {
+    const snap = this.opts.cleanSideStore?.get(path);
+    if (!snap) { await this.pushLocalToRemote(path); return; }
+    await this.applyCleanSide(path, snap.local, 'local');
+  }
+
+  /**
+   * Write `content` (a captured clean side) to BOTH local and remote so the conflict converges on a
+   * real, marker-free version. Uploads first (if that fails, nothing local changes and the file stays
+   * conflicted — no false "resolved"), then writes local, converges StateDB (isConflicted:false),
+   * records the new merge base, and drops the snapshot. (CSS-2/CSS-4/CSS-6)
+   */
+  private async applyCleanSide(path: string, content: string, side: 'local' | 'remote'): Promise<void> {
+    const { client } = await this.ensureClient();
+    const data = new TextEncoder().encode(content).buffer;
+    const mtime = Date.now();
+    const remote = await this.fetchRemoteInfo(path);
+
+    const lockToken = await this.acquireLock(path);
+    try {
+      const outcome = await this.uploadStrategy!.upload(client, path, data, mtime);
+      if (outcome === 'skipped') throw new Error(`Upload skipped (over the size limit): ${path}`);
+    } finally {
+      await this.releaseLock(path, lockToken);
+    }
+
+    await this.opts.localAdapter.atomicWriteBinary(path, data);
+    await this.opts.localAdapter.setMtime(path, mtime);
+
+    const localHash = await sha256(data);
+    this.recordHistory(path, 'uploaded', undefined, {
+      localHash, remoteId: localHash, remoteIdType: 'sha256',
+      localSize: data.byteLength, remoteSize: remote?.size,
+    });
+    this.opts.stateDB.setFile(await this.withLocalSignature({
+      path, localHash, remoteId: localHash, idType: 'sha256',
+      size: data.byteLength, mtime,
+      remoteFileId: remote?.fileId ?? null, isConflicted: false,
+    }, remote?.lastModified));
+    // Both sides now hold the clean content → it is the new merge base; the snapshot has served its
+    // purpose and is dropped (no leak).
+    this.recordMergeBase(path, content);
+    this.dropCleanSnapshot(path);
+    await this.opts.stateDB.save();
+    await this.opts.historyStore?.save();
+    void this.opts.logger?.log(`conflict: force-resolved from clean ${side} snapshot (both sides converged) → ${path}`);
   }
 
   /**
@@ -740,6 +856,10 @@ export class SyncEngine {
     // remoteFiles is a partial diff, from which directory absence cannot be read as a deletion.
     // On a short-circuited scan, feed the State-rebuilt directory list so getDirectories('') is skipped.
     if (isFullScan) await this.reconcileDirectories(summary, fullScanCachedDirs ?? undefined);
+
+    // Feature 044 self-heal: drop captured clean sides for any path that converged this sync (no longer
+    // conflicted), keeping snapshots bounded to currently-conflicted files regardless of the path taken.
+    this.sweepResolvedSnapshots();
 
     // Root-ETag short-circuit SAFETY (spec 023 §8a.5): only ARM the short-circuit when this scan fully
     // converged (StateDB now mirrors the remote). If any file was left UNRESOLVED — a conflict skipped
@@ -1332,6 +1452,13 @@ export class SyncEngine {
         void this.opts.logger?.log(`conflict: orphan marker detected, bypassing re-entrancy guard (self-heal) → ${path}`);
       }
       decision = resolver.decide(path, base, localContent, remoteContent, ctx);
+      // Feature 044: a marker write (clean:false) is the ONLY resolution that overwrites both clean
+      // sides (local body on disk + remote body on the server). Capture them NOW — before the switch
+      // runs resolveByWrite — so force-resolution can later recover a real clean version instead of the
+      // marker content. Clean auto-merges (clean:true) and the deterministic strategies capture nothing.
+      if (decision.action === 'write' && !decision.clean) {
+        this.captureCleanSides(path, localContent, remoteContent, localMtimeBefore, localSizeBefore, remote);
+      }
     } else {
       decision = resolver.decide(path, '', '', '', ctx);
     }

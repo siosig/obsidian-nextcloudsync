@@ -365,4 +365,26 @@ export const CLAUSES: Clause[] = [
   { id: 'FM-B1-3', source: 'specs/043-harden-frontmatter-merge (server rewrites tags [t1,t2,t3]→[t2,t3,t4] out of band, local drifted → set merge deletes t1, no union resurrection)', layer: 'b-1' },
   { id: 'FM-B1-4', source: 'specs/043-harden-frontmatter-merge (server rewrite with CRLF + trailing-space fences → getFrontMatterInfo split → no marker inside frontmatter)', layer: 'b-1' },
   { id: 'FM-B1-5', source: 'specs/043-harden-frontmatter-merge (after a set merge, repeated no-edit syncs converge — no churn, no marker growth, no tag growth)', layer: 'b-1' },
+  // Feature 044 (conflict clean-side snapshot): capture both clean sides at marker-conflict time so
+  // force-resolution ("Use remote"/"Use local"/Latest/Biggest) recovers a REAL clean version instead
+  // of the marker-corrupted current content. Internal store, no new user setting.
+  { id: 'CSS-1', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-001: capture both clean sides before a marker write overwrites them)', layer: 'a' },
+  { id: 'CSS-2', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-002: Use remote/local restore the captured clean remote/local, not current marker content)', layer: 'a' },
+  { id: 'CSS-3', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-003: Latest/Biggest dispatch by snapshot metrics; equal metric → no-op)', layer: 'a' },
+  { id: 'CSS-4', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-004: after recovery note is marker-free, both sides converge, flag clears only when clean)', layer: 'a' },
+  { id: 'CSS-5', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-005: no snapshot → fall back to current pull/push, never error)', layer: 'a' },
+  { id: 'CSS-6', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-006: snapshot dropped at every convergence/resolution point — no leak)', layer: 'a' },
+  { id: 'CSS-7', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-007: no user-facing setting; DEFAULT_SETTINGS gains no key)', layer: 'a' },
+  { id: 'CSS-8', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-008: at rest, snapshot count == currently marker-conflicted file count)', layer: 'a' },
+  // CSS-9 (FR-009) is a regression meta-clause: no behavioural change to body merge, clean auto-merge,
+  // marker self-heal, deterministic strategies, safe-hold, or size holds. Guaranteed by the pre-existing
+  // conflict/merge/force-resolution corpus (CSF-*/MM-*/OM-*/FRC-*/MB-*) staying green under the change.
+  { id: 'CSS-9', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-009: no regression to existing conflict/merge/force-resolution behavior)', layer: 'a', waiver: 'regression meta-clause; guaranteed by the pre-existing conflict/merge/force-resolution corpus staying green under the change, not by a dedicated new test' },
+  { id: 'CSS-10', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-010: persist to disk, survive restart — save→load round-trip)', layer: 'a' },
+  { id: 'CSS-11', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-011: a repeat marker conflict overwrites the snapshot with the two most recent clean sides)', layer: 'a' },
+  { id: 'CSS-12', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-012: capture only on the marker-write path; safe-hold/size-hold/clean-merge/deterministic capture nothing)', layer: 'a' },
+  { id: 'CSS-13', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (CleanSideStore: atomic tmp→rename, debounce, flush, corrupt→empty)', layer: 'a' },
+  { id: 'CSS-B1-1', source: 'specs/044-conflict-clean-snapshot (live 2-device: marker conflict → Use remote recovers clean remote, both converge)', layer: 'b-1' },
+  { id: 'CSS-B1-2', source: 'specs/044-conflict-clean-snapshot (live 2-device: marker conflict → Use local recovers clean local, both converge)', layer: 'b-1' },
+  { id: 'CSS-B1-3', source: 'specs/044-conflict-clean-snapshot (live: after recovery, a further no-edit sync converges — no marker growth, no snapshot leak)', layer: 'b-1' },
 ];

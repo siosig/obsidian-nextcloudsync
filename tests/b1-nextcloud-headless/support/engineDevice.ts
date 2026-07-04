@@ -5,6 +5,7 @@ import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { LocalAdapter } from '../../../src/data/LocalAdapter';
 import { StateDB } from '../../../src/data/StateDB';
 import { MergeBaseStore } from '../../../src/data/MergeBaseStore';
+import { CleanSideStore } from '../../../src/data/CleanSideStore';
 import { NextcloudClient } from '../../../src/network/NextcloudClient';
 import { IWebDAVClient } from '../../../src/network/IWebDAVClient';
 import { DavSyncSettings, DEFAULT_SETTINGS, NextcloudFeatures } from '../../../src/types';
@@ -24,6 +25,7 @@ export interface Device {
   vault: FakeVault;
   stateDB: StateDB;
   baseStore: MergeBaseStore;
+  cleanSideStore: CleanSideStore;
   client: NextcloudClient;
   settings: DavSyncSettings;
   sync(): Promise<void>;
@@ -46,6 +48,9 @@ export function makeDevice(
   // Feature 038: per-device merge base store (last-synced bodies), wired exactly like production so
   // b1 exercises the real 3-way merge with a true base across devices.
   const baseStore = new MergeBaseStore(vault.adapter, PLUGIN_DIR, deviceId);
+  // Feature 044: clean-side snapshot store, wired exactly like production so b1 exercises real
+  // force-resolution recovery across devices.
+  const cleanSideStore = new CleanSideStore(vault.adapter, PLUGIN_DIR, deviceId);
   const client = new NextcloudClient(settings, env.appPassword, remoteBase);
   const webdavFactory = {
     async createClient(): Promise<{ client: IWebDAVClient; features: NextcloudFeatures }> {
@@ -59,10 +64,11 @@ export function makeDevice(
     localAdapter,
     stateDB,
     baseStore,
+    cleanSideStore,
     statusBar: noopStatusBar,
     webdavFactory,
     pluginDir: PLUGIN_DIR,
     configDir: CONFIG_DIR,
   } as never);
-  return { engine, vault, stateDB, baseStore, client, settings, sync: () => engine.syncManual({ manual: true }) };
+  return { engine, vault, stateDB, baseStore, cleanSideStore, client, settings, sync: () => engine.syncManual({ manual: true }) };
 }
