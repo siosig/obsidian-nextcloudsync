@@ -582,6 +582,14 @@ export class SyncEngine {
 
     const summary = this.initSummary();
 
+    // Progress reporting: identical surface to a normal "Sync now" — the status bar on desktop and the
+    // single result toast on mobile (NoticeStatusBar), driven via setStatus/setProgress/tickProgress
+    // and closed with setSyncComplete. Total = every action item (downloads + file/folder deletions).
+    const total = plan.downloads.length + plan.deleteFiles.length + plan.deleteDirs.length;
+    this.syncProgress = { processed: 0, total };
+    this.opts.statusBar.setStatus('syncing');
+    if (total > 0) this.opts.statusBar.setProgress(0, total);
+
     // 1. Downloads (remote wins — forced overwrite, not a 3-way merge).
     for (const remote of plan.downloads) {
       const remoteId = remote.checksum ?? remote.etag ?? String(remote.size);
@@ -593,6 +601,7 @@ export class SyncEngine {
       } catch (err) {
         result.errors.push({ path: remote.path, message: (err as Error).message });
       }
+      this.tickProgress();
     }
 
     // 2. Delete local-only files (processRemoteDeletion honors the trash setting + cleans StateDB).
@@ -603,6 +612,7 @@ export class SyncEngine {
       } catch (err) {
         result.errors.push({ path, message: (err as Error).message });
       }
+      this.tickProgress();
     }
 
     // 3. Delete local-only folders child→parent (trashFile handles TFolder), then drop dir tracking.
@@ -614,6 +624,7 @@ export class SyncEngine {
       } catch (err) {
         result.errors.push({ path, message: (err as Error).message });
       }
+      this.tickProgress();
     }
 
     // 4. Reconcile StateDB to the remote so the next sync sees no diff (self-healing, FR-011).
@@ -646,6 +657,13 @@ export class SyncEngine {
     // 4c. Force a real full scan next sync (never short-circuit) so convergence is genuinely verified.
     this.opts.stateDB.setRemoteRootEtag(null);
     this.opts.stateDB.setSyncToken('');
+
+    // Close the progress surface with a result — exactly like a normal sync. On mobile this replaces
+    // the "🔄 Syncing…" toast with the outcome (and auto-dismisses); on desktop it updates the bar.
+    // Deletions are reflected in summary.downloadedCount (processRemoteDeletion increments it), matching
+    // how a normal sync reports remote-deletions-applied-locally.
+    summary.errorCount = result.errors.length;
+    this.opts.statusBar.setSyncComplete(0, summary.downloadedCount, 0, result.errors.length);
 
     void this.opts.logger?.log(
       `mirror: applied — downloaded=${result.downloaded}, deleted=${result.deleted}, skipped=${result.skipped}, errors=${result.errors.length}`,

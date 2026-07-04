@@ -351,13 +351,10 @@ export default class ObsidianNextcloudsync extends Plugin {
       });
       if (!confirmed) return; // no-op (FR-004)
 
-      const result = await engine.applyRemoteMirror(plan);
-      const base = `Mirror complete — downloaded ${result.downloaded}, deleted ${result.deleted}` +
-        (result.skipped ? `, skipped ${result.skipped}` : '') +
-        (result.errors.length ? `, errors ${result.errors.length}` : '') + '.';
-      // Mobile has no progress UI, so the completion Notice is the only feedback (FR-013). Desktop
-      // shows it too; the sync status dialog already reflects StateDB going forward.
-      new Notice(result.errors.length ? `⚠️ ${base}` : `✅ ${base}`, result.errors.length ? 8000 : 5000);
+      // Progress + result are surfaced by the sync engine through the SAME status-bar surface as a
+      // normal "Sync now": a live progress bar on desktop and a single "🔄 Syncing… N/total" → result
+      // toast on mobile (driven inside applyRemoteMirror via setStatus/setProgress/setSyncComplete).
+      await engine.applyRemoteMirror(plan);
     } catch (err) {
       new Notice(`❌ Mirror from remote failed: ${(err as Error).message}`, 8000);
     } finally {
