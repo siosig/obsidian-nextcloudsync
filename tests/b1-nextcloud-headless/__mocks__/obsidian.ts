@@ -1,6 +1,7 @@
 // E2E mock for the 'obsidian' module.
 // Identical surface to tests/__mocks__/obsidian.ts EXCEPT requestUrl is backed by
 // Node.js native fetch so the tests exercise a real Nextcloud server.
+import { load, dump } from 'js-yaml';
 
 export class Plugin {
   app: App;
@@ -201,3 +202,80 @@ export const Platform = {
   isIosApp: false,
   isAndroidApp: false,
 };
+
+// ── Feature 043: official frontmatter/YAML APIs the merge code depends on. Ported verbatim from the
+// a-layer double (tests/a-no-nextcloud/support/obsidian.ts) so b1 exercises the SAME merge behaviour
+// against a live server. Backed by js-yaml internally (test double only; production uses Obsidian's).
+
+/** Test double for Obsidian's `parseYaml`. Obsidian returns null for empty/whitespace input. */
+export function parseYaml(s: string): any {
+  if (s == null) return null;
+  if (s.trim() === '') return null;
+  return load(s);
+}
+
+/** Test double for Obsidian's `stringifyYaml`. `lineWidth: -1` disables folding for lossless round-trips. */
+export function stringifyYaml(obj: any): string {
+  return dump(obj, { lineWidth: -1 });
+}
+
+/** Mirror of Obsidian's `FrontMatterInfo` (obsidian.d.ts). */
+export interface FrontMatterInfo {
+  exists: boolean;
+  frontmatter: string;
+  from: number;
+  to: number;
+  contentStart: number;
+}
+
+/**
+ * Test double for Obsidian's `getFrontMatterInfo`. Recognizes a leading `---` fenced YAML block only
+ * (a `---` later in the body is a thematic break). CRLF and LF both accepted.
+ */
+export function getFrontMatterInfo(content: string): FrontMatterInfo {
+  const none: FrontMatterInfo = { exists: false, frontmatter: '', from: 0, to: 0, contentStart: 0 };
+  if (content == null) return none;
+  const open = /^---[^\S\r\n]*\r?\n/.exec(content);
+  if (!open) return none;
+  const from = open[0].length;
+  const rest = content.slice(from);
+  const immediate = /^---[^\S\r\n]*(?:\r?\n|$)/.exec(rest);
+  if (immediate) {
+    return { exists: true, frontmatter: '', from, to: from, contentStart: from + immediate[0].length };
+  }
+  const close = /\r?\n---[^\S\r\n]*(?:\r?\n|$)/.exec(rest);
+  if (!close) return none;
+  const to = from + close.index;
+  const contentStart = from + close.index + close[0].length;
+  return { exists: true, frontmatter: content.slice(from, to), from, to, contentStart };
+}
+
+/**
+ * Test double for Obsidian's `parseFrontMatterStringArray`. Normalizes a frontmatter value to a
+ * string array: scalars become one-element arrays, entries are stringified, trimmed, and a leading
+ * `#` (tag sigil) is stripped. Returns null when the key is absent/null. Duplicates preserved.
+ */
+export function parseFrontMatterStringArray(frontmatter: any, key: string | RegExp): string[] | null {
+  if (frontmatter == null || typeof frontmatter !== 'object') return null;
+  let value: any = null;
+  if (key instanceof RegExp) {
+    for (const k of Object.keys(frontmatter)) {
+      if (key.test(k)) { value = frontmatter[k]; break; }
+    }
+  } else if (Object.prototype.hasOwnProperty.call(frontmatter, key)) {
+    value = frontmatter[key];
+  }
+  if (value == null) return null;
+  const items = Array.isArray(value) ? value : [value];
+  const out: string[] = [];
+  for (const item of items) {
+    if (item == null) continue;
+    let s: string;
+    if (typeof item === 'string') s = item;
+    else if (typeof item === 'number' || typeof item === 'boolean') s = String(item);
+    else continue;
+    s = s.trim().replace(/^#/, '');
+    if (s.length > 0) out.push(s);
+  }
+  return out;
+}

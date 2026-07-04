@@ -1,10 +1,9 @@
+import { getFrontMatterInfo } from 'obsidian';
 import { MergeContext, MergeResult } from '../../types';
 import { IMergeStrategy } from './IMergeStrategy';
 import { ReconcileTextStrategy } from './ReconcileTextStrategy';
 import { Diff3Strategy } from './Diff3Strategy';
 import { FrontmatterMergeStrategy } from './FrontmatterMergeStrategy';
-
-const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
 
 interface MergeEngineOptions {
   maxConflictRegions: number;
@@ -32,27 +31,23 @@ export class MergeEngine {
     const { frontmatter: remoteFm, body: remoteBody } = this.splitFrontmatter(remote);
     const { frontmatter: baseFm, body: baseBody } = this.splitFrontmatter(base);
 
-    // 2. Resolve the frontmatter.
+    // 2. Resolve the frontmatter. Feature 043: frontmatter is resolved STRUCTURALLY and is NEVER
+    // text-diffed — the diff3 fallbackStrategy is used only for the body below, so no conflict-marker
+    // line can ever appear inside a `---` block ([HFM-9]).
     let mergedFm: string;
     if (localFm === remoteFm) {
       mergedFm = localFm; // identical on both sides
     } else {
-      // Attempt semantic union merge (feature 040): array fields union-merge, scalars 3-way resolve.
-      // Falls back to diff3 when the YAML cannot be parsed (e.g. malformed frontmatter).
+      // Semantic 3-way merge (feature 040, hardened by 043): list fields base-aware set-merge, scalars
+      // 3-way resolve. `success:false` means a side is unparseable / no frontmatter — it is NOT a signal
+      // to diff-text the frontmatter.
       const fmSemantic = this.fmStrategy.merge(baseFm, localFm, remoteFm, ctx);
       if (fmSemantic.success) {
         mergedFm = fmSemantic.frontmatter;
       } else {
-        // Semantic merge not applicable → try line-level diff3.
-        // Accept only a clean (zero-conflict) diff3 result; any conflict means the whole file fails.
-        const fmResult = this.fallbackStrategy.merge(baseFm, localFm, remoteFm);
-        if (fmResult.success && fmResult.conflictRegions === 0) {
-          mergedFm = fmResult.mergedContent;
-        } else {
-          // Cannot reconcile diverging frontmatter → the whole file is a conflict (feature 037, FR-005):
-          // the caller embeds conflict markers for text, or holds a non-text file untouched (FR-005a).
-          return { success: false, mergedContent: local, hadConflicts: true, conflictRegions: -1 };
-        }
+        // [HFM-9][HFM-10] Unparseable side → pick ONE whole side's frontmatter per the scalar policy
+        // (feature 043, D3). NEVER invoke the diff3 fallback on frontmatter text.
+        mergedFm = this.pickWholeSide(localFm, remoteFm, ctx);
       }
     }
 
@@ -151,10 +146,33 @@ export class MergeEngine {
     };
   }
 
+  /**
+   * Split a note into its frontmatter block and body using Obsidian's own `getFrontMatterInfo`
+   * ([HFM-8]): only a leading `---` fence is treated as frontmatter, so a `---` thematic break in the
+   * body is never mistaken for a delimiter, and CRLF / trailing-space fences are tolerated. The
+   * frontmatter is returned as a normalized `---\n<inner>\n---` block (LF, trimmed fences) so equal
+   * frontmatter on both sides compares equal even when the raw serialization differed.
+   */
   private splitFrontmatter(content: string): { frontmatter: string; body: string } {
-    const m = content.match(FRONTMATTER_RE);
-    if (!m) return { frontmatter: '', body: content };
-    return { frontmatter: m[0], body: content.slice(m[0].length).trimStart() };
+    const info = getFrontMatterInfo(content);
+    if (!info.exists) return { frontmatter: '', body: content };
+    const frontmatter = `---\n${info.frontmatter}\n---`;
+    return { frontmatter, body: content.slice(info.contentStart).trimStart() };
+  }
+
+  /**
+   * Feature 043 (D3, [HFM-10]): when the two frontmatter sides cannot be merged structurally (a side is
+   * unparseable), pick ONE whole side's frontmatter block per the scalar conflict policy — `local-win`
+   * / `remote-win` take that side, `latest-mtime` (the default) takes the side with the newer file
+   * mtime (remote on tie). The frontmatter is taken verbatim, so no conflict-marker line is ever added.
+   */
+  private pickWholeSide(localFm: string, remoteFm: string, ctx?: MergeContext): string {
+    const policy = ctx?.frontmatterScalarPolicy ?? 'latest-mtime';
+    if (policy === 'local-win') return localFm;
+    if (policy === 'remote-win') return remoteFm;
+    const localMtime = ctx?.localMtime ?? 0;
+    const remoteMtime = ctx?.remoteMtime ?? 0;
+    return localMtime > remoteMtime ? localFm : remoteFm;
   }
 }
 
