@@ -397,4 +397,12 @@ export const CLAUSES: Clause[] = [
   { id: 'MIR-B1-1', source: 'specs/045-remote-mirror-pull (live: mass local-only download+delete not halted by the breaker; vault ends equal to the remote)', layer: 'b-1', waiver: 'deferred b-1 end-to-end stub (it.skip): needs a live Nextcloud; validated manually via quickstart until executed' },
   { id: 'MIR-B1-2', source: 'specs/045-remote-mirror-pull (live: local-only folder deletion incl. empty, child→parent; listing-failure gate performs zero deletions)', layer: 'b-1', waiver: 'deferred b-1 end-to-end stub (it.skip): needs a live Nextcloud; validated manually via quickstart until executed' },
   { id: 'MIR-B1-3', source: 'specs/045-remote-mirror-pull (live: the sync immediately after a mirror converges with zero upload/download/delete — self-healing)', layer: 'b-1', waiver: 'deferred b-1 end-to-end stub (it.skip): needs a live Nextcloud; validated manually via quickstart until executed' },
+  // Feature 046 (watch-mode folder propagation): with "Sync on file change" on, folder create/delete/
+  // rename propagate to the remote immediately (MKCOL / trashbin delete / MOVE), mirroring the file
+  // path. Status bar reflects the immediate propagation. File path is unchanged (non-regression).
+  { id: 'WF-1', source: 'specs/046-watch-folder-propagation/spec.md (FR-001/005/006/008: createSingleFolder MKCOL, idempotent, exclusions honored; status-bar activity)', layer: 'a' },
+  { id: 'WF-2', source: 'specs/046-watch-folder-propagation/spec.md (FR-002: deleteSingleFolder — tracked-only, trashbin/recoverable, untracked no-op, exclusions honored)', layer: 'a' },
+  { id: 'WF-3', source: 'specs/046-watch-folder-propagation/spec.md (FR-003/010: renameSingleFolder MOVE, retarget tracking, exclusions honored)', layer: 'a' },
+  { id: 'WF-B1-1', source: 'specs/046-watch-folder-propagation (live: folder create/delete/rename propagate immediately as MKCOL/collection-delete/MOVE)', layer: 'b-1', waiver: 'deferred b-1 end-to-end stub (it.skip): needs a live Nextcloud; validated manually via quickstart until executed' },
+  { id: 'WF-B1-2', source: 'specs/046-watch-folder-propagation (live: after an immediate folder-op failure, the next full sync converges remote==local — self-healing)', layer: 'b-1', waiver: 'deferred b-1 end-to-end stub (it.skip): needs a live Nextcloud; validated manually via quickstart until executed' },
 ];
