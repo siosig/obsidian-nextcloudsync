@@ -110,7 +110,15 @@ export class LocalAdapter {
 
   private async ensureParentDir(filePath: string): Promise<void> {
     const lastSlash = filePath.lastIndexOf('/');
-    if (lastSlash > 0) await this.adapter.mkdir(filePath.slice(0, lastSlash));
+    if (lastSlash > 0) {
+      const dir = filePath.slice(0, lastSlash);
+      // Feature 046: mark the parent folder as our own write BEFORE creating it, so watch mode does
+      // not pick up the resulting folder-create event and propagate a spurious MKCOL back to the
+      // server (the folder already exists remotely — that is where the download came from). The
+      // idempotent createSingleFolder is a second safety net if a deeper ancestor is missed here.
+      this.ignore(dir);
+      await this.adapter.mkdir(dir);
+    }
   }
 
   /** Atomically write text content: write to tmp → remove existing → rename. */

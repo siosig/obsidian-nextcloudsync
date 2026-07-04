@@ -248,7 +248,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
       .setName('Sync on file change')
       .setDesc(Platform.isMobile
         ? 'Disabled on mobile (the OS suspends background work). Use "Sync on startup" or "Sync now".'
-        : 'Immediately sync when a local Markdown file is modified (a short delay after you stop editing). Works alongside the periodic sync interval.')
+        : 'Immediately sync a file or folder right after you create, edit, delete, or rename it (a short delay after you stop editing a file). Deletions and renames propagate too. Works alongside the periodic sync interval. Desktop only.')
       .setTooltip(TOOLTIPS.syncOnFileChange)
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.watchOnChangeEnabled && !Platform.isMobile)
