@@ -159,6 +159,73 @@ function makeRecordingEngine(perPath: Record<string, RecordingEngineConfig> = {}
   return { engine, calls };
 }
 
+// Feature 044: when the engine exposes a clean-side snapshot for a path, force-resolution must recover
+// from it (applyCleanRemote/applyCleanLocal) instead of the current-content pull/push; Latest/Biggest
+// dispatch by the snapshot metrics. When no snapshot exists, every choice falls back to the legacy
+// pull/push behavior (proven by all the FRC-* tests above, whose fake has none of these methods).
+function makeSnapshotEngine(
+  metrics: { localMtime: number; remoteMtime: number; localSize: number; remoteSize: number } | null,
+) {
+  const calls: string[] = [];
+  const engine: CompareEngine = {
+    async compareWithRemote(path: string): Promise<RemoteCompareResult> {
+      calls.push('compare');
+      return {
+        path, state: 'ok', localExists: true, remoteExists: true,
+        localMtime: 9999, remoteMtime: 9999, localChecksum: 'a', remoteChecksum: 'b',
+        checksumMatch: false, localText: null, remoteText: null, diffAvailable: false,
+        localSize: 9999, remoteSize: 9999,
+      };
+    },
+    async pushLocalToRemote(): Promise<void> { calls.push('push'); },
+    async pullRemoteToLocal(): Promise<void> { calls.push('pull'); },
+    cleanSideMetrics: () => metrics,
+    async applyCleanRemote(): Promise<void> { calls.push('applyCleanRemote'); },
+    async applyCleanLocal(): Promise<void> { calls.push('applyCleanLocal'); },
+  };
+  return { engine, calls };
+}
+
+describe('forceResolution — clean-side snapshot recovery (feature 044)', () => {
+  const M = { localMtime: 3000, remoteMtime: 1000, localSize: 200, remoteSize: 100 };
+
+  it('[SPEC:CSS-2] remote → recover the clean remote (not a plain pull) when a snapshot exists', async () => {
+    const { engine, calls } = makeSnapshotEngine(M);
+    expect(await applyForceResolution(engine, 'n.md', 'remote')).toBe('applied');
+    expect(calls).toEqual(['applyCleanRemote']);
+  });
+
+  it('[SPEC:CSS-2] local → recover the clean local (not a plain push) when a snapshot exists', async () => {
+    const { engine, calls } = makeSnapshotEngine(M);
+    expect(await applyForceResolution(engine, 'n.md', 'local')).toBe('applied');
+    expect(calls).toEqual(['applyCleanLocal']);
+  });
+
+  it('[SPEC:CSS-3] latest dispatches by SNAPSHOT metrics (local newer → clean local), no compare call', async () => {
+    const { engine, calls } = makeSnapshotEngine(M); // localMtime 3000 > remoteMtime 1000
+    expect(await applyForceResolution(engine, 'n.md', 'latest')).toBe('applied');
+    expect(calls).toEqual(['applyCleanLocal']); // NOT ['compare', ...] — the snapshot metrics win
+  });
+
+  it('[SPEC:CSS-3] biggest dispatches by SNAPSHOT metrics (remote bigger → clean remote)', async () => {
+    const { engine, calls } = makeSnapshotEngine({ localMtime: 0, remoteMtime: 0, localSize: 100, remoteSize: 200 });
+    expect(await applyForceResolution(engine, 'n.md', 'biggest')).toBe('applied');
+    expect(calls).toEqual(['applyCleanRemote']);
+  });
+
+  it('[SPEC:CSS-3] equal snapshot metric → no-op (no recovery, no overwrite)', async () => {
+    const { engine, calls } = makeSnapshotEngine({ localMtime: 5, remoteMtime: 5, localSize: 5, remoteSize: 5 });
+    expect(await applyForceResolution(engine, 'n.md', 'latest')).toBe('noop');
+    expect(calls).toEqual([]);
+  });
+
+  it('[SPEC:CSS-5] no snapshot (metrics null) → legacy pull/push fallback', async () => {
+    const { engine, calls } = makeSnapshotEngine(null);
+    expect(await applyForceResolution(engine, 'n.md', 'remote')).toBe('applied');
+    expect(calls).toEqual(['pull']); // falls back to the current-content pull, never applyCleanRemote
+  });
+});
+
 describe('forceResolution — bulk', () => {
   it('[SPEC:BRC-5] empty paths → {0,0,0}, engine untouched', async () => {
     const { engine, calls } = makeEngine();
