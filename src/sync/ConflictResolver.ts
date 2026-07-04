@@ -171,8 +171,12 @@ export class ConflictResolver {
     if (result.success && !result.hadConflicts) {
       return { action: 'write', content: result.mergedContent, clean: true };
     }
-    // Merge refused (diverging frontmatter) or the expansion guard fired (FR-005b): the reconcile
-    // result is untrustworthy, so write full-file conflict markers for the user to resolve (FR-005).
+    // Full-file conflict markers for the user to resolve (FR-005). Feature 043: this branch is now
+    // reached ONLY for a BODY-level conflict or the body expansion guard (FR-005b). Frontmatter never
+    // routes here — MergeEngine resolves every `---` block structurally (semantic merge) or by a
+    // whole-side pick ([HFM-9]/[HFM-10]), so `buildMarkerContent` cannot bury a frontmatter block
+    // inside markers (which previously seeded the nested-marker corruption; see
+    // specs/043-harden-frontmatter-merge/research.md §1).
     return { action: 'write', content: this.buildMarkerContent(local, remote), clean: false };
   }
 

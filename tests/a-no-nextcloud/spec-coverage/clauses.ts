@@ -31,6 +31,13 @@ const SF_AGG = 'sync-folder subcategory aggregated under CG/SF-1; dedicated spli
 // via the skipped test's title — the coverage scanner now ignores skipped-test traceability.
 const DEFER_HARNESS = 'b-1 e2e deferred (it.skip) — engine-level, needs a SyncEngine harness';
 const DEFER_SERVER = 'b-1 e2e deferred (it.skip) — cannot force the required live-server condition from a test';
+// spec 042 (bulk conflict resolution): jest runs with testEnvironment: 'node' (no `document`, no real
+// Modal/Setting instantiation — same constraint as SNI-5/SNI-6 and the FRC UI clauses), so
+// SyncStatusModal DOM rendering + main.ts host-wiring clauses are waived to the b-2 UI layer /
+// quickstart manual check; the pure batch-logic core they depend on is covered by BRC-1..7/9.
+const BRC_DOM =
+  'DOM/host wiring verified via quickstart manual check (specs/042-bulk-resolve-conflicts/quickstart.md); ' +
+  'batch logic core covered by BRC-1..7,9 (forceResolution.test.ts, layer a)';
 
 export const CLAUSES: Clause[] = [
   // --- CN: connection/auth ---
@@ -263,6 +270,35 @@ export const CLAUSES: Clause[] = [
   { id: 'FRC-4', source: 'specs/041-orphan-marker-selfheal-force-resolve (biggest size → bigger side wins via push/pull)', layer: 'a' },
   { id: 'FRC-5', source: 'specs/041-orphan-marker-selfheal-force-resolve (tie equal mtime/size → no-op, no notice)', layer: 'a' },
   { id: 'FRC-6', source: 'specs/041-orphan-marker-selfheal-force-resolve (overwrite failure propagates → file stays conflicted)', layer: 'a' },
+  // --- BRC: bulk conflict resolution from the status dialog (spec 042, contracts/bulk-resolve.md) ---
+  // BRC-1..7 and BRC-9 are the pure `applyBulkForceResolution` fan-out (src/ui/forceResolution.ts),
+  // verified directly at layer a (forceResolution.test.ts, tagged [SPEC:BRC-*]). BRC-8/10..21 are
+  // SyncStatusModal DOM rendering + main.ts host wiring (see BRC_DOM above), waived to the b-2 UI
+  // layer / quickstart manual check.
+  { id: 'BRC-1', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-005 / SC-003: bulk outcome === per-file outcome)', layer: 'a' },
+  { id: 'BRC-2', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-013: sequential processing, paths order)', layer: 'a' },
+  { id: 'BRC-3', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-013 / SC-004: per-file rejection caught, batch continues)', layer: 'a' },
+  { id: 'BRC-4', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (resolved+noop+failed === paths.length invariant)', layer: 'a' },
+  { id: 'BRC-5', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (edge: empty paths list → {0,0,0}, engine untouched)', layer: 'a' },
+  { id: 'BRC-6', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (edge: N=1 tallies into a single bucket)', layer: 'a' },
+  { id: 'BRC-7', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-009: batch promise never rejects)', layer: 'a' },
+  { id: 'BRC-8', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-001 / mockup: bulk row placed after heading+description, before per-file list)', layer: 'a', waiver: BRC_DOM },
+  // BRC-9's DOM row-label count (FR-004/SC-002) is a rendering concern (waived, see BRC_DOM), but its
+  // "count = the filtered target set, not an arbitrary set" invariant is exercised directly by the
+  // tagged forceResolution.test.ts case (filterReport-derived subset drives applyBulkForceResolution).
+  { id: 'BRC-9', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-004 / SC-002: count === filtered.conflictedFiles.length)', layer: 'a' },
+  { id: 'BRC-10', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-002: bulk dropdown iterates the same FORCE_CHOICES array as the per-file dropdown)', layer: 'a', waiver: 'single-source-of-truth verified by "FORCE_CHOICES lists the four options in order" (forceResolution.test.ts); DOM iteration itself is ' + BRC_DOM },
+  { id: 'BRC-11', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-003 / mockup: mod-warning button + ncs-bulk-conflict-row container)', layer: 'a', waiver: BRC_DOM },
+  { id: 'BRC-12', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-010: bulk row rendered only when onBulkForceResolve is provided — capability gate)', layer: 'a', waiver: BRC_DOM },
+  { id: 'BRC-13', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-006: per-file rows/controls unchanged alongside the bulk row)', layer: 'a', waiver: BRC_DOM },
+  { id: 'BRC-14', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (edge: N=0 never renders the bulk row, addConflictSection early-return)', layer: 'a', waiver: BRC_DOM },
+  { id: 'BRC-15', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-011: click guard — disabled button no-ops, else disable then invoke callback)', layer: 'a', waiver: BRC_DOM },
+  { id: 'BRC-16', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-008 / FR-009: re-render on settle, click handler never throws)', layer: 'a', waiver: BRC_DOM },
+  { id: 'BRC-17', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-012: confirmModal destructive:true reused; decline/dismiss touches no file)', layer: 'a', waiver: BRC_DOM },
+  { id: 'BRC-18', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-012 / Key Entities: confirm message states count N + action, not limited to last sync)', layer: 'a', waiver: BRC_DOM },
+  { id: 'BRC-19', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-014: exactly one aggregate Notice after the batch, never one per file)', layer: 'a', waiver: BRC_DOM },
+  { id: 'BRC-20', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-007: engine loop iterates only the filtered paths set)', layer: 'a', waiver: BRC_DOM },
+  { id: 'BRC-21', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (SC-006 / FR-006: existing per-file onForceResolve wiring unchanged — no regression to feature 041)', layer: 'a', waiver: BRC_DOM },
   // --- TN: atomic-write temp-file naming under the 255-byte NAME_MAX (spec 026) ---
   { id: 'TN-1', source: 'specs/main/spec.md §9 (final name ≤255B always writes; temp suffix length not leaked)', layer: 'a' },
   { id: 'TN-2', source: 'specs/main/spec.md §9 (temp name length independent of target name length)', layer: 'a' },
@@ -299,4 +335,56 @@ export const CLAUSES: Clause[] = [
   { id: 'SLD-6', source: 'specs/main/spec.md §15.1-slider (desktop mockup mirrors SLIDER_LIMITS)', layer: 'a' },
   { id: 'SLD-7', source: 'specs/main/spec.md §15.1-slider (startup-delay 0 = off folds the toggle; migrateStartupToggleToDelay converges saved state)', layer: 'a' },
   { id: 'SLD-8', source: 'specs/main/spec.md §15.1-slider (networkConcurrency 0 floors to effective 1 at consumers)', layer: 'a' },
+  // Feature 043 (harden frontmatter merge): the frontmatter path is resolved STRUCTURALLY through
+  // Obsidian's official getFrontMatterInfo / parseYaml / stringifyYaml / parseFrontMatterStringArray
+  // — conflict-marker lines NEVER enter a `---` block, and list fields merge as a base-aware 3-way SET
+  // so deletions propagate (server-rewrite case) and near-duplicate spellings collapse to one entry.
+  { id: 'HFM-1', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-004: parse/serialize via parseYaml/stringifyYaml; production no longer imports raw js-yaml)', layer: 'a' },
+  { id: 'HFM-2', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-006: base-aware SET 3-way — agree→that, disagree→side≠base, both/one-side delete→absent, adds kept)', layer: 'a' },
+  { id: 'HFM-3', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-007: no base → deduplicated union, adds preserved, deletions undetectable)', layer: 'a' },
+  { id: 'HFM-4', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-008: items normalized via parseFrontMatterStringArray, #tag/tag/whitespace collapse to one)', layer: 'a' },
+  { id: 'HFM-5', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-006: stable order base-first-then-additions, deterministic, no mtime dependence for arrays)', layer: 'a' },
+  { id: 'HFM-6', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-009: scalar conflicts via existing frontmatterScalarConflictPolicy; nested objects stay opaque scalars)', layer: 'a' },
+  { id: 'HFM-7', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-005: unparseable side → merge returns success:false, never partial frontmatter with marker lines)', layer: 'a' },
+  { id: 'HFM-8', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-003: split via getFrontMatterInfo — body --- break not mistaken for delimiter, CRLF tolerated)', layer: 'a' },
+  { id: 'HFM-9', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-001: diff3 fallback NEVER invoked on frontmatter text — zero marker lines in a --- block)', layer: 'a' },
+  { id: 'HFM-10', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-005: unparseable side → whole-side pick per scalar policy, latest-mtime/remote-win/local-win)', layer: 'a' },
+  { id: 'HFM-11', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-002: nested-marker backstop still holds; combined with HFM-9 markers cannot originate in frontmatter)', layer: 'a' },
+  // HFM-12 (FR-010) is a regression meta-clause: the refactor must not change body merge, deterministic
+  // strategies, re-entrancy/self-heal, or clean auto-merge. It is verified by the pre-existing
+  // merge/marker/base corpus (feature 038/039/040/041 clauses MB-*/CF-*, plus the untagged
+  // clean-merge/body tests in mergeEngine.test.ts) staying green — not by a single new assertion.
+  { id: 'HFM-12', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-010: no behavioural regression to body merge/strategies/self-heal)', layer: 'a', waiver: 'regression meta-clause; guaranteed by the pre-existing merge/marker/base corpus staying green under the refactor, not by a dedicated new test' },
+  { id: 'HFM-13', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-011: merged note converges — re-merge yields identical frontmatter, no marker growth, no array growth)', layer: 'a' },
+  { id: 'HFM-14', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (layer-a Obsidian double: getFrontMatterInfo/parseYaml/stringifyYaml/parseFrontMatterStringArray per documented semantics)', layer: 'a' },
+  // Feature 043 live multi-device situations (real Docker Nextcloud, pnpm test:b1). The two scenarios
+  // the user asked to cover end-to-end: (1) two devices edit the same note's frontmatter; (2) a
+  // server-side program rewrites the remote frontmatter out of band (the reported real bug).
+  { id: 'FM-B1-1', source: 'specs/043-harden-frontmatter-merge (D deletes+adds a tag / M adds a tag → base-aware set merge: deletion propagates, both adds kept, no frontmatter marker, converges)', layer: 'b-1' },
+  { id: 'FM-B1-2', source: 'specs/043-harden-frontmatter-merge (D and M change the same scalar → existing frontmatterScalarConflictPolicy decides one winner, no marker)', layer: 'b-1' },
+  { id: 'FM-B1-3', source: 'specs/043-harden-frontmatter-merge (server rewrites tags [t1,t2,t3]→[t2,t3,t4] out of band, local drifted → set merge deletes t1, no union resurrection)', layer: 'b-1' },
+  { id: 'FM-B1-4', source: 'specs/043-harden-frontmatter-merge (server rewrite with CRLF + trailing-space fences → getFrontMatterInfo split → no marker inside frontmatter)', layer: 'b-1' },
+  { id: 'FM-B1-5', source: 'specs/043-harden-frontmatter-merge (after a set merge, repeated no-edit syncs converge — no churn, no marker growth, no tag growth)', layer: 'b-1' },
+  // Feature 044 (conflict clean-side snapshot): capture both clean sides at marker-conflict time so
+  // force-resolution ("Use remote"/"Use local"/Latest/Biggest) recovers a REAL clean version instead
+  // of the marker-corrupted current content. Internal store, no new user setting.
+  { id: 'CSS-1', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-001: capture both clean sides before a marker write overwrites them)', layer: 'a' },
+  { id: 'CSS-2', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-002: Use remote/local restore the captured clean remote/local, not current marker content)', layer: 'a' },
+  { id: 'CSS-3', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-003: Latest/Biggest dispatch by snapshot metrics; equal metric → no-op)', layer: 'a' },
+  { id: 'CSS-4', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-004: after recovery note is marker-free, both sides converge, flag clears only when clean)', layer: 'a' },
+  { id: 'CSS-5', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-005: no snapshot → fall back to current pull/push, never error)', layer: 'a' },
+  { id: 'CSS-6', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-006: snapshot dropped at every convergence/resolution point — no leak)', layer: 'a' },
+  { id: 'CSS-7', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-007: no user-facing setting; DEFAULT_SETTINGS gains no key)', layer: 'a' },
+  { id: 'CSS-8', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-008: at rest, snapshot count == currently marker-conflicted file count)', layer: 'a' },
+  // CSS-9 (FR-009) is a regression meta-clause: no behavioural change to body merge, clean auto-merge,
+  // marker self-heal, deterministic strategies, safe-hold, or size holds. Guaranteed by the pre-existing
+  // conflict/merge/force-resolution corpus (CSF-*/MM-*/OM-*/FRC-*/MB-*) staying green under the change.
+  { id: 'CSS-9', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-009: no regression to existing conflict/merge/force-resolution behavior)', layer: 'a', waiver: 'regression meta-clause; guaranteed by the pre-existing conflict/merge/force-resolution corpus staying green under the change, not by a dedicated new test' },
+  { id: 'CSS-10', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-010: persist to disk, survive restart — save→load round-trip)', layer: 'a' },
+  { id: 'CSS-11', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-011: a repeat marker conflict overwrites the snapshot with the two most recent clean sides)', layer: 'a' },
+  { id: 'CSS-12', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-012: capture only on the marker-write path; safe-hold/size-hold/clean-merge/deterministic capture nothing)', layer: 'a' },
+  { id: 'CSS-13', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (CleanSideStore: atomic tmp→rename, debounce, flush, corrupt→empty)', layer: 'a' },
+  { id: 'CSS-B1-1', source: 'specs/044-conflict-clean-snapshot (live 2-device: marker conflict → Use remote recovers clean remote, both converge)', layer: 'b-1' },
+  { id: 'CSS-B1-2', source: 'specs/044-conflict-clean-snapshot (live 2-device: marker conflict → Use local recovers clean local, both converge)', layer: 'b-1' },
+  { id: 'CSS-B1-3', source: 'specs/044-conflict-clean-snapshot (live: after recovery, a further no-edit sync converges — no marker growth, no snapshot leak)', layer: 'b-1' },
 ];

@@ -56,6 +56,28 @@ export interface MergeContext {
   remoteMtime: number;
 }
 
+/**
+ * Feature 044: the two CLEAN versions of a note captured at the moment a marker conflict is detected,
+ * before `resolveByWrite` overwrites either side with conflict-marker content. Stored per-path in
+ * CleanSideStore so force-resolution ("Use remote" / "Use local" / "Latest" / "Biggest") recovers a
+ * real clean version instead of the marker-corrupted current content. Distinct from the feature-038
+ * merge base (which holds ONE last-converged body, i.e. neither current side).
+ */
+export interface CleanSideSnapshot {
+  /** Clean LOCAL body (the user's pre-merge edit), captured before markers overwrote it. */
+  local: string;
+  /** Clean REMOTE body (downloaded during conflict handling), before markers were uploaded. */
+  remote: string;
+  /** Local file mtime at conflict time (ms) — discriminator for the "Latest modified" choice. */
+  localMtime: number;
+  /** Remote lastModified at conflict time (ms) — discriminator for "Latest modified". */
+  remoteMtime: number;
+  /** Clean local body size in bytes — discriminator for the "Biggest size" choice. */
+  localSize: number;
+  /** Clean remote body size in bytes — discriminator for "Biggest size". */
+  remoteSize: number;
+}
+
 export interface DavSyncSettings {
   serverUrl: string;
   username: string;
