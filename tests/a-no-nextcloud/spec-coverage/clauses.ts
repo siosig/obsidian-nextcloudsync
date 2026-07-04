@@ -335,4 +335,56 @@ export const CLAUSES: Clause[] = [
   { id: 'SLD-6', source: 'specs/main/spec.md §15.1-slider (desktop mockup mirrors SLIDER_LIMITS)', layer: 'a' },
   { id: 'SLD-7', source: 'specs/main/spec.md §15.1-slider (startup-delay 0 = off folds the toggle; migrateStartupToggleToDelay converges saved state)', layer: 'a' },
   { id: 'SLD-8', source: 'specs/main/spec.md §15.1-slider (networkConcurrency 0 floors to effective 1 at consumers)', layer: 'a' },
+  // Feature 043 (harden frontmatter merge): the frontmatter path is resolved STRUCTURALLY through
+  // Obsidian's official getFrontMatterInfo / parseYaml / stringifyYaml / parseFrontMatterStringArray
+  // — conflict-marker lines NEVER enter a `---` block, and list fields merge as a base-aware 3-way SET
+  // so deletions propagate (server-rewrite case) and near-duplicate spellings collapse to one entry.
+  { id: 'HFM-1', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-004: parse/serialize via parseYaml/stringifyYaml; production no longer imports raw js-yaml)', layer: 'a' },
+  { id: 'HFM-2', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-006: base-aware SET 3-way — agree→that, disagree→side≠base, both/one-side delete→absent, adds kept)', layer: 'a' },
+  { id: 'HFM-3', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-007: no base → deduplicated union, adds preserved, deletions undetectable)', layer: 'a' },
+  { id: 'HFM-4', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-008: items normalized via parseFrontMatterStringArray, #tag/tag/whitespace collapse to one)', layer: 'a' },
+  { id: 'HFM-5', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-006: stable order base-first-then-additions, deterministic, no mtime dependence for arrays)', layer: 'a' },
+  { id: 'HFM-6', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-009: scalar conflicts via existing frontmatterScalarConflictPolicy; nested objects stay opaque scalars)', layer: 'a' },
+  { id: 'HFM-7', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-005: unparseable side → merge returns success:false, never partial frontmatter with marker lines)', layer: 'a' },
+  { id: 'HFM-8', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-003: split via getFrontMatterInfo — body --- break not mistaken for delimiter, CRLF tolerated)', layer: 'a' },
+  { id: 'HFM-9', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-001: diff3 fallback NEVER invoked on frontmatter text — zero marker lines in a --- block)', layer: 'a' },
+  { id: 'HFM-10', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-005: unparseable side → whole-side pick per scalar policy, latest-mtime/remote-win/local-win)', layer: 'a' },
+  { id: 'HFM-11', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-002: nested-marker backstop still holds; combined with HFM-9 markers cannot originate in frontmatter)', layer: 'a' },
+  // HFM-12 (FR-010) is a regression meta-clause: the refactor must not change body merge, deterministic
+  // strategies, re-entrancy/self-heal, or clean auto-merge. It is verified by the pre-existing
+  // merge/marker/base corpus (feature 038/039/040/041 clauses MB-*/CF-*, plus the untagged
+  // clean-merge/body tests in mergeEngine.test.ts) staying green — not by a single new assertion.
+  { id: 'HFM-12', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-010: no behavioural regression to body merge/strategies/self-heal)', layer: 'a', waiver: 'regression meta-clause; guaranteed by the pre-existing merge/marker/base corpus staying green under the refactor, not by a dedicated new test' },
+  { id: 'HFM-13', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-011: merged note converges — re-merge yields identical frontmatter, no marker growth, no array growth)', layer: 'a' },
+  { id: 'HFM-14', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (layer-a Obsidian double: getFrontMatterInfo/parseYaml/stringifyYaml/parseFrontMatterStringArray per documented semantics)', layer: 'a' },
+  // Feature 043 live multi-device situations (real Docker Nextcloud, pnpm test:b1). The two scenarios
+  // the user asked to cover end-to-end: (1) two devices edit the same note's frontmatter; (2) a
+  // server-side program rewrites the remote frontmatter out of band (the reported real bug).
+  { id: 'FM-B1-1', source: 'specs/043-harden-frontmatter-merge (D deletes+adds a tag / M adds a tag → base-aware set merge: deletion propagates, both adds kept, no frontmatter marker, converges)', layer: 'b-1' },
+  { id: 'FM-B1-2', source: 'specs/043-harden-frontmatter-merge (D and M change the same scalar → existing frontmatterScalarConflictPolicy decides one winner, no marker)', layer: 'b-1' },
+  { id: 'FM-B1-3', source: 'specs/043-harden-frontmatter-merge (server rewrites tags [t1,t2,t3]→[t2,t3,t4] out of band, local drifted → set merge deletes t1, no union resurrection)', layer: 'b-1' },
+  { id: 'FM-B1-4', source: 'specs/043-harden-frontmatter-merge (server rewrite with CRLF + trailing-space fences → getFrontMatterInfo split → no marker inside frontmatter)', layer: 'b-1' },
+  { id: 'FM-B1-5', source: 'specs/043-harden-frontmatter-merge (after a set merge, repeated no-edit syncs converge — no churn, no marker growth, no tag growth)', layer: 'b-1' },
+  // Feature 044 (conflict clean-side snapshot): capture both clean sides at marker-conflict time so
+  // force-resolution ("Use remote"/"Use local"/Latest/Biggest) recovers a REAL clean version instead
+  // of the marker-corrupted current content. Internal store, no new user setting.
+  { id: 'CSS-1', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-001: capture both clean sides before a marker write overwrites them)', layer: 'a' },
+  { id: 'CSS-2', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-002: Use remote/local restore the captured clean remote/local, not current marker content)', layer: 'a' },
+  { id: 'CSS-3', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-003: Latest/Biggest dispatch by snapshot metrics; equal metric → no-op)', layer: 'a' },
+  { id: 'CSS-4', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-004: after recovery note is marker-free, both sides converge, flag clears only when clean)', layer: 'a' },
+  { id: 'CSS-5', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-005: no snapshot → fall back to current pull/push, never error)', layer: 'a' },
+  { id: 'CSS-6', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-006: snapshot dropped at every convergence/resolution point — no leak)', layer: 'a' },
+  { id: 'CSS-7', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-007: no user-facing setting; DEFAULT_SETTINGS gains no key)', layer: 'a' },
+  { id: 'CSS-8', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-008: at rest, snapshot count == currently marker-conflicted file count)', layer: 'a' },
+  // CSS-9 (FR-009) is a regression meta-clause: no behavioural change to body merge, clean auto-merge,
+  // marker self-heal, deterministic strategies, safe-hold, or size holds. Guaranteed by the pre-existing
+  // conflict/merge/force-resolution corpus (CSF-*/MM-*/OM-*/FRC-*/MB-*) staying green under the change.
+  { id: 'CSS-9', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-009: no regression to existing conflict/merge/force-resolution behavior)', layer: 'a', waiver: 'regression meta-clause; guaranteed by the pre-existing conflict/merge/force-resolution corpus staying green under the change, not by a dedicated new test' },
+  { id: 'CSS-10', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-010: persist to disk, survive restart — save→load round-trip)', layer: 'a' },
+  { id: 'CSS-11', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-011: a repeat marker conflict overwrites the snapshot with the two most recent clean sides)', layer: 'a' },
+  { id: 'CSS-12', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-012: capture only on the marker-write path; safe-hold/size-hold/clean-merge/deterministic capture nothing)', layer: 'a' },
+  { id: 'CSS-13', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (CleanSideStore: atomic tmp→rename, debounce, flush, corrupt→empty)', layer: 'a' },
+  { id: 'CSS-B1-1', source: 'specs/044-conflict-clean-snapshot (live 2-device: marker conflict → Use remote recovers clean remote, both converge)', layer: 'b-1' },
+  { id: 'CSS-B1-2', source: 'specs/044-conflict-clean-snapshot (live 2-device: marker conflict → Use local recovers clean local, both converge)', layer: 'b-1' },
+  { id: 'CSS-B1-3', source: 'specs/044-conflict-clean-snapshot (live: after recovery, a further no-edit sync converges — no marker growth, no snapshot leak)', layer: 'b-1' },
 ];

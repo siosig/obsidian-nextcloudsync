@@ -1,22 +1,45 @@
-import { load, dump } from 'js-yaml';
+import { parseYaml, stringifyYaml, parseFrontMatterStringArray, getFrontMatterInfo } from 'obsidian';
 import { MergeContext } from '../../types';
 
 export interface FrontmatterMergeResult {
-  /** false = caller should fall back to diff3 (YAML parse failure or both sides have no frontmatter) */
+  /**
+   * false = the sides cannot be merged STRUCTURALLY (a side is unparseable, or neither side has
+   * frontmatter). Feature 043 (D3): this is NOT a signal to run a text diff — the caller picks ONE
+   * whole side's frontmatter per policy. `merge` never returns partial frontmatter with marker lines.
+   */
   success: boolean;
   /** Resolved frontmatter block including --- delimiters, e.g. "---\ntags:\n  - a\n---" */
   frontmatter: string;
 }
 
 /**
- * Semantic union merge for Obsidian frontmatter.
+ * Sentinel for a frontmatter side that cannot be parsed to a YAML mapping (parseYaml throws, or the
+ * document parses to a non-object such as a list or a bare scalar). Distinct from an EMPTY block,
+ * which parses to `{}`.
+ */
+const UNPARSEABLE = Symbol('unparseable-frontmatter');
+type ParsedFm = Record<string, unknown> | typeof UNPARSEABLE;
+
+/**
+ * Semantic 3-way merge for Obsidian frontmatter (feature 043 hardening of feature 040).
  *
- * Array fields (tags, aliases, related, …) are union-merged with deduplication.
- * Scalar fields resolve via 3-way comparison against the base:
- *   - Only one side changed → that side wins automatically.
- *   - Both sides changed to different values → apply ctx.frontmatterScalarPolicy (or 'remote-win' when ctx absent).
- * Nested YAML objects are treated as opaque scalars (option A from clarification).
- * Falls back (success: false) on YAML parse failure so the caller can use diff3 instead.
+ * Parsing/serialization go through Obsidian's own `parseYaml` / `stringifyYaml` (never the raw YAML lib),
+ * and list fields are normalized with `parseFrontMatterStringArray`, so `#tag`/`tag`, inline vs block
+ * lists, and whitespace variants collapse to one canonical entry ([HFM-1][HFM-4]).
+ *
+ * List fields (both sides a list) resolve with a base-aware SET 3-way ([HFM-2]): presence of each
+ * normalized item is binary, so a per-item disagreement between local and remote always means exactly
+ * one side changed relative to base — that side wins. Deletions therefore propagate, both-side deletes
+ * stay absent, and additions from either side are kept. With no base the algorithm degrades naturally
+ * to a deduplicated union ([HFM-3]) — nothing can be "deleted" against an empty base. Output order is
+ * stable (base order first, then additions) and deterministic, independent of mtime ([HFM-5]).
+ *
+ * Scalar fields resolve via the existing `resolveScalar` + `frontmatterScalarConflictPolicy` ([HFM-6]);
+ * nested YAML objects stay opaque scalars.
+ *
+ * A side that cannot be parsed to a mapping makes `merge` return `success:false` ([HFM-7]) so the
+ * caller (`MergeEngine`) picks a whole side — the frontmatter is NEVER text-diffed and NEVER carries
+ * conflict-marker lines.
  */
 export class FrontmatterMergeStrategy {
   merge(
@@ -29,40 +52,45 @@ export class FrontmatterMergeStrategy {
       return { success: false, frontmatter: '' };
     }
 
-    const baseData = this.parseFm(baseFm ?? '');
     const localData = this.parseFm(localFm);
     const remoteData = this.parseFm(remoteFm);
 
-    if (localData === null || remoteData === null) {
+    // Unparseable side → structural merge impossible; caller picks a whole side (never text-diffed).
+    if (localData === UNPARSEABLE || remoteData === UNPARSEABLE) {
       return { success: false, frontmatter: '' };
     }
 
-    const base = baseData ?? {};
+    // An unparseable base is not fatal — it only informs 3-way context, so treat it as "no base".
+    const baseParsed = this.parseFm(baseFm ?? '');
+    const base = baseParsed === UNPARSEABLE ? {} : baseParsed;
+
     const merged = this.buildMergedObject(base, localData, remoteData, ctx);
-    const frontmatter = this.serializeFm(merged);
-    return { success: true, frontmatter };
+    return { success: true, frontmatter: this.serializeFm(merged) };
   }
 
-  private parseFm(fm: string): Record<string, unknown> | null {
+  /**
+   * Parse a frontmatter block to a mapping via Obsidian's `parseYaml`. Accepts either a `---`-wrapped
+   * block (the shape `MergeEngine` passes) or bare inner YAML. Returns `{}` for an empty block,
+   * `UNPARSEABLE` when parsing throws or yields a non-mapping (list / scalar), and the mapping otherwise.
+   */
+  private parseFm(fm: string): ParsedFm {
     if (fm === '') return {};
+    const info = getFrontMatterInfo(fm);
+    const inner = info.exists ? info.frontmatter : fm;
+    if (inner.trim() === '') return {};
+    let parsed: unknown;
     try {
-      // fm is the raw block from splitFrontmatter, e.g. '---\nfoo: bar\n---'
-      // Extract the YAML content between the delimiters.
-      const match = fm.match(/^---\r?\n([\s\S]*?)\r?\n---$/);
-      if (!match) return null;
-      const yamlContent = match[1];
-      const parsed = load(yamlContent);
-      if (parsed === null || parsed === undefined || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        return {};
-      }
-      return parsed as Record<string, unknown>;
+      parsed = parseYaml(inner);
     } catch {
-      return null;
+      return UNPARSEABLE;
     }
+    if (parsed === null || parsed === undefined) return UNPARSEABLE;
+    if (typeof parsed !== 'object' || Array.isArray(parsed)) return UNPARSEABLE;
+    return parsed as Record<string, unknown>;
   }
 
   private serializeFm(data: Record<string, unknown>): string {
-    const yamlContent = dump(data, { lineWidth: -1 }).trimEnd();
+    const yamlContent = stringifyYaml(data).trimEnd();
     return `---\n${yamlContent}\n---`;
   }
 
@@ -70,15 +98,44 @@ export class FrontmatterMergeStrategy {
     return Array.isArray(v);
   }
 
-  private unionArrays(a: unknown[], b: unknown[]): unknown[] {
-    const seen = new Set<string>();
-    const result: unknown[] = [];
-    for (const item of [...a, ...b]) {
-      const key = JSON.stringify(item);
-      if (!seen.has(key)) {
-        seen.add(key);
-        result.push(item);
-      }
+  /**
+   * Base-aware SET 3-way merge of one list field ([HFM-2]/[HFM-3]/[HFM-4]/[HFM-5]). Items on all three
+   * sides are normalized to canonical strings via `parseFrontMatterStringArray`. Presence is binary, so
+   * for each item: if local and remote agree, keep their shared verdict; if they disagree, the side that
+   * differs from base is the change and wins. With an empty base this degrades to a deduplicated union.
+   * Output order: base order first, then local additions, then remote additions (stable, deterministic).
+   */
+  private mergeArrayField(
+    base: Record<string, unknown>,
+    local: Record<string, unknown>,
+    remote: Record<string, unknown>,
+    key: string,
+  ): string[] {
+    const baseItems = parseFrontMatterStringArray(base, key) ?? [];
+    const localItems = parseFrontMatterStringArray(local, key) ?? [];
+    const remoteItems = parseFrontMatterStringArray(remote, key) ?? [];
+
+    const baseSet = new Set(baseItems);
+    const localSet = new Set(localItems);
+    const remoteSet = new Set(remoteItems);
+
+    // Stable ordering: base order first, then local-only additions, then remote-only additions.
+    const order: string[] = [];
+    const pushUnique = (items: string[]): void => {
+      for (const it of items) if (!order.includes(it)) order.push(it);
+    };
+    pushUnique(baseItems);
+    pushUnique(localItems);
+    pushUnique(remoteItems);
+
+    const result: string[] = [];
+    for (const item of order) {
+      const inBase = baseSet.has(item);
+      const inLocal = localSet.has(item);
+      const inRemote = remoteSet.has(item);
+      // Agreement → shared verdict. Disagreement → the side that differs from base is the change.
+      const present = inLocal === inRemote ? inLocal : inLocal !== inBase ? inLocal : inRemote;
+      if (present) result.push(item);
     }
     return result;
   }
@@ -118,7 +175,8 @@ export class FrontmatterMergeStrategy {
   ): Record<string, unknown> {
     const merged: Record<string, unknown> = {};
 
-    // Union of keys: local order first, then remote-only keys appended
+    // Union of keys: local order first, then remote-only keys appended. A key absent from both local
+    // and remote (deleted on both) is simply never iterated → dropped.
     const keys = [...Object.keys(local)];
     for (const k of Object.keys(remote)) {
       if (!keys.includes(k)) keys.push(k);
@@ -142,7 +200,7 @@ export class FrontmatterMergeStrategy {
         continue;
       }
       if (this.isYamlArray(localVal) && this.isYamlArray(remoteVal)) {
-        merged[k] = this.unionArrays(localVal, remoteVal);
+        merged[k] = this.mergeArrayField(base, local, remote, k);
         continue;
       }
       merged[k] = this.resolveScalar(baseVal, localVal, remoteVal, ctx);
