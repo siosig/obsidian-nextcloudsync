@@ -31,10 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.21)
+## What's new in this release (0.7.22-beta.1)
 
-- **Resolve every listed conflict in one action (0.7.21)** — the Sync status dialog now offers a bulk force-resolution: pick a strategy (Use remote / Use local / Latest modified / Biggest size) once and apply it to all listed conflicts at once, instead of clearing them one dropdown at a time. Ties (equal modification time / size) are left untouched and failures stay conflicted, so nothing is silently lost.
-- **Frontmatter merges no longer corrupt notes or pile up tags (0.7.21)** — the frontmatter (YAML properties) part of a conflict is now resolved as structured data, never as text. Conflict markers (`<<<<<<<` / `>>>>>>>`) can no longer land inside a note's `---` block (which used to break Obsidian's Properties and re-nest on the next sync), and list fields (tags, aliases, related) merge as a true 3‑way set: a tag deleted on one device is now actually removed instead of resurrecting, near‑duplicate spellings (`#tag` vs `tag`) collapse to one, and out‑of‑band changes made by server‑side tools propagate correctly.
+- **New "Mirror from remote" maintenance action (0.7.22-beta.1)** — a new button under **Settings → Maintenance** forces this device's vault to exactly match the remote: it downloads everything the remote has and deletes local files and folders the remote no longer has (moved to your Obsidian trash, so removals are recoverable). A confirmation first shows how many files will be downloaded and deleted; unsynced local changes are discarded. It bypasses the mass-delete safety limit (you have explicitly declared the remote authoritative) but aborts without deleting anything if the remote listing can't be fully read. Handy for making a device follow the remote after migrating from another sync tool, where a normal sync otherwise trips the mass-delete breaker.
 - **"Use remote" / "Use local" recover a real clean version (0.7.21)** — when a text conflict wrote merge markers into a note, force‑resolving it from the Sync status dialog used to just re‑sync the marker‑filled content while clearing the warning. Now the plugin snapshots both clean sides at conflict time, so "Use remote", "Use local", "Latest modified" and "Biggest size" restore a genuine marker‑free version and only clear the conflict once the note is actually clean. No new settings.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
