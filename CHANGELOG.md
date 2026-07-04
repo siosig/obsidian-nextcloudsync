@@ -11,6 +11,12 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.22] - 2026-07-04
+
+### Added
+- Folder changes now propagate instantly in watch mode. With **Sync on file change** on, creating, deleting, or renaming a folder is pushed to the server right away (create → the folder is made, delete → moved to the trash, rename → moved), matching the behavior files already had. The status bar shows when a change is being pushed, and the setting description now correctly states that it covers files *and* folders across create/edit/delete/rename (desktop only).
+- New **Mirror from remote** maintenance action under **Settings → Maintenance** that forces this device's vault to exactly match the remote: it downloads everything the remote has and moves local files and folders the remote no longer has to the Obsidian trash (recoverable). A confirmation first shows how many files will be downloaded and deleted; unsynced local changes are discarded. It bypasses the mass-delete safety limit (you have explicitly declared the remote authoritative) but aborts without deleting anything if the remote listing can't be fully read — handy for making a device follow the remote after migrating from another sync tool.
+
 ## [0.7.21] - 2026-07-04
 
 ### Added
@@ -239,6 +245,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.22]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.22
 [0.7.21]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.21
 [0.7.20]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.20
 [0.7.19]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.19
