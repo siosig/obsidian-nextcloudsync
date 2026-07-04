@@ -6,7 +6,7 @@ import { VersionHistoryModal } from './ui/VersionHistoryModal';
 import { SyncStatusModal } from './ui/SyncStatusModal';
 import { StatusFilterState, makeDefaultFilterState, serializeFilter, deserializeFilter } from './ui/statusFilter';
 import { CompareModal } from './ui/CompareModal';
-import { applyForceResolution, ForceChoice } from './ui/forceResolution';
+import { applyForceResolution, applyBulkForceResolution, FORCE_CHOICES, ForceChoice } from './ui/forceResolution';
 import { confirmModal } from './ui/ConfirmModal';
 import { FileLogger } from './util/FileLogger';
 import { isSyncTmpPath, LocalAdapter } from './data/LocalAdapter';
@@ -27,6 +27,8 @@ export default class ObsidianNextcloudsync extends Plugin {
   localAdapter?: LocalAdapter;
   /** Merge base store (feature 038); flushed on unload so a debounced base write is not lost. */
   baseStore?: MergeBaseStore;
+  /** Clean-side snapshot store (feature 044); flushed on unload so a debounced write is not lost. */
+  cleanSideStore?: import('./data/CleanSideStore').CleanSideStore;
   /** Diagnostic file logger (writes a per-device debug log while the debug log is enabled). */
   logger!: FileLogger;
   /** Per-device sync-log writer (appends one block per sync when the sync log is enabled). */
@@ -253,6 +255,24 @@ export default class ObsidianNextcloudsync extends Plugin {
           new Notice(`Could not resolve "${path}": ${(err as Error).message}`);
         }
       },
+      // Feature 042: force-resolve every currently-listed conflict with one chosen action. The
+      // host owns the confirmation (destructive, irreversible) and the single aggregate result
+      // Notice; applyBulkForceResolution itself never rejects (per-file failures are tallied).
+      async (choice: ForceChoice, paths: string[]) => {
+        const n = paths.length;
+        const label = FORCE_CHOICES.find(c => c.id === choice)?.label ?? choice;
+        const ok = await confirmModal(this.app, {
+          title: 'Resolve all conflicts',
+          message: `Force-resolve all ${n} conflicts using "${label}"? This overwrites files and cannot be undone.`,
+          cta: 'Apply to all',
+          cancel: 'Cancel',
+          destructive: true,
+        });
+        if (!ok) return;
+        const { resolved, noop, failed } = await applyBulkForceResolution(this.syncEngine!, paths, choice);
+        new Notice(`Resolved ${resolved} of ${n} conflicts`
+          + (noop ? `; ${noop} unchanged` : '') + (failed ? `; ${failed} failed` : ''));
+      },
     ).open();
   }
 
@@ -359,6 +379,7 @@ export default class ObsidianNextcloudsync extends Plugin {
     this.syncEngine?.requestStop();
     void this.syncEngine?.flushState();
     void this.baseStore?.flush();
+    void this.cleanSideStore?.flush();
     this.localAdapter?.dispose();
   }
 
@@ -428,6 +449,12 @@ export default class ObsidianNextcloudsync extends Plugin {
     const baseStore = new MergeBaseStore(this.app.vault.adapter, pluginDir, this.settings.deviceId);
     await baseStore.load();
     this.baseStore = baseStore;
+    // Feature 044: captured clean sides of marker-conflicted notes so force-resolution recovers a real
+    // clean version rather than the marker content. Separate per-device file (like the merge base).
+    const { CleanSideStore } = await import('./data/CleanSideStore');
+    const cleanSideStore = new CleanSideStore(this.app.vault.adapter, pluginDir, this.settings.deviceId);
+    await cleanSideStore.load();
+    this.cleanSideStore = cleanSideStore;
     const historyStore = new SyncHistoryStore(this.app.vault.adapter, pluginDir);
     await historyStore.load();
 
@@ -447,6 +474,7 @@ export default class ObsidianNextcloudsync extends Plugin {
       localAdapter,
       stateDB,
       baseStore,
+      cleanSideStore,
       statusBar,
       historyStore,
       webdavFactory,
