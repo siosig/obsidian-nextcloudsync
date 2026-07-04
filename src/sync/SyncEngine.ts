@@ -540,15 +540,24 @@ export class SyncEngine {
       return buildMirrorPlan([], [], [], () => false, false, `Failed to list the remote: ${(err as Error).message}`);
     }
 
-    // 2. Local files. Only hash a local file when its remote counterpart carries a checksum we can
-    //    compare against (otherwise it would be downloaded regardless, so hashing would be wasted I/O).
-    const remoteChecksum = new Map(remoteFiles.map((r) => [r.path, r.checksum] as const));
+    // 2. Local files.
     const localStats = new Map<string, { size: number; mtime: number }>();
     await this.collectLocalStats('', localStats);
     for (const p of await this.configSync.enumerateIncludedPaths()) {
       const st = await this.opts.localAdapter.stat(p);
       if (st) localStats.set(p, { size: st.size, mtime: st.mtime });
     }
+
+    // 2a. Populate missing server-side checksums for files present on BOTH sides — server-computed,
+    //     no download (Nextcloud ChecksumUpdatePlugin), same as a normal sync. Without this, files put
+    //     on the server by another tool (the common migration case) carry no checksum, so every one
+    //     would be re-downloaded even when byte-identical. Best-effort: unsupported servers leave the
+    //     checksum null and those files fall back to download (still correct, just not skipped).
+    await this.resolveRemoteChecksums(remoteFiles, localStats);
+
+    // Only hash a local file when its remote counterpart now carries a checksum we can compare against
+    // (otherwise it would be downloaded regardless, so hashing would be wasted I/O).
+    const remoteChecksum = new Map(remoteFiles.map((r) => [r.path, r.checksum] as const));
     const localFiles: LocalFileEntry[] = [];
     for (const [path] of localStats) {
       let hash = '';
