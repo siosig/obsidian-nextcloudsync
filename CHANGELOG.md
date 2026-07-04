@@ -11,6 +11,15 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.21] - 2026-07-04
+
+### Added
+- Bulk force-resolution in the Sync status dialog: pick a strategy (Use remote / Use local / Latest modified / Biggest size) once and apply it to every listed conflict at once, instead of clearing them one dropdown at a time. Ties (equal modification time / size) are left untouched and failures stay conflicted, so nothing is silently lost.
+
+### Fixed
+- Frontmatter (YAML properties) conflicts are now resolved as structured data, never as text. Conflict markers (`<<<<<<<` / `>>>>>>>`) can no longer land inside a note's `---` block (which used to break Obsidian's Properties and re-nest on the next sync). List fields (tags, aliases, related) merge as a true 3-way set: a tag deleted on one device is actually removed instead of resurrecting, near-duplicate spellings (`#tag` vs `tag`) collapse to one, and out-of-band changes made by server-side tools propagate correctly.
+- "Use remote" / "Use local" / "Latest modified" / "Biggest size" force-resolution now recovers a genuine marker-free version. When a text conflict wrote merge markers into a note, force-resolving from the Sync status dialog used to re-sync the marker-filled content while only clearing the warning; the plugin now snapshots both clean sides at conflict time and clears the conflict only once the note is actually clean.
+
 ## [0.7.20] - 2026-07-02
 
 ### Fixed
@@ -230,6 +239,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.21]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.21
 [0.7.20]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.20
 [0.7.19]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.19
 [0.7.18]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.18
