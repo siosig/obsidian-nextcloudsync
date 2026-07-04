@@ -146,6 +146,40 @@ export function resetDebugIdentityFields(
 }
 
 /**
+ * Mobile-only first-run defaults. `loadSettings()` calls this only when `Platform.isMobile`, and it
+ * touches a key only when that key is absent from the saved data.json — so an existing/user-set value
+ * is preserved (first-run only, forward-compatible). Pure and platform-agnostic (the caller decides
+ * whether the device is mobile), which keeps it unit-testable without a `Platform` mock. Mobile
+ * diverges from `DEFAULT_SETTINGS` (desktop values) on the keys the mobile platform makes unsafe or
+ * inert:
+ *   - `syncOnWifiOnly`      = `true`  — cellular-cost-safe default (iOS lacks the API, so effectively
+ *                                        inert there, but Android honours it).
+ *   - `maxFileSizeMB`       = `20`    — OOM-safe cap; the mobile WebView holds the whole file in memory.
+ *   - `watchOnChangeEnabled`= `false` — mobile delivers no reliable file-change events and continuous
+ *                                        syncing drains battery.
+ *   - `syncIntervalMinutes` = `0`     — the mobile OS suspends background timers, so periodic sync never
+ *                                        fires (see the `!Platform.isMobile` guard in
+ *                                        `applyAutoSyncInterval`); defaulting to 0 (= manual only) makes
+ *                                        the disabled "Sync interval" slider read honestly instead of
+ *                                        showing an inert 15.
+ * Mutates `settings` in place. Run before {@link pruneObsoleteSettings} so the values are persisted.
+ */
+export function applyMobileFirstRunDefaults(
+  saved: {
+    syncOnWifiOnly?: unknown;
+    maxFileSizeMB?: unknown;
+    watchOnChangeEnabled?: unknown;
+    syncIntervalMinutes?: unknown;
+  },
+  settings: DavSyncSettings,
+): void {
+  if (saved.syncOnWifiOnly === undefined) settings.syncOnWifiOnly = true;
+  if (saved.maxFileSizeMB === undefined) settings.maxFileSizeMB = 20;
+  if (saved.watchOnChangeEnabled === undefined) settings.watchOnChangeEnabled = false;
+  if (saved.syncIntervalMinutes === undefined) settings.syncIntervalMinutes = 0;
+}
+
+/**
  * Delete persisted settings keys that are no longer part of the schema (e.g. `debugMode`,
  * and the `logLevel` / `syncResultsEnabled` / `syncResultsFolder` fields left behind by an
  * earlier 0.3.0-beta implementation). Mutates `settings` in place and returns the removed keys.
