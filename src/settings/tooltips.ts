@@ -35,7 +35,7 @@ export const TOOLTIPS = {
   syncOnWifiOnly:
     'Skip syncing on cellular (Wi-Fi/wired allowed). Unavailable on iOS (no network-type API).',
   syncOnFileChange:
-    'Sync a Markdown file shortly after you stop editing it. Disabled on mobile.',
+    'Immediately sync a file or folder after you create, edit, delete, or rename it. Deletions and renames propagate too. Desktop only.',
   maxFileSize:
     'Skip files larger than this in both directions — uploads and downloads. 0 = unlimited. Keep low on mobile to avoid out-of-memory crashes.',
 
