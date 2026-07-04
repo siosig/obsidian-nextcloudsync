@@ -52,11 +52,14 @@ function makeEngine(opts: { tracked: FileState[]; localFiles: string[] }) {
     setRemoteRootEtag,
     setSyncToken,
   };
+  const statusBar = {
+    setStatus: jest.fn(), setProgress: jest.fn(), setSyncComplete: jest.fn(), setErrorCount: jest.fn(),
+  };
   const engine = new SyncEngine({
     app, settings: settings(), localAdapter: adapter,
-    stateDB, statusBar: {}, webdavFactory: {}, pluginDir: PLUGIN_DIR, configDir: CONFIG_DIR,
+    stateDB, statusBar, webdavFactory: {}, pluginDir: PLUGIN_DIR, configDir: CONFIG_DIR,
   } as never);
-  return { engine, store, trashFile, setRemoteRootEtag, setSyncToken };
+  return { engine, store, trashFile, setRemoteRootEtag, setSyncToken, statusBar };
 }
 
 const plan = (over: Partial<MirrorPlan>): MirrorPlan => ({
@@ -131,6 +134,21 @@ describe('[SPEC:MIR-3] SyncEngine.applyRemoteMirror — convergence & breaker by
     expect(trashFile).not.toHaveBeenCalled();
     expect(result.deleted).toBe(0);
     expect([...store.keys()].sort()).toEqual(['a.md', 'b.md']); // untouched
+  });
+
+  it('reports progress like a normal sync: syncing → per-item progress → complete', async () => {
+    const { engine, statusBar } = makeEngine({
+      tracked: [fstate('keep.md', 'h'), fstate('gone.md', 'x')],
+      localFiles: ['keep.md', 'gone.md'],
+    });
+    await engine.applyRemoteMirror(plan({
+      deleteFiles: ['gone.md'],
+      remoteFiles: [remote('keep.md', 'h')],
+    }));
+    expect(statusBar.setStatus).toHaveBeenCalledWith('syncing');
+    expect(statusBar.setProgress).toHaveBeenCalledWith(0, 1); // total = 1 deletion
+    expect(statusBar.setProgress).toHaveBeenLastCalledWith(1, 1); // ticked to completion
+    expect(statusBar.setSyncComplete).toHaveBeenCalledTimes(1); // closes the toast with the result
   });
 
   it('forces a real full scan next sync (invalidates root-ETag and sync token)', async () => {
