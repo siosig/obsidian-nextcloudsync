@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.22-beta.2)
+## What's new in this release (0.7.22-beta.3)
 
-- **New "Mirror from remote" maintenance action (0.7.22-beta.2)** — a new button under **Settings → Maintenance** forces this device's vault to exactly match the remote: it downloads everything the remote has and deletes local files and folders the remote no longer has (moved to your Obsidian trash, so removals are recoverable). A confirmation first shows how many files will be downloaded and deleted; unsynced local changes are discarded. It bypasses the mass-delete safety limit (you have explicitly declared the remote authoritative) but aborts without deleting anything if the remote listing can't be fully read. Handy for making a device follow the remote after migrating from another sync tool, where a normal sync otherwise trips the mass-delete breaker.
+- **New "Mirror from remote" maintenance action (0.7.22-beta.3)** — a new button under **Settings → Maintenance** forces this device's vault to exactly match the remote: it downloads everything the remote has and deletes local files and folders the remote no longer has (moved to your Obsidian trash, so removals are recoverable). A confirmation first shows how many files will be downloaded and deleted; unsynced local changes are discarded. It bypasses the mass-delete safety limit (you have explicitly declared the remote authoritative) but aborts without deleting anything if the remote listing can't be fully read. Handy for making a device follow the remote after migrating from another sync tool, where a normal sync otherwise trips the mass-delete breaker.
 - **"Use remote" / "Use local" recover a real clean version (0.7.21)** — when a text conflict wrote merge markers into a note, force‑resolving it from the Sync status dialog used to just re‑sync the marker‑filled content while clearing the warning. Now the plugin snapshots both clean sides at conflict time, so "Use remote", "Use local", "Latest modified" and "Biggest size" restore a genuine marker‑free version and only clear the conflict once the note is actually clean. No new settings.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
