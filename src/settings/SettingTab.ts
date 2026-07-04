@@ -463,6 +463,18 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         }));
 
     makeSetting(containerEl)
+      .setName('Mirror from remote')
+      .setDesc('Force this device\'s vault to exactly match the remote: download everything the remote has, and delete local files and folders that are not on the remote (honoring your Obsidian "deleted files" setting, so removals are recoverable). Unsynced local changes are discarded. A confirmation shows how many files will be downloaded and deleted before anything happens. Use this to make a device follow the remote after migrating from another sync tool.')
+      .setTooltip(TOOLTIPS.mirrorFromRemote)
+      .addButton(btn => btn
+        .setButtonText('Mirror from remote')
+        // `mod-warning` is the destructive-button class; setDestructive() needs 1.13.0 > minAppVersion.
+        .setClass('mod-warning')
+        .onClick(() => {
+          void this.plugin.runRemoteMirror();
+        }));
+
+    makeSetting(containerEl)
       .setName('Last session summary')
       .setDesc('Open the sync status dialog: recent activity grouped by sync run, conflicts, retries, and errors.')
       .setTooltip(TOOLTIPS.lastSessionSummary)
