@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.24-beta.1)
+## What's new in this release (0.7.24-beta.2)
 
-- **Dedicated frontmatter merge strategy for Markdown (0.7.24-beta.1)** — a Markdown note's frontmatter is now resolved independently of its body. A new **Frontmatter strategy** setting (Merge / Biggest size / Latest modified / Local wins / Remote wins, default Merge) lets tags and other metadata keep union-merging even when you resolve the body by picking one side (e.g. latest modified). The former experimental "Frontmatter scalar conflict" option is folded into it, so there is no net new setting, and existing users are migrated automatically with no change in behaviour.
+- **Two-level conflict resolution with a Conflict strategy (0.7.24-beta.2)** — Merge now tries to auto-resolve first, and only the part it genuinely cannot (a body line both sides changed, or a clashing frontmatter field) is decided by a new **Conflict strategy** setting: Conflict markers (default, keeps both versions), or Latest modified / Local wins / Remote wins / Biggest size to resolve each conflicting part deterministically. Non-conflicting edits still merge cleanly, and frontmatter never gets markers. Markdown is always handled specially — its frontmatter uses the Frontmatter strategy and its body the Auto merge file strategy — so `md` no longer needs to be listed under Auto merge file types. Defaults reproduce the previous behaviour with no change for existing users.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
