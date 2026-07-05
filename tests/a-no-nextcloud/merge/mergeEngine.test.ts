@@ -20,7 +20,6 @@ jest.mock('node-diff3', () => ({
   },
 }));
 
-const opts = { maxConflictRegions: 3 };
 
 /** Extract the leading `---\n…\n---` frontmatter block from merged content (empty when none). */
 function frontmatterBlock(content: string): string {
@@ -36,7 +35,7 @@ function hasMarkerLines(s: string): boolean {
 describe('MergeEngine', () => {
   it('union-merges differing frontmatter tag arrays (feature 040)', () => {
     // Previously returned success=false; now semantic merge union-merges array fields.
-    const engine = new MergeEngine(opts);
+    const engine = new MergeEngine();
     const local = '---\ntags:\n  - a\n---\nBody';
     const remote = '---\ntags:\n  - b\n---\nBody';
     const result = engine.merge('', local, remote);
@@ -46,7 +45,7 @@ describe('MergeEngine', () => {
   });
 
   it('merges body when frontmatter is identical', () => {
-    const engine = new MergeEngine(opts);
+    const engine = new MergeEngine();
     const fm = '---\ntags: [a]\n---';
     const base = `${fm}\nLine 1`;
     const local = `${fm}\nLine 1\nLine 2`;
@@ -57,7 +56,7 @@ describe('MergeEngine', () => {
   });
 
   it('triggers content-loss circuit breaker', () => {
-    const engine = new MergeEngine(opts);
+    const engine = new MergeEngine();
     // Mock returns very short string
     jest.mock('reconcile-text', () => ({ reconcile: () => 'x' }));
     const local = 'A'.repeat(200);
@@ -70,36 +69,36 @@ describe('MergeEngine', () => {
     expect(result).toBeDefined();
   });
 
-  // [SPEC:CF-14] §18 F5 fix: reconcile-text (CRDT) always reports conflictRegions:0, which left the
-  // maxConflictRegions breaker dead for body conflicts. MergeEngine now runs diff3 purely to COUNT
-  // the real regions, so a body conflict surfaces a positive count even though reconcile succeeds.
-  it('[SPEC:CF-14] surfaces a positive diff3 region count for a body conflict even when reconcile succeeds', () => {
-    const engine = new MergeEngine({ maxConflictRegions: 0 });
+  // [SPEC:CF-14] feature 048: a real body conflict is resolved per-region by conflictStrategy — the
+  // default (conflict-markers) writes the region as markers and flags conflicted; a deterministic
+  // conflictStrategy picks the region's hunk cleanly.
+  it('[SPEC:CF-14] a body conflict is written as markers under the default conflict-markers strategy', () => {
+    const engine = new MergeEngine();
     const base = 'Line 1\nLine 2';
     const local = 'Changed 1\nLine 2';
     const remote = 'Line 1\nChanged 2';
-    const result = engine.merge(base, local, remote);
-    // diff3 mock flags a≠b as a conflict → count is surfaced (was always 0 before the fix).
-    expect(result.conflictRegions).toBeGreaterThan(0);
-    // §6.2: maxConflictRegions:0 = unlimited → the reconcile merge is still accepted (no policy).
+    const result = engine.merge(base, local, remote); // no ctx → conflictStrategy defaults to conflict-markers
+    expect(result.hadConflicts).toBe(true);
+    expect(hasMarkerLines(result.mergedContent)).toBe(true);
     expect(result.success).toBe(true);
   });
 
-  it('[SPEC:CF-14] routes a body conflict to the failure policy when a positive cap is exceeded', () => {
-    const engine = new MergeEngine({ maxConflictRegions: 0.5 }); // any conflict region exceeds 0.5
+  it('[SPEC:CF-14] a deterministic conflictStrategy resolves the region with no markers', () => {
+    const engine = new MergeEngine();
     const base = 'Line 1\nLine 2';
     const local = 'Changed 1\nLine 2';
     const remote = 'Line 1\nChanged 2';
-    const result = engine.merge(base, local, remote);
-    // The breaker fires on the body (it could not before — count was always 0) → success=false.
-    expect(result.conflictRegions).toBeGreaterThan(0);
-    expect(result.success).toBe(false);
+    const result = engine.merge(base, local, remote, { localMtime: 0, remoteMtime: 9, conflictStrategy: 'remote-win' });
+    expect(result.hadConflicts).toBe(false);
+    expect(hasMarkerLines(result.mergedContent)).toBe(false);
+    expect(result.mergedContent).toContain('Changed 2'); // remote hunk kept
+    expect(result.mergedContent).not.toContain('Changed 1');
   });
 
   // ─── Feature 043: frontmatter is never text-diffed (no marker lines inside a --- block) ──────────
 
   it('[SPEC:HFM-9] frontmatter the old regex could not parse (CRLF + trailing-space fences) yields zero marker lines', () => {
-    const engine = new MergeEngine({ maxConflictRegions: 0 });
+    const engine = new MergeEngine();
     const base = '---\ntags:\n  - a\n---\nBody';
     const local = '---\ntags:\n  - a\n  - b\n---\nBody';
     // Trailing spaces after the fences + CRLF: the OLD FRONTMATTER_RE/parseFm regex failed to parse
@@ -116,7 +115,7 @@ describe('MergeEngine', () => {
   });
 
   it('[SPEC:HFM-11] frontmatter carrying leftover conflict-marker lines self-heals with no nesting', () => {
-    const engine = new MergeEngine({ maxConflictRegions: 0 });
+    const engine = new MergeEngine();
     // Local frontmatter is corrupt: a prior broken merge leaked marker lines INTO the YAML block.
     const local = '---\n<<<<<<< LOCAL\ntags:\n  - a\n=======\ntags:\n  - b\n>>>>>>> REMOTE\n---\nBody';
     const remote = '---\ntags:\n  - a\n  - c\n---\nBody';
@@ -130,7 +129,7 @@ describe('MergeEngine', () => {
   });
 
   it('[SPEC:HFM-8] a --- thematic break in the body is not mistaken for the frontmatter delimiter', () => {
-    const engine = new MergeEngine({ maxConflictRegions: 0 });
+    const engine = new MergeEngine();
     const base = '---\ntags:\n  - a\n---\nIntro\n\n---\n\nOutro';
     const local = '---\ntags:\n  - a\n  - b\n---\nIntro\n\n---\n\nOutro';
     const remote = '---\ntags:\n  - a\n---\nIntro\n\n---\n\nOutro';
@@ -146,7 +145,7 @@ describe('MergeEngine', () => {
   });
 
   it('[SPEC:HFM-10] an unparseable side is resolved by a whole-side pick (latest-mtime) — no diff3 markers', () => {
-    const engine = new MergeEngine({ maxConflictRegions: 0 });
+    const engine = new MergeEngine();
     const bad = '---\n{ unterminated: yaml\n---\nBody';
     const good = '---\ntitle: Clean\n---\nBody';
     // Feature 047: the scalar policy is gone; the unparseable-side pick is latest-mtime. Remote newer
@@ -166,7 +165,7 @@ describe('MergeEngine', () => {
   // ─── Feature 043: server-rewrite scenario + convergence/idempotence (the reported real bug) ──────
 
   it('[SPEC:HFM-13] a server tag rewrite (base [1,2,3] → remote [2,3,4], local unchanged) converges to [2,3,4] and is idempotent', () => {
-    const engine = new MergeEngine({ maxConflictRegions: 0 });
+    const engine = new MergeEngine();
     // Real case: this device pushed base tags [1,2,3]; a server-side program rewrote remote to [2,3,4]
     // (deleted 1, added 4) while the local side stayed at base. The device must land on the server set,
     // NOT the blind union [1,2,3,4] — the deletion of 1 must propagate.

@@ -8,17 +8,19 @@ import { MergeEngine } from '../../../src/sync/merge/MergeEngine';
 
 describe('[SPEC:CSF-5] expansion guard — block duplication (real reconcile, SC-009)', () => {
   it('[SPEC:CSF-5] the known empty-base duplication is downgraded to a conflict, not a clean merge', () => {
-    const engine = new MergeEngine({ maxConflictRegions: 0 });
+    const engine = new MergeEngine();
     // Reproduction from SC-009: reconcile emits `line3\nline4` twice (an immediately-repeated block).
     const local = 'line1\nline2 LOCAL\nline3\nline4';
     const remote = 'line1\nline3\nline4\nREMOTE';
     const r = engine.merge('', local, remote);
-    expect(r.success).toBe(false);
+    // Feature 048: the engine always returns a resolved result (success); `hadConflicts` signals the
+    // downgrade to a (marker) conflict so the corrupted union is never written as a clean merge.
+    expect(r.success).toBe(true);
     expect(r.hadConflicts).toBe(true);
   });
 
   it('[SPEC:CSF-5] a genuinely clean merge (distinct line edits) is NOT tripped', () => {
-    const engine = new MergeEngine({ maxConflictRegions: 0 });
+    const engine = new MergeEngine();
     const r = engine.merge('', 'line1\nLOCAL\nline3', 'line1\nline3\nREMOTE');
     expect(r.success).toBe(true);
     expect(r.hadConflicts).toBe(false);
@@ -35,9 +37,9 @@ describe('[SPEC:CSF-5] expansion guard — length overflow (mocked reconcile)', 
       jest.doMock('node-diff3', () => ({ diff3Merge: () => [{ ok: [] }] }));
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { MergeEngine: ME } = require('../../../src/sync/merge/MergeEngine') as typeof import('../../../src/sync/merge/MergeEngine');
-      const engine = new ME({ maxConflictRegions: 0 });
+      const engine = new ME();
       const res = engine.merge('', 'alpha', 'bravo');
-      expect(res.success).toBe(false);
+      expect(res.hadConflicts).toBe(true); // downgraded to a conflict (feature 048: success stays true)
     });
   });
 });

@@ -1,8 +1,7 @@
-import { App, getFrontMatterInfo } from 'obsidian';
-import { ConflictResolution, MergeContext, SyncStrategy } from '../types';
+import { App } from 'obsidian';
+import { ConflictResolution, ConflictStrategy, MergeContext, SyncStrategy } from '../types';
 import { LocalAdapter } from '../data/LocalAdapter';
 import { MergeEngine } from './merge/MergeEngine';
-import { FIXED } from '../util/fixedSyncConfig';
 import { isAutoMergeFileType, isMarkdown } from '../util/mergeableExtensions';
 
 const CONFLICT_TAG = '#conflict';
@@ -58,6 +57,12 @@ export interface MergeConfig {
    * five strategies as the body; `merge` = semantic merge. Applies to every `.md`. Defaults to 'merge'.
    */
   frontmatterStrategy: SyncStrategy;
+  /**
+   * Feature 048: second-level fallback for a part a primary `merge` could not auto-resolve (a body diff3
+   * conflict region, or a frontmatter scalar clash). Threaded into MergeContext. Defaults to
+   * 'conflict-markers'.
+   */
+  conflictStrategy: ConflictStrategy;
 }
 
 /**
@@ -89,10 +94,9 @@ export class ConflictResolver {
     private readonly localAdapter: LocalAdapter,
     private readonly config: MergeConfig,
   ) {
-    // maxConflictRegions is a fixed value (feature 033, always unlimited); a clean merge is never
-    // downgraded to inline markers on region count alone — the expansion guard (FR-005b) handles the
-    // real failure mode (reconcile bloat on an empty base).
-    this.mergeEngine = new MergeEngine({ maxConflictRegions: FIXED.maxConflictRegions });
+    // Feature 048: the MergeEngine resolves body conflict regions and frontmatter clashes per
+    // `conflictStrategy`; there is no region-count cap any more (each region is resolved, not counted).
+    this.mergeEngine = new MergeEngine();
   }
 
   /**
@@ -121,11 +125,11 @@ export class ConflictResolver {
   decide(
     path: string, base: string, local: string, remote: string, ctx?: ConflictContext,
   ): ConflictResolution {
-    // Feature 047: a markdown file with frontmatter on ANY side is resolved by splitting frontmatter
-    // from body and applying `frontmatterStrategy` to the former and the file's own strategy to the
-    // latter — independently — regardless of the body classification. A markdown file with no
-    // frontmatter on any side, and every non-markdown file, keeps the whole-file path below (FR-012).
-    if (isMarkdown(path) && this.hasAnyFrontmatter(base, local, remote)) {
+    // Feature 048: markdown is ALWAYS special-cased (regardless of autoMergeFileTypes) — its frontmatter
+    // is resolved by `frontmatterStrategy` and its body by `autoMergeFileStrategy`, independently. Every
+    // non-markdown file keeps the whole-file path below (Auto Merge File → autoMergeFileStrategy, Other
+    // File → otherFileStrategy).
+    if (isMarkdown(path)) {
       return this.decideMarkdown(path, base, local, remote, ctx);
     }
     switch (this.strategyFor(path)) {
@@ -142,12 +146,26 @@ export class ConflictResolver {
     }
   }
 
-  /** merge strategy: 3-way merge with binary safe-hold (FR-005a) and conflict markers for text. */
+  /** Feature 048: MergeContext threaded to the engine, carrying the mtimes and the conflictStrategy. */
+  private mergeCtx(ctx?: ConflictContext): MergeContext {
+    return {
+      localMtime: ctx?.localMtime ?? 0,
+      remoteMtime: ctx?.remoteMtime ?? 0,
+      conflictStrategy: this.config.conflictStrategy,
+    };
+  }
+
+  /**
+   * `merge` strategy for a NON-markdown whole file: 3-way merge with per-region `conflictStrategy`
+   * resolution. Binary content cannot carry markers → safe-hold under `conflict-markers`, otherwise a
+   * deterministic whole-file pick. A complete plugin marker set safe-holds (re-entrancy guard).
+   */
   private decideMerge(base: string, local: string, remote: string, ctx?: ConflictContext): ConflictResolution {
-    // Non-text content cannot carry conflict markers without corruption → leave both sides, flag
-    // conflicted, write nothing (FR-005a). The merge engine is text-only.
+    // Non-text content cannot carry conflict markers. Under `conflict-markers` (or absent context) it
+    // safe-holds (both sides untouched, flagged); under a deterministic conflictStrategy it is a
+    // whole-file pick handled by the caller's action mapping.
     if (isLikelyBinary(local) || isLikelyBinary(remote)) {
-      return { action: 'safe-hold' };
+      return this.binaryConflict(ctx);
     }
     // Feature 039 (FR-039-1/2, R2) + feature 041: if EITHER side already carries a COMPLETE plugin
     // marker set (opening AND closing lines), merging would re-wrap the existing markers in NEW markers
@@ -165,30 +183,36 @@ export class ConflictResolver {
     if (hasCompleteMarkerSet(local) || hasCompleteMarkerSet(remote)) {
       return { action: 'safe-hold' };
     }
-    const mergeCtx: MergeContext | undefined = ctx
-      ? { localMtime: ctx.localMtime, remoteMtime: ctx.remoteMtime }
-      : undefined;
-    const result = this.mergeEngine.merge(base, local, remote, mergeCtx);
+    const result = this.mergeEngine.merge(base, local, remote, this.mergeCtx(ctx));
     // Feature 039 (FR-039-5, P2): the merge produced nested/stacked markers (corruption fingerprint) →
     // never write or push it; hold for the user instead of growing the file further.
     if (result.hold) {
       return { action: 'safe-hold' };
     }
-    if (result.success && !result.hadConflicts) {
-      return { action: 'write', content: result.mergedContent, clean: true };
-    }
-    // Full-file conflict markers for the user to resolve (FR-005). Feature 043: this branch is now
-    // reached ONLY for a BODY-level conflict or the body expansion guard (FR-005b). Frontmatter never
-    // routes here — MergeEngine resolves every `---` block structurally (semantic merge) or by a
-    // whole-side pick ([HFM-9]/[HFM-10]), so `buildMarkerContent` cannot bury a frontmatter block
-    // inside markers (which previously seeded the nested-marker corruption; see
-    // specs/043-harden-frontmatter-merge/research.md §1).
-    return { action: 'write', content: this.buildMarkerContent(local, remote), clean: false };
+    // Feature 048: the engine has already applied conflictStrategy per region — the content is the final
+    // resolution (markers only when conflictStrategy is conflict-markers). Clean unless markers remain.
+    return { action: 'write', content: result.mergedContent, clean: result.success && !result.hadConflicts };
   }
 
-  /** True when any of base/local/remote carries a frontmatter block (feature 047). */
-  private hasAnyFrontmatter(base: string, local: string, remote: string): boolean {
-    return getFrontMatterInfo(local).exists || getFrontMatterInfo(remote).exists || getFrontMatterInfo(base).exists;
+  /**
+   * Feature 048: a binary file the `merge` strategy cannot line-merge. Under conflict-markers it
+   * safe-holds (markers would corrupt binary); under a deterministic conflictStrategy it maps to a
+   * whole-file prefer-local / prefer-remote (size/mtime handled via ctx), so both sides converge.
+   */
+  private binaryConflict(ctx?: ConflictContext): ConflictResolution {
+    switch (this.config.conflictStrategy) {
+      case 'local-win':
+        return { action: 'prefer-local' };
+      case 'remote-win':
+        return { action: 'prefer-remote' };
+      case 'biggest-size':
+        return this.decideByComparison(ctx?.localSize, ctx?.remoteSize);
+      case 'latest-mtime':
+        return this.decideByComparison(ctx?.localMtime, ctx?.remoteMtime);
+      case 'conflict-markers':
+      default:
+        return { action: 'safe-hold' };
+    }
   }
 
   /**
@@ -200,20 +224,21 @@ export class ConflictResolver {
    * the composed file, not a prefer-local/remote of the raw side, because the two halves may differ).
    */
   private decideMarkdown(path: string, base: string, local: string, remote: string, ctx?: ConflictContext): ConflictResolution {
-    if (isLikelyBinary(local) || isLikelyBinary(remote)) {
-      return { action: 'safe-hold' };
+    // A binary "markdown" file (rare) cannot be line-merged; only meaningful if the body strategy is
+    // merge — otherwise the whole-side pick below is fine. Treat it like a body binary conflict.
+    if ((isLikelyBinary(local) || isLikelyBinary(remote)) && this.config.autoMergeFileStrategy === 'merge') {
+      return this.binaryConflict(ctx);
     }
     if (hasCompleteMarkerSet(local) || hasCompleteMarkerSet(remote)) {
       return { action: 'safe-hold' };
     }
-    const mergeCtx: MergeContext | undefined = ctx
-      ? { localMtime: ctx.localMtime, remoteMtime: ctx.remoteMtime }
-      : undefined;
+    // Feature 048: markdown body ALWAYS uses `autoMergeFileStrategy` (never otherFileStrategy), even
+    // when `md` is not in autoMergeFileTypes. Frontmatter uses `frontmatterStrategy`. conflictStrategy
+    // (threaded via ctx) resolves any part a `merge` primary could not auto-resolve.
     const result = this.mergeEngine.resolveMarkdown(base, local, remote, {
       frontmatterStrategy: this.config.frontmatterStrategy,
-      bodyStrategy: this.strategyFor(path),
-      buildMarkers: (l, r) => this.buildMarkerContent(l, r),
-      ctx: mergeCtx,
+      bodyStrategy: this.config.autoMergeFileStrategy,
+      ctx: this.mergeCtx(ctx),
     });
     if (result.hold) {
       return { action: 'safe-hold' };
@@ -255,21 +280,6 @@ export class ConflictResolver {
       default:
         return { content: local, clean: false, conflictRegions: -1 };
     }
-  }
-
-  /** Build full-file conflict-marker content (both versions kept). */
-  private buildMarkerContent(local: string, remote: string): string {
-    const deviceSuffix = this.config.deviceId.slice(-4);
-    const dateStr = new Date().toISOString().slice(0, 10);
-    const markerLocal = `<<<<<<< LOCAL (${deviceSuffix}, ${dateStr})`;
-    const markerRemote = `>>>>>>> REMOTE (${dateStr})`;
-    return (
-      markerLocal + '\n' +
-      local.trimEnd() + '\n' +
-      '=======\n' +
-      remote.trimEnd() + '\n' +
-      markerRemote + '\n'
-    );
   }
 
   /**
