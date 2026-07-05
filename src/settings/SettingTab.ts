@@ -324,16 +324,34 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         }));
 
     makeSetting(containerEl)
-      .setName('Frontmatter scalar conflict [experimental]')
-      .setDesc('When both devices change the same scalar frontmatter field (e.g. Title or status) to different values, choose which side wins. Array fields (tags, aliases, …) always union-merge and are unaffected by this setting.')
-      .setTooltip(TOOLTIPS.frontmatterScalarConflictPolicy)
+      .setName('Frontmatter strategy')
+      .setDesc('How to resolve a conflict on a Markdown note’s frontmatter, independently of the body. Merge does a semantic merge (array fields such as tags/aliases union-merge; a scalar clash is decided by the conflict strategy below); the other four adopt one whole side’s frontmatter block. Applies to every Markdown note regardless of the body strategy.')
+      .setTooltip(TOOLTIPS.frontmatterStrategy)
       .addDropdown(dd => dd
+        .addOption('merge', 'Merge')
+        .addOption('biggest-size', 'Biggest size')
         .addOption('latest-mtime', 'Latest modified')
-        .addOption('remote-win', 'Remote wins')
         .addOption('local-win', 'Local wins')
-        .setValue(this.plugin.settings.frontmatterScalarConflictPolicy)
+        .addOption('remote-win', 'Remote wins')
+        .setValue(this.plugin.settings.frontmatterStrategy)
         .onChange(async (value) => {
-          this.plugin.settings.frontmatterScalarConflictPolicy = value as DavSyncSettings['frontmatterScalarConflictPolicy'];
+          this.plugin.settings.frontmatterStrategy = value as DavSyncSettings['frontmatterStrategy'];
+          await this.plugin.saveSettings();
+        }));
+
+    makeSetting(containerEl)
+      .setName('Conflict strategy')
+      .setDesc('When merge cannot auto-resolve a part (a body line both sides changed, or a clashing frontmatter field), this decides the outcome. Conflict markers keeps both sides (frontmatter falls back to latest modified — markers can’t live in the --- block); the others pick one side per conflicting part. Only fires for the merge strategy.')
+      .setTooltip(TOOLTIPS.conflictStrategy)
+      .addDropdown(dd => dd
+        .addOption('conflict-markers', 'Conflict markers')
+        .addOption('biggest-size', 'Biggest size')
+        .addOption('latest-mtime', 'Latest modified')
+        .addOption('local-win', 'Local wins')
+        .addOption('remote-win', 'Remote wins')
+        .setValue(this.plugin.settings.conflictStrategy)
+        .onChange(async (value) => {
+          this.plugin.settings.conflictStrategy = value as DavSyncSettings['conflictStrategy'];
           await this.plugin.saveSettings();
         }));
 
@@ -446,6 +464,27 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
           // Dump a fresh settings snapshot as soon as logging is turned on.
           if (value) void this.plugin.logSettingsSnapshot();
+        }));
+
+    // ── Advanced (caution) ──────────────────────────────────────────────────────
+    // Feature 049: options that can cause data loss. Gated behind a visible warning banner.
+    new Setting(containerEl).setName('Advanced (use with caution)').setHeading();
+
+    const advWarn = containerEl.createEl('div', { cls: 'ncs-setting-warning' });
+    advWarn.createSpan({ text: '⚠️ ' });
+    advWarn.createEl('strong', { text: 'Caution: these options can cause data loss.' });
+    advWarn.createSpan({ text: ' Change them only if you understand the risk.' });
+
+    makeSetting(containerEl)
+      .setName('Mass-delete safety limit')
+      .setDesc('Most files/folders one sync may delete locally when they vanish from the server — the guard that stops a partial or failed remote listing from wiping your vault. -1 = automatic (recommended): the built-in limit of max(20, 20% of tracked files). 0 = no limit (risky — a broken listing could delete everything locally). A positive number sets a fixed limit. Raise this only if a legitimate large deletion was blocked.')
+      .setTooltip(TOOLTIPS.massDeleteLimit)
+      .addText(text => text
+        .setPlaceholder('-1')
+        .setValue(String(this.plugin.settings.massDeleteLimit))
+        .onChange(async (value) => {
+          this.plugin.settings.massDeleteLimit = normalizeNumericInput(value, -1, 1_000_000, this.plugin.settings.massDeleteLimit);
+          await this.plugin.saveSettings();
         }));
 
     new Setting(containerEl).setName('Maintenance').setHeading();

@@ -45,7 +45,7 @@ function makeConfig(
   otherFileStrategy: Exclude<SyncStrategy, 'merge'> = 'latest-mtime',
   autoMergeFileTypes: string[] = ['md', 'txt'],
 ): MergeConfig {
-  return { autoMergeFileTypes, autoMergeFileStrategy, otherFileStrategy, deviceId: 'test-dev-abcd' };
+  return { autoMergeFileTypes, autoMergeFileStrategy, otherFileStrategy, deviceId: 'test-dev-abcd', frontmatterStrategy: 'merge', conflictStrategy: 'conflict-markers' };
 }
 
 function makeResolver(config: MergeConfig, store: Record<string, string> = {}): ConflictResolver {
@@ -191,25 +191,25 @@ describe('ConflictResolver.decide — feature 041 orphan-marker self-heal', () =
 
 describe('ConflictResolver.decide — deterministic strategies', () => {
   it('CSF-8 local-win -> prefer-local; remote-win -> prefer-remote', () => {
-    expect(makeResolver(makeConfig('local-win')).decide('n.md', '', 'a', 'b')).toEqual({ action: 'prefer-local' });
-    expect(makeResolver(makeConfig('remote-win')).decide('n.md', '', 'a', 'b')).toEqual({ action: 'prefer-remote' });
+    expect(makeResolver(makeConfig('local-win')).decide('n.txt', '', 'a', 'b')).toEqual({ action: 'prefer-local' });
+    expect(makeResolver(makeConfig('remote-win')).decide('n.txt', '', 'a', 'b')).toEqual({ action: 'prefer-remote' });
   });
 
   it('CSF-6 biggest-size -> larger side', () => {
     const r = makeResolver(makeConfig('biggest-size'));
-    expect(r.decide('n.md', '', '', '', ctx({ localSize: 200, remoteSize: 100 }))).toEqual({ action: 'prefer-local' });
-    expect(r.decide('n.md', '', '', '', ctx({ localSize: 100, remoteSize: 200 }))).toEqual({ action: 'prefer-remote' });
+    expect(r.decide('n.txt', '', '', '', ctx({ localSize: 200, remoteSize: 100 }))).toEqual({ action: 'prefer-local' });
+    expect(r.decide('n.txt', '', '', '', ctx({ localSize: 100, remoteSize: 200 }))).toEqual({ action: 'prefer-remote' });
   });
 
   it('CSF-7 latest-mtime -> newer side', () => {
     const r = makeResolver(makeConfig('latest-mtime'));
-    expect(r.decide('n.md', '', '', '', ctx({ localMtime: 3000, remoteMtime: 1000 }))).toEqual({ action: 'prefer-local' });
-    expect(r.decide('n.md', '', '', '', ctx({ localMtime: 1000, remoteMtime: 3000 }))).toEqual({ action: 'prefer-remote' });
+    expect(r.decide('n.txt', '', '', '', ctx({ localMtime: 3000, remoteMtime: 1000 }))).toEqual({ action: 'prefer-local' });
+    expect(r.decide('n.txt', '', '', '', ctx({ localMtime: 1000, remoteMtime: 3000 }))).toEqual({ action: 'prefer-remote' });
   });
 
   it('CSF-9 tie (equal size / equal mtime) -> no-op', () => {
-    expect(makeResolver(makeConfig('biggest-size')).decide('n.md', '', '', '', ctx({ localSize: 50, remoteSize: 50 }))).toEqual({ action: 'no-op' });
-    expect(makeResolver(makeConfig('latest-mtime')).decide('n.md', '', '', '', ctx({ localMtime: 7, remoteMtime: 7 }))).toEqual({ action: 'no-op' });
+    expect(makeResolver(makeConfig('biggest-size')).decide('n.txt', '', '', '', ctx({ localSize: 50, remoteSize: 50 }))).toEqual({ action: 'no-op' });
+    expect(makeResolver(makeConfig('latest-mtime')).decide('n.txt', '', '', '', ctx({ localMtime: 7, remoteMtime: 7 }))).toEqual({ action: 'no-op' });
   });
 });
 

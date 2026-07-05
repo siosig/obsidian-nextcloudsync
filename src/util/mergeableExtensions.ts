@@ -42,3 +42,14 @@ export function isAutoMergeFileType(path: string, autoMergeFileTypes: readonly s
     .filter((e) => e.length > 0)
     .includes(ext);
 }
+
+/**
+ * True when `path` is a markdown note (`.md`, case-insensitive). Feature 047 gives markdown a dedicated
+ * frontmatter strategy applied regardless of the Auto-Merge / Other classification, so this is a
+ * separate predicate from {@link isAutoMergeFileType}. Also gates recording a merge base for every
+ * `.md` (feature 047, FR-015), so frontmatter set-merge can detect deletions even when `md` is not an
+ * Auto Merge File type.
+ */
+export function isMarkdown(path: string): boolean {
+  return /\.md$/i.test(path);
+}

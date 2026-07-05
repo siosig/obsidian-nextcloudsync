@@ -89,9 +89,8 @@ export const CLAUSES: Clause[] = [
   { id: 'CF-6', source: 'report/mock_test.md §3.F', layer: 'b-1' },
   { id: 'CF-7', source: 'report/mock_test.md §3.F', layer: 'b-1' },
   { id: 'CF-8', source: 'report/mock_test.md §3.F', layer: 'b-1' },
-  // CF-9 (conflict-region cap) is fully verified at layer a by MergeEngine's positive-cap test
-  // (mergeUnlimited.test.ts, tagged [SPEC:CF-9]); the b-1 live write is redundant (it.skip).
-  { id: 'CF-9', source: 'specs/main/spec.md §6.2 (maxConflictRegions cap)', layer: 'a' },
+  // CF-9 (conflict-region cap) removed by feature 048: there is no region-count cap any more — each body
+  // conflict region is resolved by conflictStrategy, not counted against a threshold.
   { id: 'CF-10', source: 'report/mock_test.md §3.F', layer: 'b-1' },
   { id: 'CF-11', source: 'report/mock_test.md §3.F', layer: 'b-1' },
   // F4 resolved in 0.7.1 (993de3c): Diff3Strategy now uses diff3Merge; verified at layer a.
