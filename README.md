@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.23)
+## What's new in this release (0.7.24-beta.1)
 
-- **Sync interval now reads honestly on mobile (0.7.23)** — periodic auto-sync never runs on mobile (the OS suspends background timers), but the **Sync interval** slider still showed the desktop default of 15 minutes even while greyed out, as if a timed sync were active. On a fresh mobile install the interval now defaults to **0 (manual only)**, so the disabled slider matches what actually happens. Desktop is unchanged, and any interval you have already set is preserved.
+- **Dedicated frontmatter merge strategy for Markdown (0.7.24-beta.1)** — a Markdown note's frontmatter is now resolved independently of its body. A new **Frontmatter strategy** setting (Merge / Biggest size / Latest modified / Local wins / Remote wins, default Merge) lets tags and other metadata keep union-merging even when you resolve the body by picking one side (e.g. latest modified). The former experimental "Frontmatter scalar conflict" option is folded into it, so there is no net new setting, and existing users are migrated automatically with no change in behaviour.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
