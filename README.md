@@ -31,11 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.24)
+## What's new in this release (0.7.25-beta.1)
 
-- **Frontmatter gets its own conflict strategy (0.7.24)** — a `.md` file's frontmatter and body are now resolved independently. The body still follows the file-type merge strategy; the frontmatter block has a new dedicated **Frontmatter strategy** setting (default: merge), so a frontmatter-only clash no longer forces the same resolution as the body.
-- **Two-level conflict resolution (0.7.24)** — when the primary strategy (frontmatter / auto-merge / other-file) can't fully resolve a clash on its own, the remaining conflicting region or field now falls back to a second, explicit **Conflict strategy** (default: conflict markers) instead of an all-or-nothing decision.
-- **Mirror-from-remote progress dialog + configurable mass-delete limit (0.7.24)** — "Mirror from remote" no longer looks frozen: a dialog opens immediately and shows live progress through every stage (reading the remote, comparing, then a download/delete progress bar). The mass-delete safety limit is now configurable under a new **Advanced (use with caution)** section: `-1` = automatic (the safe default), `0` = no limit, or a fixed number.
+- **Fixed a permanently stuck sync caused by client-side caching (0.7.25-beta.1)** — a file could get stuck failing to sync forever (even across restarts and manual "Sync now" / "Use remote" attempts) if the app's own network cache had ever stored a bad, incomplete response for that file. Every request the plugin sends now explicitly disables that caching, so a bad response can never be replayed — the next sync attempt always reaches the server for a fresh answer.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
