@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.25-beta.1)
+## What's new in this release (0.7.25-beta.2)
 
-- **Fixed a permanently stuck sync caused by client-side caching (0.7.25-beta.1)** — a file could get stuck failing to sync forever (even across restarts and manual "Sync now" / "Use remote" attempts) if the app's own network cache had ever stored a bad, incomplete response for that file. Every request the plugin sends now explicitly disables that caching, so a bad response can never be replayed — the next sync attempt always reaches the server for a fresh answer.
+- **Redesigned troubleshooting logging into one findable file (0.7.25-beta.2)** — enabling *Debug → Enable logging* now writes a single per-device file, `nextcloud-debug_<device>.txt`, at the vault root (the old two separate log files are merged). Turning it on immediately shows a notice naming the exact file and reminding you that Obsidian hides `.txt` unless *Settings → Files & Links → Detect all file extensions* is on (you can also open it via your OS or Nextcloud). If the log can't be written, you now get a notice instead of silence — so "logging is on yet I see no file" no longer leaves you guessing.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
