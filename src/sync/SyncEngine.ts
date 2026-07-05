@@ -244,6 +244,13 @@ export class SyncEngine {
       new Notice(`❌ Sync failed: ${(err as Error).message}`, 6000);
       this.recordError(summary, '', err);
     } finally {
+      // Clear the running flags FIRST. Everything below is best-effort teardown that can throw (a
+      // failed stateDB/historyStore save, a persistence I/O error); if the flag were cleared only at
+      // the end, such a throw would leave the engine permanently "running" and block every subsequent
+      // sync. Resetting up front guarantees the next sync can always start.
+      this.running = false;
+      this.currentRunStartedAt = null;
+
       void this.opts.logger?.log(
         `sync: done up=${summary.uploadedCount} down=${summary.downloadedCount} ` +
         `del=${summary.deletedCount} merged=${summary.mergedCount} conflicted=${summary.conflictedCount} err=${summary.errorCount} cancelled=${cancelled}`,
@@ -251,8 +258,15 @@ export class SyncEngine {
       summary.completedAt = Date.now();
       this.lastSummary = summary;
       this.opts.stateDB.setLastSyncTime(Date.now());
-      await this.opts.stateDB.save();
-      await this.opts.historyStore?.save(); // persist this session's per-file outcomes (pruned to 24h)
+      // Best-effort persistence: a save failure must not propagate out of the finally (which would
+      // mask the original error and, before the flag move above, strand the running flag).
+      try {
+        await this.opts.stateDB.save();
+        await this.opts.historyStore?.save(); // persist this session's per-file outcomes (pruned to 24h)
+      } catch (persistErr) {
+        console.error('[SyncEngine] Post-sync persistence failed:', persistErr);
+        void this.opts.logger?.log(`sync: post-sync save failed — ${(persistErr as Error).message}`, 'error');
+      }
       // Append the per-device sync log (best-effort; the writer no-ops when disabled).
       const sessionEntries = this.opts.historyStore?.since(summary.startedAt) ?? [];
       try { await this.opts.onSessionComplete?.(sessionEntries, summary); } catch { /* never break sync */ }
@@ -264,8 +278,6 @@ export class SyncEngine {
       // Result display is owned by the status bar surface: StatusBarItem on desktop, and
       // NoticeStatusBar (a result toast) on mobile, both via setSyncComplete above. Genuine
       // failures still surface via the catch-block notice / NextcloudErrorParser.
-      this.running = false;
-      this.currentRunStartedAt = null;
     }
   }
 
@@ -1687,6 +1699,7 @@ export class SyncEngine {
       otherFileStrategy: this.opts.settings.otherFileStrategy,
       deviceId: this.opts.settings.deviceId,
       frontmatterStrategy: this.opts.settings.frontmatterStrategy,
+      conflictStrategy: this.opts.settings.conflictStrategy,
     });
     const ctx = {
       localSize: localSizeBefore,

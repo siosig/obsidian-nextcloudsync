@@ -14,6 +14,7 @@ function resolver(overrides: Partial<MergeConfig>): ConflictResolver {
     autoMergeFileStrategy: DEFAULT_SETTINGS.autoMergeFileStrategy,
     otherFileStrategy: DEFAULT_SETTINGS.otherFileStrategy,
     frontmatterStrategy: DEFAULT_SETTINGS.frontmatterStrategy,
+    conflictStrategy: DEFAULT_SETTINGS.conflictStrategy,
     deviceId: 'conf-device',
     ...overrides,
   });
@@ -56,7 +57,7 @@ describe('spec 001 — core requirements', () => {
   it('FR-010 (finalized): YAML frontmatter is auto-merged (non-overlapping lines merge cleanly)', () => {
     // Finalized D5: frontmatter is IN scope for auto-merge — non-overlapping frontmatter
     // edits (different keys) merge cleanly via diff3; only same-line divergence conflicts.
-    const engine = new MergeEngine({ maxConflictRegions: 0 });
+    const engine = new MergeEngine();
     // Keep the two changed keys on non-adjacent lines: line-based diff3 merges distinct
     // lines cleanly, but adjacent changed lines collapse into one (conflicting) hunk.
     const base = '---\nk1: a\nmid: x\nk2: b\n---\nbody\n';

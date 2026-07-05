@@ -10,7 +10,7 @@ function makeConfig(
   otherFileStrategy: Exclude<SyncStrategy, 'merge'> = 'latest-mtime',
   autoMergeFileTypes: string[] = ['md', 'txt'],
 ): MergeConfig {
-  return { autoMergeFileTypes, autoMergeFileStrategy, otherFileStrategy, deviceId: 'dev-abcd', frontmatterStrategy: 'merge' };
+  return { autoMergeFileTypes, autoMergeFileStrategy, otherFileStrategy, deviceId: 'dev-abcd', frontmatterStrategy: 'merge', conflictStrategy: 'conflict-markers' };
 }
 
 function resolver(cfg: MergeConfig): ConflictResolver {
@@ -95,12 +95,15 @@ describe('[SPEC:CSF-9] tie → no-op success (FR-009)', () => {
 });
 
 describe('[SPEC:CSF-10] defaults', () => {
-  it('[SPEC:CSF-10] DEFAULT_SETTINGS: merge / latest-mtime / the pre-registered auto-merge types', () => {
+  it('[SPEC:CSF-10] DEFAULT_SETTINGS: merge / latest-mtime / conflict-markers / auto-merge types (no md)', () => {
     expect(DEFAULT_SETTINGS.autoMergeFileStrategy).toBe('merge');
     expect(DEFAULT_SETTINGS.otherFileStrategy).toBe('latest-mtime');
+    expect(DEFAULT_SETTINGS.conflictStrategy).toBe('conflict-markers');
+    // Feature 048: md is special-cased and NOT listed; the list only classifies non-markdown text.
     expect(DEFAULT_SETTINGS.autoMergeFileTypes).toEqual(
-      expect.arrayContaining(['md', 'txt']),
+      expect.arrayContaining(['txt']),
     );
+    expect(DEFAULT_SETTINGS.autoMergeFileTypes).not.toContain('md');
   });
 });
 
