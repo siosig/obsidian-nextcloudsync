@@ -33,23 +33,12 @@ export interface ConfigSyncCategories {
 export type SyncStrategy = 'merge' | 'biggest-size' | 'latest-mtime' | 'local-win' | 'remote-win';
 
 /**
- * Policy for resolving a scalar frontmatter field that was changed to different values
- * on both local and remote sides.
- *   latest-mtime — file with the newer modification time wins; remote wins on tie
- *   remote-win   — remote value always wins
- *   local-win    — local value always wins
- * Experimental: may change or be removed in a future release.
- */
-export type FrontmatterScalarPolicy = 'latest-mtime' | 'remote-win' | 'local-win';
-
-/**
- * Runtime inputs for semantic frontmatter merge, threaded from ConflictContext.
- * Absent when no ConflictContext is available (e.g. unit tests); in that case
- * FrontmatterMergeStrategy falls back to 'remote-win' for scalar conflicts.
+ * Runtime inputs for semantic frontmatter merge, threaded from ConflictContext (feature 047).
+ * Absent when no ConflictContext is available (e.g. unit tests). The scalar / delete-vs-modify
+ * tiebreak inside `frontmatterStrategy: merge` is FIXED to latest-mtime (feature 047, FR-005), so no
+ * per-merge policy is threaded any more — only the two mtimes are needed. Remote wins on a mtime tie.
  */
 export interface MergeContext {
-  /** Scalar conflict resolution policy (from DavSyncSettings.frontmatterScalarConflictPolicy). */
-  frontmatterScalarPolicy: FrontmatterScalarPolicy;
   /** Local file modification time in milliseconds since epoch. */
   localMtime: number;
   /** Remote file modification time in milliseconds since epoch. */
@@ -159,10 +148,13 @@ export interface DavSyncSettings {
    */
   excludedFolders: string[];
   /**
-   * How to resolve a scalar frontmatter field when both sides changed it to different values.
-   * Experimental — may change in a future release. Default: 'latest-mtime'.
+   * How to resolve a conflict on a markdown file's frontmatter block, INDEPENDENTLY of the body
+   * (feature 047). Same five strategies as `autoMergeFileStrategy`. `merge` = semantic merge (arrays
+   * base-aware set-merge, scalars/objects/parse-failure tie-broken by latest-mtime); the other four
+   * adopt one whole side's frontmatter block. Applies to every `.md` regardless of body classification.
+   * Default: 'merge'. Replaces the former experimental `frontmatterScalarConflictPolicy`.
    */
-  frontmatterScalarConflictPolicy: FrontmatterScalarPolicy;
+  frontmatterStrategy: SyncStrategy;
   /**
    * Persisted Sync Status dialog filter selection: the checked status keys, serialized as an array.
    * Absent ⇒ all statuses shown (default). Restored on load and saved on every toggle, so the
@@ -210,7 +202,7 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   autoMergeFileStrategy: 'merge',
   otherFileStrategy: 'latest-mtime',
   excludedFolders: [],
-  frontmatterScalarConflictPolicy: 'latest-mtime',
+  frontmatterStrategy: 'merge',
   // Explicit `undefined` keeps the key in the allowlist used by pruneObsoleteSettings (so a saved
   // selection is never pruned) while meaning "no saved selection → all statuses shown".
   statusFilter: undefined,

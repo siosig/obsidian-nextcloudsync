@@ -208,94 +208,91 @@ describe('FrontmatterMergeStrategy – scalar auto-resolve (US2)', () => {
   });
 });
 
-// ─── HFM-6: scalar conflict via existing policy; nested objects stay opaque ───
+// ─── HFM-6: scalar conflict via fixed latest-mtime tiebreak; nested objects stay opaque ───
 
-describe('FrontmatterMergeStrategy – scalar policy + nested-object opacity (HFM-6)', () => {
+describe('FrontmatterMergeStrategy – scalar latest-mtime tiebreak + nested-object opacity (HFM-6, feature 047)', () => {
   const strategy = new FrontmatterMergeStrategy();
 
-  it('[SPEC:HFM-6] a both-sides scalar conflict is decided by the existing frontmatterScalarConflictPolicy (no new knob)', () => {
-    // Both sides changed `status` to different values → policy decides. remote-win vs local-win must
-    // flip the winner purely from the existing scalar policy field, proving no behaviour was added.
+  it('[SPEC:HFM-6] a both-sides scalar conflict is decided by a fixed latest-mtime tiebreak (no policy knob)', () => {
+    // Both sides changed `status` to different values → the newer side wins. Feature 047 removed the
+    // experimental scalar policy; the tiebreak is now a fixed latest-mtime.
     const base = fm('status: draft');
     const local = fm('status: done');
     const remote = fm('status: in-review');
-    const remoteWin = strategy.merge(base, local, remote, { frontmatterScalarPolicy: 'remote-win', localMtime: 0, remoteMtime: 0 });
-    expect(remoteWin.success).toBe(true);
-    expect(remoteWin.frontmatter).toContain('in-review');
-    expect(remoteWin.frontmatter).not.toContain('done');
-    const localWin = strategy.merge(base, local, remote, { frontmatterScalarPolicy: 'local-win', localMtime: 0, remoteMtime: 0 });
-    expect(localWin.frontmatter).toContain('done');
-    expect(localWin.frontmatter).not.toContain('in-review');
+    const localNewer = strategy.merge(base, local, remote, { localMtime: 2000, remoteMtime: 1000 });
+    expect(localNewer.success).toBe(true);
+    expect(localNewer.frontmatter).toContain('done');
+    expect(localNewer.frontmatter).not.toContain('in-review');
+    const remoteNewer = strategy.merge(base, local, remote, { localMtime: 1000, remoteMtime: 2000 });
+    expect(remoteNewer.frontmatter).toContain('in-review');
+    expect(remoteNewer.frontmatter).not.toContain('done');
   });
 
-  it('[SPEC:HFM-6] a nested YAML object is treated as an opaque scalar, resolved whole by policy — never partially merged', () => {
-    // meta is a mapping on all three sides. Both sides changed it differently → it must be picked WHOLE
-    // by the scalar policy (option A opacity), NOT field-by-field merged. remote-win → remote's meta wins
-    // intact; local's divergent inner value must be absent.
+  it('[SPEC:HFM-6] a nested YAML object is treated as an opaque scalar, resolved whole by latest-mtime — never partially merged', () => {
+    // meta is a mapping on all three sides, changed differently → picked WHOLE by the mtime tiebreak
+    // (option A opacity), NOT field-by-field merged. Remote newer → remote's meta wins intact.
     const base = fm('meta:\n  author: Alice\n  version: 1');
     const local = fm('meta:\n  author: Bob\n  version: 1');
     const remote = fm('meta:\n  author: Carol\n  version: 2');
-    const result = strategy.merge(base, local, remote, { frontmatterScalarPolicy: 'remote-win', localMtime: 0, remoteMtime: 0 });
+    const result = strategy.merge(base, local, remote, { localMtime: 0, remoteMtime: 5000 });
     expect(result.success).toBe(true);
     expect(result.frontmatter).toContain('Carol');
     expect(result.frontmatter).toContain('version: 2');
-    // Opaque whole-value pick: the losing side's inner author is not spliced in.
     expect(result.frontmatter).not.toContain('Bob');
   });
 });
 
-// ─── US3: scalar conflict policy ─────────────────────────────────────────────
+// ─── Feature 047: scalar tiebreak is a fixed latest-mtime (remote wins on tie) ───
 
-describe('FrontmatterMergeStrategy – scalar conflict policy (US3)', () => {
+describe('FrontmatterMergeStrategy – scalar latest-mtime tiebreak (feature 047)', () => {
   const strategy = new FrontmatterMergeStrategy();
   const base = fm('status: draft');
   const local = fm('status: done');
   const remote = fm('status: in-review');
 
-  it('policy latest-mtime, local newer → local value wins', () => {
-    const ctx: MergeContext = { frontmatterScalarPolicy: 'latest-mtime', localMtime: 2000, remoteMtime: 1000 };
+  it('local newer → local value wins', () => {
+    const ctx: MergeContext = { localMtime: 2000, remoteMtime: 1000 };
     const result = strategy.merge(base, local, remote, ctx);
     expect(result.success).toBe(true);
     expect(result.frontmatter).toContain('done');
     expect(result.frontmatter).not.toContain('in-review');
   });
 
-  it('policy latest-mtime, remote newer → remote value wins', () => {
-    const ctx: MergeContext = { frontmatterScalarPolicy: 'latest-mtime', localMtime: 1000, remoteMtime: 2000 };
+  it('remote newer → remote value wins', () => {
+    const ctx: MergeContext = { localMtime: 1000, remoteMtime: 2000 };
     const result = strategy.merge(base, local, remote, ctx);
     expect(result.success).toBe(true);
     expect(result.frontmatter).toContain('in-review');
     expect(result.frontmatter).not.toContain('done');
   });
 
-  it('policy latest-mtime, mtime tie → remote wins', () => {
-    const ctx: MergeContext = { frontmatterScalarPolicy: 'latest-mtime', localMtime: 1000, remoteMtime: 1000 };
+  it('mtime tie → remote wins', () => {
+    const ctx: MergeContext = { localMtime: 1000, remoteMtime: 1000 };
     const result = strategy.merge(base, local, remote, ctx);
     expect(result.success).toBe(true);
     expect(result.frontmatter).toContain('in-review');
   });
 
-  it('policy remote-win → remote always wins', () => {
-    const ctx: MergeContext = { frontmatterScalarPolicy: 'remote-win', localMtime: 9999, remoteMtime: 0 };
-    const result = strategy.merge(base, local, remote, ctx);
-    expect(result.success).toBe(true);
-    expect(result.frontmatter).toContain('in-review');
-    expect(result.frontmatter).not.toContain('done');
-  });
-
-  it('policy local-win → local always wins', () => {
-    const ctx: MergeContext = { frontmatterScalarPolicy: 'local-win', localMtime: 0, remoteMtime: 9999 };
-    const result = strategy.merge(base, local, remote, ctx);
-    expect(result.success).toBe(true);
-    expect(result.frontmatter).toContain('done');
-    expect(result.frontmatter).not.toContain('in-review');
-  });
-
-  it('no ctx supplied → remote wins (safe default)', () => {
+  it('no ctx supplied → remote wins (safe default; mtimes default to a 0/0 tie)', () => {
     const result = strategy.merge(base, local, remote);
     expect(result.success).toBe(true);
     expect(result.frontmatter).toContain('in-review');
     expect(result.frontmatter).not.toContain('done');
+  });
+
+  it('[SPEC:FR-005] scalar delete-vs-modify is base-aware and decided by latest-mtime', () => {
+    // base has `status`; local DELETES it (keeps a different key so the block is non-empty), remote
+    // MODIFIES it. The winner is the newer operation.
+    const b = fm('status: draft\ntitle: x');
+    const localDel = fm('title: x');            // status removed
+    const remoteMod = fm('status: shipped\ntitle: x');
+    // Remote (modify) newer → keep the modified value.
+    const rWins = strategy.merge(b, localDel, remoteMod, { localMtime: 0, remoteMtime: 9999 });
+    expect(rWins.frontmatter).toContain('shipped');
+    // Local (delete) newer → the key stays deleted (deletion wins).
+    const lWins = strategy.merge(b, localDel, remoteMod, { localMtime: 9999, remoteMtime: 0 });
+    expect(lWins.frontmatter).not.toContain('shipped');
+    expect(lWins.frontmatter).not.toContain('status');
   });
 });
 
@@ -325,11 +322,12 @@ describe('MergeEngine – frontmatter semantic merge integration', () => {
     expect(result.mergedContent).not.toContain('Old');
   });
 
-  it('passes MergeContext policy to FrontmatterMergeStrategy', () => {
+  it('threads MergeContext mtimes to FrontmatterMergeStrategy (scalar tiebreak)', () => {
     const base = '---\nstatus: draft\n---\nBody';
     const local = '---\nstatus: done\n---\nBody';
     const remote = '---\nstatus: in-review\n---\nBody';
-    const ctx: MergeContext = { frontmatterScalarPolicy: 'local-win', localMtime: 0, remoteMtime: 9999 };
+    // Local newer → local scalar wins.
+    const ctx: MergeContext = { localMtime: 9999, remoteMtime: 0 };
     const result = engine.merge(base, local, remote, ctx);
     expect(result.success).toBe(true);
     expect(result.mergedContent).toContain('done');
