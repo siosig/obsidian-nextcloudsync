@@ -146,8 +146,10 @@ export class FrontmatterMergeStrategy {
 
   /**
    * Resolve a scalar (or nested-object, treated opaque) field present on BOTH sides with different
-   * values. Feature 047 (FR-005): the both-changed tiebreak is FIXED to latest-mtime (remote wins on
-   * a mtime tie) — the former experimental scalar policy is gone.
+   * values. Feature 048: a genuine both-changed clash is a "conflict" resolved by `ctx.conflictStrategy`
+   * (per-field): local-win / remote-win pick that side; latest-mtime picks the newer file; biggest-size
+   * picks the larger serialized value (tie → latest-mtime); `conflict-markers` cannot be written into a
+   * `---` block, so it falls back to latest-mtime. One-sided changes still auto-resolve.
    */
   private resolveScalar(
     baseVal: unknown,
@@ -162,8 +164,38 @@ export class FrontmatterMergeStrategy {
     if (!localChanged && remoteChanged) return remoteVal;
     if (!localChanged && !remoteChanged) return localVal;
 
-    // Both changed to different values: latest-mtime wins (remote on tie).
+    return this.pickScalarByConflict(localVal, remoteVal, ctx);
+  }
+
+  /** Pick local/remote for a both-changed scalar clash per conflictStrategy (markers → latest-mtime). */
+  private pickScalarByConflict(localVal: unknown, remoteVal: unknown, ctx?: MergeContext): unknown {
+    const cs = ctx?.conflictStrategy ?? 'conflict-markers';
+    if (cs === 'local-win') return localVal;
+    if (cs === 'remote-win') return remoteVal;
+    if (cs === 'biggest-size') {
+      const la = this.sizeOf(localVal);
+      const lb = this.sizeOf(remoteVal);
+      if (la !== lb) return la > lb ? localVal : remoteVal;
+    }
     return this.localWinsByMtime(ctx) ? localVal : remoteVal;
+  }
+
+  private sizeOf(v: unknown): number {
+    return JSON.stringify(v ?? null).length;
+  }
+
+  /**
+   * Decide whether a DELETION wins a delete-vs-modify clash (feature 048). local-win/remote-win favour
+   * that side (deletion wins only if that side is the deleter); biggest-size always keeps the value (a
+   * value outsizes an absence); latest-mtime / conflict-markers(→latest) favour the newer operation.
+   */
+  private deletionWins(deleterIsLocal: boolean, ctx?: MergeContext): boolean {
+    const cs = ctx?.conflictStrategy ?? 'conflict-markers';
+    if (cs === 'local-win') return deleterIsLocal;
+    if (cs === 'remote-win') return !deleterIsLocal;
+    if (cs === 'biggest-size') return false; // a value (size > 0) beats a deletion (absence)
+    const localNewer = this.localWinsByMtime(ctx);
+    return deleterIsLocal ? localNewer : !localNewer;
   }
 
   /** True when the local side's edit is strictly newer than the remote's (remote wins on a tie). */
@@ -213,16 +245,17 @@ export class FrontmatterMergeStrategy {
         // Local absent, remote present.
         if (!inBase) { merged[k] = remoteVal; continue; }        // remote added the key
         if (this.deepEqual(remoteVal, baseVal)) continue;         // remote unchanged → local delete propagates
-        if (this.localWinsByMtime(ctx)) continue;                 // delete (local) newer → drop
-        merged[k] = remoteVal;                                    // modify (remote) newer → keep
+        if (this.deletionWins(true, ctx)) continue;               // delete-vs-modify → conflictStrategy: delete wins → drop
+        merged[k] = remoteVal;                                    // modify (remote) wins → keep
         continue;
       }
       if (!remoteHas) {
         // Remote absent, local present (symmetric).
         if (!inBase) { merged[k] = localVal; continue; }          // local added the key
         if (this.deepEqual(localVal, baseVal)) continue;          // local unchanged → remote delete propagates
-        if (this.localWinsByMtime(ctx)) { merged[k] = localVal; continue; } // modify (local) newer → keep
-        continue;                                                 // delete (remote) newer → drop
+        if (this.deletionWins(false, ctx)) continue;              // delete-vs-modify → conflictStrategy: delete wins → drop
+        merged[k] = localVal;                                     // modify (local) wins → keep
+        continue;
       }
 
       // Present on both sides.

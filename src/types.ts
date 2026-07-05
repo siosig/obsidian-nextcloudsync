@@ -33,16 +33,31 @@ export interface ConfigSyncCategories {
 export type SyncStrategy = 'merge' | 'biggest-size' | 'latest-mtime' | 'local-win' | 'remote-win';
 
 /**
- * Runtime inputs for semantic frontmatter merge, threaded from ConflictContext (feature 047).
- * Absent when no ConflictContext is available (e.g. unit tests). The scalar / delete-vs-modify
- * tiebreak inside `frontmatterStrategy: merge` is FIXED to latest-mtime (feature 047, FR-005), so no
- * per-merge policy is threaded any more — only the two mtimes are needed. Remote wins on a mtime tie.
+ * Feature 048: the SECOND-level fallback applied ONLY to a part that a primary `merge` strategy could
+ * not auto-resolve (a body diff3 conflict region, or a frontmatter scalar/object both-changed clash).
+ *   conflict-markers — body keeps both sides as `<<<<<<< / >>>>>>>` markers (flagged conflicted);
+ *                      frontmatter cannot hold markers, so it falls back to latest-mtime; binary body
+ *                      cannot hold markers either, so it safe-holds (both sides untouched).
+ *   latest-mtime / local-win / remote-win / biggest-size — resolve the conflicting part deterministically
+ *                      (per body region / per frontmatter field). A biggest-size tie falls to latest-mtime.
+ * A primary strategy other than `merge` is already deterministic, so it never reaches this fallback.
+ */
+export type ConflictStrategy = 'conflict-markers' | 'biggest-size' | 'latest-mtime' | 'local-win' | 'remote-win';
+
+/**
+ * Runtime inputs for the merge, threaded from ConflictContext. The two mtimes drive latest-mtime
+ * tiebreaks; `conflictStrategy` (feature 048) resolves a frontmatter scalar clash or a body diff3
+ * conflict region that a primary `merge` could not auto-resolve. Absent when no ConflictContext is
+ * available (e.g. unit tests): mtimes default to 0 (remote wins the tie) and conflictStrategy defaults
+ * to 'conflict-markers'.
  */
 export interface MergeContext {
   /** Local file modification time in milliseconds since epoch. */
   localMtime: number;
   /** Remote file modification time in milliseconds since epoch. */
   remoteMtime: number;
+  /** Feature 048: how to resolve a part a primary `merge` could not auto-resolve. */
+  conflictStrategy?: ConflictStrategy;
 }
 
 /**
@@ -156,6 +171,15 @@ export interface DavSyncSettings {
    */
   frontmatterStrategy: SyncStrategy;
   /**
+   * Feature 048: second-level fallback applied ONLY to a part a primary `merge` could not auto-resolve
+   * (a body diff3 conflict region, or a frontmatter scalar/object both-changed clash). Lets the user
+   * keep attempting a merge but choose the outcome on a real conflict instead of always writing markers.
+   * Default 'conflict-markers' reproduces the feature-047 behaviour (both sides kept as markers, no data
+   * loss). A deterministic primary strategy (biggest-size / latest-mtime / local/remote-win) never
+   * conflicts, so this setting is inert for it.
+   */
+  conflictStrategy: ConflictStrategy;
+  /**
    * Persisted Sync Status dialog filter selection: the checked status keys, serialized as an array.
    * Absent ⇒ all statuses shown (default). Restored on load and saved on every toggle, so the
    * selection survives an Obsidian restart. Unknown keys are ignored on load.
@@ -198,11 +222,15 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   // Conflict strategies (feature 037): a single per-type choice. Defaults reproduce the prior felt
   // behaviour — Auto Merge File types attempt a 3-way merge, everything else takes the newer side.
   // Clearing autoMergeFileTypes routes every file through otherFileStrategy (no merge attempted).
-  autoMergeFileTypes: ['md', 'txt', 'cpp', 'py', 'c', 'h', 'hpp', 'rs', 'go', 'ts', 'js', 'java', 'sh'],
+  // Feature 048: `md` is NOT listed — markdown is always special-cased (frontmatter → frontmatterStrategy,
+  // body → autoMergeFileStrategy) regardless of this list, which now only classifies NON-markdown text.
+  autoMergeFileTypes: ['txt', 'cpp', 'py', 'c', 'h', 'hpp', 'rs', 'go', 'ts', 'js', 'java', 'sh'],
   autoMergeFileStrategy: 'merge',
   otherFileStrategy: 'latest-mtime',
   excludedFolders: [],
   frontmatterStrategy: 'merge',
+  // Feature 048: default keeps the 047 behaviour — a real merge conflict writes both-side markers.
+  conflictStrategy: 'conflict-markers',
   // Explicit `undefined` keeps the key in the allowlist used by pruneObsoleteSettings (so a saved
   // selection is never pruned) while meaning "no saved selection → all statuses shown".
   statusFilter: undefined,

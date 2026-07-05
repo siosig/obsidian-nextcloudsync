@@ -47,7 +47,7 @@ describe('FrontmatterMergeStrategy – no frontmatter (US4)', () => {
   });
 
   it('MergeEngine: notes without frontmatter merge only the body (unchanged behaviour)', () => {
-    const engine = new MergeEngine({ maxConflictRegions: 0 });
+    const engine = new MergeEngine();
     const base = 'Hello world';
     const local = 'Hello world local';
     const remote = 'Hello world local';
@@ -299,7 +299,7 @@ describe('FrontmatterMergeStrategy – scalar latest-mtime tiebreak (feature 047
 // ─── MergeEngine integration: frontmatter is merged semantically ──────────────
 
 describe('MergeEngine – frontmatter semantic merge integration', () => {
-  const engine = new MergeEngine({ maxConflictRegions: 0 });
+  const engine = new MergeEngine();
 
   it('tags on both sides union-merge instead of conflicting', () => {
     const base = '---\ntags:\n  - work\n---\nBody';

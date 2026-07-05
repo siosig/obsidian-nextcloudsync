@@ -1,15 +1,33 @@
-import { migrateBookmarksToConfigSync, migrateStartupToggleToDelay, migrateConflictSettingsToStrategies, migrateFrontmatterScalarPolicyToStrategy, pruneObsoleteSettings, resetDebugIdentityFields } from '../../../src/util/settingsMigration';
+import { migrateBookmarksToConfigSync, migrateStartupToggleToDelay, migrateConflictSettingsToStrategies, migrateFrontmatterScalarPolicyToStrategy, migrateMarkdownAutoMergeType, pruneObsoleteSettings, resetDebugIdentityFields } from '../../../src/util/settingsMigration';
 import { DEFAULT_SETTINGS, DavSyncSettings } from '../../../src/types';
 
 function freshSettings(): DavSyncSettings {
   return { ...DEFAULT_SETTINGS, configSync: { ...DEFAULT_SETTINGS.configSync } };
 }
 
+// Feature 048: md is always special-cased and must not sit in autoMergeFileTypes; conflictStrategy's
+// default ('conflict-markers') comes from DEFAULT_SETTINGS for profiles that lack it.
+describe('[feat048 FR-011/FR-012] migrateMarkdownAutoMergeType — strip md, default conflictStrategy', () => {
+  it('[feat048 FR-011] strips md from a persisted autoMergeFileTypes list (idempotent)', () => {
+    const s = freshSettings();
+    s.autoMergeFileTypes = ['md', 'txt', '.MD', 'py'];
+    migrateMarkdownAutoMergeType(s);
+    expect(s.autoMergeFileTypes).toEqual(['txt', 'py']);
+    migrateMarkdownAutoMergeType(s); // idempotent
+    expect(s.autoMergeFileTypes).toEqual(['txt', 'py']);
+  });
+
+  it('[feat048 FR-012] defaults: autoMergeFileTypes has no md; conflictStrategy is conflict-markers', () => {
+    expect(DEFAULT_SETTINGS.autoMergeFileTypes).not.toContain('md');
+    expect(DEFAULT_SETTINGS.conflictStrategy).toBe('conflict-markers');
+  });
+});
+
 // Feature 047: the experimental frontmatterScalarConflictPolicy is removed and folded into the new
 // dedicated frontmatterStrategy. To PRESERVE the old always-semantic-merge behaviour (arrays union),
 // every migrating user — whatever the old value — converges to `merge`; the old key is then pruned.
-describe('[SPEC:FR-010/FR-011] migrateFrontmatterScalarPolicyToStrategy — old scalar policy → frontmatterStrategy', () => {
-  it('[SPEC:FR-010] any old scalar policy value migrates to merge (preserves semantic merge, not a whole-side pick)', () => {
+describe('[feat048 FR-010/FR-011] migrateFrontmatterScalarPolicyToStrategy — old scalar policy → frontmatterStrategy', () => {
+  it('[feat048 FR-010] any old scalar policy value migrates to merge (preserves semantic merge, not a whole-side pick)', () => {
     for (const old of ['latest-mtime', 'remote-win', 'local-win']) {
       const s = freshSettings();
       migrateFrontmatterScalarPolicyToStrategy({ frontmatterScalarConflictPolicy: old }, s);
@@ -17,20 +35,20 @@ describe('[SPEC:FR-010/FR-011] migrateFrontmatterScalarPolicyToStrategy — old 
     }
   });
 
-  it('[SPEC:FR-010] a fresh install (no old key) keeps the default merge', () => {
+  it('[feat048 FR-010] a fresh install (no old key) keeps the default merge', () => {
     const s = freshSettings();
     migrateFrontmatterScalarPolicyToStrategy({}, s);
     expect(s.frontmatterStrategy).toBe('merge');
   });
 
-  it('[SPEC:FR-011] already on the new model → no-op (a deliberate choice is not overwritten)', () => {
+  it('[feat048 FR-011] already on the new model → no-op (a deliberate choice is not overwritten)', () => {
     const s = freshSettings();
     s.frontmatterStrategy = 'remote-win';
     migrateFrontmatterScalarPolicyToStrategy({ frontmatterStrategy: 'remote-win', frontmatterScalarConflictPolicy: 'local-win' }, s);
     expect(s.frontmatterStrategy).toBe('remote-win');
   });
 
-  it('[SPEC:FR-011] pruneObsoleteSettings drops the obsolete frontmatterScalarConflictPolicy key', () => {
+  it('[feat048 FR-011] pruneObsoleteSettings drops the obsolete frontmatterScalarConflictPolicy key', () => {
     const s = freshSettings() as unknown as Record<string, unknown>;
     s.frontmatterScalarConflictPolicy = 'latest-mtime';
     const removed = pruneObsoleteSettings(s);
