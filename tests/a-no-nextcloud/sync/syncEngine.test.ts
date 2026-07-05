@@ -176,6 +176,10 @@ describe('SyncEngine.handleConflict — strategy actions (feature 037)', () => {
     const arg = h.setFile.mock.calls[0][0] as FileState;
     expect(arg.isConflicted).toBe(false);
     expect(arg.remoteId).toBe('rem-checksum');
+    // 051-webdav-cache-headers: forced prefer-remote resolution must fetch through the shared
+    // client.downloadFile() (not a bespoke fetch), since that is the single choke point where
+    // NO_CACHE_HEADERS is applied — proven separately in noCacheHeaders.test.ts.
+    expect(h.client.downloadFile).toHaveBeenCalledWith('image.png');
   });
 
   it('latest-mtime → prefers the newer side (remote newer here → overwrites local)', async () => {
