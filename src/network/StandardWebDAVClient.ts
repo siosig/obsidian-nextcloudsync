@@ -14,6 +14,7 @@ import {
 import { IWebDAVClient } from './IWebDAVClient';
 import { DavSyncSettings } from '../types';
 import { toRemotePath, hrefToRelative, encodeRemoteUrl, ensureRemoteDir } from './remotePath';
+import { NO_CACHE_HEADERS } from './noCacheHeaders';
 
 export class StandardWebDAVClient implements IWebDAVClient {
   /** Remote directories already created via MKCOL (in-session cache). */
@@ -48,7 +49,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
     const res = await requestUrl({
       url: this.baseUrl,
       method: 'PROPFIND',
-      headers: { Authorization: this.authHeader, Depth: '0' },
+      headers: { Authorization: this.authHeader, Depth: '0', ...NO_CACHE_HEADERS },
       throw: false,
     });
     if (res.status !== 207 && res.status !== 200) throw new NetworkError(res.status, res.text);
@@ -76,7 +77,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
     const res = await requestUrl({
       url: this.remoteUrl(rel),
       method: 'PROPFIND',
-      headers: { Authorization: this.authHeader, Depth: '1', 'Content-Type': 'application/xml' },
+      headers: { Authorization: this.authHeader, Depth: '1', 'Content-Type': 'application/xml', ...NO_CACHE_HEADERS },
       body: `<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:getetag/><d:getcontentlength/><d:getlastmodified/><d:resourcetype/></d:prop></d:propfind>`,
       throw: false,
     });
@@ -103,7 +104,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
     const res = await requestUrl({
       url: this.remoteUrl(rel),
       method: 'PROPFIND',
-      headers: { Authorization: this.authHeader, Depth: '1', 'Content-Type': 'application/xml' },
+      headers: { Authorization: this.authHeader, Depth: '1', 'Content-Type': 'application/xml', ...NO_CACHE_HEADERS },
       body: `<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:getetag/><d:getcontentlength/><d:getlastmodified/><d:resourcetype/></d:prop></d:propfind>`,
       throw: false,
     });
@@ -120,7 +121,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
     const res = await requestUrl({
       url: this.remoteUrl(path),
       method: 'PROPFIND',
-      headers: { Authorization: this.authHeader, Depth: '1', 'Content-Type': 'application/xml' },
+      headers: { Authorization: this.authHeader, Depth: '1', 'Content-Type': 'application/xml', ...NO_CACHE_HEADERS },
       body: `<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/></d:prop></d:propfind>`,
       throw: false,
     });
@@ -138,7 +139,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
   }
 
   async deleteCollection(path: string): Promise<void> {
-    const res = await requestUrl({ url: this.remoteUrl(path), method: 'DELETE', headers: { Authorization: this.authHeader }, throw: false });
+    const res = await requestUrl({ url: this.remoteUrl(path), method: 'DELETE', headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS }, throw: false });
     if (res.status === 404) return;
     if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
   }
@@ -149,7 +150,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
   }
 
   async downloadFile(remotePath: string): Promise<ArrayBuffer> {
-    const res = await requestUrl({ url: this.remoteUrl(remotePath), method: 'GET', headers: { Authorization: this.authHeader }, throw: false });
+    const res = await requestUrl({ url: this.remoteUrl(remotePath), method: 'GET', headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS }, throw: false });
     if (res.status !== 200) throw new NetworkError(res.status, '');
     return res.arrayBuffer;
   }
@@ -164,7 +165,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
     remotePath: string, data: ArrayBuffer, mtime?: number,
     opts?: { precomputedSha256?: string; ifMatchEtag?: string | null },
   ): Promise<void> {
-    const headers: Record<string, string> = { Authorization: this.authHeader };
+    const headers: Record<string, string> = { Authorization: this.authHeader, ...NO_CACHE_HEADERS };
     if (mtime) headers['X-OC-MTime'] = String(Math.floor(mtime / 1000));
     if (opts?.ifMatchEtag) headers['If-Match'] = `"${opts.ifMatchEtag.replace(/^"|"$/g, '')}"`;
     // Reactive directory creation (P1-B): PUT first; MKCOL ancestors on a missing-parent, retry once.
@@ -180,13 +181,13 @@ export class StandardWebDAVClient implements IWebDAVClient {
 
   async moveFile(oldPath: string, newPath: string): Promise<void> {
     await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader }, toRemotePath(this.remoteBase, newPath), this.createdDirs);
-    const res = await requestUrl({ url: this.remoteUrl(oldPath), method: 'MOVE', headers: { Authorization: this.authHeader, Destination: this.remoteUrl(newPath), Overwrite: 'F' }, throw: false });
+    const res = await requestUrl({ url: this.remoteUrl(oldPath), method: 'MOVE', headers: { Authorization: this.authHeader, Destination: this.remoteUrl(newPath), Overwrite: 'F', ...NO_CACHE_HEADERS }, throw: false });
     if (res.status === 412) throw new ConflictError(newPath);
     if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
   }
 
   async deleteFile(path: string, _expectedRemoteId: string): Promise<void> {
-    const res = await requestUrl({ url: this.remoteUrl(path), method: 'DELETE', headers: { Authorization: this.authHeader }, throw: false });
+    const res = await requestUrl({ url: this.remoteUrl(path), method: 'DELETE', headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS }, throw: false });
     if (res.status === 404) return; // blind delete (P1-B): already gone = success
     if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
   }
@@ -201,7 +202,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
       const res = await requestUrl({
         url: this.remoteUrl(remotePath),
         method: 'PROPFIND',
-        headers: { Authorization: this.authHeader, Depth: '0' },
+        headers: { Authorization: this.authHeader, Depth: '0', ...NO_CACHE_HEADERS },
         throw: false,
       });
       return res.status !== 404;
