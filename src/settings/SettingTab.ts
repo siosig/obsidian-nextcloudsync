@@ -325,7 +325,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
 
     makeSetting(containerEl)
       .setName('Frontmatter strategy')
-      .setDesc('How to resolve a conflict on a Markdown note’s frontmatter, independently of the body. Merge does a semantic merge (array fields such as tags/aliases union-merge; scalar clashes take the latest modified); the other four adopt one whole side’s frontmatter block. Applies to every Markdown note regardless of the body strategy.')
+      .setDesc('How to resolve a conflict on a Markdown note’s frontmatter, independently of the body. Merge does a semantic merge (array fields such as tags/aliases union-merge; a scalar clash is decided by the conflict strategy below); the other four adopt one whole side’s frontmatter block. Applies to every Markdown note regardless of the body strategy.')
       .setTooltip(TOOLTIPS.frontmatterStrategy)
       .addDropdown(dd => dd
         .addOption('merge', 'Merge')
@@ -336,6 +336,22 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         .setValue(this.plugin.settings.frontmatterStrategy)
         .onChange(async (value) => {
           this.plugin.settings.frontmatterStrategy = value as DavSyncSettings['frontmatterStrategy'];
+          await this.plugin.saveSettings();
+        }));
+
+    makeSetting(containerEl)
+      .setName('Conflict strategy')
+      .setDesc('When merge cannot auto-resolve a part (a body line both sides changed, or a clashing frontmatter field), this decides the outcome. Conflict markers keeps both sides (frontmatter falls back to latest modified — markers can’t live in the --- block); the others pick one side per conflicting part. Only fires for the merge strategy.')
+      .setTooltip(TOOLTIPS.conflictStrategy)
+      .addDropdown(dd => dd
+        .addOption('conflict-markers', 'Conflict markers')
+        .addOption('biggest-size', 'Biggest size')
+        .addOption('latest-mtime', 'Latest modified')
+        .addOption('local-win', 'Local wins')
+        .addOption('remote-win', 'Remote wins')
+        .setValue(this.plugin.settings.conflictStrategy)
+        .onChange(async (value) => {
+          this.plugin.settings.conflictStrategy = value as DavSyncSettings['conflictStrategy'];
           await this.plugin.saveSettings();
         }));
 
