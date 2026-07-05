@@ -33,27 +33,31 @@ export interface ConfigSyncCategories {
 export type SyncStrategy = 'merge' | 'biggest-size' | 'latest-mtime' | 'local-win' | 'remote-win';
 
 /**
- * Policy for resolving a scalar frontmatter field that was changed to different values
- * on both local and remote sides.
- *   latest-mtime — file with the newer modification time wins; remote wins on tie
- *   remote-win   — remote value always wins
- *   local-win    — local value always wins
- * Experimental: may change or be removed in a future release.
+ * Feature 048: the SECOND-level fallback applied ONLY to a part that a primary `merge` strategy could
+ * not auto-resolve (a body diff3 conflict region, or a frontmatter scalar/object both-changed clash).
+ *   conflict-markers — body keeps both sides as `<<<<<<< / >>>>>>>` markers (flagged conflicted);
+ *                      frontmatter cannot hold markers, so it falls back to latest-mtime; binary body
+ *                      cannot hold markers either, so it safe-holds (both sides untouched).
+ *   latest-mtime / local-win / remote-win / biggest-size — resolve the conflicting part deterministically
+ *                      (per body region / per frontmatter field). A biggest-size tie falls to latest-mtime.
+ * A primary strategy other than `merge` is already deterministic, so it never reaches this fallback.
  */
-export type FrontmatterScalarPolicy = 'latest-mtime' | 'remote-win' | 'local-win';
+export type ConflictStrategy = 'conflict-markers' | 'biggest-size' | 'latest-mtime' | 'local-win' | 'remote-win';
 
 /**
- * Runtime inputs for semantic frontmatter merge, threaded from ConflictContext.
- * Absent when no ConflictContext is available (e.g. unit tests); in that case
- * FrontmatterMergeStrategy falls back to 'remote-win' for scalar conflicts.
+ * Runtime inputs for the merge, threaded from ConflictContext. The two mtimes drive latest-mtime
+ * tiebreaks; `conflictStrategy` (feature 048) resolves a frontmatter scalar clash or a body diff3
+ * conflict region that a primary `merge` could not auto-resolve. Absent when no ConflictContext is
+ * available (e.g. unit tests): mtimes default to 0 (remote wins the tie) and conflictStrategy defaults
+ * to 'conflict-markers'.
  */
 export interface MergeContext {
-  /** Scalar conflict resolution policy (from DavSyncSettings.frontmatterScalarConflictPolicy). */
-  frontmatterScalarPolicy: FrontmatterScalarPolicy;
   /** Local file modification time in milliseconds since epoch. */
   localMtime: number;
   /** Remote file modification time in milliseconds since epoch. */
   remoteMtime: number;
+  /** Feature 048: how to resolve a part a primary `merge` could not auto-resolve. */
+  conflictStrategy?: ConflictStrategy;
 }
 
 /**
@@ -116,6 +120,15 @@ export interface DavSyncSettings {
    */
   bulkUploadEnabled: boolean;
   /**
+   * Feature 049: mass-delete circuit-breaker limit (Advanced / caution). Caps how many local files or
+   * folders a single sync may delete via absence-based remote-deletion detection — the guard that
+   * prevents a partial/failed remote listing from wiping the vault.
+   *   -1 (default) = AUTOMATIC — the built-in dynamic limit max(20, 20% of tracked files) (safe).
+   *    0           = UNLIMITED — the breaker never fires (RISKY: a partial listing can delete everything).
+   *    N > 0       = a fixed absolute limit — the breaker fires when a sync would delete more than N.
+   */
+  massDeleteLimit: number;
+  /**
    * Master opt-in for syncing parts of the Obsidian config folder (Vault#configDir, e.g. `.obsidian`).
    * Default OFF. While off, nothing under the config folder is synced (notes-only behaviour).
    * When on, the individual `configSync` categories below decide what is included.
@@ -159,10 +172,22 @@ export interface DavSyncSettings {
    */
   excludedFolders: string[];
   /**
-   * How to resolve a scalar frontmatter field when both sides changed it to different values.
-   * Experimental — may change in a future release. Default: 'latest-mtime'.
+   * How to resolve a conflict on a markdown file's frontmatter block, INDEPENDENTLY of the body
+   * (feature 047). Same five strategies as `autoMergeFileStrategy`. `merge` = semantic merge (arrays
+   * base-aware set-merge, scalars/objects/parse-failure tie-broken by latest-mtime); the other four
+   * adopt one whole side's frontmatter block. Applies to every `.md` regardless of body classification.
+   * Default: 'merge'. Replaces the former experimental `frontmatterScalarConflictPolicy`.
    */
-  frontmatterScalarConflictPolicy: FrontmatterScalarPolicy;
+  frontmatterStrategy: SyncStrategy;
+  /**
+   * Feature 048: second-level fallback applied ONLY to a part a primary `merge` could not auto-resolve
+   * (a body diff3 conflict region, or a frontmatter scalar/object both-changed clash). Lets the user
+   * keep attempting a merge but choose the outcome on a real conflict instead of always writing markers.
+   * Default 'conflict-markers' reproduces the feature-047 behaviour (both sides kept as markers, no data
+   * loss). A deterministic primary strategy (biggest-size / latest-mtime / local/remote-win) never
+   * conflicts, so this setting is inert for it.
+   */
+  conflictStrategy: ConflictStrategy;
   /**
    * Persisted Sync Status dialog filter selection: the checked status keys, serialized as an array.
    * Absent ⇒ all statuses shown (default). Restored on load and saved on every toggle, so the
@@ -191,6 +216,8 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   // Desktop default OFF; mobile's first run flips it ON in loadSettings() (metered data).
   syncOnWifiOnly: false,
   bulkUploadEnabled: true,
+  // Feature 049: -1 = automatic dynamic breaker (safe default). 0 = unlimited (opt-in, risky). N = fixed.
+  massDeleteLimit: -1,
   // Config-folder sync is opt-in: master defaults OFF, so a fresh install syncs notes only.
   // These category defaults take effect only once the user turns the master on.
   // Migrated `syncBookmarks: true` users get bookmarks-only instead
@@ -206,11 +233,15 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   // Conflict strategies (feature 037): a single per-type choice. Defaults reproduce the prior felt
   // behaviour — Auto Merge File types attempt a 3-way merge, everything else takes the newer side.
   // Clearing autoMergeFileTypes routes every file through otherFileStrategy (no merge attempted).
-  autoMergeFileTypes: ['md', 'txt', 'cpp', 'py', 'c', 'h', 'hpp', 'rs', 'go', 'ts', 'js', 'java', 'sh'],
+  // Feature 048: `md` is NOT listed — markdown is always special-cased (frontmatter → frontmatterStrategy,
+  // body → autoMergeFileStrategy) regardless of this list, which now only classifies NON-markdown text.
+  autoMergeFileTypes: ['txt', 'cpp', 'py', 'c', 'h', 'hpp', 'rs', 'go', 'ts', 'js', 'java', 'sh'],
   autoMergeFileStrategy: 'merge',
   otherFileStrategy: 'latest-mtime',
   excludedFolders: [],
-  frontmatterScalarConflictPolicy: 'latest-mtime',
+  frontmatterStrategy: 'merge',
+  // Feature 048: default keeps the 047 behaviour — a real merge conflict writes both-side markers.
+  conflictStrategy: 'conflict-markers',
   // Explicit `undefined` keeps the key in the allowlist used by pruneObsoleteSettings (so a saved
   // selection is never pruned) while meaning "no saved selection → all statuses shown".
   statusFilter: undefined,

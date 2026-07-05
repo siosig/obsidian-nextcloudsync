@@ -13,7 +13,7 @@ describe('[SPEC:MB-1] base present → shared blocks are not duplicated', () => 
   const remote = 'line1\nline3\nline4\nREMOTE';
 
   it('merges cleanly with both edits and no duplicated shared block', () => {
-    const engine = new MergeEngine({ maxConflictRegions: 0 });
+    const engine = new MergeEngine();
     const r = engine.merge(base, local, remote);
     expect(r.success).toBe(true);
     expect(r.hadConflicts).toBe(false);
@@ -28,15 +28,16 @@ describe('[SPEC:MB-1] base present → shared blocks are not duplicated', () => 
 
 describe('[SPEC:MB-3] base absent → empty-base duplication is caught by the expansion guard', () => {
   it('the same inputs with base="" do NOT produce a clean merge (037 guard)', () => {
-    const engine = new MergeEngine({ maxConflictRegions: 0 });
+    const engine = new MergeEngine();
     const r = engine.merge('', 'line1\nline2 LOCAL\nline3\nline4', 'line1\nline3\nline4\nREMOTE');
-    expect(r.success).toBe(false); // downgraded to conflict — corrupt body never written
+    // Feature 048: downgraded to a (marker) conflict — corrupt union never written as a clean merge.
+    expect(r.hadConflicts).toBe(true);
   });
 });
 
 describe('[SPEC:MB-2][SPEC:MB-4] base advances → repeated conflicts stay clean (self-healing)', () => {
   it('after a clean merge, using it as the next base keeps subsequent merges duplication-free', () => {
-    const engine = new MergeEngine({ maxConflictRegions: 0 });
+    const engine = new MergeEngine();
     // Round 1: base seeded, clean merge.
     const base1 = 'line1\nline3\nline4';
     const merged1 = engine.merge(base1, 'line1\nline2 LOCAL\nline3\nline4', 'line1\nline3\nline4\nREMOTE');
