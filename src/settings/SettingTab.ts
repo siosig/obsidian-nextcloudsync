@@ -324,16 +324,18 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         }));
 
     makeSetting(containerEl)
-      .setName('Frontmatter scalar conflict [experimental]')
-      .setDesc('When both devices change the same scalar frontmatter field (e.g. Title or status) to different values, choose which side wins. Array fields (tags, aliases, …) always union-merge and are unaffected by this setting.')
-      .setTooltip(TOOLTIPS.frontmatterScalarConflictPolicy)
+      .setName('Frontmatter strategy')
+      .setDesc('How to resolve a conflict on a Markdown note’s frontmatter, independently of the body. Merge does a semantic merge (array fields such as tags/aliases union-merge; scalar clashes take the latest modified); the other four adopt one whole side’s frontmatter block. Applies to every Markdown note regardless of the body strategy.')
+      .setTooltip(TOOLTIPS.frontmatterStrategy)
       .addDropdown(dd => dd
+        .addOption('merge', 'Merge')
+        .addOption('biggest-size', 'Biggest size')
         .addOption('latest-mtime', 'Latest modified')
-        .addOption('remote-win', 'Remote wins')
         .addOption('local-win', 'Local wins')
-        .setValue(this.plugin.settings.frontmatterScalarConflictPolicy)
+        .addOption('remote-win', 'Remote wins')
+        .setValue(this.plugin.settings.frontmatterStrategy)
         .onChange(async (value) => {
-          this.plugin.settings.frontmatterScalarConflictPolicy = value as DavSyncSettings['frontmatterScalarConflictPolicy'];
+          this.plugin.settings.frontmatterStrategy = value as DavSyncSettings['frontmatterStrategy'];
           await this.plugin.saveSettings();
         }));
 

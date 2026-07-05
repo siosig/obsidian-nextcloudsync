@@ -47,9 +47,9 @@ export const TOOLTIPS = {
   otherFileStrategy:
     'Conflict strategy for every other file. Latest modified keeps the side with the newer modification time — beware: clock skew between devices can let an older edit overwrite a newer one with no prompt. Biggest size keeps the larger file; Local/Remote wins always keep that side. A size or mtime tie is left untouched and re-evaluated next sync.',
 
-  // Conflict resolution — Experimental (feature 040)
-  frontmatterScalarConflictPolicy:
-    'Experimental. When both sides changed the same scalar frontmatter field (e.g. title or status) to different values, this policy decides the winner. "Latest modified" uses the file modification time — beware clock skew between devices. Array fields (tags, aliases, …) always union-merge regardless of this setting.',
+  // Conflict resolution — markdown frontmatter (feature 047)
+  frontmatterStrategy:
+    'How a markdown note’s frontmatter block is resolved on conflict, INDEPENDENTLY of the body. Merge: array fields (tags, aliases, …) union-merge with deletion propagation; scalar/object clashes take the latest modified side. Biggest size / Latest modified / Local wins / Remote wins each adopt one whole side’s frontmatter. Applies to every markdown note whatever the body strategy is. "Latest modified" uses file mtime — beware clock skew between devices.',
 
   // Excluded folders section
   excludedFolders:
