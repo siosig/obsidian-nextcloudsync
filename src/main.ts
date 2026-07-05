@@ -13,7 +13,7 @@ import { isSyncTmpPath, LocalAdapter } from './data/LocalAdapter';
 import type { MergeBaseStore } from './data/MergeBaseStore';
 import { v4 as uuidv4 } from './util/uuid';
 import { hostToken, LogPlatform } from './util/hostToken';
-import { migrateConfigSyncCategories, migrateBookmarksToConfigSync, migrateStartupToggleToDelay, migrateConflictSettingsToStrategies, pruneObsoleteSettings, resetDebugIdentityFields, applyMobileFirstRunDefaults } from './util/settingsMigration';
+import { migrateConfigSyncCategories, migrateBookmarksToConfigSync, migrateStartupToggleToDelay, migrateConflictSettingsToStrategies, migrateFrontmatterScalarPolicyToStrategy, pruneObsoleteSettings, resetDebugIdentityFields, applyMobileFirstRunDefaults } from './util/settingsMigration';
 import { debugLogPath, syncLogPath, isActiveOwnLog } from './util/logPaths';
 import { SyncLogWriter, formatResolution } from './log/SyncLogWriter';
 import { autoNetworkConcurrency } from './util/platformDefaults';
@@ -470,6 +470,11 @@ export default class ObsidianNextcloudsync extends Plugin {
     // / frontmatterConflictStrategy + mergeableExtensions) into the per-type strategy model before the
     // obsolete keys are pruned below.
     migrateConflictSettingsToStrategies(saved, this.settings);
+
+    // Feature 047: fold the removed experimental `frontmatterScalarConflictPolicy` into the new
+    // dedicated `frontmatterStrategy` (every migrating user → `merge`, preserving semantic merge)
+    // before the obsolete key is pruned below.
+    migrateFrontmatterScalarPolicyToStrategy(saved, this.settings);
 
     // Feature 032: the Debug section no longer exposes a device name or a log folder. Force both back
     // to their auto/fixed sentinels so every user converges onto the single path (device name derived,

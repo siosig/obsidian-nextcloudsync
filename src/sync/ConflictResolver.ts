@@ -1,9 +1,9 @@
-import { App } from 'obsidian';
-import { ConflictResolution, FrontmatterScalarPolicy, MergeContext, SyncStrategy } from '../types';
+import { App, getFrontMatterInfo } from 'obsidian';
+import { ConflictResolution, MergeContext, SyncStrategy } from '../types';
 import { LocalAdapter } from '../data/LocalAdapter';
 import { MergeEngine } from './merge/MergeEngine';
 import { FIXED } from '../util/fixedSyncConfig';
-import { isAutoMergeFileType } from '../util/mergeableExtensions';
+import { isAutoMergeFileType, isMarkdown } from '../util/mergeableExtensions';
 
 const CONFLICT_TAG = '#conflict';
 const CONFLICT_MARKER_RE = /^<<<<<<< /m;
@@ -53,8 +53,11 @@ export interface MergeConfig {
   otherFileStrategy: Exclude<SyncStrategy, 'merge'>;
   /** Device id, used for the conflict-marker byline. */
   deviceId: string;
-  /** Scalar frontmatter conflict resolution policy (feature 040, Experimental). Defaults to 'latest-mtime' when absent. */
-  frontmatterScalarPolicy?: FrontmatterScalarPolicy;
+  /**
+   * Feature 047: how to resolve a markdown file's frontmatter block, independently of the body. Same
+   * five strategies as the body; `merge` = semantic merge. Applies to every `.md`. Defaults to 'merge'.
+   */
+  frontmatterStrategy: SyncStrategy;
 }
 
 /**
@@ -118,6 +121,13 @@ export class ConflictResolver {
   decide(
     path: string, base: string, local: string, remote: string, ctx?: ConflictContext,
   ): ConflictResolution {
+    // Feature 047: a markdown file with frontmatter on ANY side is resolved by splitting frontmatter
+    // from body and applying `frontmatterStrategy` to the former and the file's own strategy to the
+    // latter — independently — regardless of the body classification. A markdown file with no
+    // frontmatter on any side, and every non-markdown file, keeps the whole-file path below (FR-012).
+    if (isMarkdown(path) && this.hasAnyFrontmatter(base, local, remote)) {
+      return this.decideMarkdown(path, base, local, remote, ctx);
+    }
     switch (this.strategyFor(path)) {
       case 'merge':
         return this.decideMerge(base, local, remote, ctx);
@@ -156,11 +166,7 @@ export class ConflictResolver {
       return { action: 'safe-hold' };
     }
     const mergeCtx: MergeContext | undefined = ctx
-      ? {
-          frontmatterScalarPolicy: this.config.frontmatterScalarPolicy ?? 'latest-mtime',
-          localMtime: ctx.localMtime,
-          remoteMtime: ctx.remoteMtime,
-        }
+      ? { localMtime: ctx.localMtime, remoteMtime: ctx.remoteMtime }
       : undefined;
     const result = this.mergeEngine.merge(base, local, remote, mergeCtx);
     // Feature 039 (FR-039-5, P2): the merge produced nested/stacked markers (corruption fingerprint) →
@@ -178,6 +184,41 @@ export class ConflictResolver {
     // inside markers (which previously seeded the nested-marker corruption; see
     // specs/043-harden-frontmatter-merge/research.md §1).
     return { action: 'write', content: this.buildMarkerContent(local, remote), clean: false };
+  }
+
+  /** True when any of base/local/remote carries a frontmatter block (feature 047). */
+  private hasAnyFrontmatter(base: string, local: string, remote: string): boolean {
+    return getFrontMatterInfo(local).exists || getFrontMatterInfo(remote).exists || getFrontMatterInfo(base).exists;
+  }
+
+  /**
+   * Feature 047: resolve a markdown conflict with the frontmatter and body handled by INDEPENDENT
+   * strategies. Binary content or a complete plugin marker set (body re-entrancy) safe-holds — the
+   * same guards as `decideMerge`. Otherwise the MergeEngine composes `frontmatterStrategy(frontmatter)`
+   * with `bodyStrategy(body)`; any body markers stay in the body (never the `---` block). The result is
+   * a single composed content written locally and pushed (a whole-side pick still produces a `write` of
+   * the composed file, not a prefer-local/remote of the raw side, because the two halves may differ).
+   */
+  private decideMarkdown(path: string, base: string, local: string, remote: string, ctx?: ConflictContext): ConflictResolution {
+    if (isLikelyBinary(local) || isLikelyBinary(remote)) {
+      return { action: 'safe-hold' };
+    }
+    if (hasCompleteMarkerSet(local) || hasCompleteMarkerSet(remote)) {
+      return { action: 'safe-hold' };
+    }
+    const mergeCtx: MergeContext | undefined = ctx
+      ? { localMtime: ctx.localMtime, remoteMtime: ctx.remoteMtime }
+      : undefined;
+    const result = this.mergeEngine.resolveMarkdown(base, local, remote, {
+      frontmatterStrategy: this.config.frontmatterStrategy,
+      bodyStrategy: this.strategyFor(path),
+      buildMarkers: (l, r) => this.buildMarkerContent(l, r),
+      ctx: mergeCtx,
+    });
+    if (result.hold) {
+      return { action: 'safe-hold' };
+    }
+    return { action: 'write', content: result.mergedContent, clean: result.success && !result.hadConflicts };
   }
 
   /**

@@ -13,6 +13,7 @@ function resolver(overrides: Partial<MergeConfig>): ConflictResolver {
     autoMergeFileTypes: DEFAULT_SETTINGS.autoMergeFileTypes,
     autoMergeFileStrategy: DEFAULT_SETTINGS.autoMergeFileStrategy,
     otherFileStrategy: DEFAULT_SETTINGS.otherFileStrategy,
+    frontmatterStrategy: DEFAULT_SETTINGS.frontmatterStrategy,
     deviceId: 'conf-device',
     ...overrides,
   });

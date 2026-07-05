@@ -20,6 +20,7 @@ function resolver(overrides: Partial<DavSyncSettings>): ConflictResolver {
     autoMergeFileStrategy: settings.autoMergeFileStrategy,
     otherFileStrategy: settings.otherFileStrategy,
     deviceId: settings.deviceId,
+    frontmatterStrategy: settings.frontmatterStrategy,
   };
   return new ConflictResolver({} as App, {} as unknown as LocalAdapter, config);
 }
