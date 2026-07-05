@@ -466,6 +466,27 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
           if (value) void this.plugin.logSettingsSnapshot();
         }));
 
+    // ── Advanced (caution) ──────────────────────────────────────────────────────
+    // Feature 049: options that can cause data loss. Gated behind a visible warning banner.
+    new Setting(containerEl).setName('Advanced (use with caution)').setHeading();
+
+    const advWarn = containerEl.createEl('div', { cls: 'ncs-setting-warning' });
+    advWarn.createSpan({ text: '⚠️ ' });
+    advWarn.createEl('strong', { text: 'Caution: these options can cause data loss.' });
+    advWarn.createSpan({ text: ' Change them only if you understand the risk.' });
+
+    makeSetting(containerEl)
+      .setName('Mass-delete safety limit')
+      .setDesc('Most files/folders one sync may delete locally when they vanish from the server — the guard that stops a partial or failed remote listing from wiping your vault. -1 = automatic (recommended): the built-in limit of max(20, 20% of tracked files). 0 = no limit (risky — a broken listing could delete everything locally). A positive number sets a fixed limit. Raise this only if a legitimate large deletion was blocked.')
+      .setTooltip(TOOLTIPS.massDeleteLimit)
+      .addText(text => text
+        .setPlaceholder('-1')
+        .setValue(String(this.plugin.settings.massDeleteLimit))
+        .onChange(async (value) => {
+          this.plugin.settings.massDeleteLimit = normalizeNumericInput(value, -1, 1_000_000, this.plugin.settings.massDeleteLimit);
+          await this.plugin.saveSettings();
+        }));
+
     new Setting(containerEl).setName('Maintenance').setHeading();
 
     makeSetting(containerEl)
