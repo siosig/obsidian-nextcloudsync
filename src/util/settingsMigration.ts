@@ -126,6 +126,46 @@ export function migrateConflictSettingsToStrategies(
 }
 
 /**
+ * Feature 047: migrate the removed experimental `frontmatterScalarConflictPolicy` to the new dedicated
+ * `frontmatterStrategy`.
+ *
+ * IMPORTANT — this is NOT a same-named value mapping. The old policy only tuned the SCALAR tiebreak
+ * inside a merge that ALWAYS ran (arrays always union/set-merged, markers never written). Mapping its
+ * value (default `latest-mtime`, persisted for virtually every user) to the same-named whole-side
+ * strategy would make the whole frontmatter block be taken from one side and SILENTLY DROP array
+ * union-merge for everyone — a broad regression of feature 040/043. So every migrating user (any old
+ * value) converges to `merge`, which preserves the old always-semantic-merge behavior; the new merge's
+ * scalar tiebreak is fixed to latest-mtime, matching the old default.
+ *
+ * Idempotent: a no-op once `frontmatterStrategy` is on the saved model, and for a fresh install (no old
+ * key) where DEFAULT_SETTINGS already supplies `merge`. Mutates `settings`; run before
+ * {@link pruneObsoleteSettings} so the obsolete key is then dropped.
+ */
+export function migrateFrontmatterScalarPolicyToStrategy(
+  saved: { frontmatterStrategy?: unknown; frontmatterScalarConflictPolicy?: unknown },
+  settings: DavSyncSettings,
+): void {
+  if (saved.frontmatterStrategy !== undefined) return; // already on the new model
+  if (saved.frontmatterScalarConflictPolicy !== undefined) {
+    settings.frontmatterStrategy = 'merge';
+  }
+}
+
+/**
+ * Feature 048: markdown is always special-cased (frontmatter → frontmatterStrategy, body →
+ * autoMergeFileStrategy) regardless of `autoMergeFileTypes`, so `md` must not sit in that list. Strip
+ * it from any persisted list (self-healing; behaviour is unchanged since md is special-cased anyway).
+ * The new `conflictStrategy` needs no value mapping — DEFAULT_SETTINGS supplies its default
+ * ('conflict-markers', reproducing the prior markers-on-conflict behaviour) for profiles that lack it.
+ * Idempotent; mutates `settings`; run before {@link pruneObsoleteSettings}.
+ */
+export function migrateMarkdownAutoMergeType(settings: DavSyncSettings): void {
+  settings.autoMergeFileTypes = (settings.autoMergeFileTypes ?? []).filter(
+    (e) => typeof e === 'string' && e.trim().replace(/^\.+/, '').toLowerCase() !== 'md',
+  );
+}
+
+/**
  * Force the two Debug-identity fields back to their auto/fixed sentinels (feature 032). The settings
  * UI no longer lets the user set a device name or a log folder; every user converges onto the single
  * path where the device name is derived (`deviceName=''` ⇒ `<platform>-<deviceId>`) and logs are
