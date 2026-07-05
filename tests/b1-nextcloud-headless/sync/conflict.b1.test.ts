@@ -20,6 +20,8 @@ function resolver(overrides: Partial<DavSyncSettings>): ConflictResolver {
     autoMergeFileStrategy: settings.autoMergeFileStrategy,
     otherFileStrategy: settings.otherFileStrategy,
     deviceId: settings.deviceId,
+    frontmatterStrategy: settings.frontmatterStrategy,
+    conflictStrategy: settings.conflictStrategy,
   };
   return new ConflictResolver({} as App, {} as unknown as LocalAdapter, config);
 }
@@ -60,14 +62,16 @@ describe('Layer B — conflict resolution (CF)', () => {
     if (d.action === 'write') expect(d.clean).toBe(true);
   });
 
+  // Feature 048: markdown is special-cased (always a composed write), so the deterministic whole-file
+  // actions are exercised on a NON-markdown auto-merge file (txt).
   it('CF-4 auto merge file + local-win → prefer-local', () => {
-    const r = resolver({ autoMergeFileStrategy: 'local-win', autoMergeFileTypes: ['md'] });
-    expect(r.decide('n.md', DIVERGED.base, DIVERGED.local, DIVERGED.remote).action).toBe('prefer-local');
+    const r = resolver({ autoMergeFileStrategy: 'local-win', autoMergeFileTypes: ['txt'] });
+    expect(r.decide('n.txt', DIVERGED.base, DIVERGED.local, DIVERGED.remote).action).toBe('prefer-local');
   });
 
   it('CF-5 auto merge file + remote-win → prefer-remote', () => {
-    const r = resolver({ autoMergeFileStrategy: 'remote-win', autoMergeFileTypes: ['md'] });
-    expect(r.decide('n.md', DIVERGED.base, DIVERGED.local, DIVERGED.remote).action).toBe('prefer-remote');
+    const r = resolver({ autoMergeFileStrategy: 'remote-win', autoMergeFileTypes: ['txt'] });
+    expect(r.decide('n.txt', DIVERGED.base, DIVERGED.local, DIVERGED.remote).action).toBe('prefer-remote');
   });
 
   it('CF-6 merge ON + SAME-line divergence with a real base → conflict markers, both sides kept (feature 039 base-aware 3-way)', () => {
@@ -93,7 +97,8 @@ describe('Layer B — conflict resolution (CF)', () => {
 
   it('CF-8 empty auto-merge types + other=local-win → prefer-local', () => {
     const r = resolver({ autoMergeFileTypes: [], otherFileStrategy: 'local-win' });
-    expect(r.decide('n.md', DIVERGED.base, DIVERGED.local, DIVERGED.remote).action).toBe('prefer-local');
+    // Non-markdown Other File (feature 048: markdown never routes to otherFileStrategy).
+    expect(r.decide('n.pdf', DIVERGED.base, DIVERGED.local, DIVERGED.remote).action).toBe('prefer-local');
   });
 
   // CF-9: the conflict-region cap is unit-tested in MergeEngine.test.ts with mocked strategies.
