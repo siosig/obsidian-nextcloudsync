@@ -1,4 +1,21 @@
-import { massDeleteLimit, isMassDeletionGuarded, MASS_DELETE_MIN } from '../../../src/util/limits';
+import { massDeleteLimit, isMassDeletionGuarded, MASS_DELETE_MIN, effectiveMassDeleteLimit } from '../../../src/util/limits';
+
+// Feature 049: the mass-delete breaker limit is user-configurable (Advanced / caution). -1 = automatic
+// (safe default), 0 = unlimited (opt-in), N = fixed absolute.
+describe('[SPEC:DEL-3] effectiveMassDeleteLimit — user-configurable breaker (feature 049)', () => {
+  it('-1 (default) uses the automatic dynamic limit', () => {
+    expect(effectiveMassDeleteLimit(-1, 0)).toBe(MASS_DELETE_MIN);
+    expect(effectiveMassDeleteLimit(-1, 1000)).toBe(massDeleteLimit(1000)); // 200
+  });
+  it('0 means unlimited (breaker never fires)', () => {
+    expect(effectiveMassDeleteLimit(0, 1000)).toBe(Number.POSITIVE_INFINITY);
+    expect(1_000_000 > effectiveMassDeleteLimit(0, 10)).toBe(false); // nothing exceeds Infinity
+  });
+  it('a positive value is a fixed absolute limit (overrides the dynamic one)', () => {
+    expect(effectiveMassDeleteLimit(50, 1000)).toBe(50); // fixed 50 even though auto would be 200
+    expect(effectiveMassDeleteLimit(500, 100)).toBe(500); // raise above the auto 20
+  });
+});
 
 // [SPEC:DEL-3] specs/main/spec.md §8 — mass-delete circuit breaker. A full-scan reconciliation may delete
 // locally at most max(20, floor(20% of tracked)) "remotely absent" files; beyond that it assumes a
