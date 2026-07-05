@@ -53,6 +53,19 @@ export function massDeleteLimit(trackedCount: number): number {
 }
 
 /**
+ * Feature 049: the effective mass-delete limit honouring the user's `massDeleteLimit` setting.
+ *   -1 (default) → the automatic dynamic {@link massDeleteLimit} (safe default);
+ *    0           → unlimited (breaker off — opt-in, risky);
+ *    N > 0       → a fixed absolute limit.
+ * Any other negative value is treated as automatic (defensive).
+ */
+export function effectiveMassDeleteLimit(configured: number, trackedCount: number): number {
+  if (configured === 0) return Number.POSITIVE_INFINITY;
+  if (configured > 0) return configured;
+  return massDeleteLimit(trackedCount);
+}
+
+/**
  * True when the number of local-deletion candidates exceeds {@link massDeleteLimit} for the tracked
  * set — i.e. the mass-delete circuit breaker should fire and refuse the bulk local deletion.
  */

@@ -120,6 +120,15 @@ export interface DavSyncSettings {
    */
   bulkUploadEnabled: boolean;
   /**
+   * Feature 049: mass-delete circuit-breaker limit (Advanced / caution). Caps how many local files or
+   * folders a single sync may delete via absence-based remote-deletion detection — the guard that
+   * prevents a partial/failed remote listing from wiping the vault.
+   *   -1 (default) = AUTOMATIC — the built-in dynamic limit max(20, 20% of tracked files) (safe).
+   *    0           = UNLIMITED — the breaker never fires (RISKY: a partial listing can delete everything).
+   *    N > 0       = a fixed absolute limit — the breaker fires when a sync would delete more than N.
+   */
+  massDeleteLimit: number;
+  /**
    * Master opt-in for syncing parts of the Obsidian config folder (Vault#configDir, e.g. `.obsidian`).
    * Default OFF. While off, nothing under the config folder is synced (notes-only behaviour).
    * When on, the individual `configSync` categories below decide what is included.
@@ -207,6 +216,8 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   // Desktop default OFF; mobile's first run flips it ON in loadSettings() (metered data).
   syncOnWifiOnly: false,
   bulkUploadEnabled: true,
+  // Feature 049: -1 = automatic dynamic breaker (safe default). 0 = unlimited (opt-in, risky). N = fixed.
+  massDeleteLimit: -1,
   // Config-folder sync is opt-in: master defaults OFF, so a fresh install syncs notes only.
   // These category defaults take effect only once the user turns the master on.
   // Migrated `syncBookmarks: true` users get bookmarks-only instead
