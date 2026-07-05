@@ -121,7 +121,7 @@ describe('MergeEngine', () => {
     const local = '---\n<<<<<<< LOCAL\ntags:\n  - a\n=======\ntags:\n  - b\n>>>>>>> REMOTE\n---\nBody';
     const remote = '---\ntags:\n  - a\n  - c\n---\nBody';
     // remote newer → latest-mtime picks the clean remote side (self-heal), never re-wrapping markers.
-    const ctx: MergeContext = { frontmatterScalarPolicy: 'latest-mtime', localMtime: 1000, remoteMtime: 2000 };
+    const ctx: MergeContext = { localMtime: 1000, remoteMtime: 2000 };
     const result = engine.merge('', local, remote, ctx);
     const fmBlock = frontmatterBlock(result.mergedContent);
     expect(hasMarkerLines(fmBlock)).toBe(false);
@@ -145,18 +145,19 @@ describe('MergeEngine', () => {
     expect(hasMarkerLines(fmBlock)).toBe(false);
   });
 
-  it('[SPEC:HFM-10] an unparseable side is resolved by a whole-side pick per scalar policy — no diff3 markers', () => {
+  it('[SPEC:HFM-10] an unparseable side is resolved by a whole-side pick (latest-mtime) — no diff3 markers', () => {
     const engine = new MergeEngine({ maxConflictRegions: 0 });
     const bad = '---\n{ unterminated: yaml\n---\nBody';
     const good = '---\ntitle: Clean\n---\nBody';
-    // remote-win → pick the whole remote (good) side.
-    const ctxRemote: MergeContext = { frontmatterScalarPolicy: 'remote-win', localMtime: 5000, remoteMtime: 0 };
+    // Feature 047: the scalar policy is gone; the unparseable-side pick is latest-mtime. Remote newer
+    // → pick the whole remote (good) side.
+    const ctxRemote: MergeContext = { localMtime: 0, remoteMtime: 5000 };
     const r1 = engine.merge('', bad, good, ctxRemote);
     const fm1 = frontmatterBlock(r1.mergedContent);
     expect(hasMarkerLines(fm1)).toBe(false);
     expect(fm1).toContain('Clean');
-    // local-win → pick the whole (unparseable) local side verbatim; still no engine-injected markers.
-    const ctxLocal: MergeContext = { frontmatterScalarPolicy: 'local-win', localMtime: 0, remoteMtime: 5000 };
+    // Local newer → pick the whole (unparseable) local side verbatim; still no engine-injected markers.
+    const ctxLocal: MergeContext = { localMtime: 5000, remoteMtime: 0 };
     const r2 = engine.merge('', bad, good, ctxLocal);
     const fm2 = frontmatterBlock(r2.mergedContent);
     expect(hasMarkerLines(fm2)).toBe(false);

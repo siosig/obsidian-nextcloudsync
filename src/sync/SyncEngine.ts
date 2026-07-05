@@ -24,7 +24,7 @@ import { StateDB } from '../data/StateDB';
 import type { MergeBaseStore } from '../data/MergeBaseStore';
 import type { CleanSideStore } from '../data/CleanSideStore';
 import type { CleanSideMetrics } from '../ui/compareResolution';
-import { isAutoMergeFileType } from '../util/mergeableExtensions';
+import { isAutoMergeFileType, isMarkdown } from '../util/mergeableExtensions';
 import { SyncHistoryStore } from '../data/SyncHistoryStore';
 import { IStatusBar } from '../ui/StatusBarItem';
 import { WebDAVFactory } from '../network/WebDAVFactory';
@@ -455,7 +455,9 @@ export class SyncEngine {
    */
   private recordMergeBase(path: string, content: string): void {
     if (!this.opts.baseStore) return;
-    if (!isAutoMergeFileType(path, this.opts.settings.autoMergeFileTypes)) return;
+    // Feature 047 (FR-015): record a base for every Auto Merge File (body 3-way) AND every markdown
+    // file (frontmatter set-merge needs a base to detect deletions even when `md` is an Other File).
+    if (!isAutoMergeFileType(path, this.opts.settings.autoMergeFileTypes) && !isMarkdown(path)) return;
     this.opts.baseStore.set(path, content);
     this.opts.baseStore.requestSave();
   }
@@ -1684,7 +1686,7 @@ export class SyncEngine {
       autoMergeFileStrategy: this.opts.settings.autoMergeFileStrategy,
       otherFileStrategy: this.opts.settings.otherFileStrategy,
       deviceId: this.opts.settings.deviceId,
-      frontmatterScalarPolicy: this.opts.settings.frontmatterScalarConflictPolicy,
+      frontmatterStrategy: this.opts.settings.frontmatterStrategy,
     });
     const ctx = {
       localSize: localSizeBefore,
@@ -1693,11 +1695,13 @@ export class SyncEngine {
       remoteMtime: remote.lastModified || 0,
     };
 
-    // Only the `merge` strategy needs the decoded text of both sides; the deterministic strategies
-    // decide from size/mtime alone, so defer the remote download until we know it is required.
+    // The `merge` strategy needs the decoded text of both sides; so does EVERY markdown file (feature
+    // 047), which splits frontmatter from body and resolves them independently regardless of the body
+    // strategy. Non-markdown deterministic strategies decide from size/mtime alone, so defer their
+    // remote download until we know it is required.
     let remoteData: ArrayBuffer | undefined;
     let decision: ConflictResolution;
-    if (resolver.strategyFor(path) === 'merge') {
+    if (resolver.strategyFor(path) === 'merge' || isMarkdown(path)) {
       const localContent = await this.opts.localAdapter.read(path);
       remoteData = await this.client!.downloadFile(remote.path);
       const remoteContent = new TextDecoder().decode(remoteData);

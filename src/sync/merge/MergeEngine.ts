@@ -1,5 +1,5 @@
 import { getFrontMatterInfo } from 'obsidian';
-import { MergeContext, MergeResult } from '../../types';
+import { MergeContext, MergeResult, SyncStrategy } from '../../types';
 import { IMergeStrategy } from './IMergeStrategy';
 import { ReconcileTextStrategy } from './ReconcileTextStrategy';
 import { Diff3Strategy } from './Diff3Strategy';
@@ -45,9 +45,10 @@ export class MergeEngine {
       if (fmSemantic.success) {
         mergedFm = fmSemantic.frontmatter;
       } else {
-        // [HFM-9][HFM-10] Unparseable side → pick ONE whole side's frontmatter per the scalar policy
-        // (feature 043, D3). NEVER invoke the diff3 fallback on frontmatter text.
-        mergedFm = this.pickWholeSide(localFm, remoteFm, ctx);
+        // [HFM-9][HFM-10] Unparseable side → pick ONE whole side's frontmatter by latest-mtime
+        // (feature 047; the former scalar policy is gone). NEVER invoke the diff3 fallback on
+        // frontmatter text.
+        mergedFm = this.pickWholeSide(localFm, remoteFm, 'latest-mtime', ctx);
       }
     }
 
@@ -161,18 +162,100 @@ export class MergeEngine {
   }
 
   /**
-   * Feature 043 (D3, [HFM-10]): when the two frontmatter sides cannot be merged structurally (a side is
-   * unparseable), pick ONE whole side's frontmatter block per the scalar conflict policy — `local-win`
-   * / `remote-win` take that side, `latest-mtime` (the default) takes the side with the newer file
-   * mtime (remote on tie). The frontmatter is taken verbatim, so no conflict-marker line is ever added.
+   * Feature 047: resolve a markdown conflict by handling the frontmatter and the body with INDEPENDENT
+   * strategies, then recomposing. The frontmatter is resolved by `frontmatterStrategy` and NEVER carries
+   * conflict markers; the body is resolved by `bodyStrategy` (the file's Auto-Merge / Other strategy).
+   * `buildMarkers(localBody, remoteBody)` is supplied by the caller (ConflictResolver, which owns the
+   * marker byline/format) and is used only when the body strategy is `merge` and the body genuinely
+   * conflicts — so any markers land in the BODY, never in the `---` block.
    */
-  private pickWholeSide(localFm: string, remoteFm: string, ctx?: MergeContext): string {
-    const policy = ctx?.frontmatterScalarPolicy ?? 'latest-mtime';
-    if (policy === 'local-win') return localFm;
-    if (policy === 'remote-win') return remoteFm;
-    const localMtime = ctx?.localMtime ?? 0;
-    const remoteMtime = ctx?.remoteMtime ?? 0;
-    return localMtime > remoteMtime ? localFm : remoteFm;
+  resolveMarkdown(
+    base: string,
+    local: string,
+    remote: string,
+    opts: {
+      frontmatterStrategy: SyncStrategy;
+      bodyStrategy: SyncStrategy;
+      buildMarkers: (localBody: string, remoteBody: string) => string;
+      ctx?: MergeContext;
+    },
+  ): MergeResult {
+    const { frontmatter: localFm, body: localBody } = this.splitFrontmatter(local);
+    const { frontmatter: remoteFm, body: remoteBody } = this.splitFrontmatter(remote);
+    const { frontmatter: baseFm, body: baseBody } = this.splitFrontmatter(base);
+
+    const mergedFm = this.resolveFrontmatterBlock(opts.frontmatterStrategy, baseFm, localFm, remoteFm, opts.ctx);
+    const body = this.resolveBodyBlock(opts.bodyStrategy, baseBody, localBody, remoteBody, opts.buildMarkers, opts.ctx);
+
+    const merged = mergedFm ? `${mergedFm}\n${body.content}` : body.content;
+
+    // Nested-marker backstop (feature 039): a well-formed single body-marker set is fine; stacked
+    // markers indicate a bypassed guard → never persist, signal hold so the caller safe-holds.
+    if (hasNestedConflictMarkers(merged)) {
+      return { success: false, mergedContent: local, hadConflicts: true, conflictRegions: -1, hold: true };
+    }
+    return { success: true, mergedContent: merged, hadConflicts: body.hadConflicts, conflictRegions: body.hadConflicts ? -1 : 0 };
+  }
+
+  /**
+   * Resolve the frontmatter block alone. Always returns clean text (no markers): `merge` runs the
+   * semantic 3-way (falling back to a latest-mtime whole-side pick when a side is unparseable); the
+   * other four strategies adopt one whole side's frontmatter block.
+   */
+  private resolveFrontmatterBlock(
+    strategy: SyncStrategy, baseFm: string, localFm: string, remoteFm: string, ctx?: MergeContext,
+  ): string {
+    if (localFm === remoteFm) return localFm;
+    if (strategy === 'merge') {
+      const r = this.fmStrategy.merge(baseFm, localFm, remoteFm, ctx);
+      return r.success ? r.frontmatter : this.pickWholeSide(localFm, remoteFm, 'latest-mtime', ctx);
+    }
+    return this.pickWholeSide(localFm, remoteFm, strategy, ctx);
+  }
+
+  /**
+   * Resolve the body block alone. `merge` runs the body 3-way with the same circuit breakers as the
+   * whole-file `merge()`, emitting BODY-only markers (via `buildMarkers`) on a genuine conflict; the
+   * other four strategies adopt one whole side's body.
+   */
+  private resolveBodyBlock(
+    strategy: SyncStrategy, baseBody: string, localBody: string, remoteBody: string,
+    buildMarkers: (l: string, r: string) => string, ctx?: MergeContext,
+  ): { content: string; hadConflicts: boolean } {
+    if (localBody === remoteBody) return { content: localBody, hadConflicts: false };
+    if (strategy !== 'merge') {
+      return { content: this.pickWholeSide(localBody, remoteBody, strategy, ctx), hadConflicts: false };
+    }
+    const result = this.mergeText(baseBody, localBody, remoteBody);
+    const maxOriginal = Math.max(localBody.length, remoteBody.length);
+    const needMarkers =
+      result.hadConflicts ||
+      (this.opts.maxConflictRegions !== 0 && result.conflictRegions > this.opts.maxConflictRegions) ||
+      (maxOriginal > 0 && result.mergedContent.length < maxOriginal * 0.5) ||
+      (!result.hadConflicts &&
+        (result.mergedContent.length > localBody.length + remoteBody.length ||
+          hasRepeatedBlock(result.mergedContent)));
+    if (needMarkers) {
+      return { content: buildMarkers(localBody, remoteBody), hadConflicts: true };
+    }
+    return { content: result.mergedContent, hadConflicts: false };
+  }
+
+  /**
+   * Adopt ONE whole side's block (frontmatter or body) by a deterministic strategy — used by both the
+   * frontmatter whole-side strategies and the non-merge body strategies (feature 047). `biggest-size`
+   * compares block length and falls back to latest-mtime on a tie (never a no-op); `latest-mtime` (and
+   * any unexpected value) takes the newer side; remote wins on a mtime tie. The block is verbatim, so
+   * no conflict-marker line is ever introduced.
+   */
+  private pickWholeSide(localBlk: string, remoteBlk: string, strategy: SyncStrategy, ctx?: MergeContext): string {
+    if (strategy === 'local-win') return localBlk;
+    if (strategy === 'remote-win') return remoteBlk;
+    if (strategy === 'biggest-size' && localBlk.length !== remoteBlk.length) {
+      return localBlk.length > remoteBlk.length ? localBlk : remoteBlk;
+    }
+    // latest-mtime (default / biggest-size tie): newer side wins, remote on tie.
+    return (ctx?.localMtime ?? 0) > (ctx?.remoteMtime ?? 0) ? localBlk : remoteBlk;
   }
 }
 
