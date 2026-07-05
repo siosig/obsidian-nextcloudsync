@@ -70,6 +70,10 @@ export const TOOLTIPS = {
   loggingEnabled:
     'Write a per-device sync log (all operations) and a verbose debug log to the vault root while troubleshooting. Turn off and delete the log files when done.',
 
+  // Advanced (caution) section
+  massDeleteLimit:
+    'Safety cap on how many local files/folders one sync may delete when they disappear from the server — the guard against a partial/failed remote listing wiping your vault. -1 = automatic (recommended: max(20, 20% of tracked files)). 0 = no limit (risky). A positive number sets a fixed limit. Raise only if a real large deletion was blocked.',
+
   // Maintenance section
   resetVaultIndex:
     "Clears this device's sync index (first-install state). No files are deleted; the next sync re-scans.",

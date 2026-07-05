@@ -38,7 +38,7 @@ import { isUnderExcludedFolder } from '../util/excludedFolders';
 import { FileLogger } from '../util/FileLogger';
 import {
   isCellularBlocked, SIGNATURE_SAFETY_WINDOW_MS, MAX_HASH_SIZE,
-  MAX_INFLIGHT_BYTES_DESKTOP, MAX_INFLIGHT_BYTES_MOBILE, massDeleteLimit, FORCE_FULL_SCAN_EVERY,
+  MAX_INFLIGHT_BYTES_DESKTOP, MAX_INFLIGHT_BYTES_MOBILE, effectiveMassDeleteLimit, FORCE_FULL_SCAN_EVERY,
   isAnomalousRemoteContent, isOverFileSizeLimit,
 } from '../util/limits';
 import { createLimiter, ByteSemaphore } from '../util/ConcurrencyLimiter';
@@ -465,6 +465,16 @@ export class SyncEngine {
    * seed). The read side (handleConflict) uses the same `isAutoMergeFileType` classification so the
    * two never disagree (FR-009). Persistence is coalesced via the store's debounced save.
    */
+  /**
+   * Feature 049: the effective mass-delete breaker limit for `tracked` items, honouring the user's
+   * `massDeleteLimit` setting. -1 = the automatic dynamic limit (safe default); 0 = unlimited (breaker
+   * off, opt-in); N > 0 = a fixed absolute limit. Guards absence-based bulk deletion from a partial
+   * remote listing.
+   */
+  private effectiveMassDeleteLimit(tracked: number): number {
+    return effectiveMassDeleteLimit(this.opts.settings.massDeleteLimit, tracked);
+  }
+
   private recordMergeBase(path: string, content: string): void {
     if (!this.opts.baseStore) return;
     // Feature 047 (FR-015): record a base for every Auto Merge File (body 3-way) AND every markdown
@@ -629,9 +639,10 @@ export class SyncEngine {
    * deletions. The mass-delete breaker's COUNT limit is intentionally NOT consulted here (FR-008): the
    * user explicitly declared the remote authoritative; this path simply never calls `massDeleteLimit`.
    */
-  async planRemoteMirror(): Promise<MirrorPlan> {
+  async planRemoteMirror(onPhase?: (label: string) => void): Promise<MirrorPlan> {
     // Lazily build (and cache) the WebDAV client + features, exactly like a normal sync does — the
     // client is only created on first sync, so a mirror invoked before any sync must connect here.
+    onPhase?.('Connecting to the server…');
     let client: IWebDAVClient;
     try {
       ({ client } = await this.ensureClient());
@@ -640,6 +651,7 @@ export class SyncEngine {
     }
 
     // 1. Authoritative remote listing (no short-circuit). Failure ⇒ abort gate (zero deletions).
+    onPhase?.('Reading the remote file list…');
     let remoteFiles: RemoteFileInfo[];
     try {
       remoteFiles = await client.getFiles('');
@@ -648,6 +660,7 @@ export class SyncEngine {
     }
 
     // 2. Local files.
+    onPhase?.('Comparing with local files…');
     const localStats = new Map<string, { size: number; mtime: number }>();
     await this.collectLocalStats('', localStats);
     for (const p of await this.configSync.enumerateIncludedPaths()) {
@@ -660,8 +673,10 @@ export class SyncEngine {
     //     on the server by another tool (the common migration case) carry no checksum, so every one
     //     would be re-downloaded even when byte-identical. Best-effort: unsupported servers leave the
     //     checksum null and those files fall back to download (still correct, just not skipped).
+    onPhase?.('Checking server checksums…');
     await this.resolveRemoteChecksums(remoteFiles, localStats);
 
+    onPhase?.('Checking local files…');
     // Only hash a local file when its remote counterpart now carries a checksum we can compare against
     // (otherwise it would be downloaded regardless, so hashing would be wasted I/O).
     const remoteChecksum = new Map(remoteFiles.map((r) => [r.path, r.checksum] as const));
@@ -692,7 +707,7 @@ export class SyncEngine {
    * setting — recoverable), then reconcile StateDB to the remote so the next normal sync converges to
    * zero diff (FR-011 / SC-002). The caller must pass an `ok:true` plan and have aborted in-flight sync.
    */
-  async applyRemoteMirror(plan: MirrorPlan): Promise<MirrorResult> {
+  async applyRemoteMirror(plan: MirrorPlan, onProgress?: (done: number, total: number) => void): Promise<MirrorResult> {
     const result: MirrorResult = { downloaded: 0, deleted: 0, skipped: plan.skipCount, errors: [] };
     if (!plan.ok) return result;
 
@@ -705,6 +720,12 @@ export class SyncEngine {
     this.syncProgress = { processed: 0, total };
     this.opts.statusBar.setStatus('syncing');
     if (total > 0) this.opts.statusBar.setProgress(0, total);
+    onProgress?.(0, total);
+    // Advance the status-bar progress AND the dialog progress (feature 049) together.
+    const tick = (): void => {
+      this.tickProgress();
+      onProgress?.(this.syncProgress?.processed ?? 0, total);
+    };
 
     // 1. Downloads (remote wins — forced overwrite, not a 3-way merge).
     for (const remote of plan.downloads) {
@@ -717,7 +738,7 @@ export class SyncEngine {
       } catch (err) {
         result.errors.push({ path: remote.path, message: (err as Error).message });
       }
-      this.tickProgress();
+      tick();
     }
 
     // 2. Delete local-only files (processRemoteDeletion honors the trash setting + cleans StateDB).
@@ -728,7 +749,7 @@ export class SyncEngine {
       } catch (err) {
         result.errors.push({ path, message: (err as Error).message });
       }
-      this.tickProgress();
+      tick();
     }
 
     // 3. Delete local-only folders child→parent (trashFile handles TFolder), then drop dir tracking.
@@ -740,7 +761,7 @@ export class SyncEngine {
       } catch (err) {
         result.errors.push({ path, message: (err as Error).message });
       }
-      this.tickProgress();
+      tick();
     }
 
     // 4. Reconcile StateDB to the remote so the next sync sees no diff (self-healing, FR-011).
@@ -2102,7 +2123,7 @@ export class SyncEngine {
       // 2) Circuit breaker: a healthy full listing rarely loses a large fraction of the vault at once.
       //    If too many files look "remotely deleted", assume a partial/failed listing and refuse.
       const tracked = this.opts.stateDB.getAllFiles().length;
-      const limit = massDeleteLimit(tracked);
+      const limit = this.effectiveMassDeleteLimit(tracked);
       if (candidates.length > limit) {
         void this.opts.logger?.log(`delete-local: SKIPPED ${candidates.length} absence-deletions — exceeds safety limit (${limit}); likely a partial remote listing`);
         new Notice(`⚠️ ${candidates.length} files look deleted on the server — skipped to avoid mass deletion. Re-sync to retry.`, 10000);
@@ -2193,7 +2214,7 @@ export class SyncEngine {
 
     // Circuit breaker on the destructive set (a partial listing would make many dirs look deleted).
     const denom = Math.max(tracked.size, remoteDirs.size, localDirs.size);
-    if (deleteRemote.length + trashLocal.length > massDeleteLimit(denom)) {
+    if (deleteRemote.length + trashLocal.length > this.effectiveMassDeleteLimit(denom)) {
       void this.opts.logger?.log(`dir-sync: SKIPPED ${deleteRemote.length + trashLocal.length} dir deletions — exceeds safety limit; likely a partial listing`);
       // Record as an error so the root-ETag short-circuit convergence gate (spec 023 §8a.5) invalidates
       // the stored etag and the next sync really re-scans instead of short-circuiting on stale State.

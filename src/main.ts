@@ -8,6 +8,7 @@ import { StatusFilterState, makeDefaultFilterState, serializeFilter, deserialize
 import { CompareModal } from './ui/CompareModal';
 import { applyForceResolution, applyBulkForceResolution, FORCE_CHOICES, ForceChoice } from './ui/forceResolution';
 import { confirmModal } from './ui/ConfirmModal';
+import { openMirrorFromRemoteModal } from './ui/MirrorFromRemoteModal';
 import { FileLogger } from './util/FileLogger';
 import { isSyncTmpPath, LocalAdapter } from './data/LocalAdapter';
 import type { MergeBaseStore } from './data/MergeBaseStore';
@@ -335,33 +336,18 @@ export default class ObsidianNextcloudsync extends Plugin {
     if (this.mirrorInProgress) return; // guard against double-invocation
     this.mirrorInProgress = true;
     try {
-      await engine.abortAndWait();
-
-      const plan = await engine.planRemoteMirror();
-      if (!plan.ok) {
-        new Notice(`❌ Mirror aborted: ${plan.reason ?? 'could not read the remote'} (no files were changed).`, 8000);
-        return;
-      }
-
-      const deleteCount = plan.deleteFiles.length + plan.deleteDirs.length;
-      const confirmed = await confirmModal(this.app, {
-        title: 'Mirror from remote',
-        message:
-          `This will make this device exactly match the remote:\n\n` +
-          `• Download: ${plan.downloads.length} file(s)\n` +
-          `• Delete locally: ${deleteCount} file(s)/folder(s) not on the remote ` +
-          `(moved to your Obsidian trash — recoverable)\n\n` +
-          `Unsynced local changes will be discarded. This cannot be undone except from the trash.`,
-        cta: 'Mirror from remote',
-        cancel: 'Cancel',
-        destructive: true,
+      // Feature 049: open the dialog IMMEDIATELY, then plan/confirm/apply INSIDE it so the (network-heavy)
+      // planning stage shows live phase labels instead of a frozen-looking UI. The status-bar surface
+      // still updates in parallel (desktop bar / mobile toast). The promise resolves at the terminal
+      // state (result / error / cancel), or once an in-flight apply finishes if dismissed mid-apply.
+      await openMirrorFromRemoteModal(this.app, {
+        plan: async (onPhase) => {
+          onPhase('Stopping the current sync…');
+          await engine.abortAndWait();
+          return engine.planRemoteMirror(onPhase);
+        },
+        apply: (plan, onProgress) => engine.applyRemoteMirror(plan, onProgress),
       });
-      if (!confirmed) return; // no-op (FR-004)
-
-      // Progress + result are surfaced by the sync engine through the SAME status-bar surface as a
-      // normal "Sync now": a live progress bar on desktop and a single "🔄 Syncing… N/total" → result
-      // toast on mobile (driven inside applyRemoteMirror via setStatus/setProgress/setSyncComplete).
-      await engine.applyRemoteMirror(plan);
     } catch (err) {
       new Notice(`❌ Mirror from remote failed: ${(err as Error).message}`, 8000);
     } finally {
