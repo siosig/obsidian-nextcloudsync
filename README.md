@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.24-beta.2)
+## What's new in this release (0.7.24-beta.3)
 
-- **Two-level conflict resolution with a Conflict strategy (0.7.24-beta.2)** — Merge now tries to auto-resolve first, and only the part it genuinely cannot (a body line both sides changed, or a clashing frontmatter field) is decided by a new **Conflict strategy** setting: Conflict markers (default, keeps both versions), or Latest modified / Local wins / Remote wins / Biggest size to resolve each conflicting part deterministically. Non-conflicting edits still merge cleanly, and frontmatter never gets markers. Markdown is always handled specially — its frontmatter uses the Frontmatter strategy and its body the Auto merge file strategy — so `md` no longer needs to be listed under Auto merge file types. Defaults reproduce the previous behaviour with no change for existing users.
+- **Mirror-from-remote progress dialog + configurable mass-delete limit (0.7.24-beta.3)** — "Mirror from remote" no longer looks frozen: a dialog now opens immediately and shows live progress through every stage (reading the remote, comparing, then a download/delete progress bar) instead of a silent pause. And the mass-delete safety limit — the guard that stops a partial server listing from wiping your vault — is now configurable under a new **Advanced (use with caution)** section: `-1` = automatic (the safe default), `0` = no limit, or a fixed number, so a legitimately large deletion is no longer blocked.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
