@@ -1,9 +1,45 @@
-import { migrateBookmarksToConfigSync, migrateStartupToggleToDelay, migrateConflictSettingsToStrategies, pruneObsoleteSettings, resetDebugIdentityFields } from '../../../src/util/settingsMigration';
+import { migrateBookmarksToConfigSync, migrateStartupToggleToDelay, migrateConflictSettingsToStrategies, migrateFrontmatterScalarPolicyToStrategy, pruneObsoleteSettings, resetDebugIdentityFields } from '../../../src/util/settingsMigration';
 import { DEFAULT_SETTINGS, DavSyncSettings } from '../../../src/types';
 
 function freshSettings(): DavSyncSettings {
   return { ...DEFAULT_SETTINGS, configSync: { ...DEFAULT_SETTINGS.configSync } };
 }
+
+// Feature 047: the experimental frontmatterScalarConflictPolicy is removed and folded into the new
+// dedicated frontmatterStrategy. To PRESERVE the old always-semantic-merge behaviour (arrays union),
+// every migrating user — whatever the old value — converges to `merge`; the old key is then pruned.
+describe('[SPEC:FR-010/FR-011] migrateFrontmatterScalarPolicyToStrategy — old scalar policy → frontmatterStrategy', () => {
+  it('[SPEC:FR-010] any old scalar policy value migrates to merge (preserves semantic merge, not a whole-side pick)', () => {
+    for (const old of ['latest-mtime', 'remote-win', 'local-win']) {
+      const s = freshSettings();
+      migrateFrontmatterScalarPolicyToStrategy({ frontmatterScalarConflictPolicy: old }, s);
+      expect(s.frontmatterStrategy).toBe('merge');
+    }
+  });
+
+  it('[SPEC:FR-010] a fresh install (no old key) keeps the default merge', () => {
+    const s = freshSettings();
+    migrateFrontmatterScalarPolicyToStrategy({}, s);
+    expect(s.frontmatterStrategy).toBe('merge');
+  });
+
+  it('[SPEC:FR-011] already on the new model → no-op (a deliberate choice is not overwritten)', () => {
+    const s = freshSettings();
+    s.frontmatterStrategy = 'remote-win';
+    migrateFrontmatterScalarPolicyToStrategy({ frontmatterStrategy: 'remote-win', frontmatterScalarConflictPolicy: 'local-win' }, s);
+    expect(s.frontmatterStrategy).toBe('remote-win');
+  });
+
+  it('[SPEC:FR-011] pruneObsoleteSettings drops the obsolete frontmatterScalarConflictPolicy key', () => {
+    const s = freshSettings() as unknown as Record<string, unknown>;
+    s.frontmatterScalarConflictPolicy = 'latest-mtime';
+    const removed = pruneObsoleteSettings(s);
+    expect(removed).toContain('frontmatterScalarConflictPolicy');
+    expect(s).not.toHaveProperty('frontmatterScalarConflictPolicy');
+    // idempotent: a second prune removes nothing more.
+    expect(pruneObsoleteSettings(s)).not.toContain('frontmatterScalarConflictPolicy');
+  });
+});
 
 // Feature 037 (R3): the three removed conflict settings fold into the per-type strategy model, then
 // the obsolete keys are pruned (self-healing). CSF-11.

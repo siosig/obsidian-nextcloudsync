@@ -34,7 +34,7 @@ type ParsedFm = Record<string, unknown> | typeof UNPARSEABLE;
  * to a deduplicated union ([HFM-3]) — nothing can be "deleted" against an empty base. Output order is
  * stable (base order first, then additions) and deterministic, independent of mtime ([HFM-5]).
  *
- * Scalar fields resolve via the existing `resolveScalar` + `frontmatterScalarConflictPolicy` ([HFM-6]);
+ * Scalar fields resolve via `resolveScalar` with a fixed latest-mtime tiebreak (feature 047, [HFM-6]);
  * nested YAML objects stay opaque scalars.
  *
  * A side that cannot be parsed to a mapping makes `merge` return `success:false` ([HFM-7]) so the
@@ -144,6 +144,11 @@ export class FrontmatterMergeStrategy {
     return JSON.stringify(a) === JSON.stringify(b);
   }
 
+  /**
+   * Resolve a scalar (or nested-object, treated opaque) field present on BOTH sides with different
+   * values. Feature 047 (FR-005): the both-changed tiebreak is FIXED to latest-mtime (remote wins on
+   * a mtime tie) — the former experimental scalar policy is gone.
+   */
   private resolveScalar(
     baseVal: unknown,
     localVal: unknown,
@@ -157,16 +162,27 @@ export class FrontmatterMergeStrategy {
     if (!localChanged && remoteChanged) return remoteVal;
     if (!localChanged && !remoteChanged) return localVal;
 
-    // Both changed to different values: apply policy
-    const policy = ctx?.frontmatterScalarPolicy ?? 'remote-win';
-    if (policy === 'local-win') return localVal;
-    if (policy === 'remote-win') return remoteVal;
-    // 'latest-mtime': newer mtime wins; remote wins on tie
-    const localMtime = ctx?.localMtime ?? 0;
-    const remoteMtime = ctx?.remoteMtime ?? 0;
-    return localMtime > remoteMtime ? localVal : remoteVal;
+    // Both changed to different values: latest-mtime wins (remote on tie).
+    return this.localWinsByMtime(ctx) ? localVal : remoteVal;
   }
 
+  /** True when the local side's edit is strictly newer than the remote's (remote wins on a tie). */
+  private localWinsByMtime(ctx?: MergeContext): boolean {
+    return (ctx?.localMtime ?? 0) > (ctx?.remoteMtime ?? 0);
+  }
+
+  /**
+   * Base-aware 3-way merge of the frontmatter mapping (feature 047 hardens feature 043's key handling).
+   *
+   * Key presence is decided against base so a one-sided DELETION propagates instead of the other side's
+   * value silently resurrecting it:
+   *   - present on both        → equal keep; arrays set-merge; scalars resolveScalar (latest-mtime).
+   *   - absent on one side:
+   *       - not in base        → the other side ADDED it → keep the added value.
+   *       - in base, other side unchanged → this side DELETED it → drop (deletion propagates).
+   *       - in base, other side modified  → delete-vs-modify → latest-mtime tiebreak ([FR-005]/Q3).
+   *   - absent on both         → deleted on both → dropped.
+   */
   private buildMergedObject(
     base: Record<string, unknown>,
     local: Record<string, unknown>,
@@ -174,27 +190,42 @@ export class FrontmatterMergeStrategy {
     ctx?: MergeContext,
   ): Record<string, unknown> {
     const merged: Record<string, unknown> = {};
+    const has = (o: Record<string, unknown>, k: string): boolean =>
+      Object.prototype.hasOwnProperty.call(o, k);
 
-    // Union of keys: local order first, then remote-only keys appended. A key absent from both local
-    // and remote (deleted on both) is simply never iterated → dropped.
+    // Union of keys: local order first, then remote-only keys appended.
     const keys = [...Object.keys(local)];
     for (const k of Object.keys(remote)) {
       if (!keys.includes(k)) keys.push(k);
     }
 
     for (const k of keys) {
+      const inBase = has(base, k);
       const baseVal = base[k];
       const localVal = local[k];
       const remoteVal = remote[k];
+      const localHas = has(local, k);
+      const remoteHas = has(remote, k);
 
-      if (localVal === undefined) {
-        merged[k] = remoteVal;
+      if (!localHas && !remoteHas) continue; // deleted on both → drop
+
+      if (!localHas) {
+        // Local absent, remote present.
+        if (!inBase) { merged[k] = remoteVal; continue; }        // remote added the key
+        if (this.deepEqual(remoteVal, baseVal)) continue;         // remote unchanged → local delete propagates
+        if (this.localWinsByMtime(ctx)) continue;                 // delete (local) newer → drop
+        merged[k] = remoteVal;                                    // modify (remote) newer → keep
         continue;
       }
-      if (remoteVal === undefined) {
-        merged[k] = localVal;
-        continue;
+      if (!remoteHas) {
+        // Remote absent, local present (symmetric).
+        if (!inBase) { merged[k] = localVal; continue; }          // local added the key
+        if (this.deepEqual(localVal, baseVal)) continue;          // local unchanged → remote delete propagates
+        if (this.localWinsByMtime(ctx)) { merged[k] = localVal; continue; } // modify (local) newer → keep
+        continue;                                                 // delete (remote) newer → drop
       }
+
+      // Present on both sides.
       if (this.deepEqual(localVal, remoteVal)) {
         merged[k] = localVal;
         continue;

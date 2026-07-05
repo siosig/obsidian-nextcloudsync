@@ -16,7 +16,7 @@ function makeConfig(
   otherFileStrategy: Exclude<SyncStrategy, 'merge'> = 'latest-mtime',
   autoMergeFileTypes: string[] = ['md', 'txt'],
 ): MergeConfig {
-  return { autoMergeFileTypes, autoMergeFileStrategy, otherFileStrategy, deviceId: 'dev-abcd' };
+  return { autoMergeFileTypes, autoMergeFileStrategy, otherFileStrategy, deviceId: 'dev-abcd', frontmatterStrategy: 'merge' };
 }
 
 function resolver(cfg: MergeConfig = makeConfig()): ConflictResolver {
