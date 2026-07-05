@@ -25,6 +25,13 @@ export class FileLogger {
     private readonly appVersion: string,
     private readonly host: string,
     private readonly pathOf: () => string,
+    /**
+     * Notified (best-effort) when a write fails. The write itself still never throws — a diagnostic
+     * logger must not break the flow it instruments — but a silently-swallowed failure is
+     * undebuggable (the user turns logging on, no file appears, and there is no signal why). The
+     * host wires this to a user-visible surface (a Notice) so the failure is at least noticed.
+     */
+    private readonly onWriteError?: (err: unknown) => void,
   ) {}
 
   /**
@@ -43,8 +50,10 @@ export class FileLogger {
         await ensureParentFolder(this.adapter, p);
         await this.adapter.write(p, `# Nextcloud Sync — diagnostic log\n\n${line}`);
       }
-    } catch {
-      // Never let diagnostic logging interfere with the flow being logged.
+    } catch (err) {
+      // Never let diagnostic logging interfere with the flow being logged (do not rethrow), but
+      // surface the failure so a "logging is on yet no file appears" situation is not silent.
+      this.onWriteError?.(err);
     }
   }
 }
