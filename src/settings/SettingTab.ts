@@ -452,18 +452,28 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
 
     // The single Debug control. The device name (auto-derived <platform>-<deviceId>) and the log
     // location (vault root) are fixed — feature 032 removed their inputs to converge every user onto
-    // one path. The sync log (all operations) and debug log (verbose) verbosity are also fixed.
+    // one path. Feature 052 folded the two log files into one verbose file per device.
     makeSetting(containerEl)
       .setName('Enable logging (troubleshooting)')
-      .setDesc('Write a per-device sync log and a verbose debug log to the vault root while troubleshooting. The device name is derived automatically and the log location is fixed to the vault root. Turn this off and delete the log files when finished.')
+      .setDesc('Write a single per-device log file (nextcloud-debug_<device>.txt) to the vault root while troubleshooting. The device name is derived automatically and the location is fixed to the vault root. To see the file inside Obsidian, turn on Settings → Files & Links → "Detect all file extensions" (otherwise open it via your OS or Nextcloud). Turn this off and delete the file when finished.')
       .setTooltip(TOOLTIPS.loggingEnabled)
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.loggingEnabled)
         .onChange(async (value) => {
           this.plugin.settings.loggingEnabled = value;
           await this.plugin.saveSettings();
-          // Dump a fresh settings snapshot as soon as logging is turned on.
-          if (value) void this.plugin.logSettingsSnapshot();
+          // Fire immediately on enable: write a fresh settings snapshot and name the exact file the
+          // user should look for. .txt is hidden in Obsidian by default (Detect all file extensions
+          // off) and never listed in Quick Switcher, so pointing at the path prevents the "logging
+          // is on yet I see no file" confusion. A write failure surfaces via FileLogger.onWriteError.
+          if (value) {
+            void this.plugin.logSettingsSnapshot();
+            new Notice(
+              `Nextcloud Sync: logging to "${this.plugin.logFilePath()}" (vault root). `
+              + 'Enable "Detect all file extensions" to see it in Obsidian.',
+              10000,
+            );
+          }
         }));
 
     // ── Advanced (caution) ──────────────────────────────────────────────────────
