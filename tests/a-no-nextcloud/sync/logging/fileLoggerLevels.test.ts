@@ -14,6 +14,7 @@ function fakeAdapter() {
 
 function makeLogger(adapter: ReturnType<typeof fakeAdapter>, opts: {
   enabled?: boolean; level?: DebugLogLevel; host?: string; version?: string; path?: string;
+  onWriteError?: (err: unknown) => void;
 } = {}) {
   return new FileLogger(
     adapter as never,
@@ -22,6 +23,7 @@ function makeLogger(adapter: ReturnType<typeof fakeAdapter>, opts: {
     opts.version ?? '0.2.10',
     opts.host ?? 'desktop-a1b2c3',
     () => opts.path ?? 'logs/nextcloud-sync_debug_desktop-a1b2c3.md',
+    opts.onWriteError,
   );
 }
 
@@ -112,5 +114,41 @@ describe('FileLogger level gating', () => {
     expect(content).toContain('second');
     expect(a.write).toHaveBeenCalledTimes(1); // created once
     expect(a.append).toHaveBeenCalledTimes(1); // appended once
+  });
+});
+
+describe('[SPEC:LOG-2] FileLogger surfaces write failures without breaking the flow', () => {
+  it('calls onWriteError when the initial write throws, and never rejects', async () => {
+    const a = fakeAdapter();
+    a.write.mockRejectedValueOnce(new Error('EACCES: permission denied'));
+    const onWriteError = jest.fn();
+    const logger = makeLogger(a, { onWriteError });
+    // The write rejects internally; log() must still resolve (never throw) to protect the flow.
+    await expect(logger.log('boom', 'error')).resolves.toBeUndefined();
+    expect(onWriteError).toHaveBeenCalledTimes(1);
+    expect((onWriteError.mock.calls[0][0] as Error).message).toContain('EACCES');
+  });
+
+  it('calls onWriteError when an append to an existing file throws', async () => {
+    const a = fakeAdapter();
+    a.files['logs/nextcloud-sync_debug_desktop-a1b2c3.md'] = 'existing';
+    a.append.mockRejectedValueOnce(new Error('disk full'));
+    const onWriteError = jest.fn();
+    const logger = makeLogger(a, { onWriteError });
+    await expect(logger.log('boom', 'error')).resolves.toBeUndefined();
+    expect(onWriteError).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not call onWriteError on a successful write', async () => {
+    const a = fakeAdapter();
+    const onWriteError = jest.fn();
+    await makeLogger(a, { onWriteError }).log('fine', 'error');
+    expect(onWriteError).not.toHaveBeenCalled();
+  });
+
+  it('is optional — a write failure with no callback still never rejects', async () => {
+    const a = fakeAdapter();
+    a.write.mockRejectedValueOnce(new Error('boom'));
+    await expect(makeLogger(a).log('x', 'error')).resolves.toBeUndefined();
   });
 });
