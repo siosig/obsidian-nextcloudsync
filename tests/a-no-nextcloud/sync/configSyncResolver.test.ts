@@ -114,6 +114,52 @@ describe('ConfigSyncResolver.isIncluded', () => {
   });
 });
 
+// GitHub issue #12 (feature request: "sync community plugins"). Declined by design — community
+// plugins live under `<configDir>/plugins/**` (each an arbitrary third-party bundle: main.js,
+// manifest.json, styles.css, data.json, nested assets) and syncing executable plugin code across
+// devices is a correctness/security hazard the plugin deliberately does not take on. This is a
+// REGRESSION GUARD locking that stance: no toggle combination may ever pull a community plugin's
+// files into the sync set. If a future change wants to support it, this test must be updated
+// consciously (not silently), forcing the decision back through review.
+describe('ConfigSyncResolver — community plugins are never synced (GitHub issue #12)', () => {
+  const COMMUNITY_PLUGIN_FILES = [
+    `${CONFIG_DIR}/plugins/dataview/main.js`,
+    `${CONFIG_DIR}/plugins/dataview/manifest.json`,
+    `${CONFIG_DIR}/plugins/dataview/styles.css`,
+    `${CONFIG_DIR}/plugins/dataview/data.json`,
+    `${CONFIG_DIR}/plugins/templater-obsidian/main.js`,
+    `${CONFIG_DIR}/plugins/templater-obsidian/assets/nested/blob.bin`,
+  ];
+
+  it('isIncluded is false for every community-plugin file with syncConfigFolder ON and both categories ON', () => {
+    const r = makeResolver({ syncConfigFolder: true, configSync: { others: true, bookmarks: true } });
+    for (const p of COMMUNITY_PLUGIN_FILES) expect(r.isIncluded(p)).toBe(false);
+  });
+
+  it('isConfigFolderConflictPath never routes a community-plugin file as a config conflict', () => {
+    const r = makeResolver({ syncConfigFolder: true, configSync: { others: true, bookmarks: true } });
+    for (const p of COMMUNITY_PLUGIN_FILES) expect(r.isConfigFolderConflictPath(p)).toBe(false);
+  });
+
+  it('enumerateIncludedPaths never lists a community plugin even when plugins/ is populated', async () => {
+    // A plugins tree exists on disk; the "others" category recurses themes/ & snippets/ but must
+    // NEVER descend into plugins/. Enumeration lists only the theme file, not the plugin bundle.
+    const adapter = makeAdapter({
+      files: { [`${CONFIG_DIR}/appearance.json`]: true },
+      dirs: {
+        [`${CONFIG_DIR}/themes`]: { files: [`${CONFIG_DIR}/themes/Cool/theme.css`], folders: [`${CONFIG_DIR}/themes/Cool`] },
+        [`${CONFIG_DIR}/themes/Cool`]: { files: [`${CONFIG_DIR}/themes/Cool/theme.css`], folders: [] },
+        [`${CONFIG_DIR}/plugins`]: { files: [], folders: [`${CONFIG_DIR}/plugins/dataview`] },
+        [`${CONFIG_DIR}/plugins/dataview`]: { files: [`${CONFIG_DIR}/plugins/dataview/main.js`], folders: [] },
+      },
+    });
+    const r = makeResolver({ syncConfigFolder: true, configSync: { others: true, bookmarks: true }, adapter });
+    const paths = await r.enumerateIncludedPaths();
+    expect(paths.some(p => p.includes('/plugins/'))).toBe(false);
+    expect(paths).not.toContain(`${CONFIG_DIR}/plugins/dataview/main.js`);
+  });
+});
+
 describe('ConfigSyncResolver.enumerateIncludedPaths', () => {
   it('returns [] when the master toggle is off', async () => {
     const r = makeResolver({ syncConfigFolder: false, configSync: { others: true } });

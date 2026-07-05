@@ -94,3 +94,36 @@ export function describeLive(title: string, fn: (getEnv: () => LiveEnv) => void)
   }
   describe(title, () => fn(() => result.env));
 }
+
+// The "N" actor (feature 051) — a change made DIRECTLY on the Nextcloud server FS via SSH + occ —
+// is only reachable against the ephemeral cluster (nextcloud-cloudrun), which exports these keys via
+// scripts/b1-cluster.sh. NEXTCLOUD_USER is already a live-env key, so N needs only SSH target + data dir.
+const CLUSTER_KEYS = ['NEXTCLOUD_SSH_TARGET', 'NEXTCLOUD_DATA_HOST'] as const;
+
+/** Which cluster-only (N actor) keys are missing from process.env, if any. */
+export function missingClusterKeys(): string[] {
+  return CLUSTER_KEYS.filter((k) => !process.env[k] || process.env[k]!.length === 0);
+}
+
+/**
+ * describe() for the 3-actor (feature 051) suites, which need BOTH live WebDAV credentials AND the
+ * ephemeral cluster's N actor (SSH + occ + host data dir). Runs only when both are present; otherwise
+ * skips CLEANLY (visible in the report as "skipped", never a silent pass). The default
+ * `pnpm test:b1` (localhost/.env, no cluster) skips these; `pnpm test:b1:cluster`
+ * (scripts/b1-cluster.sh) sets the cluster env so they run. This keeps the default b1 suite green
+ * while still exercising the 3-actor matrix on the cluster.
+ */
+export function describeCluster(title: string, fn: (getEnv: () => LiveEnv) => void): void {
+  const live = requireLiveEnv();
+  const missingCluster = missingClusterKeys();
+  if (!live.ok || missingCluster.length > 0) {
+    const missing = [...(live.ok ? [] : live.missing), ...missingCluster];
+    // eslint-disable-next-line no-console -- surface why the cluster suite is skipped
+    console.warn(`[e2e] skipping "${title}": cluster N unavailable (missing ${missing.join(', ')})`);
+    describe.skip(title, () => {
+      it('skipped (cluster N unavailable — run `pnpm test:b1:cluster`)', () => undefined);
+    });
+    return;
+  }
+  describe(title, () => fn(() => live.env));
+}

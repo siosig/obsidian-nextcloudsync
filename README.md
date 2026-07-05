@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.23)
+## What's new in this release (0.7.24-beta.3)
 
-- **Sync interval now reads honestly on mobile (0.7.23)** — periodic auto-sync never runs on mobile (the OS suspends background timers), but the **Sync interval** slider still showed the desktop default of 15 minutes even while greyed out, as if a timed sync were active. On a fresh mobile install the interval now defaults to **0 (manual only)**, so the disabled slider matches what actually happens. Desktop is unchanged, and any interval you have already set is preserved.
+- **Mirror-from-remote progress dialog + configurable mass-delete limit (0.7.24-beta.3)** — "Mirror from remote" no longer looks frozen: a dialog now opens immediately and shows live progress through every stage (reading the remote, comparing, then a download/delete progress bar) instead of a silent pause. And the mass-delete safety limit — the guard that stops a partial server listing from wiping your vault — is now configurable under a new **Advanced (use with caution)** section: `-1` = automatic (the safe default), `0` = no limit, or a fixed number, so a legitimately large deletion is no longer blocked.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
