@@ -41,15 +41,17 @@ export const TOOLTIPS = {
 
   // Conflict resolution section (feature 037)
   autoMergeFileTypes:
-    'Comma-separated file extensions treated as Auto merge files (these use the Auto merge file strategy). Every other extension — and extensionless files — use the Other file strategy. Clear the field to route every file through the Other file strategy.',
+    'Comma-separated file extensions treated as Auto merge files (these use the Auto merge file strategy). Every other extension — and extensionless files — use the Other file strategy. Markdown is always special-cased (frontmatter + body handled separately) regardless of this list, so md is not listed here.',
   autoMergeFileStrategy:
-    'Conflict strategy for Auto merge files. Merge does a 3-way merge with reconcile-text (clean → merged, text conflict → conflict markers, non-text → left untouched and flagged). The other four pick one side deterministically. Keep Nextcloud version history on so an overwritten side is recoverable.',
+    'Strategy for Auto merge files (and a markdown note’s body). Merge does a 3-way merge; a real conflict is then decided by the Conflict strategy below. The other four pick one side deterministically. Keep Nextcloud version history on so an overwritten side is recoverable.',
   otherFileStrategy:
     'Conflict strategy for every other file. Latest modified keeps the side with the newer modification time — beware: clock skew between devices can let an older edit overwrite a newer one with no prompt. Biggest size keeps the larger file; Local/Remote wins always keep that side. A size or mtime tie is left untouched and re-evaluated next sync.',
 
-  // Conflict resolution — markdown frontmatter (feature 047)
+  // Conflict resolution — markdown frontmatter (feature 047) + conflict strategy (feature 048)
   frontmatterStrategy:
-    'How a markdown note’s frontmatter block is resolved on conflict, INDEPENDENTLY of the body. Merge: array fields (tags, aliases, …) union-merge with deletion propagation; scalar/object clashes take the latest modified side. Biggest size / Latest modified / Local wins / Remote wins each adopt one whole side’s frontmatter. Applies to every markdown note whatever the body strategy is. "Latest modified" uses file mtime — beware clock skew between devices.',
+    'How a markdown note’s frontmatter block is resolved on conflict, INDEPENDENTLY of the body. Merge: array fields (tags, aliases, …) union-merge with deletion propagation; a scalar/object clash is decided by the Conflict strategy. Biggest size / Latest modified / Local wins / Remote wins each adopt one whole side’s frontmatter. Applies to every markdown note whatever the body strategy is. "Latest modified" uses file mtime — beware clock skew between devices.',
+  conflictStrategy:
+    'What happens when Merge cannot auto-resolve a part — a body line changed differently on both sides, or a clashing frontmatter field. Conflict markers keeps both versions in the file (frontmatter, which cannot hold markers, falls back to Latest modified). Biggest size / Latest modified / Local wins / Remote wins resolve each conflicting part deterministically. A deterministic body/frontmatter strategy never conflicts, so this is inert for it.',
 
   // Excluded folders section
   excludedFolders:

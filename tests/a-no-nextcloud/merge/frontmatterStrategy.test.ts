@@ -9,7 +9,7 @@ import type { LocalAdapter } from '../../../src/data/LocalAdapter';
 function makeConfig(frontmatterStrategy: SyncStrategy, bodyStrategy: SyncStrategy): MergeConfig {
   // `md` is an Auto Merge File type, so strategyFor('*.md') === bodyStrategy (autoMergeFileStrategy).
   const otherFileStrategy = (bodyStrategy === 'merge' ? 'latest-mtime' : bodyStrategy) as Exclude<SyncStrategy, 'merge'>;
-  return { autoMergeFileTypes: ['md'], autoMergeFileStrategy: bodyStrategy, otherFileStrategy, deviceId: 'dev-abcd', frontmatterStrategy };
+  return { autoMergeFileTypes: ['md'], autoMergeFileStrategy: bodyStrategy, otherFileStrategy, deviceId: 'dev-abcd', frontmatterStrategy, conflictStrategy: 'conflict-markers' };
 }
 
 function resolver(frontmatterStrategy: SyncStrategy, bodyStrategy: SyncStrategy): ConflictResolver {
