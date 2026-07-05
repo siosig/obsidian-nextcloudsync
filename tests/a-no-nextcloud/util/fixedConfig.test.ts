@@ -1,6 +1,6 @@
 import { DEFAULT_SETTINGS } from '../../../src/types';
 import { hostToken } from '../../../src/util/hostToken';
-import { syncLogPath, debugLogPath } from '../../../src/util/logPaths';
+import { debugLogPath } from '../../../src/util/logPaths';
 
 // Feature 032 restored these as user-editable DavSyncSettings fields. Feature 033 then re-fixed five
 // of them (fileLocking, chunkedUpload, chunkThreshold, maxConflictRegions, explorerCompare) — those
@@ -30,10 +30,9 @@ describe('[SPEC:DBG-2] fixed Debug identity: auto-derived device name + vault-ro
     expect(hostToken(DEFAULT_SETTINGS.deviceName, 'ios', deviceId)).toBe('ios-a1b2c3');
   });
 
-  it('[SPEC:DBG-2] the empty logsFolder default puts both logs at the vault root', () => {
+  it('[SPEC:DBG-2] the empty logsFolder default puts the log at the vault root', () => {
     expect(DEFAULT_SETTINGS.logsFolder).toBe('');
     const host = 'desktop-a1b2c3';
-    expect(syncLogPath(DEFAULT_SETTINGS.logsFolder, host)).toBe('nextcloud-sync_sync_desktop-a1b2c3.txt');
-    expect(debugLogPath(DEFAULT_SETTINGS.logsFolder, host)).toBe('nextcloud-sync_debug_desktop-a1b2c3.txt');
+    expect(debugLogPath(DEFAULT_SETTINGS.logsFolder, host)).toBe('nextcloud-debug_desktop-a1b2c3.txt');
   });
 });
