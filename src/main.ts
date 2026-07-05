@@ -1,5 +1,5 @@
 import { App, Plugin, Notice, Platform, TFile, TFolder, TAbstractFile, debounce } from 'obsidian';
-import { DavSyncSettings, DEFAULT_SETTINGS, FeatureUnsupportedError, SyncHistoryEntry, SyncSessionSummary } from './types';
+import { DavSyncSettings, DEFAULT_SETTINGS, FeatureUnsupportedError } from './types';
 import { NextcloudSyncSettingTab } from './settings/SettingTab';
 import { SyncEngine } from './sync/SyncEngine';
 import { VersionHistoryModal } from './ui/VersionHistoryModal';
@@ -15,8 +15,7 @@ import type { MergeBaseStore } from './data/MergeBaseStore';
 import { v4 as uuidv4 } from './util/uuid';
 import { hostToken, LogPlatform } from './util/hostToken';
 import { migrateConfigSyncCategories, migrateBookmarksToConfigSync, migrateStartupToggleToDelay, migrateConflictSettingsToStrategies, migrateFrontmatterScalarPolicyToStrategy, migrateMarkdownAutoMergeType, pruneObsoleteSettings, resetDebugIdentityFields, applyMobileFirstRunDefaults } from './util/settingsMigration';
-import { debugLogPath, syncLogPath, isActiveOwnLog } from './util/logPaths';
-import { SyncLogWriter, formatResolution } from './log/SyncLogWriter';
+import { debugLogPath, isActiveOwnLog } from './util/logPaths';
 import { autoNetworkConcurrency } from './util/platformDefaults';
 
 const MIN_OBSIDIAN_VERSION = '1.11.4';
@@ -33,10 +32,8 @@ export default class ObsidianNextcloudsync extends Plugin {
   baseStore?: MergeBaseStore;
   /** Clean-side snapshot store (feature 044); flushed on unload so a debounced write is not lost. */
   cleanSideStore?: import('./data/CleanSideStore').CleanSideStore;
-  /** Diagnostic file logger (writes a per-device debug log while the debug log is enabled). */
+  /** Diagnostic file logger: writes this device's single log file while logging is enabled. */
   logger!: FileLogger;
-  /** Per-device sync-log writer (appends one block per sync when the sync log is enabled). */
-  syncLogWriter!: SyncLogWriter;
   /**
    * Status filter for the Sync Status dialog. Held here (not on the modal, which is recreated per
    * open) so the selection persists across reopens. Hydrated from settings on load and saved on every
@@ -66,10 +63,10 @@ export default class ObsidianNextcloudsync extends Plugin {
       await this.saveSettings();
     }
 
-    // Diagnostic logger: appends to a per-device debug log while the debug log is enabled (all
+    // Diagnostic logger: appends to this device's single log file while logging is enabled (all
     // platforms). Logging still performs a real sync — identical behavior on desktop and mobile.
-    // The file is named with this device's host token so multiple devices never collide, and each
-    // line is gated by the configured verbosity level.
+    // The file is named with this device's host token so multiple devices never collide. A failed
+    // write surfaces as a Notice (never a thrown error) so "logging on yet no file" is not silent.
     this.logger = new FileLogger(
       this.app.vault.adapter,
       () => this.settings.loggingEnabled,
@@ -77,18 +74,11 @@ export default class ObsidianNextcloudsync extends Plugin {
       this.manifest.version,
       this.hostToken(),
       () => debugLogPath(this.settings.logsFolder, this.hostToken()),
+      (err) => new Notice(`Nextcloud Sync: could not write the log file — ${(err as Error)?.message ?? String(err)}`, 8000),
     );
     void this.logger.log(`plugin loaded (obsidian=${currentVersion})`);
     // Record a full settings snapshot at the top of each debug-log session.
     void this.logSettingsSnapshot();
-
-    // Per-device sync log: appends one block per sync (binary version + conflict-resolution
-    // settings header, then one line per qualifying operation) while the sync log is enabled.
-    this.syncLogWriter = new SyncLogWriter(
-      this.app.vault.adapter,
-      () => this.settings.loggingEnabled,
-      () => syncLogPath(this.settings.logsFolder, this.hostToken()),
-    );
 
     this.addSettingTab(new NextcloudSyncSettingTab(this.app, this));
 
@@ -382,30 +372,16 @@ export default class ObsidianNextcloudsync extends Plugin {
   }
 
   /**
-   * Stable, filename-safe per-device host token used to name both log files and label debug-log
+   * Stable, filename-safe per-device host token used to name the log file and label debug-log
    * lines. Derived from the user-facing Device name, defaulting to `<platform>-<deviceId6>`.
    */
   private hostToken(): string {
     return hostToken(this.settings.deviceName, this.logPlatform(), this.settings.deviceId);
   }
 
-  /**
-   * Append this session's outcomes to the per-device sync log. The session header carries the
-   * binary version and all merge-related settings; each line carries the per-file marker,
-   * checksums and sizes. No-op when the sync log is disabled.
-   */
-  private async appendSyncLog(entries: SyncHistoryEntry[], summary: SyncSessionSummary): Promise<void> {
-    const resolution = formatResolution({
-      autoMergeFileStrategy: this.settings.autoMergeFileStrategy,
-      otherFileStrategy: this.settings.otherFileStrategy,
-      autoMergeFileTypes: this.settings.autoMergeFileTypes,
-    });
-    await this.syncLogWriter.append(entries, {
-      at: summary.startedAt,
-      version: this.manifest.version,
-      resolution,
-      level: 'all',
-    });
+  /** Vault-relative path of this device's log file (shown to the user when logging is enabled). */
+  logFilePath(): string {
+    return debugLogPath(this.settings.logsFolder, this.hostToken());
   }
 
   /**
@@ -533,9 +509,9 @@ export default class ObsidianNextcloudsync extends Plugin {
       webdavFactory,
       pluginDir,
       configDir: this.app.vault.configDir,
-      // Keep this device's own log file out of sync while its output toggle is on (it is being
-      // appended to during the sync). Evaluated live, from the same settings + host token the
-      // loggers use, so it follows the Sync log / Debug log toggles and any logsFolder change.
+      // Keep this device's own log file out of sync while logging is on (it is being appended to
+      // during the sync). Evaluated live, from the same settings + host token the logger uses, so
+      // it follows the logging toggle.
       isActiveLogFile: (path) => isActiveOwnLog(path, {
         logsFolder: this.settings.logsFolder,
         host: this.hostToken(),
@@ -550,7 +526,6 @@ export default class ObsidianNextcloudsync extends Plugin {
           void this.saveSettings();
         }
       },
-      onSessionComplete: (entries, summary) => this.appendSyncLog(entries, summary),
     });
 
     // Periodic auto-sync is desktop-only (mobile OS suspends background timers).
