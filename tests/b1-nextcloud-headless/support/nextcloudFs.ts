@@ -5,28 +5,9 @@
 //   NEXTCLOUD_SSH_TARGET  e.g. runner@34.146.46.66
 //   NEXTCLOUD_DATA_HOST   e.g. /opt/svc-node/data
 //   NEXTCLOUD_USER        e.g. admin
-// When they are absent (localhost / plain b1), N is unavailable and the 3-actor tests skip cleanly.
+// When they are absent (localhost / plain b1), N is unavailable and the 3-actor suites skip cleanly
+// via describeCluster() (see support/env.ts) — the default `pnpm test:b1` never exercises this module.
 import { execFileSync } from 'child_process';
-
-export function nextcloudFsAvailable(): boolean {
-  return !!(process.env.NEXTCLOUD_SSH_TARGET && process.env.NEXTCLOUD_DATA_HOST && process.env.NEXTCLOUD_USER);
-}
-
-/**
- * Fail loudly (never silently pass) when the N actor is unavailable. The 3-actor tests are
- * cluster-only and meaningless without N; a silent early-return would fake a green run. Call this at
- * the top of every 3-actor test so a run that does NOT exercise N fails with an actionable message.
- * Run against the ephemeral cluster: `pnpm test:b1:cluster` (after `make up` in nextcloud-cloudrun).
- */
-export function assertNextcloudFs(): void {
-  if (!nextcloudFsAvailable()) {
-    throw new Error(
-      'N actor (Nextcloud server FS) unavailable: NEXTCLOUD_SSH_TARGET/DATA_HOST/USER are unset. '
-      + 'The 3-actor tests require the ephemeral cluster — run `pnpm test:b1:cluster` '
-      + '(scripts/b1-cluster.sh) against nextcloud-cloudrun, not a plain/localhost b1 run.',
-    );
-  }
-}
 
 function req(key: string): string {
   const v = process.env[key];
