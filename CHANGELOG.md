@@ -11,6 +11,13 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.26] - 2026-07-06
+
+### Fixed
+- Fixed a sync that could get stuck on "A sync is already in progress" forever: if the very first step (connecting to the server and reading its capabilities) failed, the engine stayed flagged as "sync in progress" and swallowed the error, so every later sync was skipped — and a restart didn't help because the startup sync hit the same failing step. That connection step is now inside the error handling, so the failure surfaces and the engine recovers for the next attempt.
+- The **Network timeout** setting now actually applies to requests. It was never wired in, so a server that accepted the connection but never responded could hang a sync indefinitely (and lock the engine as above). Every WebDAV request is now bounded by the configured timeout (default 30s; 0 = unbounded), and a stalled request fails so the next sync retries.
+- A source-wide audit fixed a batch of data-safety failure paths where one failed step could silently lose or resurrect content: a clean merge whose upload fails stays flagged; a file/folder is untracked only when the remote delete truly succeeds; an interrupted atomic write never loses both the old and new content; large (chunked) uploads honour the same optimistic-concurrency check as small ones; a mid-sync crash recovers the on-disk state instead of restarting empty; and empty-base merges no longer fuse two independent edits into one corrupted line. Also added double-click guards on force-resolve / restore, and mobile watch-mode is now disabled at runtime.
+
 ## [0.7.25] - 2026-07-06
 
 ### Fixed
@@ -266,6 +273,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.26]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.26
 [0.7.25]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.25
 [0.7.24]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.24
 [0.7.23]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.23
