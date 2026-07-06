@@ -15,7 +15,8 @@
     "test:b1": "jest --config jest.b1.config.js --runInBand",
     "test:b1:par": "jest --config jest.b1.config.js --maxWorkers=5",
     "test:b1:cluster": "bash scripts/b1-cluster.sh",
-    "test:b2": "wdio run wdio.conf.mts"
+    "test:b2": "wdio run wdio.conf.mts",
+    "test:b2:instance": "bash scripts/b2-instance.sh"
   },
   "keywords": [
     "obsidian",
