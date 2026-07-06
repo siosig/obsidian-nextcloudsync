@@ -1,6 +1,6 @@
 // Feature 051: the "N" actor — a change made DIRECTLY on the Nextcloud server's filesystem (as if by
 // another tool), then made visible to WebDAV via `occ files:scan`. Only meaningful against the
-// ephemeral cluster (nextcloud-cloudrun), which exposes SSH + a host bind-mounted data dir + an `occ`
+// ephemeral instance (nextcloud-testinstance), which exposes SSH + a host bind-mounted data dir + an `occ`
 // wrapper. The cluster runner (scripts/b1-cluster.sh) exports the connection details as env vars:
 //   NEXTCLOUD_SSH_TARGET  e.g. runner@34.146.46.66
 //   NEXTCLOUD_DATA_HOST   e.g. /opt/svc-node/data
