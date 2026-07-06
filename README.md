@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.27-beta.1)
+## What's new in this release (0.7.27)
 
-- **`.git` and `.trash` are never synced anymore (0.7.27-beta.1)** — Obsidian's local trash folder (`.trash`) and a repository's `.git` folder were being uploaded and pulled to every device. Syncing `.trash` cluttered every device's trash and churned against the plugin's own delete-to-trash behaviour; syncing `.git` piece by piece can corrupt the repository. Both are now permanently excluded, regardless of your *Excluded folders* list — which is what the settings screen already said. This is a targeted exclusion: other dot-folders at your vault root (for example `.archive/`) keep syncing as before. Already-uploaded `.trash`/`.git` copies on the server are simply left alone (not deleted); remove them there manually if you want.
+- **`.git` and `.trash` are never synced anymore (0.7.27)** — Obsidian's local trash folder (`.trash`) and a repository's `.git` folder were being uploaded and pulled to every device. Syncing `.trash` cluttered every device's trash and churned against the plugin's own delete-to-trash behaviour; syncing `.git` piece by piece can corrupt the repository. Both are now permanently excluded, regardless of your *Excluded folders* list — which is what the settings screen already said. This is a targeted exclusion: other dot-folders at your vault root (for example `.archive/`) keep syncing as before. Already-uploaded `.trash`/`.git` copies on the server are simply left alone (not deleted); remove them there manually if you want.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 

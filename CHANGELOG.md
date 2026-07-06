@@ -11,6 +11,11 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.27] - 2026-07-07
+
+### Fixed
+- `.git` and `.trash` folders are never synced anymore. Obsidian's local trash folder (`.trash`) and a repository's `.git` folder were being uploaded and pulled to every device — syncing `.trash` cluttered every device's trash and churned against the plugin's own delete-to-trash behaviour, and syncing `.git` piece by piece can corrupt the repository. Both are now permanently excluded regardless of your *Excluded folders* list, matching what the settings screen already stated. This is a targeted exclusion: other dot-folders at your vault root (for example `.archive/`) keep syncing as before. Already-uploaded `.trash`/`.git` copies on the server are left alone (not deleted); remove them there manually if you want.
+
 ## [0.7.26] - 2026-07-06
 
 ### Fixed
@@ -273,6 +278,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.27]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.27
 [0.7.26]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.26
 [0.7.25]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.25
 [0.7.24]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.24
