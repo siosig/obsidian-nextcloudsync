@@ -38,10 +38,24 @@ export class MergeBaseStore {
 
   async load(): Promise<void> {
     try {
-      if (!(await this.adapter.exists(this.storePath))) return;
-      const raw = await this.adapter.read(this.storePath);
+      let readPath = this.storePath;
+      let recoveredFromTmp = false;
+      if (!(await this.adapter.exists(readPath))) {
+        // G4-2: a crash between remove(storePath) and rename(tmpPath, storePath) in doSave leaves
+        // storePath absent while tmpPath still holds the fully-written new data. Recover from tmp
+        // instead of silently treating this as "no bases yet".
+        if (!(await this.adapter.exists(this.tmpPath))) return;
+        readPath = this.tmpPath;
+        recoveredFromTmp = true;
+      }
+      const raw = await this.adapter.read(readPath);
       const parsed = JSON.parse(raw) as Record<string, string>;
       if (parsed && typeof parsed === 'object') this.bases = parsed;
+      if (recoveredFromTmp) {
+        // Adopt the recovered tmp as the primary file; best-effort (the next save() recreates
+        // storePath from the now-recovered in-memory bases if this rename also fails).
+        await this.adapter.rename(this.tmpPath, this.storePath).catch(() => undefined);
+      }
     } catch {
       // Corrupted store — start empty. Bases re-seed at the next convergence (self-healing).
       console.warn('[MergeBaseStore] Failed to parse merge-base store; starting empty');

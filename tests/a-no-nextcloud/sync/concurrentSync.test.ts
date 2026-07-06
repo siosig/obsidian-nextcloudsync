@@ -1,4 +1,5 @@
 import { SyncEngine } from '../../../src/sync/SyncEngine';
+import { DEFAULT_SETTINGS } from '../../../src/types';
 import { autoNetworkConcurrency } from '../../../src/util/platformDefaults';
 
 // Feature 028: network concurrency is no longer a user setting — the engine reads
@@ -111,5 +112,53 @@ describe('SyncEngine — Two-Phase Termination (requestStop)', () => {
     let ran = 0;
     await run([{ path: 'a/1.md', size: 1 }, { path: 'b/1.md', size: 1 }], async () => { ran++; });
     expect(ran).toBe(0);
+  });
+});
+
+describe('[SPEC:CONC-1] SyncEngine — a failed ensureClient must not strand the running guard', () => {
+  // Regression for feature 053. ensureClient() (client creation + capabilities probe) used to run
+  // OUTSIDE runSyncSession's try/finally, so a connection failure stranded `running=true` forever —
+  // every later sync balked with "already running" — AND swallowed the real error (no FAILED log).
+  // The fix moves ensureClient inside the guard so the failure is caught + logged and the flag is
+  // always cleared, letting the next sync retry.
+  function makeFailingEngine() {
+    const logs: string[] = [];
+    const createClient = jest.fn(async () => { throw new Error('boom: capabilities probe failed'); });
+    const opts = {
+      app: {},
+      settings: { ...DEFAULT_SETTINGS, syncOnWifiOnly: false },
+      localAdapter: {},
+      stateDB: {
+        setLastSyncTime: jest.fn(),
+        save: jest.fn(async () => undefined),
+        countConflicted: jest.fn(() => 0),
+        getSyncToken: jest.fn(() => null),
+        getAllFiles: jest.fn(() => []),
+      },
+      statusBar: { setStatus: jest.fn(), setSyncComplete: jest.fn() },
+      webdavFactory: { createClient },
+      logger: { log: jest.fn(async (m: string) => { logs.push(m); }) },
+      pluginDir: '', configDir: '.obsidian',
+    };
+    const engine = new SyncEngine(opts as never) as unknown as { syncManual(o?: { manual?: boolean }): Promise<void> };
+    return { engine, createClient, logs };
+  }
+
+  it('clears `running` and surfaces the error, so the next sync can retry', async () => {
+    // testEnvironment is 'node'; isBlockedByWifiOnly reads navigator.connection. syncOnWifiOnly=false
+    // short-circuits, but guard the global so older runtimes without a `navigator` don't ReferenceError.
+    (globalThis as { navigator?: unknown }).navigator ??= {};
+    const { engine, createClient, logs } = makeFailingEngine();
+
+    // First sync: ensureClient throws. With the fix the error is caught, so syncManual RESOLVES
+    // (before the fix it rejected and left `running` stranded).
+    await expect(engine.syncManual({ manual: true })).resolves.toBeUndefined();
+    expect(createClient).toHaveBeenCalledTimes(1);
+    expect(logs.some((l) => l.startsWith('sync: FAILED'))).toBe(true); // real error surfaced, not swallowed
+
+    // Second sync: must actually run again (running was cleared), NOT balk with "already running".
+    await expect(engine.syncManual({ manual: true })).resolves.toBeUndefined();
+    expect(createClient).toHaveBeenCalledTimes(2);
+    expect(logs.filter((l) => l === 'sync: skipped — already running')).toHaveLength(0);
   });
 });
