@@ -155,6 +155,10 @@ export const CLAUSES: Clause[] = [
   // --- PR: pause / resume mid-sync (lifecycle) ---
   { id: 'PR-1', source: 'spec 019 FR-016', layer: 'b-1' },
   { id: 'PR-2', source: 'spec 019 FR-016', layer: 'b-1' },
+  // --- CONC: concurrency / running-guard integrity ---
+  { id: 'CONC-1', source: 'specs/main/spec.md §5 (a failed ensureClient must not strand the running guard; feature 053)', layer: 'a' },
+  // --- NET: network request timeout (feature 054) ---
+  { id: 'NET-1', source: 'specs/main/spec.md §5.6 (networkTimeoutSeconds bounds every WebDAV request so a hang cannot lock the engine)', layer: 'a' },
   // --- LOG: active-log self-sync exclusion + write-failure visibility ---
   { id: 'LOG-1', source: 'specs/main/spec.md §9.1', layer: 'a' },
   { id: 'LOG-2', source: 'specs/main/spec.md §12 (log write failures surface as a Notice)', layer: 'a' },
