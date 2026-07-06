@@ -68,7 +68,7 @@ export const TOOLTIPS = {
 
   // Debug section
   loggingEnabled:
-    'Write a per-device sync log (all operations) and a verbose debug log to the vault root while troubleshooting. Turn off and delete the log files when done.',
+    'Write a single per-device log file (nextcloud-debug_<device>.txt) to the vault root while troubleshooting. Obsidian hides .txt unless "Detect all file extensions" is on; you can also open it via your OS or Nextcloud. Turn off and delete the file when done.',
 
   // Advanced (caution) section
   massDeleteLimit:

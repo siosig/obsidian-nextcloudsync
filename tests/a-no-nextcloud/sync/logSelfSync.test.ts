@@ -2,11 +2,11 @@ import { DataAdapter } from 'obsidian';
 import { LocalAdapter } from '../../../src/data/LocalAdapter';
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { DavSyncSettings } from '../../../src/types';
-import { isActiveOwnLog, debugLogPath, syncLogPath } from '../../../src/util/logPaths';
+import { isActiveOwnLog, debugLogPath } from '../../../src/util/logPaths';
 
 /**
  * REPRODUCTION + FIX GUARD: the "Destination file already exists!" error reported on the
- * plugin's own per-device debug log (e.g. _logs/nextcloud-sync_debug_<host>.txt).
+ * plugin's own per-device debug log (e.g. _logs/nextcloud-debug_<host>.txt).
  *
  * Root cause established by investigation + live evidence:
  *  - The real Nextcloud server returns a DIFFERENT message for a MOVE/Overwrite:F to an existing
@@ -27,9 +27,8 @@ import { isActiveOwnLog, debugLogPath, syncLogPath } from '../../../src/util/log
 const enc = new TextEncoder();
 const toBuf = (s: string): ArrayBuffer => enc.encode(s).buffer;
 const HOST = 'desktop-daidows';
-const LOG_PATH = '_logs/nextcloud-sync_debug_desktop-daidows.txt';
+const LOG_PATH = '_logs/nextcloud-debug_desktop-daidows.txt';
 const DEBUG_LOG = debugLogPath('_logs', HOST);
-const SYNC_LOG = syncLogPath('_logs', HOST);
 
 /**
  * An in-memory DataAdapter that mimics the two Obsidian behaviours that matter here:
@@ -95,14 +94,9 @@ describe('[SPEC:LOG-1] REPRO: plugin syncs its own debug log → local atomicWri
     return (engine as unknown as { isSystemExcluded(p: string): boolean }).isSystemExcluded(path);
   }
 
-  it('excludes this device\'s debug log while logging is ON, and syncs it when OFF', () => {
+  it('excludes this device\'s log while logging is ON, and syncs it when OFF', () => {
     expect(excludedWith(true, DEBUG_LOG)).toBe(true);   // ON → excluded
     expect(excludedWith(false, DEBUG_LOG)).toBe(false); // OFF → syncable
-  });
-
-  it('excludes this device\'s sync log while logging is ON, and syncs it when OFF', () => {
-    expect(excludedWith(true, SYNC_LOG)).toBe(true);   // ON → excluded
-    expect(excludedWith(false, SYNC_LOG)).toBe(false); // OFF → syncable
   });
 
   it('never excludes an ordinary note', () => {
