@@ -96,7 +96,7 @@ export function describeLive(title: string, fn: (getEnv: () => LiveEnv) => void)
 }
 
 // The "N" actor (feature 051) — a change made DIRECTLY on the Nextcloud server FS via SSH + occ —
-// is only reachable against the ephemeral cluster (nextcloud-cloudrun), which exports these keys via
+// is only reachable against the ephemeral instance (nextcloud-testinstance), which exports these keys via
 // scripts/b1-cluster.sh. NEXTCLOUD_USER is already a live-env key, so N needs only SSH target + data dir.
 const CLUSTER_KEYS = ['NEXTCLOUD_SSH_TARGET', 'NEXTCLOUD_DATA_HOST'] as const;
 
