@@ -34,12 +34,16 @@ function makeDataAdapterWithDotPaths(): DataAdapter {
   const statMap: Record<string, { size: number; mtime: number }> = {
     '.env': { size: 42, mtime: 1001 },
     '.archive/note.md': { size: 100, mtime: 2002 },
+    '.git/config': { size: 7, mtime: 3003 },
+    '.trash/deleted.md': { size: 9, mtime: 4004 },
   };
 
   const listMap: Record<string, { files: string[]; folders: string[] }> = {
-    '': { files: ['.env'], folders: ['.archive', '.obsidian'] },
+    '': { files: ['.env'], folders: ['.archive', '.obsidian', '.git', '.trash'] },
     '.archive': { files: ['.archive/note.md'], folders: [] },
     '.obsidian': { files: ['.obsidian/appearance.json'], folders: [] },
+    '.git': { files: ['.git/config'], folders: [] },
+    '.trash': { files: ['.trash/deleted.md'], folders: [] },
   };
 
   return {
@@ -101,6 +105,25 @@ describe('dot-paths: collectDotPaths supplements Vault-enumerated files (Task 7)
     expect(result.get('.env')).toEqual({ size: 42, mtime: 1001 });
     expect(result.has('.archive/note.md')).toBe(true);
     expect(result.get('.archive/note.md')).toEqual({ size: 100, mtime: 2002 });
+  });
+
+  it('[SPEC:EXCL-HARD-1] scanLocalFiles does NOT include hard-excluded .git/.trash (collectDotPaths skips them)', async () => {
+    const rawAdapter = makeDataAdapterWithDotPaths();
+    const vault = makeVault(VAULT_FILES, rawAdapter);
+    const localAdapter = new LocalAdapter(rawAdapter, vault);
+    const engine = makeEngine(localAdapter);
+
+    const result = await (engine as unknown as {
+      scanLocalFiles(): Promise<Map<string, { size: number; mtime: number }>>;
+    }).scanLocalFiles();
+
+    // .git and .trash are re-enumerated at the vault root by collectDotPaths, but isSystemExcluded
+    // filters them out — the whole tree is skipped, so no file under them is synced.
+    expect(result.has('.git/config')).toBe(false);
+    expect(result.has('.trash/deleted.md')).toBe(false);
+    // Regression: non-machine root dot content is still present.
+    expect(result.has('.env')).toBe(true);
+    expect(result.has('.archive/note.md')).toBe(true);
   });
 
   it('scanLocalFiles still includes normal Vault-tracked files', async () => {
