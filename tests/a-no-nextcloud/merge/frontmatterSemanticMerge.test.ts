@@ -305,7 +305,8 @@ describe('MergeEngine – frontmatter semantic merge integration', () => {
     const base = '---\ntags:\n  - work\n---\nBody';
     const local = '---\ntags:\n  - work\n  - local-tag\n---\nBody';
     const remote = '---\ntags:\n  - work\n  - remote-tag\n---\nBody';
-    const result = engine.merge(base, local, remote);
+    // frontmatter merge is the markdown path (resolveMarkdown); merge() is now non-md body-only (G3-3).
+    const result = engine.resolveMarkdown(base, local, remote, { frontmatterStrategy: 'merge', bodyStrategy: 'merge' });
     expect(result.success).toBe(true);
     expect(result.mergedContent).toContain('local-tag');
     expect(result.mergedContent).toContain('remote-tag');
@@ -316,7 +317,7 @@ describe('MergeEngine – frontmatter semantic merge integration', () => {
     const base = '---\ntitle: Old\n---\nBody';
     const local = '---\ntitle: New\n---\nBody';
     const remote = '---\ntitle: Old\n---\nBody';
-    const result = engine.merge(base, local, remote);
+    const result = engine.resolveMarkdown(base, local, remote, { frontmatterStrategy: 'merge', bodyStrategy: 'merge' });
     expect(result.success).toBe(true);
     expect(result.mergedContent).toContain('New');
     expect(result.mergedContent).not.toContain('Old');
@@ -328,7 +329,7 @@ describe('MergeEngine – frontmatter semantic merge integration', () => {
     const remote = '---\nstatus: in-review\n---\nBody';
     // Local newer → local scalar wins.
     const ctx: MergeContext = { localMtime: 9999, remoteMtime: 0 };
-    const result = engine.merge(base, local, remote, ctx);
+    const result = engine.resolveMarkdown(base, local, remote, { frontmatterStrategy: 'merge', bodyStrategy: 'merge', ctx });
     expect(result.success).toBe(true);
     expect(result.mergedContent).toContain('done');
     expect(result.mergedContent).not.toContain('in-review');

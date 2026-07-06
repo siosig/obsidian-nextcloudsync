@@ -1,5 +1,5 @@
-import { requestUrl } from 'obsidian';
 import { NO_CACHE_HEADERS } from './noCacheHeaders';
+import { requestUrlWithTimeout } from './requestWithTimeout';
 
 /**
  * Helpers for converting between the remote base folder (the Vault name) and paths.
@@ -93,7 +93,7 @@ export function encodeRemoteUrl(baseUrl: string, remotePath: string): string {
  * Required before upload because WebDAV PUT does not auto-create parent directories.
  */
 export async function ensureRemoteDir(
-  ctx: { baseUrl: string; authHeader: string },
+  ctx: { baseUrl: string; authHeader: string; timeoutMs?: number },
   remoteFilePath: string,
   createdCache: Set<string>,
 ): Promise<void> {
@@ -103,12 +103,12 @@ export async function ensureRemoteDir(
     if (!seg) continue;
     acc = acc ? `${acc}/${seg}` : seg;
     if (createdCache.has(acc)) continue;
-    await requestUrl({
+    await requestUrlWithTimeout({
       url: encodeRemoteUrl(ctx.baseUrl, acc),
       method: 'MKCOL',
       headers: { Authorization: ctx.authHeader, ...NO_CACHE_HEADERS },
       throw: false,
-    });
+    }, ctx.timeoutMs ?? 0);
     // 201=created / 405=already exists are both fine; continue best-effort on other codes too.
     createdCache.add(acc);
   }

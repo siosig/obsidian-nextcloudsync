@@ -217,15 +217,23 @@ export class SyncEngine {
 
   /** The actual full-sync session body. Always runs under the {@link syncManual} balking guard. */
   private async runSyncSession(): Promise<void> {
-    void this.opts.logger?.log('sync: connecting (ensureClient)');
-    await this.ensureClient();
-    this.syncProgress = { processed: 0, total: 0 };
-    this.opts.statusBar.setStatus('syncing');
+    // Build the summary and tag this run BEFORE the try so the catch/finally can reference them even
+    // when the very first step fails.
     const summary = this.initSummary();
     this.currentRunStartedAt = summary.startedAt; // tag this run's history entries for grouping
 
     const cancelled = false;
     try {
+      // Feature 053: connect INSIDE the guard. ensureClient() (client creation + capabilities probe)
+      // can throw (network / auth / capabilities) or hang; if it ran outside this try, a failure would
+      // skip the finally that clears `running`, stranding the engine as "sync in progress" forever
+      // AND swallowing the real error (no FAILED log) — every later sync then balks with "already
+      // running", and a restart's startup sync re-triggers the same failure and re-strands it.
+      void this.opts.logger?.log('sync: connecting (ensureClient)');
+      await this.ensureClient();
+      this.syncProgress = { processed: 0, total: 0 };
+      this.opts.statusBar.setStatus('syncing');
+
       const isFirstSync = !this.opts.stateDB.getSyncToken() && this.opts.stateDB.getAllFiles().length === 0;
 
       if (isFirstSync) {
@@ -328,9 +336,11 @@ export class SyncEngine {
     const base = this.opts.stateDB.getFile(path);
     if (!base) return; // not tracked — nothing to do on remote
     this.beginWatchActivity();
+    let succeeded = false;
     try {
-      await this.client!.deleteFile(path, base.remoteId);
+      await this.client!.deleteFile(path, base.remoteId); // resolves on 404 too (already gone = success)
       this.recordHistory(path, 'deleted');
+      succeeded = true;
     } catch (err) {
       if (!(err instanceof NetworkError && err.status === 404)) {
         console.warn(`[SyncEngine] Single-file delete failed for ${path}:`, err);
@@ -338,6 +348,11 @@ export class SyncEngine {
     } finally {
       this.endWatchActivity();
     }
+    // BUG G1-2 fix: only drop the StateDB tracking entry when the remote delete actually succeeded.
+    // Dropping it on a real failure (423/500/timeout) would make the next sync see base=undefined,
+    // read the still-present remote file as "new", and re-download it — silently reverting the
+    // user's deletion. Keep the entry so the delete is retried next sync.
+    if (!succeeded) return;
     this.opts.stateDB.deleteFile(path);
     this.dropMergeBase(path); // feature 038: file gone → drop its merge base
     this.dropCleanSnapshot(path); // feature 044: file gone → drop any captured clean sides
@@ -393,14 +408,19 @@ export class SyncEngine {
     if (!this.opts.stateDB.getDir(path)) return; // untracked → nothing to do on the remote
     await this.ensureClient();
     this.beginWatchActivity();
+    let succeeded = false;
     try {
       await this.client!.deleteCollection(path); // trashbin; 404 handled inside as success
       void this.opts.logger?.log(`watch: folder deleted → remote collection removed ${path}`);
+      succeeded = true;
     } catch (err) {
       console.warn(`[SyncEngine] Single-folder delete failed for ${path}:`, err);
     } finally {
       this.endWatchActivity();
     }
+    // BUG G1-2 fix: only drop the tracked directory when the remote delete actually succeeded (see
+    // deleteSingleFile for the full rationale) — otherwise the next sync would re-create it locally.
+    if (!succeeded) return;
     this.opts.stateDB.deleteDir(path);
     this.opts.stateDB.requestSave();
   }
@@ -1840,7 +1860,12 @@ export class SyncEngine {
       remoteId: uploaded ? mergedHash : remoteId,
       idType: uploaded ? 'sha256' : idType,
       size: stat?.size ?? 0, mtime: maxMtime,
-      remoteFileId: remote.fileId, isConflicted: !clean,
+      remoteFileId: remote.fileId,
+      // BUG G1-1 fix: isConflicted must also stay true when the upload failed, even for a clean
+      // merge — remoteId/idType above are already gated on `uploaded`; without this the committed
+      // state pairs the OLD remoteId with the NEW localHash and isConflicted:false, which the next
+      // sync reads as "converged" and never retries pushing the merge result.
+      isConflicted: !clean || !uploaded,
     }, remote.lastModified));
     const mergeDetail: SyncHistoryDetail = {
       localHash: mergedHash,
@@ -2089,6 +2114,10 @@ export class SyncEngine {
         } else {
           console.warn(`[SyncEngine] Failed to delete ${path} from remote:`, err);
           this.recordError(summary, path, err);
+          // BUG G1-2 fix: on a real failure, keep the StateDB tracking entry so the next sync retries
+          // the delete — dropping it here would make the next sync see the still-present remote file
+          // as "new" and re-download it, silently reverting the user's local deletion.
+          continue;
         }
       }
       this.opts.stateDB.deleteFile(path);
