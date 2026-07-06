@@ -220,6 +220,21 @@ export function applyMobileFirstRunDefaults(
 }
 
 /**
+ * Runtime guard (G7-2, feature 055): watch mode must never fire on mobile, regardless of the
+ * persisted `watchOnChangeEnabled` value. {@link applyMobileFirstRunDefaults} only defaults this
+ * to `false` on a brand-new install — a value copied in from another device (e.g. a synced
+ * `.obsidian` folder) or carried over from an older profile can still persist `true` on a mobile
+ * device. main.ts's vault-event listeners consult this single decision point (instead of reading
+ * `watchOnChangeEnabled` directly) so the mobile constraint holds no matter how the persisted flag
+ * got there. Pure and platform-agnostic — the caller passes `Platform.isMobile` — so it needs no
+ * Obsidian mock to unit test. A no-op on desktop (`isMobile` false passes `watchOnChangeEnabled`
+ * straight through).
+ */
+export function isWatchModeActive(watchOnChangeEnabled: boolean, isMobile: boolean): boolean {
+  return watchOnChangeEnabled && !isMobile;
+}
+
+/**
  * Delete persisted settings keys that are no longer part of the schema (e.g. `debugMode`,
  * and the `logLevel` / `syncResultsEnabled` / `syncResultsFolder` fields left behind by an
  * earlier 0.3.0-beta implementation). Mutates `settings` in place and returns the removed keys.

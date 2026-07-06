@@ -112,8 +112,11 @@ describe('[SPEC:CSS-1][SPEC:CSS-12] capture the clean sides on a marker write on
     expect(h.cleanSideStore.get(PATH)).toBeUndefined();
   });
 
-  it('[SPEC:CSS-12] a deterministic strategy (remote-win, non-merge type) captures NOTHING', async () => {
-    const h = await buildHarness({ settings: { autoMergeFileTypes: [], otherFileStrategy: 'remote-win' },
+  it('[SPEC:CSS-12] a deterministic strategy (remote-win) captures NOTHING', async () => {
+    // A deterministic body strategy resolves by a whole-side pick (no markers), so nothing is captured.
+    // PATH is markdown, whose body always follows autoMergeFileStrategy — set it to remote-win here
+    // (otherFileStrategy would not apply to a markdown body).
+    const h = await buildHarness({ settings: { autoMergeFileTypes: [], autoMergeFileStrategy: 'remote-win' },
       local: 'local', remote: 'remote' });
     await h.invokeConflict();
     expect(h.cleanSideStore.get(PATH)).toBeUndefined();

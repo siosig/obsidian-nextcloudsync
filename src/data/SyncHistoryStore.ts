@@ -33,11 +33,25 @@ export class SyncHistoryStore {
 
   async load(now: number = Date.now()): Promise<void> {
     try {
-      if (!(await this.adapter.exists(this.filePath))) return;
-      const raw = await this.adapter.read(this.filePath);
+      let readPath = this.filePath;
+      let recoveredFromTmp = false;
+      if (!(await this.adapter.exists(readPath))) {
+        // G4-2: a crash between remove(filePath) and rename(tmpPath, filePath) in doSave leaves
+        // filePath absent while tmpPath still holds the fully-written new history. Recover from tmp
+        // instead of silently treating this as "no history yet".
+        if (!(await this.adapter.exists(this.tmpPath))) return;
+        readPath = this.tmpPath;
+        recoveredFromTmp = true;
+      }
+      const raw = await this.adapter.read(readPath);
       const parsed = JSON.parse(raw) as unknown;
       this.entries = Array.isArray(parsed) ? (parsed as SyncHistoryEntry[]) : [];
       this.prune(now);
+      if (recoveredFromTmp) {
+        // Adopt the recovered tmp as the primary file; best-effort (the next save() recreates
+        // filePath from the now-recovered in-memory entries if this rename also fails).
+        await this.adapter.rename(this.tmpPath, this.filePath).catch(() => undefined);
+      }
     } catch {
       console.warn('[SyncHistoryStore] Failed to parse history; starting empty');
       this.entries = [];
