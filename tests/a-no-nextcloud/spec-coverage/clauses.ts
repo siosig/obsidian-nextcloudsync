@@ -168,6 +168,8 @@ export const CLAUSES: Clause[] = [
   { id: 'G6-1', source: 'specs/main/spec.md §18.1 (force-resolve / bulk-resolve are guarded by an instance field that survives re-render, preventing double execution)', layer: 'a' },
   { id: 'G6-2', source: 'specs/main/spec.md §18.1 (version Restore is guarded by a modal-level in-flight gate)', layer: 'a' },
   { id: 'G7-2', source: 'specs/main/spec.md §18.1 (mobile watch-mode is gated at runtime on Platform.isMobile, not only by first-run defaulting)', layer: 'a' },
+  { id: 'G3-1', source: 'specs/main/spec.md §18.1 (empty-base merge never silently fuses two divergent sides at the character level; line-preserving unions stay clean)', layer: 'a' },
+  { id: 'G3-3', source: 'specs/main/spec.md §18.1 (MergeEngine.merge for non-markdown never splits a leading --- block as frontmatter — a one-sided in-block edit is 3-way merged, not discarded)', layer: 'a' },
   // --- LOG: active-log self-sync exclusion + write-failure visibility ---
   { id: 'LOG-1', source: 'specs/main/spec.md §9.1', layer: 'a' },
   { id: 'LOG-2', source: 'specs/main/spec.md §12 (log write failures surface as a Notice)', layer: 'a' },
