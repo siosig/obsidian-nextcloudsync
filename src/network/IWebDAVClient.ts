@@ -78,8 +78,16 @@ export interface IWebDAVClient {
   restoreVersion(version: FileVersion, fileId: string): Promise<void>;
 
   // ── US3: Chunked upload ──
-  /** Uploads data in chunks. On completion it appears atomically at the final path. */
-  uploadChunked(remotePath: string, data: ArrayBuffer, chunkSizeBytes: number): Promise<void>;
+  /**
+   * Uploads data in chunks. On completion it appears atomically at the final path.
+   * @param opts Same optimistic-concurrency/precomputed-hash options as {@link uploadFile} — the
+   *        `ifMatchEtag` MUST be applied to the assembling MOVE so a concurrently-changed remote
+   *        yields 412 (mapped to PreconditionFailedError) exactly like the single-PUT path.
+   */
+  uploadChunked(
+    remotePath: string, data: ArrayBuffer, chunkSizeBytes: number,
+    opts?: { precomputedSha256?: string; ifMatchEtag?: string | null },
+  ): Promise<void>;
 
   // ── US4: Files Locking ──
   /** Acquires a file lock and returns the token. HTTP 423 maps to FileLockedError. */
