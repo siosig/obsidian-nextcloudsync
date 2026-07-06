@@ -14,7 +14,7 @@ import { isSyncTmpPath, LocalAdapter } from './data/LocalAdapter';
 import type { MergeBaseStore } from './data/MergeBaseStore';
 import { v4 as uuidv4 } from './util/uuid';
 import { hostToken, LogPlatform } from './util/hostToken';
-import { migrateConfigSyncCategories, migrateBookmarksToConfigSync, migrateStartupToggleToDelay, migrateConflictSettingsToStrategies, migrateFrontmatterScalarPolicyToStrategy, migrateMarkdownAutoMergeType, pruneObsoleteSettings, resetDebugIdentityFields, applyMobileFirstRunDefaults } from './util/settingsMigration';
+import { migrateConfigSyncCategories, migrateBookmarksToConfigSync, migrateStartupToggleToDelay, migrateConflictSettingsToStrategies, migrateFrontmatterScalarPolicyToStrategy, migrateMarkdownAutoMergeType, pruneObsoleteSettings, resetDebugIdentityFields, applyMobileFirstRunDefaults, isWatchModeActive } from './util/settingsMigration';
 import { debugLogPath, isActiveOwnLog } from './util/logPaths';
 import { autoNetworkConcurrency } from './util/platformDefaults';
 
@@ -28,6 +28,15 @@ export default class ObsidianNextcloudsync extends Plugin {
   private mirrorInProgress = false;
   /** Shared with SyncEngine; its ignore list marks the plugin's own writes for the watchers. */
   localAdapter?: LocalAdapter;
+  /** The desktop status-bar DOM element handed to the current engine's StatusBarItem (undefined on
+   *  mobile, where NoticeStatusBar is used instead). Tracked so `initSyncEngine` can remove it on
+   *  re-init (G7-1) instead of leaking a duplicate status-bar item into the DOM on every re-login. */
+  private statusBarEl?: HTMLElement;
+  /** In-flight `initSyncEngine` promise (G7-3). Concurrent callers (onLayoutReady's auto-init and an
+   *  early `runSyncNow`) await this same promise instead of each starting their own initialization
+   *  while `this.syncEngine` is still unset. Cleared once initialization settles, so a later explicit
+   *  call (e.g. re-login) still starts a fresh init. */
+  private initializingEngine?: Promise<void>;
   /** Merge base store (feature 038); flushed on unload so a debounced base write is not lost. */
   baseStore?: MergeBaseStore;
   /** Clean-side snapshot store (feature 044); flushed on unload so a debounced write is not lost. */
@@ -140,9 +149,12 @@ export default class ObsidianNextcloudsync extends Plugin {
 
       // Watch mode: react to individual file events with lightweight single-file operations.
       // Full vault sync is reserved for manual Sync Now and the periodic interval.
-      // Watch mode is disabled on mobile (OS suspends background work).
+      // Watch mode is disabled on mobile (OS suspends background work). This is enforced here at
+      // runtime via isWatchModeActive (G7-2) — not just via the first-run default in loadSettings —
+      // so a `watchOnChangeEnabled: true` persisted from another device (e.g. a copied/synced
+      // `.obsidian` folder) can never make watch mode fire on mobile.
       const guard = (file: TAbstractFile): file is TFile =>
-        this.settings.watchOnChangeEnabled && file instanceof TFile; // false on mobile (applied in loadSettings)
+        isWatchModeActive(this.settings.watchOnChangeEnabled, Platform.isMobile) && file instanceof TFile;
 
       // Vault events caused by the plugin itself (downloads / conflict writes use atomic
       // tmp-write → rename) must not be propagated back to the server, or every download
@@ -168,8 +180,9 @@ export default class ObsidianNextcloudsync extends Plugin {
         debouncedUpload();
       }));
       // Feature 046: folders (TFolder) propagate immediately via single-folder ops; files keep the
-      // debounced upload path. watchOn() is the master gate (false on mobile via loadSettings).
-      const watchOn = (): boolean => this.settings.watchOnChangeEnabled;
+      // debounced upload path. watchOn() is the master gate — false on mobile regardless of the
+      // persisted value (G7-2; see isWatchModeActive above).
+      const watchOn = (): boolean => isWatchModeActive(this.settings.watchOnChangeEnabled, Platform.isMobile);
       this.registerEvent(this.app.vault.on('create', (file: TAbstractFile) => {
         if (!watchOn() || isOwnSyncEvent(file.path)) return;
         if (file instanceof TFolder) { void this.syncEngine?.createSingleFolder(file.path); return; }
@@ -395,6 +408,18 @@ export default class ObsidianNextcloudsync extends Plugin {
   }
 
   onunload(): void {
+    this.teardownSyncEngine();
+  }
+
+  /**
+   * Tear down the current sync engine (if any) so it can be safely replaced or the plugin can
+   * safely unload. Shared by `onunload` and `initSyncEngine` (G7-1): re-login/account-switch calls
+   * `initSyncEngine()` again to build a fresh engine, and without this teardown the OLD engine's
+   * auto-sync timer keeps running (orphaned/unreachable), its status-bar item is never removed
+   * (duplicate items pile up in the status bar), and two engines end up reading/writing the same
+   * StateDB concurrently.
+   */
+  private teardownSyncEngine(): void {
     this.syncEngine?.stopAutoSync();
     // Two-Phase Termination: signal an in-flight sync to stop pulling new work (phase 1), then flush
     // any pending debounced state save so a coalesced watch-mode update is not lost on teardown (phase 2).
@@ -403,6 +428,8 @@ export default class ObsidianNextcloudsync extends Plugin {
     void this.baseStore?.flush();
     void this.cleanSideStore?.flush();
     this.localAdapter?.dispose();
+    this.statusBarEl?.remove();
+    this.statusBarEl = undefined;
   }
 
   async loadSettings(): Promise<void> {
@@ -460,7 +487,29 @@ export default class ObsidianNextcloudsync extends Plugin {
     await this.saveData(this.settings);
   }
 
+  /**
+   * (Re)build the sync engine. Idempotent and re-entrant-safe:
+   *  - G7-3: initialization is memoized in `initializingEngine` — a call that arrives while a
+   *    previous call is still awaiting store loads (e.g. onLayoutReady's auto-init racing an early
+   *    `runSyncNow`) awaits that SAME in-flight promise instead of starting a second, redundant
+   *    initialization. The memo is cleared once the promise settles, so a later explicit call (e.g.
+   *    re-login) still performs a genuinely fresh init.
+   *  - G7-1: a fresh init first tears down any existing engine (see `teardownSyncEngine`), so
+   *    re-login/account-switch cleanly replaces the old engine instead of leaking its status-bar
+   *    item and leaving its auto-sync timer running orphaned.
+   */
   async initSyncEngine(): Promise<void> {
+    if (this.initializingEngine) return this.initializingEngine;
+    const promise = this.doInitSyncEngine().finally(() => {
+      this.initializingEngine = undefined;
+    });
+    this.initializingEngine = promise;
+    return promise;
+  }
+
+  private async doInitSyncEngine(): Promise<void> {
+    this.teardownSyncEngine();
+
     const { StateDB } = await import('./data/StateDB');
     const { MergeBaseStore } = await import('./data/MergeBaseStore');
     const { SyncHistoryStore } = await import('./data/SyncHistoryStore');
@@ -491,9 +540,13 @@ export default class ObsidianNextcloudsync extends Plugin {
     // surfaced as a single reused Notice toast via NoticeStatusBar. Both implement IStatusBar, so
     // the sync engine needs no platform branching.
     // On desktop, clicking the status bar opens the sync-status dialog (conflicts / retries).
+    // The raw element is kept on `this.statusBarEl` (G7-1) so a later re-init can remove it instead
+    // of leaking a second status-bar item into the DOM alongside this one.
+    let statusBarEl: HTMLElement | undefined;
     const statusBar = Platform.isMobile
       ? new NoticeStatusBar()
-      : new StatusBarItem(this.addStatusBarItem(), () => this.openSyncStatus());
+      : new StatusBarItem(statusBarEl = this.addStatusBarItem(), () => this.openSyncStatus());
+    this.statusBarEl = statusBarEl;
     const password = loadAppPassword(this.app, this.settings.passwordSecretId);
     const webdavFactory = new WebDAVFactory(this.app, this.settings, password, (m) => void this.logger.log(`net: ${m}`));
 
