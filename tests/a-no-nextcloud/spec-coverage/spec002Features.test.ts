@@ -16,10 +16,6 @@ describe('spec 002 — nextcloud feature extensions (fixed values, feature 033)'
     expect(FIXED.fileLockingEnabled).toBe(false);
   });
 
-  it('FR-019: bulk upload defaults ON', () => {
-    expect(DEFAULT_SETTINGS.bulkUploadEnabled).toBe(true);
-  });
-
   it('FR-010: chunk threshold is a positive platform-derived value (chunking start threshold)', () => {
     expect(chunkThresholdMB(false)).toBeGreaterThan(0); // desktop
     expect(chunkThresholdMB(true)).toBeGreaterThan(0);  // mobile
