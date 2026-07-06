@@ -1,19 +1,14 @@
-import { joinLogPath, syncLogPath, debugLogPath, isActiveOwnLog } from '../../../../src/util/logPaths';
+import { joinLogPath, debugLogPath, isActiveOwnLog } from '../../../../src/util/logPaths';
 
-describe('logPaths — log files use the .txt extension', () => {
-  // The logs are plain text (not Markdown); a .md extension makes editors
-  // render them as Markdown and garble the output. They must be .txt.
-  it('sync-log path ends with .txt', () => {
-    expect(syncLogPath('_logs', 'desktop-abc')).toBe('_logs/nextcloud-sync_sync_desktop-abc.txt');
-  });
-
-  it('debug-log path ends with .txt', () => {
-    expect(debugLogPath('_logs', 'desktop-abc')).toBe('_logs/nextcloud-sync_debug_desktop-abc.txt');
+describe('logPaths — the single per-device log file uses the .txt extension', () => {
+  // The log is plain text (not Markdown); a .md extension makes editors render it as Markdown and
+  // garble the output. Feature 052 folded the old two files into one `nextcloud-debug_<host>.txt`.
+  it('debug-log path is nextcloud-debug_<host>.txt', () => {
+    expect(debugLogPath('_logs', 'desktop-abc')).toBe('_logs/nextcloud-debug_desktop-abc.txt');
   });
 
   it('blank logsFolder puts the file at the vault root', () => {
-    expect(syncLogPath('', 'ios')).toBe('nextcloud-sync_sync_ios.txt');
-    expect(debugLogPath('', 'ios')).toBe('nextcloud-sync_debug_ios.txt');
+    expect(debugLogPath('', 'ios')).toBe('nextcloud-debug_ios.txt');
   });
 
   it('joinLogPath strips trailing slashes', () => {
@@ -21,27 +16,15 @@ describe('logPaths — log files use the .txt extension', () => {
   });
 });
 
-describe('[SPEC:LOG-1] isActiveOwnLog — exclude a log only while THIS device is writing it', () => {
+describe('[SPEC:LOG-1] isActiveOwnLog — exclude the log only while THIS device is writing it', () => {
   const HOST = 'desktop-plugintest';
   // Feature 028: the per-log toggles are unified into a single loggingEnabled flag.
   const base = { logsFolder: '_logs', host: HOST, loggingEnabled: true };
   const debugP = debugLogPath('_logs', HOST);
-  const syncP = syncLogPath('_logs', HOST);
 
-  it('excludes the debug log while logging is ON', () => {
+  it('excludes this device\'s log while logging is ON, syncable while OFF', () => {
     expect(isActiveOwnLog(debugP, { ...base, loggingEnabled: true })).toBe(true);
     expect(isActiveOwnLog(debugP, { ...base, loggingEnabled: false })).toBe(false); // OFF → syncable
-  });
-
-  it('excludes the sync log while logging is ON', () => {
-    expect(isActiveOwnLog(syncP, { ...base, loggingEnabled: true })).toBe(true);
-    expect(isActiveOwnLog(syncP, { ...base, loggingEnabled: false })).toBe(false); // OFF → syncable
-  });
-
-  it('excludes both logs together under the unified toggle', () => {
-    const on = { ...base, loggingEnabled: true };
-    expect(isActiveOwnLog(debugP, on)).toBe(true);
-    expect(isActiveOwnLog(syncP, on)).toBe(true);
   });
 
   it("does not exclude another device's log (different host) — it stays syncable", () => {
@@ -52,11 +35,12 @@ describe('[SPEC:LOG-1] isActiveOwnLog — exclude a log only while THIS device i
   it('does not exclude ordinary vault files', () => {
     expect(isActiveOwnLog('Notes/a.md', base)).toBe(false);
     expect(isActiveOwnLog('_logs/some-other-file.txt', base)).toBe(false);
+    // The old sync-log name is now an ordinary file (the writer was removed) → syncable.
+    expect(isActiveOwnLog(`_logs/nextcloud-sync_sync_${HOST}.txt`, base)).toBe(false);
   });
 
-  it('works with a blank logsFolder (logs at vault root)', () => {
+  it('works with a blank logsFolder (log at vault root)', () => {
     const root = { ...base, logsFolder: '' };
-    expect(isActiveOwnLog(`nextcloud-sync_debug_${HOST}.txt`, root)).toBe(true);
-    expect(isActiveOwnLog(`nextcloud-sync_sync_${HOST}.txt`, root)).toBe(true);
+    expect(isActiveOwnLog(`nextcloud-debug_${HOST}.txt`, root)).toBe(true);
   });
 });

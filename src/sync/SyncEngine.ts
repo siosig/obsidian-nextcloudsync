@@ -98,11 +98,6 @@ interface SyncEngineOptions {
    * without coupling the sync engine to plugin settings persistence.
    */
   onFeatures?: (features: NextcloudFeatures) => void;
-  /**
-   * Called once at the end of each sync session, after history is persisted, with that session's
-   * per-file outcomes (chronological). Used to append the per-device sync log. Best-effort.
-   */
-  onSessionComplete?: (entries: SyncHistoryEntry[], summary: SyncSessionSummary) => void | Promise<void>;
 }
 
 export class SyncEngine {
@@ -267,9 +262,6 @@ export class SyncEngine {
         console.error('[SyncEngine] Post-sync persistence failed:', persistErr);
         void this.opts.logger?.log(`sync: post-sync save failed — ${(persistErr as Error).message}`, 'error');
       }
-      // Append the per-device sync log (best-effort; the writer no-ops when disabled).
-      const sessionEntries = this.opts.historyStore?.since(summary.startedAt) ?? [];
-      try { await this.opts.onSessionComplete?.(sessionEntries, summary); } catch { /* never break sync */ }
       const conflictCount = this.opts.stateDB.countConflicted();
       this.opts.statusBar.setSyncComplete(
         summary.uploadedCount, summary.downloadedCount,
