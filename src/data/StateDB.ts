@@ -38,14 +38,30 @@ export class StateDB {
 
   async load(): Promise<void> {
     try {
-      if (!(await this.adapter.exists(this.statePath))) return;
-      const raw = await this.adapter.read(this.statePath);
+      let readPath = this.statePath;
+      let recoveredFromTmp = false;
+      if (!(await this.adapter.exists(readPath))) {
+        // G4-2: a crash (power loss / mobile OS kill) between remove(statePath) and
+        // rename(tmpPath, statePath) in doSave leaves statePath absent while tmpPath still holds the
+        // fully-written new state. Without this check that surviving tmp goes unnoticed and load()
+        // treats a crash mid-save as "first run", silently discarding the persisted state.
+        if (!(await this.adapter.exists(this.tmpPath))) return;
+        readPath = this.tmpPath;
+        recoveredFromTmp = true;
+      }
+      const raw = await this.adapter.read(readPath);
       const parsed = JSON.parse(raw) as SyncState;
       this.state = parsed;
       if (!this.state.directories) this.state.directories = {}; // pre-DP v1 state file
       // Root-ETag short-circuit (spec 023): pre-023 state has neither field. Absent remoteRootEtag
       // ⇒ next sync does a real full scan; skip count defaults to 0.
       if (this.state.fullScanSkipCount == null) this.state.fullScanSkipCount = 0;
+      if (recoveredFromTmp) {
+        // Adopt the recovered tmp as the primary file so the on-disk layout is normal again.
+        // Best-effort: if this rename also fails, the next save() still recreates statePath from
+        // the now-recovered in-memory state.
+        await this.adapter.rename(this.tmpPath, this.statePath).catch(() => undefined);
+      }
     } catch {
       // Corrupted DB — start fresh (recovery handled externally)
       console.warn('[StateDB] Failed to parse state DB; starting with empty state');

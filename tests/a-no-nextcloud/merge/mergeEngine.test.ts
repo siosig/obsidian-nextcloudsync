@@ -104,7 +104,8 @@ describe('MergeEngine', () => {
     // Trailing spaces after the fences + CRLF: the OLD FRONTMATTER_RE/parseFm regex failed to parse
     // this, dropped to whole-file diff3, and buried the frontmatter inside conflict markers.
     const remote = '--- \r\ntags:\r\n  - a\r\n  - c\r\n--- \r\nBody';
-    const result = engine.merge(base, local, remote);
+    // frontmatter behavior lives on the markdown path (resolveMarkdown); merge() is now non-md body-only (G3-3).
+    const result = engine.resolveMarkdown(base, local, remote, { frontmatterStrategy: 'merge', bodyStrategy: 'merge' });
     expect(result.success).toBe(true);
     const fmBlock = frontmatterBlock(result.mergedContent);
     expect(hasMarkerLines(fmBlock)).toBe(false);
@@ -121,7 +122,7 @@ describe('MergeEngine', () => {
     const remote = '---\ntags:\n  - a\n  - c\n---\nBody';
     // remote newer → latest-mtime picks the clean remote side (self-heal), never re-wrapping markers.
     const ctx: MergeContext = { localMtime: 1000, remoteMtime: 2000 };
-    const result = engine.merge('', local, remote, ctx);
+    const result = engine.resolveMarkdown('', local, remote, { frontmatterStrategy: 'merge', bodyStrategy: 'merge', ctx });
     const fmBlock = frontmatterBlock(result.mergedContent);
     expect(hasMarkerLines(fmBlock)).toBe(false);
     expect(hasNestedConflictMarkers(result.mergedContent)).toBe(false);
@@ -133,7 +134,7 @@ describe('MergeEngine', () => {
     const base = '---\ntags:\n  - a\n---\nIntro\n\n---\n\nOutro';
     const local = '---\ntags:\n  - a\n  - b\n---\nIntro\n\n---\n\nOutro';
     const remote = '---\ntags:\n  - a\n---\nIntro\n\n---\n\nOutro';
-    const result = engine.merge(base, local, remote);
+    const result = engine.resolveMarkdown(base, local, remote, { frontmatterStrategy: 'merge', bodyStrategy: 'merge' });
     const fmBlock = frontmatterBlock(result.mergedContent);
     // Only the leading tags fence is frontmatter; the body's --- survives in the body.
     expect(fmBlock).toContain('tags');
@@ -151,13 +152,13 @@ describe('MergeEngine', () => {
     // Feature 047: the scalar policy is gone; the unparseable-side pick is latest-mtime. Remote newer
     // → pick the whole remote (good) side.
     const ctxRemote: MergeContext = { localMtime: 0, remoteMtime: 5000 };
-    const r1 = engine.merge('', bad, good, ctxRemote);
+    const r1 = engine.resolveMarkdown('', bad, good, { frontmatterStrategy: 'merge', bodyStrategy: 'merge', ctx: ctxRemote });
     const fm1 = frontmatterBlock(r1.mergedContent);
     expect(hasMarkerLines(fm1)).toBe(false);
     expect(fm1).toContain('Clean');
     // Local newer → pick the whole (unparseable) local side verbatim; still no engine-injected markers.
     const ctxLocal: MergeContext = { localMtime: 5000, remoteMtime: 0 };
-    const r2 = engine.merge('', bad, good, ctxLocal);
+    const r2 = engine.resolveMarkdown('', bad, good, { frontmatterStrategy: 'merge', bodyStrategy: 'merge', ctx: ctxLocal });
     const fm2 = frontmatterBlock(r2.mergedContent);
     expect(hasMarkerLines(fm2)).toBe(false);
   });
@@ -172,7 +173,7 @@ describe('MergeEngine', () => {
     const base = "---\ntags:\n  - '1'\n  - '2'\n  - '3'\n---\nBody";
     const local = base; // local unchanged
     const remote = "---\ntags:\n  - '2'\n  - '3'\n  - '4'\n---\nBody";
-    const r1 = engine.merge(base, local, remote);
+    const r1 = engine.resolveMarkdown(base, local, remote, { frontmatterStrategy: 'merge', bodyStrategy: 'merge' });
     expect(r1.success).toBe(true);
     const fm1 = frontmatterBlock(r1.mergedContent);
     expect(tagsIn(fm1)).toEqual(['2', '3', '4']); // 1 deleted by server, 4 added — no blind union
@@ -183,7 +184,7 @@ describe('MergeEngine', () => {
     // BOTH sides — and the new merge base — hold the converged note. Re-merging that fixed point yields
     // identical frontmatter with no marker growth and no array growth.
     const converged = r1.mergedContent;
-    const r2 = engine.merge(converged, converged, converged);
+    const r2 = engine.resolveMarkdown(converged, converged, converged, { frontmatterStrategy: 'merge', bodyStrategy: 'merge' });
     expect(r2.success).toBe(true);
     const fm2 = frontmatterBlock(r2.mergedContent);
     expect(tagsIn(fm2)).toEqual(['2', '3', '4']); // no array growth

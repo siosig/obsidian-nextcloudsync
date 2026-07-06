@@ -236,7 +236,10 @@ export class StandardWebDAVClient implements IWebDAVClient {
     throw new FeatureUnsupportedError('versions');
   }
 
-  async uploadChunked(_remotePath: string, _data: ArrayBuffer, _chunkSizeBytes: number): Promise<void> {
+  async uploadChunked(
+    _remotePath: string, _data: ArrayBuffer, _chunkSizeBytes: number,
+    _opts?: { precomputedSha256?: string; ifMatchEtag?: string | null },
+  ): Promise<void> {
     throw new FeatureUnsupportedError('chunked-upload');
   }
 

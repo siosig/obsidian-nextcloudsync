@@ -127,15 +127,22 @@ export class LocalAdapter {
     const tmpPath = tmpPathFor(targetPath);
     this.ignore(tmpPath);
     this.ignore(targetPath);
+    let targetRemoved = false;
     try {
       await this.ensureParentDir(targetPath);
       await this.adapter.write(tmpPath, content);
       if (await this.adapter.exists(targetPath)) {
         await this.adapter.remove(targetPath);
+        targetRemoved = true;
       }
       await this.adapter.rename(tmpPath, targetPath);
     } catch (err) {
-      if (await this.adapter.exists(tmpPath)) {
+      // G4-1: if `remove(targetPath)` already succeeded before `rename` threw (mobile process kill /
+      // Windows AV lock / external-storage blip mid-rename), tmpPath is the ONLY surviving copy of the
+      // new content — neither the old file nor the new one is on disk at targetPath. Deleting tmp here
+      // would destroy the sole copy outright. Only clean up tmp when the destructive remove() never
+      // happened, i.e. tmp is still disposable scratch and the original target is untouched.
+      if (!targetRemoved && await this.adapter.exists(tmpPath)) {
         await this.adapter.remove(tmpPath);
       }
       throw translateNameTooLong(err, targetPath);
@@ -148,11 +155,13 @@ export class LocalAdapter {
     const tmpPath = tmpPathFor(targetPath);
     this.ignore(tmpPath);
     this.ignore(targetPath);
+    let targetRemoved = false;
     try {
       await this.ensureParentDir(targetPath);
       await this.adapter.writeBinary(tmpPath, data);
       if (await this.adapter.exists(targetPath)) {
         await this.adapter.remove(targetPath);
+        targetRemoved = true;
       }
       await this.adapter.rename(tmpPath, targetPath);
       // Read-back verification (spec 025, report §4.4): fsync is unavailable via the Obsidian adapter,
@@ -164,7 +173,11 @@ export class LocalAdapter {
         throw new Error(`write-back verification failed for ${targetPath}: expected ${data.byteLength} bytes, found ${written ? written.size : 'none'}`);
       }
     } catch (err) {
-      if (await this.adapter.exists(tmpPath)) {
+      // G4-1: see the matching comment in atomicWrite() — once remove(targetPath) has run, tmpPath may
+      // be the only surviving copy of the new content, so it must not be deleted on a later failure
+      // (e.g. a rename crash). If rename already succeeded and only the read-back check above failed,
+      // tmpPath no longer exists (it was renamed away), so this guard is a no-op in that case.
+      if (!targetRemoved && await this.adapter.exists(tmpPath)) {
         await this.adapter.remove(tmpPath);
       }
       throw translateNameTooLong(err, targetPath);

@@ -114,7 +114,10 @@ describe('ConflictResolver.isAutoMergeFile / strategyFor (CSF-1 classification)'
 describe('ConflictResolver.decide — merge strategy', () => {
   it('CSF-2 clean text merge -> write { clean: true }', () => {
     const r = makeResolver(makeConfig('merge'));
-    const d = r.decide('notes.md', '', 'local', 'remote');
+    // Non-conflicting empty-base union that PRESERVES line boundaries — reconcile joins 'A\n' + 'B\n'
+    // into the two clean lines 'A','B' (CSF-2 contract: both sides kept, clean). Contrast the G3-1
+    // fusion case, where 'local'+'remote' (no line break) fuse into one corrupted line → conflict.
+    const d = r.decide('notes.md', '', 'A\n', 'B\n');
     expect(d.action).toBe('write');
     if (d.action === 'write') expect(d.clean).toBe(true);
   });
@@ -244,7 +247,8 @@ describe('ConflictResolver.resolve (local-side write)', () => {
   it('writes merged content to disk for a clean merge', async () => {
     const store: Record<string, string> = {};
     const r = makeResolver(makeConfig('merge'), store);
-    const resolved = await r.resolve('notes.md', '', 'local', 'remote');
+    // Non-conflicting disjoint edits on a shared base → a clean merged write (see CSF-2 note above).
+    const resolved = await r.resolve('notes.md', '', 'A\n', 'B\n');
     expect(resolved).toBe(true);
     expect(store['notes.md']).toBeDefined();
   });

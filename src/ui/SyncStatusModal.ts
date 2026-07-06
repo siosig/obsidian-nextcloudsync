@@ -11,6 +11,34 @@ import {
 } from './statusFilter';
 import { formatClock24 } from './timeFormat';
 
+/**
+ * Tracks which force-resolution operations (keyed by file path) are currently in flight, surviving
+ * `render()` (an instance field, not a DOM attribute). Without this, a re-render triggered mid-flight
+ * by an unrelated interaction (a filter toggle, or "Sync now" completing) recreates a fresh,
+ * non-disabled Apply button, and clicking it re-triggers the same resolution concurrently with the
+ * still-pending first call (last-write-wins loses one). Mirrors CompareModal's instance-field `busy`
+ * pattern (see `runStrategy`); keyed here because several conflicts may be resolved independently. The
+ * bulk "Apply to all" action uses its own separate instance (a single, unkeyed slot) so it can't
+ * collide with a per-file key. (G6-1)
+ */
+export class KeyedBusyGate {
+  private readonly inFlight = new Set<string>();
+
+  /** Marks `key` as in flight and returns true, unless it's already in flight (then a no-op false). */
+  tryEnter(key: string): boolean {
+    if (this.inFlight.has(key)) return false;
+    this.inFlight.add(key);
+    return true;
+  }
+
+  leave(key: string): void {
+    this.inFlight.delete(key);
+  }
+}
+
+/** Fixed key used with a dedicated `KeyedBusyGate` instance for the bulk "Apply to all" action. */
+const BULK_RESOLVE_KEY = 'bulk';
+
 /** Status glyph + accessible label for each recorded file outcome. */
 const OP_LABEL: Record<SyncFileOp, { icon: string; text: string }> = {
   uploaded: { icon: '↑', text: 'Uploaded' },
@@ -32,6 +60,12 @@ const OP_LABEL: Record<SyncFileOp, { icon: string; text: string }> = {
  * when the sync completes, so the report provider — not a one-shot snapshot — is injected.
  */
 export class SyncStatusModal extends Modal {
+  /** Per-file force-resolve guard (G6-1), keyed by path; survives `render()`. */
+  private readonly resolveGate = new KeyedBusyGate();
+  /** Bulk "Apply to all" force-resolve guard (G6-1); a separate instance so it can never collide
+   * with a per-file key in `resolveGate`. */
+  private readonly bulkResolveGate = new KeyedBusyGate();
+
   constructor(
     app: App,
     private readonly getReport: () => SyncStatusReport,
@@ -260,9 +294,15 @@ export class SyncStatusModal extends Modal {
       for (const c of FORCE_CHOICES) select.createEl('option', { text: c.label, value: c.id });
       const applyBtn = control.createEl('button', { text: 'Apply to all', cls: 'ncs-conflict-apply mod-warning' });
       applyBtn.addEventListener('click', () => {
-        if (applyBtn.disabled) return;
+        // Guarded by an instance field (G6-1), not just `applyBtn.disabled` — a re-render mid-flight
+        // (e.g. a filter toggle) recreates this button from scratch, so a DOM-only guard would not
+        // survive it and a stale click could re-trigger the bulk resolution concurrently.
+        if (!this.bulkResolveGate.tryEnter(BULK_RESOLVE_KEY)) return;
         applyBtn.disabled = true;
-        void this.onBulkForceResolve!(select.value as ForceChoice, files).then(() => this.render());
+        void this.onBulkForceResolve!(select.value as ForceChoice, files).then(() => {
+          this.bulkResolveGate.leave(BULK_RESOLVE_KEY);
+          this.render();
+        });
       });
     }
 
@@ -283,10 +323,18 @@ export class SyncStatusModal extends Modal {
       for (const c of FORCE_CHOICES) select.createEl('option', { text: c.label, value: c.id });
       const applyBtn = controls.createEl('button', { text: 'Apply', cls: 'ncs-conflict-apply' });
       applyBtn.addEventListener('click', () => {
+        // Guarded by an instance field keyed on `path` (G6-1), not just `applyBtn.disabled` — a
+        // re-render mid-flight (e.g. "Sync now" completing) recreates this button from scratch, so a
+        // DOM-only guard would not survive it and a stale click could re-trigger this resolution
+        // concurrently with the still-pending first call.
+        if (!this.resolveGate.tryEnter(path)) return;
         applyBtn.disabled = true;
         // The host handles failures (Notice) and never rejects here; re-render reflects the new state
         // (a still-conflicted file stays listed, a resolved one disappears).
-        void this.onForceResolve!(path, select.value as ForceChoice).then(() => this.render());
+        void this.onForceResolve!(path, select.value as ForceChoice).then(() => {
+          this.resolveGate.leave(path);
+          this.render();
+        });
       });
     }
   }
