@@ -173,6 +173,8 @@ export const CLAUSES: Clause[] = [
   // --- LOG: active-log self-sync exclusion + write-failure visibility ---
   { id: 'LOG-1', source: 'specs/main/spec.md §9.1', layer: 'a' },
   { id: 'LOG-2', source: 'specs/main/spec.md §12 (log write failures surface as a Notice)', layer: 'a' },
+  // --- EXCL-HARD: machine-managed folders (.git/.trash) permanently excluded from sync ---
+  { id: 'EXCL-HARD-1', source: 'specs/main/spec.md §9.3 (.git and .trash are hard-excluded regardless of the user list; targeted, not blanket — .archive/.env still sync)', layer: 'a' },
   // --- file-mix distribution ---
   { id: 'FR-017', source: 'spec 019', layer: 'a' },
   // --- spec 019 (this feature's own requirements: traceability mechanism) ---
