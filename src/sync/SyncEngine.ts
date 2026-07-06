@@ -34,7 +34,7 @@ import { ConflictResolver, hasOrphanMarker } from './ConflictResolver';
 import { ConfigSyncResolver } from './ConfigSyncResolver';
 import { sha256 } from '../util/hash';
 import { FIXED, chunkThresholdMB } from '../util/fixedSyncConfig';
-import { isUnderExcludedFolder } from '../util/excludedFolders';
+import { isUnderExcludedFolder, HARD_EXCLUDED_FOLDERS } from '../util/excludedFolders';
 import { FileLogger } from '../util/FileLogger';
 import {
   isCellularBlocked, SIGNATURE_SAFETY_WINDOW_MS, MAX_HASH_SIZE,
@@ -2511,6 +2511,7 @@ export class SyncEngine {
     for (const folder of root.folders) {
       if (!SyncEngine.isDotName(folder)) continue;
       if (this.configSync.isUnderConfigDir(folder)) continue; // .obsidian handled by ConfigSyncResolver
+      if (this.isSystemExcluded(folder)) continue; // .git/.trash: skip the whole tree (no recursion into a huge .git)
       await this.collectStatsRecursiveViaAdapter(folder, out);
     }
   }
@@ -2544,6 +2545,11 @@ export class SyncEngine {
     // "Destination file already exists!") and churn. Turning the log OFF makes it static and
     // syncable again. Another device's log (different host) is not written here and stays syncable.
     if (this.opts.isActiveLogFile?.(path)) return true;
+    // Machine-managed vault-root folders (.git, .trash): permanent hard exclusion, independent of
+    // the user's list. `.git` piecewise sync corrupts the repo (discussion #6); `.trash` is
+    // Obsidian's device-local trash whose sync clutters every device and churns against the
+    // plugin's own trashFile-based deletion. Targeted list — other root dot content still syncs.
+    if (isUnderExcludedFolder(path, HARD_EXCLUDED_FOLDERS)) return true;
     // User-managed excluded folders (feature 027): folder-prefix match, applied to every
     // path before the config-folder logic so it covers ordinary vault files too. This is an
     // additive layer on top of the hard exclusions above — those always take precedence.
