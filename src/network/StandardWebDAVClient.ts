@@ -1,4 +1,5 @@
-import { requestUrl } from 'obsidian';
+import { RequestUrlParam, RequestUrlResponse } from 'obsidian';
+import { requestUrlWithTimeout } from './requestWithTimeout';
 import {
   NextcloudFeatures,
   RemoteFileInfo,
@@ -44,9 +45,19 @@ export class StandardWebDAVClient implements IWebDAVClient {
     return `Basic ${btoa(binary)}`;
   }
 
+  /** Configured WebDAV request timeout in ms (0 = unbounded). Read live so a settings change applies next request. */
+  private get timeoutMs(): number {
+    return (this.settings.networkTimeoutSeconds ?? 0) * 1000;
+  }
+
+  /** All WebDAV requests route through here so the configured Network timeout is always applied. */
+  private req(params: RequestUrlParam): Promise<RequestUrlResponse> {
+    return requestUrlWithTimeout(params, this.timeoutMs);
+  }
+
   async connect(): Promise<NextcloudFeatures> {
     // Standard WebDAV: just verify connectivity
-    const res = await requestUrl({
+    const res = await this.req({
       url: this.baseUrl,
       method: 'PROPFIND',
       headers: { Authorization: this.authHeader, Depth: '0', ...NO_CACHE_HEADERS },
@@ -74,7 +85,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
   private async propfindRecursive(rel: string, out: RemoteFileInfo[], visited: Set<string>): Promise<void> {
     if (visited.has(rel)) return; // Guard against self-reference and cycles
     visited.add(rel);
-    const res = await requestUrl({
+    const res = await this.req({
       url: this.remoteUrl(rel),
       method: 'PROPFIND',
       headers: { Authorization: this.authHeader, Depth: '1', 'Content-Type': 'application/xml', ...NO_CACHE_HEADERS },
@@ -101,7 +112,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
   private async dirsRecursive(rel: string, out: RemoteDirInfo[], visited: Set<string>): Promise<void> {
     if (visited.has(rel)) return;
     visited.add(rel);
-    const res = await requestUrl({
+    const res = await this.req({
       url: this.remoteUrl(rel),
       method: 'PROPFIND',
       headers: { Authorization: this.authHeader, Depth: '1', 'Content-Type': 'application/xml', ...NO_CACHE_HEADERS },
@@ -118,7 +129,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
   }
 
   async isRemoteDirEmpty(path: string): Promise<boolean> {
-    const res = await requestUrl({
+    const res = await this.req({
       url: this.remoteUrl(path),
       method: 'PROPFIND',
       headers: { Authorization: this.authHeader, Depth: '1', 'Content-Type': 'application/xml', ...NO_CACHE_HEADERS },
@@ -132,14 +143,14 @@ export class StandardWebDAVClient implements IWebDAVClient {
 
   async createDirectory(path: string): Promise<void> {
     await ensureRemoteDir(
-      { baseUrl: this.baseUrl, authHeader: this.authHeader },
+      { baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs },
       toRemotePath(this.remoteBase, `${path}/_`),
       this.createdDirs,
     );
   }
 
   async deleteCollection(path: string): Promise<void> {
-    const res = await requestUrl({ url: this.remoteUrl(path), method: 'DELETE', headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS }, throw: false });
+    const res = await this.req({ url: this.remoteUrl(path), method: 'DELETE', headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS }, throw: false });
     if (res.status === 404) return;
     if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
   }
@@ -150,7 +161,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
   }
 
   async downloadFile(remotePath: string): Promise<ArrayBuffer> {
-    const res = await requestUrl({ url: this.remoteUrl(remotePath), method: 'GET', headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS }, throw: false });
+    const res = await this.req({ url: this.remoteUrl(remotePath), method: 'GET', headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS }, throw: false });
     if (res.status !== 200) throw new NetworkError(res.status, '');
     return res.arrayBuffer;
   }
@@ -170,24 +181,24 @@ export class StandardWebDAVClient implements IWebDAVClient {
     if (opts?.ifMatchEtag) headers['If-Match'] = `"${opts.ifMatchEtag.replace(/^"|"$/g, '')}"`;
     // Reactive directory creation (P1-B): PUT first; MKCOL ancestors on a missing-parent, retry once.
     // Standard WebDAV returns 409; Nextcloud's files DAV returns 404 for a missing parent — handle both.
-    let res = await requestUrl({ url: this.remoteUrl(remotePath), method: 'PUT', headers, body: data, throw: false });
+    let res = await this.req({ url: this.remoteUrl(remotePath), method: 'PUT', headers, body: data, throw: false });
     if (res.status === 409 || res.status === 404) {
-      await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
-      res = await requestUrl({ url: this.remoteUrl(remotePath), method: 'PUT', headers, body: data, throw: false });
+      await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
+      res = await this.req({ url: this.remoteUrl(remotePath), method: 'PUT', headers, body: data, throw: false });
     }
     if (res.status === 412) throw new PreconditionFailedError(remotePath);
     if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
   }
 
   async moveFile(oldPath: string, newPath: string): Promise<void> {
-    await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader }, toRemotePath(this.remoteBase, newPath), this.createdDirs);
-    const res = await requestUrl({ url: this.remoteUrl(oldPath), method: 'MOVE', headers: { Authorization: this.authHeader, Destination: this.remoteUrl(newPath), Overwrite: 'F', ...NO_CACHE_HEADERS }, throw: false });
+    await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs }, toRemotePath(this.remoteBase, newPath), this.createdDirs);
+    const res = await this.req({ url: this.remoteUrl(oldPath), method: 'MOVE', headers: { Authorization: this.authHeader, Destination: this.remoteUrl(newPath), Overwrite: 'F', ...NO_CACHE_HEADERS }, throw: false });
     if (res.status === 412) throw new ConflictError(newPath);
     if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
   }
 
   async deleteFile(path: string, _expectedRemoteId: string): Promise<void> {
-    const res = await requestUrl({ url: this.remoteUrl(path), method: 'DELETE', headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS }, throw: false });
+    const res = await this.req({ url: this.remoteUrl(path), method: 'DELETE', headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS }, throw: false });
     if (res.status === 404) return; // blind delete (P1-B): already gone = success
     if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
   }
@@ -199,7 +210,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
   async remoteExists(remotePath: string): Promise<boolean> {
     // Only a definitive 404 means "gone"; any other status is treated as "present" (conservative).
     try {
-      const res = await requestUrl({
+      const res = await this.req({
         url: this.remoteUrl(remotePath),
         method: 'PROPFIND',
         headers: { Authorization: this.authHeader, Depth: '0', ...NO_CACHE_HEADERS },

@@ -115,11 +115,6 @@ export interface DavSyncSettings {
   // Feature 033: chunkedUploadEnabled and fileLockingEnabled were removed (chunked upload is always
   // on, file locking always off). Both are now fixed in src/util/fixedSyncConfig.ts.
   /**
-   * Use the Nextcloud bulk-upload endpoint to batch many small files into one request.
-   * Default ON; only takes effect when the server advertises the capability.
-   */
-  bulkUploadEnabled: boolean;
-  /**
    * Feature 049: mass-delete circuit-breaker limit (Advanced / caution). Caps how many local files or
    * folders a single sync may delete via absence-based remote-deletion detection — the guard that
    * prevents a partial/failed remote listing from wiping the vault.
@@ -215,7 +210,6 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   networkConcurrency: 16, // First-run: overridden by autoNetworkConcurrency() in loadSettings(); persisted value is kept on subsequent loads.
   // Desktop default OFF; mobile's first run flips it ON in loadSettings() (metered data).
   syncOnWifiOnly: false,
-  bulkUploadEnabled: true,
   // Feature 049: -1 = automatic dynamic breaker (safe default). 0 = unlimited (opt-in, risky). N = fixed.
   massDeleteLimit: -1,
   // Config-folder sync is opt-in: master defaults OFF, so a fresh install syncs notes only.
