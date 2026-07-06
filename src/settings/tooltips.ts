@@ -55,7 +55,7 @@ export const TOOLTIPS = {
 
   // Excluded folders section
   excludedFolders:
-    'Folders listed here are never synced (folder-prefix match). Dotfolders like .git and the config plugins folder are already excluded by default.',
+    'Folders listed here are never synced (folder-prefix match). .git, .trash, the config plugins folder, and plugin state are already excluded automatically.',
   addExcludedFolder:
     'Pick or type a vault-relative folder to exclude. The path is added to the list below.',
 
