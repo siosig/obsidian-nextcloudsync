@@ -23,11 +23,6 @@ export const MAX_HASH_SIZE = 20 * 1024 * 1024;
 export const MAX_INFLIGHT_BYTES_DESKTOP = 100 * 1024 * 1024;
 export const MAX_INFLIGHT_BYTES_MOBILE = 30 * 1024 * 1024;
 
-/** Bulk-upload eligibility thresholds (Nextcloud `/dav/bulk`). See research R8. */
-export const BULK_MAX_FILE_BYTES = 1 * 1024 * 1024;       // per-file cap to qualify for a bulk batch
-export const BULK_MAX_BATCH_BYTES = 3 * 1024 * 1024;      // total bytes per bulk request
-export const BULK_MAX_BATCH_COUNT = 100;                  // max files per bulk request
-
 /** Number of PROPFIND/REPORT response nodes to parse before yielding to the event loop (anti-ANR). */
 export const PARSE_YIELD_EVERY = 100;
 
