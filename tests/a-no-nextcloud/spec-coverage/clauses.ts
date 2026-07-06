@@ -155,8 +155,9 @@ export const CLAUSES: Clause[] = [
   // --- PR: pause / resume mid-sync (lifecycle) ---
   { id: 'PR-1', source: 'spec 019 FR-016', layer: 'b-1' },
   { id: 'PR-2', source: 'spec 019 FR-016', layer: 'b-1' },
-  // --- LOG: active-log self-sync exclusion ---
+  // --- LOG: active-log self-sync exclusion + write-failure visibility ---
   { id: 'LOG-1', source: 'specs/main/spec.md §9.1', layer: 'a' },
+  { id: 'LOG-2', source: 'specs/main/spec.md §12 (log write failures surface as a Notice)', layer: 'a' },
   // --- file-mix distribution ---
   { id: 'FR-017', source: 'spec 019', layer: 'a' },
   // --- spec 019 (this feature's own requirements: traceability mechanism) ---

@@ -1,4 +1,5 @@
 import { requestUrl } from 'obsidian';
+import { NO_CACHE_HEADERS } from './noCacheHeaders';
 
 /**
  * Helpers for converting between the remote base folder (the Vault name) and paths.
@@ -105,7 +106,7 @@ export async function ensureRemoteDir(
     await requestUrl({
       url: encodeRemoteUrl(ctx.baseUrl, acc),
       method: 'MKCOL',
-      headers: { Authorization: ctx.authHeader },
+      headers: { Authorization: ctx.authHeader, ...NO_CACHE_HEADERS },
       throw: false,
     });
     // 201=created / 405=already exists are both fine; continue best-effort on other codes too.
