@@ -217,15 +217,23 @@ export class SyncEngine {
 
   /** The actual full-sync session body. Always runs under the {@link syncManual} balking guard. */
   private async runSyncSession(): Promise<void> {
-    void this.opts.logger?.log('sync: connecting (ensureClient)');
-    await this.ensureClient();
-    this.syncProgress = { processed: 0, total: 0 };
-    this.opts.statusBar.setStatus('syncing');
+    // Build the summary and tag this run BEFORE the try so the catch/finally can reference them even
+    // when the very first step fails.
     const summary = this.initSummary();
     this.currentRunStartedAt = summary.startedAt; // tag this run's history entries for grouping
 
     const cancelled = false;
     try {
+      // Feature 053: connect INSIDE the guard. ensureClient() (client creation + capabilities probe)
+      // can throw (network / auth / capabilities) or hang; if it ran outside this try, a failure would
+      // skip the finally that clears `running`, stranding the engine as "sync in progress" forever
+      // AND swallowing the real error (no FAILED log) — every later sync then balks with "already
+      // running", and a restart's startup sync re-triggers the same failure and re-strands it.
+      void this.opts.logger?.log('sync: connecting (ensureClient)');
+      await this.ensureClient();
+      this.syncProgress = { processed: 0, total: 0 };
+      this.opts.statusBar.setStatus('syncing');
+
       const isFirstSync = !this.opts.stateDB.getSyncToken() && this.opts.stateDB.getAllFiles().length === 0;
 
       if (isFirstSync) {
