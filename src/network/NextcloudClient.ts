@@ -18,6 +18,7 @@ import { DavSyncSettings } from '../types';
 import { toRemotePath, hrefToRelative, encodeRemoteUrl, ensureRemoteDir } from './remotePath';
 import { sha256 } from '../util/hash';
 import { PARSE_YIELD_EVERY } from '../util/limits';
+import { NO_CACHE_HEADERS } from './noCacheHeaders';
 
 const PROPFIND_BODY = `<?xml version="1.0" encoding="utf-8" ?>
 <d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">
@@ -113,7 +114,7 @@ export class NextcloudClient implements IWebDAVClient {
   async connect(): Promise<NextcloudFeatures> {
     // Check /status.php for maintenance mode
     const statusUrl = this.settings.serverUrl.replace(/\/remote\.php.*$/, '') + '/status.php';
-    const statusRes = await requestUrl({ url: statusUrl, method: 'GET', throw: false });
+    const statusRes = await requestUrl({ url: statusUrl, method: 'GET', headers: { ...NO_CACHE_HEADERS }, throw: false });
     if (statusRes.status === 200) {
       const status = statusRes.json as Record<string, unknown>;
       if (status.maintenance === true) {
@@ -126,7 +127,7 @@ export class NextcloudClient implements IWebDAVClient {
     const capRes = await requestUrl({
       url: capUrl,
       method: 'GET',
-      headers: { Authorization: this.authHeader, 'OCS-APIRequest': 'true' },
+      headers: { Authorization: this.authHeader, 'OCS-APIRequest': 'true', ...NO_CACHE_HEADERS },
       throw: false,
     });
 
@@ -173,6 +174,7 @@ export class NextcloudClient implements IWebDAVClient {
         Authorization: this.authHeader,
         Depth: 'infinity',
         'Content-Type': 'application/xml; charset=utf-8',
+        ...NO_CACHE_HEADERS,
       },
       body: PROPFIND_BODY,
       throw: false,
@@ -192,7 +194,7 @@ export class NextcloudClient implements IWebDAVClient {
       const res = await requestUrl({
         url: this.remoteUrl(''),
         method: 'PROPFIND',
-        headers: { Authorization: this.authHeader, Depth: '0', 'Content-Type': 'application/xml; charset=utf-8' },
+        headers: { Authorization: this.authHeader, Depth: '0', 'Content-Type': 'application/xml; charset=utf-8', ...NO_CACHE_HEADERS },
         body: PROPFIND_BODY,
         throw: false,
       });
@@ -214,6 +216,7 @@ export class NextcloudClient implements IWebDAVClient {
         Authorization: this.authHeader,
         Depth: 'infinity',
         'Content-Type': 'application/xml; charset=utf-8',
+        ...NO_CACHE_HEADERS,
       },
       body: PROPFIND_BODY,
       throw: false,
@@ -231,7 +234,7 @@ export class NextcloudClient implements IWebDAVClient {
     const res = await requestUrl({
       url: this.remoteUrl(path),
       method: 'PROPFIND',
-      headers: { Authorization: this.authHeader, Depth: '1', 'Content-Type': 'application/xml; charset=utf-8' },
+      headers: { Authorization: this.authHeader, Depth: '1', 'Content-Type': 'application/xml; charset=utf-8', ...NO_CACHE_HEADERS },
       body: PROPFIND_BODY,
       throw: false,
     });
@@ -260,7 +263,7 @@ export class NextcloudClient implements IWebDAVClient {
 
   async deleteCollection(path: string): Promise<void> {
     const res = await requestUrl({
-      url: this.remoteUrl(path), method: 'DELETE', headers: { Authorization: this.authHeader }, throw: false,
+      url: this.remoteUrl(path), method: 'DELETE', headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS }, throw: false,
     });
     if (res.status === 404) return; // already gone — the desired end state.
     if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
@@ -274,6 +277,7 @@ export class NextcloudClient implements IWebDAVClient {
       headers: {
         Authorization: this.authHeader,
         'Content-Type': 'application/xml; charset=utf-8',
+        ...NO_CACHE_HEADERS,
       },
       body: REPORT_BODY(syncToken),
       throw: false,
@@ -284,7 +288,7 @@ export class NextcloudClient implements IWebDAVClient {
   }
 
   async downloadFile(remotePath: string): Promise<ArrayBuffer> {
-    const res = await requestUrl({ url: this.remoteUrl(remotePath), method: 'GET', headers: { Authorization: this.authHeader }, throw: false });
+    const res = await requestUrl({ url: this.remoteUrl(remotePath), method: 'GET', headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS }, throw: false });
     if (res.status !== 200) throw new NetworkError(res.status, '');
     // Return the bytes directly (no shared field) so concurrent downloads cannot race each other.
     return res.arrayBuffer;
@@ -301,6 +305,7 @@ export class NextcloudClient implements IWebDAVClient {
     const headers: Record<string, string> = {
       Authorization: this.authHeader,
       'OC-Checksum': checksum,
+      ...NO_CACHE_HEADERS,
     };
     // X-OC-MTime (Unix seconds) tells Nextcloud to preserve the local file's modification time.
     if (mtime) headers['X-OC-MTime'] = String(Math.floor(mtime / 1000));
@@ -330,7 +335,7 @@ export class NextcloudClient implements IWebDAVClient {
     const res = await requestUrl({
       url: this.remoteUrl(remotePath),
       method: 'PATCH',
-      headers: { Authorization: this.authHeader, 'X-Recalculate-Hash': 'sha256' },
+      headers: { Authorization: this.authHeader, 'X-Recalculate-Hash': 'sha256', ...NO_CACHE_HEADERS },
       throw: false,
     });
     if (res.status !== 204 && res.status !== 200) return null;
@@ -345,7 +350,7 @@ export class NextcloudClient implements IWebDAVClient {
     const res = await requestUrl({
       url: this.remoteUrl(oldPath),
       method: 'MOVE',
-      headers: { Authorization: this.authHeader, Destination: this.remoteUrl(newPath), Overwrite: 'F' },
+      headers: { Authorization: this.authHeader, Destination: this.remoteUrl(newPath), Overwrite: 'F', ...NO_CACHE_HEADERS },
       throw: false,
     });
     if (res.status === 412) throw new ConflictError(newPath);
@@ -354,7 +359,7 @@ export class NextcloudClient implements IWebDAVClient {
 
   async deleteFile(path: string, _expectedRemoteId: string): Promise<void> {
     const res = await requestUrl({
-      url: this.remoteUrl(path), method: 'DELETE', headers: { Authorization: this.authHeader }, throw: false,
+      url: this.remoteUrl(path), method: 'DELETE', headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS }, throw: false,
     });
     // Blind delete (P1-B): a 404 means the file is already gone — exactly the desired end state, so
     // treat it as success rather than an error (no pre-deletion existence probe is needed).
@@ -372,7 +377,7 @@ export class NextcloudClient implements IWebDAVClient {
     const res = await requestUrl({
       url: this.remoteUrl(''),
       method: 'REPORT',
-      headers: { Authorization: this.authHeader, 'Content-Type': 'application/xml; charset=utf-8' },
+      headers: { Authorization: this.authHeader, 'Content-Type': 'application/xml; charset=utf-8', ...NO_CACHE_HEADERS },
       body: REPORT_BODY(''),
       throw: false,
     });
@@ -402,7 +407,7 @@ export class NextcloudClient implements IWebDAVClient {
       const res = await requestUrl({
         url: this.remoteUrl(remotePath),
         method: 'PROPFIND',
-        headers: { Authorization: this.authHeader, Depth: '0' },
+        headers: { Authorization: this.authHeader, Depth: '0', ...NO_CACHE_HEADERS },
         throw: false,
       });
       return res.status !== 404;
@@ -423,6 +428,7 @@ export class NextcloudClient implements IWebDAVClient {
         Authorization: this.authHeader,
         Depth: '1',
         'Content-Type': 'application/xml; charset=utf-8',
+        ...NO_CACHE_HEADERS,
       },
       body: `<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:getlastmodified/><d:getcontentlength/></d:prop></d:propfind>`,
       throw: false,
@@ -437,7 +443,7 @@ export class NextcloudClient implements IWebDAVClient {
     const res = await requestUrl({
       url: this.versionUrl(version, fileId),
       method: 'GET',
-      headers: { Authorization: this.authHeader },
+      headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS },
       throw: false,
     });
     if (res.status !== 200) throw new NetworkError(res.status, '');
@@ -450,7 +456,7 @@ export class NextcloudClient implements IWebDAVClient {
     const res = await requestUrl({
       url: this.versionUrl(version, fileId),
       method: 'MOVE',
-      headers: { Authorization: this.authHeader, Destination: destination },
+      headers: { Authorization: this.authHeader, Destination: destination, ...NO_CACHE_HEADERS },
       throw: false,
     });
     if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
@@ -500,7 +506,7 @@ export class NextcloudClient implements IWebDAVClient {
 
     try {
       // 1. Create the upload session.
-      const mk = await requestUrl({ url: sessionUrl, method: 'MKCOL', headers: { Authorization: this.authHeader }, throw: false });
+      const mk = await requestUrl({ url: sessionUrl, method: 'MKCOL', headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS }, throw: false });
       if (mk.status < 200 || mk.status >= 300) throw new NetworkError(mk.status, mk.text);
 
       // 2. PUT each chunk named by its start byte offset (15-digit zero-padded) so lexical order = assembly order.
@@ -511,7 +517,7 @@ export class NextcloudClient implements IWebDAVClient {
         const put = await requestUrl({
           url: `${sessionUrl}/${chunkName}`,
           method: 'PUT',
-          headers: { Authorization: this.authHeader },
+          headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS },
           body: chunk,
           throw: false,
         });
@@ -532,6 +538,7 @@ export class NextcloudClient implements IWebDAVClient {
           'OC-Total-Length': String(total),
           // Persist the SHA-256 on the assembled file (same rationale as uploadFile).
           'OC-Checksum': `SHA256:${sum}`,
+          ...NO_CACHE_HEADERS,
         },
         throw: false,
       });
@@ -542,7 +549,7 @@ export class NextcloudClient implements IWebDAVClient {
       await this.verifyRemoteChecksum(remotePath, data, sum);
     } catch (err) {
       // On abort, discard the session so no incomplete file is left at the final path (FR-011).
-      await requestUrl({ url: sessionUrl, method: 'DELETE', headers: { Authorization: this.authHeader }, throw: false }).catch(() => undefined);
+      await requestUrl({ url: sessionUrl, method: 'DELETE', headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS }, throw: false }).catch(() => undefined);
       throw err;
     }
   }
@@ -554,7 +561,7 @@ export class NextcloudClient implements IWebDAVClient {
     const res = await requestUrl({
       url: this.remoteUrl(remotePath),
       method: 'PROPFIND',
-      headers: { Authorization: this.authHeader, Depth: '0', 'Content-Type': 'application/xml; charset=utf-8' },
+      headers: { Authorization: this.authHeader, Depth: '0', 'Content-Type': 'application/xml; charset=utf-8', ...NO_CACHE_HEADERS },
       body: `<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:prop><oc:checksums/></d:prop></d:propfind>`,
       throw: false,
     });
@@ -574,7 +581,7 @@ export class NextcloudClient implements IWebDAVClient {
     const res = await requestUrl({
       url: this.remoteUrl(remotePath),
       method: 'LOCK',
-      headers: { Authorization: this.authHeader, 'X-User-Lock': '1' },
+      headers: { Authorization: this.authHeader, 'X-User-Lock': '1', ...NO_CACHE_HEADERS },
       throw: false,
     });
     if (res.status === 423) throw new FileLockedError(remotePath);
@@ -599,7 +606,7 @@ export class NextcloudClient implements IWebDAVClient {
       await requestUrl({
         url: this.remoteUrl(remotePath),
         method: 'UNLOCK',
-        headers: { Authorization: this.authHeader, 'Lock-Token': token, 'X-User-Lock': '1' },
+        headers: { Authorization: this.authHeader, 'Lock-Token': token, 'X-User-Lock': '1', ...NO_CACHE_HEADERS },
         throw: false,
       });
     } catch {
