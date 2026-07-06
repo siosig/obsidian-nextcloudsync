@@ -6,6 +6,21 @@
 // No glob/wildcard support — folder-prefix only — to keep the setting fool-proof.
 
 /**
+ * Machine-managed vault-root folders that are ALWAYS excluded from sync, independent of the user's
+ * excludedFolders list. Matched with the same folder-boundary rule as user entries
+ * (`isUnderExcludedFolder`), so only these exact folders and their descendants are excluded — never
+ * same-prefix siblings (`.github`, `.trashcan`) or same-prefix files (`.gitignore`).
+ *
+ *  - `.git`   — a machine-managed repository; piecewise file sync corrupts it (discussion #6).
+ *  - `.trash` — Obsidian's device-local trash; syncing it clutters every device and churns against
+ *               the plugin's own trashFile-based deletion (remote delete → local .trash → re-upload).
+ *
+ * This is a TARGETED list, not a blanket "all dotfolders" rule: other root dot content (`.archive/`,
+ * `.env`) must keep syncing (Task 7 / collectDotPaths).
+ */
+export const HARD_EXCLUDED_FOLDERS: readonly string[] = ['.git', '.trash'];
+
+/**
  * Normalize a user-entered folder path into the canonical vault-relative form used for
  * storage and comparison, or return null when the input denotes the whole vault (and
  * therefore must be rejected, since excluding the root would stop all syncing).
