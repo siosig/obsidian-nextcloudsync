@@ -22,16 +22,23 @@ export class MergeEngine {
   private readonly reconcile = new ReconcileTextStrategy();
 
   /**
-   * Whole-file merge entry (non-markdown Auto-Merge files, and any content that happens to carry a
-   * leading `---` block). Frontmatter, if present, is semantically merged; the body is 3-way merged
-   * with per-region `conflictStrategy` resolution.
+   * Whole-file merge entry for NON-markdown files (bug G3-3). The only production caller,
+   * `ConflictResolver.decideMerge`, is reached solely when `!isMarkdown(path)`; markdown goes through
+   * {@link resolveMarkdown}. The entire content is 3-way merged as ONE body — a leading `---...---`
+   * block is NEVER split off as frontmatter here, because a non-markdown file's `---` block is not
+   * guaranteed to be YAML: routing it through the frontmatter path meant an unparseable "frontmatter"
+   * side fell back to a silent whole-side pick (`pickWholeSide`) that could DISCARD a one-sided edit
+   * inside that block instead of diff3-merging it like the rest of the file. Only real markdown gets
+   * frontmatter/body independence.
    */
   merge(base: string, local: string, remote: string, ctx?: MergeContext): MergeResult {
-    return this.resolveMarkdown(base, local, remote, {
-      frontmatterStrategy: 'merge',
-      bodyStrategy: 'merge',
-      ctx,
-    });
+    const cs = ctx?.conflictStrategy ?? 'conflict-markers';
+    const body = this.resolveBodyBlock('merge', cs, base, local, remote, ctx);
+    // Same nested-marker backstop as resolveMarkdown: stacked markers ⇒ hold, never persist.
+    if (hasNestedConflictMarkers(body.content)) {
+      return { success: false, mergedContent: local, hadConflicts: true, conflictRegions: -1, hold: true };
+    }
+    return { success: true, mergedContent: body.content, hadConflicts: body.hadConflicts, conflictRegions: body.hadConflicts ? -1 : 0 };
   }
 
   /**
@@ -121,10 +128,26 @@ export class MergeEngine {
     // feature-037 expansion guard catches reconcile's known duplication bug and degrades to a whole-body
     // conflictStrategy resolution. A real base takes the precise per-region path below.
     if (base.length === 0) {
+      // A genuine first write — one side never touched (empty) — cannot fuse with anything, so it
+      // always resolves cleanly to the non-empty side. (The caller guarantees local !== remote here,
+      // so at most one side is empty.) This also keeps `linesSurvive` from false-flagging it below.
+      if (local.length === 0 || remote.length === 0) {
+        return { content: local.length === 0 ? remote : local, hadConflicts: false };
+      }
       const reconciled = this.reconcile.merge('', local, remote);
+      // Bug G3-1: reconcile-text can fuse the two sides at the CHARACTER level on an empty base — e.g.
+      // local='local' + remote='remote' -> 'localremote' with hadConflicts:false — silently destroying
+      // the line boundary between two INDEPENDENT edits. A pure concatenation is exactly
+      // local.length + remote.length (not longer) and has no repeated block, so the length/repeat
+      // guards miss it; require instead that every line of each side survive INTACT in the result.
+      // Skipped when a side already carries a plugin conflict marker: that is the feature 041/044
+      // orphan-marker self-heal path, which deliberately re-unions the marker-bearing content to
+      // converge (and the nested-marker backstop still guards genuine re-entrancy).
+      const guardFusion = !containsMarkerLine(local) && !containsMarkerLine(remote);
       const bloated =
         reconciled.mergedContent.length > local.length + remote.length ||
-        hasRepeatedBlock(reconciled.mergedContent);
+        hasRepeatedBlock(reconciled.mergedContent) ||
+        (guardFusion && (!linesSurvive(local, reconciled.mergedContent) || !linesSurvive(remote, reconciled.mergedContent)));
       if (reconciled.success && reconciled.conflictRegions >= 0 && !bloated) {
         return { content: reconciled.mergedContent, hadConflicts: false };
       }
@@ -236,6 +259,35 @@ export function hasNestedConflictMarkers(content: string): boolean {
     }
   }
   return false;
+}
+
+/** True when any line is one of THIS plugin's conflict-marker lines (opening or closing). */
+function containsMarkerLine(text: string): boolean {
+  return text.split('\n').some((l) => l.startsWith('<<<<<<<') || l.startsWith('>>>>>>>'));
+}
+
+/**
+ * Bug G3-1 safety net: true when every line of `side` survives, in order, as an EXACT line somewhere
+ * in `merged` (a same-order subsequence, not necessarily contiguous). reconcile-text's empty-base
+ * fallback can fuse the tail of one side into the head of the other at the character level — e.g.
+ * `local='Hello brave new world'` `remote='Goodbye cruel old world'` yields the single fused line
+ * `'Goodbye cruel old worldHello brave new world'` with `hadConflicts:false`, silently destroying the
+ * line boundary between two INDEPENDENT edits. Neither original line then survives intact, so this
+ * check catches it (the length/repeated-block guards do not, since a pure concatenation is exactly
+ * `local.length + remote.length`, not longer). A legitimate line-level union (shared lines kept,
+ * divergent lines appended) passes, because each original line still appears verbatim. O(n) — `i`
+ * only advances, never rescans from 0.
+ */
+function linesSurvive(side: string, merged: string): boolean {
+  const sideLines = side.split('\n');
+  const mergedLines = merged.split('\n');
+  let i = 0;
+  for (const line of sideLines) {
+    while (i < mergedLines.length && mergedLines[i] !== line) i++;
+    if (i >= mergedLines.length) return false;
+    i++;
+  }
+  return true;
 }
 
 /** Largest block length checked for immediate repetition — bounds cost on large files. */

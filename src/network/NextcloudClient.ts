@@ -505,7 +505,10 @@ export class NextcloudClient implements IWebDAVClient {
 
   // ── US3: Chunked upload ──────────────────────────────────────────────
 
-  async uploadChunked(remotePath: string, data: ArrayBuffer, chunkSizeBytes: number): Promise<void> {
+  async uploadChunked(
+    remotePath: string, data: ArrayBuffer, chunkSizeBytes: number,
+    opts?: { precomputedSha256?: string; ifMatchEtag?: string | null },
+  ): Promise<void> {
     const uploadId = `obsidian-${this.settings.deviceId.slice(-8)}-${Date.now()}`;
     const sessionUrl = `${this.davBase('uploads')}/${uploadId}`;
     const finalUrl = this.remoteUrl(remotePath);
@@ -540,19 +543,24 @@ export class NextcloudClient implements IWebDAVClient {
       // genuinely re-created (spec 024) — otherwise the assembling MOVE would target a missing parent.
       this.forgetCreatedAncestors(toRemotePath(this.remoteBase, remotePath));
       await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
+      const moveHeaders: Record<string, string> = {
+        Authorization: this.authHeader,
+        Destination: finalUrl,
+        'OC-Total-Length': String(total),
+        // Persist the SHA-256 on the assembled file (same rationale as uploadFile).
+        'OC-Checksum': `SHA256:${sum}`,
+        ...NO_CACHE_HEADERS,
+      };
+      // If-Match optimistic concurrency on the assembling MOVE (mirrors uploadFile): a remote
+      // changed since this etag returns 412, mapped below to PreconditionFailedError.
+      if (opts?.ifMatchEtag) moveHeaders['If-Match'] = `"${opts.ifMatchEtag.replace(/^"|"$/g, '')}"`;
       const move = await this.req({
         url: `${sessionUrl}/.file`,
         method: 'MOVE',
-        headers: {
-          Authorization: this.authHeader,
-          Destination: finalUrl,
-          'OC-Total-Length': String(total),
-          // Persist the SHA-256 on the assembled file (same rationale as uploadFile).
-          'OC-Checksum': `SHA256:${sum}`,
-          ...NO_CACHE_HEADERS,
-        },
+        headers: moveHeaders,
         throw: false,
       });
+      if (move.status === 412) throw new PreconditionFailedError(remotePath); // remote changed (If-Match)
       if (move.status < 200 || move.status >= 300) throw new NetworkError(move.status, move.text);
 
       // 4. Verify the checksum after assembly (FR-012). Pass the precomputed hash to avoid
