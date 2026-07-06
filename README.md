@@ -31,8 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.26-beta.1)
+## What's new in this release (0.7.26-beta.2)
 
+- **A round of data-safety and reliability hardening (0.7.26-beta.2)** — a source-wide audit found and fixed a set of failure paths where a single failed step could quietly lose or resurrect content. Now: a clean merge whose upload fails stays flagged (never silently dropped); a file/folder is untracked only when the remote delete truly succeeded (a failed delete no longer makes the item reappear next sync); an interrupted atomic write can never leave a file with neither its old nor new content; large (chunked) uploads honour the same optimistic-concurrency check as small ones, so a concurrent edit isn't overwritten; a mid-sync crash recovers the on-disk state instead of restarting empty; and empty-base merges no longer fuse two independent edits into one corrupted line. Plus double-click guards on force-resolve / restore, and mobile watch-mode is now correctly disabled at runtime.
 - **Fixed a sync that could get stuck on "A sync is already in progress" forever (0.7.26-beta.1)** — if the very first step of a sync (connecting to the server and reading its capabilities) failed, the engine stayed flagged as "sync in progress" and swallowed the error, so every later sync was skipped with that message — and restarting didn't help, because the automatic sync on startup hit the same failing step again. That connection step is now inside the error handling, so a failure is surfaced and the engine recovers for the next attempt.
 - **The Network timeout setting now actually works (0.7.26-beta.1)** — the *Network timeout* value (default 30s) was never applied to requests, so a server that accepted the connection but never responded could hang a sync indefinitely (and lock the engine as above). Every WebDAV request is now bounded by this timeout: a stalled request fails after the configured time and the next sync retries. Set it to 0 for an unbounded wait on very slow links.
 
