@@ -30,7 +30,7 @@ export class ChunkedUploadStrategy implements IUploadStrategy {
 
     if (sizeMB > this.config.uploadChunkThresholdMB) {
       try {
-        await client.uploadChunked(remotePath, data, CHUNK_SIZE_BYTES);
+        await client.uploadChunked(remotePath, data, CHUNK_SIZE_BYTES, opts);
         return 'uploaded';
       } catch (err) {
         // If chunked upload fails, fall back to a single PUT (FR-013).
