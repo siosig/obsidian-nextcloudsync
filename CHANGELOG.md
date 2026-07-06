@@ -11,6 +11,14 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.25] - 2026-07-06
+
+### Fixed
+- Fixed a permanently stuck sync caused by client-side caching: a file could keep failing to sync forever (even across restarts and manual "Sync now" / "Use remote" attempts) if the app's own network cache had ever stored a bad, incomplete response for it. Every request now explicitly disables that caching, so a bad response is never replayed and the next sync always reaches the server for a fresh answer.
+
+### Changed
+- Troubleshooting logging is redesigned into one findable file: enabling **Debug → Enable logging** now writes a single per-device file, `nextcloud-debug_<device>.txt`, at the vault root (the old two separate log files are merged). Turning it on immediately shows a notice naming the exact file and reminding you that Obsidian hides `.txt` unless **Settings → Files & Links → Detect all file extensions** is on (you can also open it via your OS or Nextcloud). A failed log write now surfaces a notice instead of being silent.
+
 ## [0.7.24] - 2026-07-05
 
 ### Added
@@ -258,6 +266,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.25]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.25
 [0.7.24]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.24
 [0.7.23]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.23
 [0.7.22]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.22
