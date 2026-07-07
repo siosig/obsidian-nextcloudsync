@@ -51,3 +51,6 @@ scripts/
 # wdio-obsidian-service download cache (b-2)
 .obsidian-cache/
 /tmp/
+
+# Project-local MCP config (contains no secret, but kept out of the public repo)
+.mcp.json
