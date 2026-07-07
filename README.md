@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.27)
+## What's new in this release (0.7.28)
 
-- **`.git` and `.trash` are never synced anymore (0.7.27)** — Obsidian's local trash folder (`.trash`) and a repository's `.git` folder were being uploaded and pulled to every device. Syncing `.trash` cluttered every device's trash and churned against the plugin's own delete-to-trash behaviour; syncing `.git` piece by piece can corrupt the repository. Both are now permanently excluded, regardless of your *Excluded folders* list — which is what the settings screen already said. This is a targeted exclusion: other dot-folders at your vault root (for example `.archive/`) keep syncing as before. Already-uploaded `.trash`/`.git` copies on the server are simply left alone (not deleted); remove them there manually if you want.
+- **Fixed the plugin dropping out of the community directory (0.7.28)** — the previous release failed Obsidian's automated review because it disabled the `sentence-case` UI-text lint rule, which the reviewer explicitly disallows. Fixed the actual cause instead of suppressing the check: the rule's brand list was forcing "git" to "Git" wherever it appeared, which was wrong for the real, always-lowercase `.git` folder name — the brand override no longer includes it. No user-facing behavior changes.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 

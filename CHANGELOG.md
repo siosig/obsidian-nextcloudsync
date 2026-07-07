@@ -11,6 +11,11 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.28] - 2026-07-08
+
+### Fixed
+- The plugin dropped out of the community plugin directory because the previous release's automated review failed: the Obsidian reviewer disallows disabling its `sentence-case` UI-text rule, and a rule-suppressing comment had been used to work around a false positive on the literal folder name `.git`. Fixed the actual cause instead of suppressing the check — the rule's brand list forces "git" to "Git" wherever it appears, which is wrong for a real, always-lowercase filesystem folder name; the brand override no longer includes it. No user-facing behavior changes.
+
 ## [0.7.27] - 2026-07-07
 
 ### Fixed
@@ -278,6 +283,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.28]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.28
 [0.7.27]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.27
 [0.7.26]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.26
 [0.7.25]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.25
