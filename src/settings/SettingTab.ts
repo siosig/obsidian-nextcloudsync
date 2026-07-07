@@ -363,7 +363,6 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
 
     makeSetting(containerEl)
       .setName('Excluded folders')
-      // eslint-disable-next-line obsidianmd/ui/sentence-case -- ".git"/".trash" are literal folder names; the rule mis-capitalizes leading-dot tokens
       .setDesc('Folders that are never synced — neither uploaded nor downloaded. Matched by folder prefix at a folder boundary, additive on top of .git, .trash, the config plugins folder, and plugin state that are already excluded automatically.')
       .setTooltip(TOOLTIPS.excludedFolders);
 
@@ -399,8 +398,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
       .setTooltip(TOOLTIPS.addExcludedFolder)
       .addText(text => {
         excludeInput = text;
-        // eslint-disable-next-line obsidianmd/ui/sentence-case -- "Attachments/Large media" is an example folder name; lowercasing it is wrong
-        text.setPlaceholder('e.g. Attachments/Large media');
+        text.setPlaceholder('Example: attachments/large media');
         // Inline suggestions: vault folders not already excluded, filtered by what you type.
         new FolderInputSuggest(
           this.app,
