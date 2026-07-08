@@ -38,6 +38,12 @@ const DEFER_SERVER = 'b-1 e2e deferred (it.skip) — cannot force the required l
 const BRC_DOM =
   'DOM/host wiring verified via quickstart manual check (specs/042-bulk-resolve-conflicts/quickstart.md); ' +
   'batch logic core covered by BRC-1..7,9 (forceResolution.test.ts, layer a)';
+// spec 055 (mass-delete breaker skipped-paths visibility): SyncStatusModal.addErrorSection DOM
+// rendering of skippedPaths cannot be exercised under jest's testEnvironment: 'node' (no `document`) —
+// same constraint as BRC_DOM/SNI-5/SNI-6. The pure formatting logic it renders is covered at layer a.
+const MDV_DOM =
+  'DOM rendering verified via quickstart manual check (specs/055-massdelete-skip-visibility/quickstart.md); ' +
+  'pure formatting logic covered by MDV-3 (skippedPathsFormat.test.ts, layer a)';
 
 export const CLAUSES: Clause[] = [
   // --- CN: connection/auth ---
@@ -422,4 +428,10 @@ export const CLAUSES: Clause[] = [
   { id: 'WF-3', source: 'specs/046-watch-folder-propagation/spec.md (FR-003/010: renameSingleFolder MOVE, retarget tracking, exclusions honored)', layer: 'a' },
   { id: 'WF-B1-1', source: 'specs/046-watch-folder-propagation (live: folder create/delete/rename propagate immediately as MKCOL/collection-delete/MOVE)', layer: 'b-1', waiver: 'deferred b-1 end-to-end stub (it.skip): needs a live Nextcloud; validated manually via quickstart until executed' },
   { id: 'WF-B1-2', source: 'specs/046-watch-folder-propagation (live: after an immediate folder-op failure, the next full sync converges remote==local — self-healing)', layer: 'b-1', waiver: 'deferred b-1 end-to-end stub (it.skip): needs a live Nextcloud; validated manually via quickstart until executed' },
+  // --- MDV: mass-delete breaker skipped-paths visibility (feature 055) ---
+  { id: 'MDV-1', source: 'specs/055-massdelete-skip-visibility/spec.md (dir mass-delete breaker records skipped paths)', layer: 'a' },
+  { id: 'MDV-2', source: 'specs/055-massdelete-skip-visibility/spec.md (file mass-delete breaker records skipped paths)', layer: 'a' },
+  { id: 'MDV-3', source: 'specs/055-massdelete-skip-visibility/spec.md (display formatting: cap + "…and N more")', layer: 'a' },
+  { id: 'MDV-4', source: 'specs/055-massdelete-skip-visibility/spec.md (ordinary errors unaffected — regression)', layer: 'a' },
+  { id: 'MDV-5', source: 'specs/055-massdelete-skip-visibility/spec.md (SyncStatusModal DOM rendering of skippedPaths)', layer: 'a', waiver: MDV_DOM },
 ];

@@ -375,6 +375,15 @@ export type ConflictResolution =
 export interface SyncErrorDetail {
   path: string;
   message: string;
+  /**
+   * Skipped deletion candidate paths, set only when the mass-delete breaker fires.
+   * `sample` is truncated to the display limit; `totalCount` is the count before truncation.
+   * See specs/055-massdelete-skip-visibility/data-model.md for details.
+   */
+  skippedPaths?: {
+    sample: string[];
+    totalCount: number;
+  };
 }
 
 /** The outcome recorded for a single file during a sync, shown in the status dialog's history. */
