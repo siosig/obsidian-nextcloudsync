@@ -189,6 +189,27 @@ describe('SyncEngine.reconcileDirectories — directory create/delete propagatio
     expect(client.createDirectory).toHaveBeenCalledWith('newdir'); // creation still happens
   });
 
+  it('[SPEC:MDV-1] dir mass-delete breaker records skippedPaths with sample and totalCount', async () => {
+    // Same trigger as DP-11: 25 tracked dirs, all remote-present & local-absent → all become
+    // delete candidates, which exceeds effectiveMassDeleteLimit(25) = max(20, floor(25*0.2)) = 20.
+    const tracked = Array.from({ length: 25 }, (_, i) => dirState(`d${i}`));
+    const client = makeClient({ remoteDirs: tracked.map((d) => d.path) });
+    const { engine } = makeEngine({ client, localDirs: ['newdir'], tracked });
+    const summary = makeSummary();
+    await reconcile(engine, summary);
+    expect(client.deleteCollection).not.toHaveBeenCalled(); // breaker refused the destructive batch
+
+    const breakerError = summary.errors.find((e) => e.path === '(dir mass-delete breaker)');
+    expect(breakerError).toBeDefined();
+    expect(breakerError!.skippedPaths).toBeDefined();
+    expect(breakerError!.skippedPaths!.totalCount).toBe(tracked.length); // 25 skipped candidates total
+    expect(breakerError!.skippedPaths!.sample.length).toBeLessThanOrEqual(10);
+    const expectedCandidates = tracked.map((d) => d.path);
+    for (const p of breakerError!.skippedPaths!.sample) {
+      expect(expectedCandidates).toContain(p);
+    }
+  });
+
   // DP-12 (lock ON wraps the remote delete) was removed in feature 033: file locking is always off,
   // so the remote delete is never lock-wrapped. DP-13 below is now the only behaviour.
 
