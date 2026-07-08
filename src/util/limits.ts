@@ -111,6 +111,14 @@ export function isOverFileSizeLimit(byteLength: number, maxFileSizeMB: number): 
 }
 
 /**
+ * Cap on how many skipped-file paths are collected as a representative sample during a sync run
+ * (e.g. paths skipped for exceeding `maxFileSizeMB`). The full count is tracked separately, so the UI
+ * can show the first `MAX_SKIPPED_PATHS_SAMPLE` paths plus an "…and N more" summary line without
+ * holding every skipped path in memory for large vaults.
+ */
+export const MAX_SKIPPED_PATHS_SAMPLE = 10;
+
+/**
  * True when syncing should be skipped because "Wi-Fi only" is on and the connection is cellular.
  * Network type is undetectable on iOS (no navigator.connection), so the setting is ignored there.
  */
