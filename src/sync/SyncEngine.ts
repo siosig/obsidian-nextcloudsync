@@ -39,7 +39,7 @@ import { FileLogger } from '../util/FileLogger';
 import {
   isCellularBlocked, SIGNATURE_SAFETY_WINDOW_MS, MAX_HASH_SIZE,
   MAX_INFLIGHT_BYTES_DESKTOP, MAX_INFLIGHT_BYTES_MOBILE, effectiveMassDeleteLimit, FORCE_FULL_SCAN_EVERY,
-  isAnomalousRemoteContent, isOverFileSizeLimit,
+  isAnomalousRemoteContent, isOverFileSizeLimit, MAX_SKIPPED_PATHS_SAMPLE,
 } from '../util/limits';
 import { createLimiter, ByteSemaphore } from '../util/ConcurrencyLimiter';
 import { isSafeVaultRelativePath } from '../network/remotePath';
@@ -1036,10 +1036,15 @@ export class SyncEngine {
   }
 
   /** Count an error and keep its detail for the sync-status dialog. Empty path = session-level. */
-  private recordError(summary: SyncSessionSummary, path: string, err: unknown): void {
+  private recordError(
+    summary: SyncSessionSummary,
+    path: string,
+    err: unknown,
+    skippedPaths?: { sample: string[]; totalCount: number },
+  ): void {
     summary.errorCount++;
     const message = err instanceof Error ? err.message : String(err);
-    summary.errors.push({ path, message });
+    summary.errors.push({ path, message, skippedPaths });
     if (path) this.recordHistory(path, 'error', message); // session-level errors aren't file history
   }
 
@@ -2152,7 +2157,10 @@ export class SyncEngine {
         // and (b) the root-ETag short-circuit convergence gate (spec 023 §8a.5) invalidates the stored
         // etag — otherwise the next sync would short-circuit on stale State and the "re-sync to retry"
         // advice would never re-evaluate the deletions (the breaker would be stuck silently).
-        this.recordError(summary, '(mass-delete breaker)', new Error(`Skipped ${candidates.length} absence-deletions — exceeds safety limit ${limit}`));
+        this.recordError(summary, '(mass-delete breaker)', new Error(`Skipped ${candidates.length} absence-deletions — exceeds safety limit ${limit}`), {
+          sample: candidates.slice(0, MAX_SKIPPED_PATHS_SAMPLE),
+          totalCount: candidates.length,
+        });
         return;
       }
 
@@ -2239,7 +2247,11 @@ export class SyncEngine {
       void this.opts.logger?.log(`dir-sync: SKIPPED ${deleteRemote.length + trashLocal.length} dir deletions — exceeds safety limit; likely a partial listing`);
       // Record as an error so the root-ETag short-circuit convergence gate (spec 023 §8a.5) invalidates
       // the stored etag and the next sync really re-scans instead of short-circuiting on stale State.
-      this.recordError(summary, '(dir mass-delete breaker)', new Error(`Skipped ${deleteRemote.length + trashLocal.length} dir deletions — exceeds safety limit`));
+      const skippedDirPaths = [...deleteRemote, ...trashLocal];
+      this.recordError(summary, '(dir mass-delete breaker)', new Error(`Skipped ${deleteRemote.length + trashLocal.length} dir deletions — exceeds safety limit`), {
+        sample: skippedDirPaths.slice(0, MAX_SKIPPED_PATHS_SAMPLE),
+        totalCount: skippedDirPaths.length,
+      });
       deleteRemote.length = 0;
       trashLocal.length = 0;
     }
