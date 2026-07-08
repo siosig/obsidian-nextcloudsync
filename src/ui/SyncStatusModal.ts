@@ -1,5 +1,6 @@
 import { App, Modal, Setting } from 'obsidian';
 import { SyncErrorDetail, SyncFileOp, SyncHistoryEntry } from '../types';
+import { MAX_SKIPPED_PATHS_SAMPLE } from '../util/limits';
 import { FORCE_CHOICES, ForceChoice } from './forceResolution';
 import {
   ALL_FILTER_OPS,
@@ -10,6 +11,19 @@ import {
   SyncStatusReport,
 } from './statusFilter';
 import { formatClock24 } from './timeFormat';
+
+export { MAX_SKIPPED_PATHS_SAMPLE };
+
+/**
+ * Formats a (already capped-at-{@link MAX_SKIPPED_PATHS_SAMPLE}) sample of skipped file paths for
+ * display, appending a single "…and N more" summary line when `totalCount` exceeds the sample size.
+ * Pure/side-effect-free so it's independently testable from the modal's DOM rendering.
+ */
+export function formatSkippedPathsForDisplay(sample: string[], totalCount: number): string[] {
+  const remaining = totalCount - sample.length;
+  if (remaining <= 0) return [...sample];
+  return [...sample, `…and ${remaining} more`];
+}
 
 /**
  * Tracks which force-resolution operations (keyed by file path) are currently in flight, surviving
@@ -251,6 +265,13 @@ export class SyncStatusModal extends Modal {
       const row = list.createEl('div', { cls: 'ncs-status-row' });
       row.createEl('div', { text: e.path || '(entire sync session)' });
       row.createEl('div', { text: e.message, cls: 'setting-item-description' });
+      if (e.skippedPaths) {
+        const skippedList = row.createEl('ul', { cls: 'ncs-status-skipped-paths' });
+        skippedList.addEventListener('click', (evt) => evt.stopPropagation());
+        for (const line of formatSkippedPathsForDisplay(e.skippedPaths.sample, e.skippedPaths.totalCount)) {
+          skippedList.createEl('li', { text: line, cls: 'setting-item-description' });
+        }
+      }
       if (e.path) {
         row.addEventListener('click', () => {
           void this.app.workspace.openLinkText(e.path, '', false);
