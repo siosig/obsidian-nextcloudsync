@@ -24,6 +24,7 @@ import { StateDB } from '../data/StateDB';
 import type { MergeBaseStore } from '../data/MergeBaseStore';
 import type { CleanSideStore } from '../data/CleanSideStore';
 import type { CleanSideMetrics } from '../ui/compareResolution';
+import { DIR_BREAKER_REPORT_FILENAME, FILE_BREAKER_REPORT_FILENAME } from '../ui/breakerReport';
 import { isAutoMergeFileType, isMarkdown } from '../util/mergeableExtensions';
 import { SyncHistoryStore } from '../data/SyncHistoryStore';
 import { IStatusBar } from '../ui/StatusBarItem';
@@ -569,6 +570,93 @@ export class SyncEngine {
   }
 
   /**
+   * Feature 056: resolve one skipped mass-delete-breaker directory candidate immediately (not
+   * deferred to the next sync). `category` is which side reconcileDirectories would have deleted from
+   * (`deleteRemote`: local absent/remote present; `trashLocal`: local present/remote absent). `choice`
+   * mirrors the file-conflict force-resolution meaning: "remote" always means "make local match
+   * remote", "local" always means "make remote match local" — expressed here as directory create/
+   * delete instead of file push/pull. Recreated directories are tracked with `remoteFileId: null`
+   * (the same self-healing pattern already used by createSingleFolder/renameSingleFolder — the next
+   * full sync's real PROPFIND fills in the real id once both sides exist again). Throws on failure
+   * without touching StateDB (the caller, `resolveAllSkippedDirs`, isolates per-path failures).
+   */
+  async resolveSkippedDir(
+    path: string,
+    category: 'deleteRemote' | 'trashLocal',
+    choice: 'remote' | 'local',
+  ): Promise<void> {
+    await this.ensureClient();
+    if (category === 'deleteRemote') {
+      if (choice === 'remote') {
+        // Remote is correct: undo the apparent local deletion by recreating the folder locally.
+        await this.opts.app.vault.adapter.mkdir(normalizePath(path));
+        this.opts.stateDB.setDir({ path, remoteFileId: null });
+      } else {
+        // Local absence is correct: let the deletion proceed on the remote.
+        await this.client!.deleteCollection(path);
+        this.opts.stateDB.deleteDir(path);
+      }
+    } else {
+      if (choice === 'remote') {
+        // Remote absence is correct: let the deletion proceed locally.
+        const folder = this.opts.app.vault.getAbstractFileByPath(path);
+        if (folder instanceof TFolder) await this.opts.app.fileManager.trashFile(folder);
+        this.opts.stateDB.deleteDir(path);
+      } else {
+        // Local is correct: undo the apparent remote deletion by recreating it on the remote.
+        await this.client!.createDirectory(path);
+        this.opts.stateDB.setDir({ path, remoteFileId: null });
+      }
+    }
+    this.opts.stateDB.requestSave();
+  }
+
+  /**
+   * Feature 056: bulk-apply one choice to every path in the current `(dir mass-delete breaker)`
+   * session error's `dirBreakerSkipped`, sequentially (mirrors applyBulkForceResolution's sequencing
+   * and per-path failure isolation — a per-path rejection is tallied, not thrown). On completion,
+   * mutates `this.lastSummary.errors` IN PLACE: removes the breaker entry once every path resolved,
+   * or narrows its `dirBreakerSkipped` to only the still-failed paths otherwise — so the next
+   * `getStatusReport()` (which returns the same `lastSummary` reference, not a clone) reflects the
+   * outcome immediately, without waiting for a fresh full sync. Refuses to run while a full sync is
+   * in progress (`this.running`): a concurrent reconcileDirectories reads/writes the same StateDB
+   * directory rows this touches, so racing it is worth refusing outright rather than risking a
+   * mkdir-then-immediately-trash flicker on the same path.
+   */
+  async resolveAllSkippedDirs(choice: 'remote' | 'local'): Promise<{ resolved: number; failed: number }> {
+    if (this.running) throw new Error('Cannot resolve skipped directories — sync in progress');
+    const errors = this.lastSummary?.errors;
+    const entry = errors?.find((e) => e.path === '(dir mass-delete breaker)' && e.dirBreakerSkipped);
+    if (!entry?.dirBreakerSkipped) return { resolved: 0, failed: 0 };
+
+    const candidates: { path: string; category: 'deleteRemote' | 'trashLocal' }[] = [
+      ...entry.dirBreakerSkipped.deleteRemote.map((path) => ({ path, category: 'deleteRemote' as const })),
+      ...entry.dirBreakerSkipped.trashLocal.map((path) => ({ path, category: 'trashLocal' as const })),
+    ];
+
+    let resolved = 0;
+    const failedDeleteRemote: string[] = [];
+    const failedTrashLocal: string[] = [];
+    for (const { path, category } of candidates) {
+      try {
+        await this.resolveSkippedDir(path, category, choice);
+        resolved++;
+      } catch {
+        (category === 'deleteRemote' ? failedDeleteRemote : failedTrashLocal).push(path);
+      }
+    }
+
+    const failed = failedDeleteRemote.length + failedTrashLocal.length;
+    if (failed === 0) {
+      const idx = errors!.indexOf(entry);
+      if (idx >= 0) errors!.splice(idx, 1);
+    } else {
+      entry.dirBreakerSkipped = { deleteRemote: failedDeleteRemote, trashLocal: failedTrashLocal };
+    }
+    return { resolved, failed };
+  }
+
+  /**
    * Write `content` (a captured clean side) to BOTH local and remote so the conflict converges on a
    * real, marker-free version. Uploads first (if that fails, nothing local changes and the file stays
    * conflicted — no false "resolved"), then writes local, converges StateDB (isConflicted:false),
@@ -1036,10 +1124,16 @@ export class SyncEngine {
   }
 
   /** Count an error and keep its detail for the sync-status dialog. Empty path = session-level. */
-  private recordError(summary: SyncSessionSummary, path: string, err: unknown): void {
+  private recordError(
+    summary: SyncSessionSummary,
+    path: string,
+    err: unknown,
+    skippedPaths?: { all: string[] },
+    dirBreakerSkipped?: { deleteRemote: string[]; trashLocal: string[] },
+  ): void {
     summary.errorCount++;
     const message = err instanceof Error ? err.message : String(err);
-    summary.errors.push({ path, message });
+    summary.errors.push({ path, message, skippedPaths, dirBreakerSkipped });
     if (path) this.recordHistory(path, 'error', message); // session-level errors aren't file history
   }
 
@@ -2152,7 +2246,9 @@ export class SyncEngine {
         // and (b) the root-ETag short-circuit convergence gate (spec 023 §8a.5) invalidates the stored
         // etag — otherwise the next sync would short-circuit on stale State and the "re-sync to retry"
         // advice would never re-evaluate the deletions (the breaker would be stuck silently).
-        this.recordError(summary, '(mass-delete breaker)', new Error(`Skipped ${candidates.length} absence-deletions — exceeds safety limit ${limit}`));
+        this.recordError(summary, '(mass-delete breaker)', new Error(`Skipped ${candidates.length} absence-deletions — exceeds safety limit ${limit}`), {
+          all: candidates,
+        });
         return;
       }
 
@@ -2239,7 +2335,14 @@ export class SyncEngine {
       void this.opts.logger?.log(`dir-sync: SKIPPED ${deleteRemote.length + trashLocal.length} dir deletions — exceeds safety limit; likely a partial listing`);
       // Record as an error so the root-ETag short-circuit convergence gate (spec 023 §8a.5) invalidates
       // the stored etag and the next sync really re-scans instead of short-circuiting on stale State.
-      this.recordError(summary, '(dir mass-delete breaker)', new Error(`Skipped ${deleteRemote.length + trashLocal.length} dir deletions — exceeds safety limit`));
+      const skippedDeleteRemote = [...deleteRemote];
+      const skippedTrashLocal = [...trashLocal];
+      this.recordError(
+        summary, '(dir mass-delete breaker)',
+        new Error(`Skipped ${deleteRemote.length + trashLocal.length} dir deletions — exceeds safety limit`),
+        undefined,
+        { deleteRemote: skippedDeleteRemote, trashLocal: skippedTrashLocal },
+      );
       deleteRemote.length = 0;
       trashLocal.length = 0;
     }
@@ -2540,6 +2643,10 @@ export class SyncEngine {
     // The plugin's own atomic-write temp files are never sync content (defense in depth:
     // the vault watchers already filter them, but a leftover tmp must not be uploaded either).
     if (isSyncTmpPath(path)) return true;
+    // Mass-delete breaker report notes (feature 056): fixed vault-root filenames, regenerated and
+    // overwritten each time the user opens them. Device-local diagnostic snapshots, not vault
+    // content — syncing them would just churn against the next overwrite.
+    if (path === DIR_BREAKER_REPORT_FILENAME || path === FILE_BREAKER_REPORT_FILENAME) return true;
     // This device's own per-device log file, while its output toggle is ON: the plugin appends to
     // it during the sync, so syncing it would race the live append (Obsidian's rename throws
     // "Destination file already exists!") and churn. Turning the log OFF makes it static and
