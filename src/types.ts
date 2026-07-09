@@ -375,6 +375,24 @@ export type ConflictResolution =
 export interface SyncErrorDetail {
   path: string;
   message: string;
+  /**
+   * Skipped deletion candidate paths (full, uncapped), set only when the FILE (absence-deletion)
+   * mass-delete breaker fires. The modal derives a capped inline preview from `all` at render time;
+   * the full list also backs the "open report note" action (feature 056).
+   */
+  skippedPaths?: {
+    all: string[];
+  };
+  /**
+   * Full, uncapped, category-split candidate paths, set only when the DIR mass-delete breaker
+   * fires (mutually exclusive with `skippedPaths`, which the file-side breaker uses instead).
+   * `deleteRemote`/`trashLocal` mirror reconcileDirectories' own candidate categories, so a bulk
+   * resolution (`SyncEngine.resolveAllSkippedDirs`) knows which primitive to apply per path.
+   */
+  dirBreakerSkipped?: {
+    deleteRemote: string[];
+    trashLocal: string[];
+  };
 }
 
 /** The outcome recorded for a single file during a sync, shown in the status dialog's history. */

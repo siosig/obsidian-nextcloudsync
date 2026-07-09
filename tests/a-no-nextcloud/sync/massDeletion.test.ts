@@ -1,4 +1,7 @@
 import { massDeleteLimit, isMassDeletionGuarded, MASS_DELETE_MIN, effectiveMassDeleteLimit } from '../../../src/util/limits';
+import { SyncEngine } from '../../../src/sync/SyncEngine';
+import { sha256 } from '../../../src/util/hash';
+import { DavSyncSettings, FileState, RemoteFileInfo, SyncSessionSummary } from '../../../src/types';
 
 // Feature 049: the mass-delete breaker limit is user-configurable (Advanced / caution). -1 = automatic
 // (safe default), 0 = unlimited (opt-in), N = fixed absolute.
@@ -52,5 +55,116 @@ describe('[SPEC:DEL-3] mass-delete circuit breaker threshold', () => {
       // A near-total wipe of a large vault is always guarded.
       expect(isMassDeletionGuarded(900, 1000)).toBe(true);
     });
+  });
+});
+
+// Feature 055/056: when the FILE-side (absence-deletion) breaker above trips, the skipped candidate
+// paths are recorded as diagnostic info on the SyncErrorDetail (`skippedPaths.all`, full/uncapped —
+// feature 056 backs the report-note view), so the sync-status dialog can show the user WHICH files
+// were skipped, not just that "some files" were. This drives SyncEngine's private
+// `processLocalModifications` full-scan absence-deletion path directly, mirroring the `[SPEC:MDV-6]`
+// dir-breaker harness in tests/a-no-nextcloud/sync/dirSync.test.ts.
+describe('[SPEC:MDV-2] SyncEngine file mass-delete breaker — skippedPaths diagnostic (feature 055)', () => {
+  const CONFIG_DIR = '.obsidian';
+  const PLUGIN_DIR = `${CONFIG_DIR}/plugins/nextcloud-sync`;
+
+  function makeSummary(): SyncSessionSummary {
+    return {
+      startedAt: 0, completedAt: null, uploadedCount: 0, downloadedCount: 0,
+      deletedCount: 0, mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], errors: [],
+    };
+  }
+
+  function settings(): DavSyncSettings {
+    return {
+      configDir: CONFIG_DIR, syncConfigFolder: false, excludedFolders: [], networkConcurrency: 4,
+      massDeleteLimit: -1, // feature 049 default: automatic dynamic limit (max(20, 20% of tracked))
+      configSync: { appearance: false, themesSnippets: false, hotkeys: false, corePlugins: false, bookmarks: false },
+    } as unknown as DavSyncSettings;
+  }
+
+  const fstate = (path: string, hash: string): FileState => ({
+    path, localHash: hash, remoteId: hash, idType: 'sha256', size: 1, mtime: 0,
+    remoteFileId: null, isConflicted: false,
+  });
+
+  function makeEngine(tracked: FileState[], unchangedData: ArrayBuffer) {
+    const store = new Map<string, FileState>(tracked.map((f) => [f.path, f]));
+    const adapter = {
+      listVaultFiles: () => tracked.map((f) => ({ path: f.path, size: 1, mtime: 0 })),
+      list: jest.fn(async () => ({ files: [], folders: [] })),
+      stat: jest.fn(async () => null),
+      readBinary: jest.fn(async () => unchangedData),
+    };
+    const app = { vault: { adapter, getFiles: () => [] }, fileManager: {} };
+    const stateDB = {
+      getFile: (p: string) => store.get(p),
+      getAllFiles: () => [...store.values()],
+      deleteFile: jest.fn(),
+      getLastSyncTime: () => 0,
+    };
+    const engine = new SyncEngine({
+      app, settings: settings(), localAdapter: adapter,
+      stateDB, statusBar: {}, webdavFactory: {}, pluginDir: PLUGIN_DIR, configDir: CONFIG_DIR,
+    } as never);
+    return { engine, store };
+  }
+
+  // Drives the private full-scan absence-deletion path directly (same style as dirSync.test.ts's
+  // `reconcile` helper for `reconcileDirectories`).
+  const runFullScan = (
+    engine: SyncEngine, remoteFiles: RemoteFileInfo[], summary: SyncSessionSummary,
+  ): Promise<void> =>
+    (engine as unknown as {
+      processLocalModifications(
+        remoteFiles: RemoteFileInfo[], summary: SyncSessionSummary, isFullScan?: boolean,
+      ): Promise<void>;
+    }).processLocalModifications(remoteFiles, summary, true);
+
+  it('[SPEC:MDV-2] file mass-delete breaker records skippedPaths.all (full, uncapped)', async () => {
+    const unchangedData = new TextEncoder().encode('unchanged-content').buffer;
+    const hash = await sha256(unchangedData);
+    // 25 tracked files, all present locally with content matching the stored hash (so they are NOT
+    // filtered out as "locally modified"), but absent from the (complete) remote listing → all 25
+    // become absence-deletion candidates. effectiveMassDeleteLimit(-1, 25) = massDeleteLimit(25) =
+    // max(20, floor(25*0.2)) = 20, so 25 > 20 trips the breaker (same scale as dirSync's MDV-6 case).
+    const tracked = Array.from({ length: 25 }, (_, i) => fstate(`note${i}.md`, hash));
+    const { engine } = makeEngine(tracked, unchangedData);
+    const summary = makeSummary();
+    // The full-scan absence-deletion path only runs when remotePathSet.size > 0; a single unrelated
+    // remote file satisfies that without matching (and thus without excluding) any tracked candidate.
+    const remoteFiles: RemoteFileInfo[] = [
+      { path: 'unrelated.md', fileId: null, checksum: hash, etag: null, size: 1, lastModified: 0 },
+    ];
+
+    await runFullScan(engine, remoteFiles, summary);
+
+    const breakerError = summary.errors.find((e) => e.path === '(mass-delete breaker)');
+    expect(breakerError).toBeDefined();
+    expect(breakerError!.skippedPaths).toBeDefined();
+    // Full, UNCAPPED list — no 10-item truncation (feature 056: needed for the report-note view).
+    const expectedCandidates = tracked.map((f) => f.path);
+    expect(breakerError!.skippedPaths!.all.slice().sort()).toEqual(expectedCandidates.slice().sort());
+  });
+
+  // Drives the private `recordError` directly (same private-method-cast pattern as `runFullScan`
+  // above) to prove that ordinary, non-breaker error recording is unaffected by the skippedPaths
+  // diagnostic added for the mass-delete breaker: a plain per-file error (e.g. an upload/download
+  // failure) must NOT get a skippedPaths value — only the breaker call sites (feature 055) pass one.
+  const callRecordError = (engine: SyncEngine, summary: SyncSessionSummary, path: string, err: unknown): void =>
+    (engine as unknown as {
+      recordError(summary: SyncSessionSummary, path: string, err: unknown): void;
+    }).recordError(summary, path, err);
+
+  it('[SPEC:MDV-4] ordinary (non-breaker) errors leave skippedPaths undefined', () => {
+    const unchangedData = new TextEncoder().encode('unchanged-content').buffer;
+    const { engine } = makeEngine([], unchangedData);
+    const summary = makeSummary();
+
+    callRecordError(engine, summary, 'note0.md', new Error('upload failed: 500 Internal Server Error'));
+
+    expect(summary.errors).toHaveLength(1);
+    expect(summary.errors[0].path).toBe('note0.md');
+    expect(summary.errors[0].skippedPaths).toBeUndefined();
   });
 });
