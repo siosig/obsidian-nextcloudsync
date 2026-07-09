@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.29-beta.1)
+## What's new in this release (0.7.29-beta.2)
 
-- **The mass-delete safety breaker now shows which paths it skipped (0.7.29-beta.1)** — previously, when the mass-delete breaker tripped (protecting against a partial or failed listing), the sync status dialog only reported a count ("Skipped 123 dir deletions"), with no way to tell whether it was a false alarm or a real mass deletion. It now lists the actual skipped paths (up to 10, with a "…and N more" count for the rest) right in the error row. The breaker's trigger conditions, counts, and self-healing behavior are unchanged — this is a diagnostics-only addition.
+- **Mass-delete breaker: full report note + one-click bulk resolve for directories (0.7.29-beta.2)** — clicking a mass-delete breaker error in the sync status dialog now opens a report note listing every skipped path in full (no more capped "…and N more"), and previously that same click could accidentally create an empty note named after the error label — that's fixed. For the directory breaker specifically, a single "Use remote" / "Use local" action now resolves every skipped directory at once, instead of leaving you to fix each one by hand.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
