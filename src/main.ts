@@ -287,6 +287,23 @@ export default class ObsidianNextcloudsync extends Plugin {
         new Notice(`Resolved ${resolved} of ${n} conflicts`
           + (noop ? `; ${noop} unchanged` : '') + (failed ? `; ${failed} failed` : ''));
       },
+      // Feature 056: bulk-resolve every path the dir mass-delete breaker skipped, with one chosen
+      // action. Same confirmation/Notice split as the conflict bulk-resolve above; resolveAllSkippedDirs
+      // itself never rejects (per-path failures are tallied and left for the next attempt).
+      async (choice: 'remote' | 'local') => {
+        const label = choice === 'remote' ? 'Use remote' : 'Use local';
+        const ok = await confirmModal(this.app, {
+          title: 'Resolve skipped directories',
+          message: `Apply "${label}" to every directory the mass-delete breaker skipped? `
+            + 'This creates/deletes directories and cannot be undone.',
+          cta: 'Apply to all',
+          cancel: 'Cancel',
+          destructive: true,
+        });
+        if (!ok) return;
+        const { resolved, failed } = await this.syncEngine!.resolveAllSkippedDirs(choice);
+        new Notice(`Resolved ${resolved} skipped directories` + (failed ? `; ${failed} failed` : ''));
+      },
     ).open();
   }
 

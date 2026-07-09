@@ -1,5 +1,6 @@
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { DavSyncSettings } from '../../../src/types';
+import { DIR_BREAKER_REPORT_FILENAME, FILE_BREAKER_REPORT_FILENAME } from '../../../src/ui/breakerReport';
 
 /**
  * [SPEC:EXCL-HARD-1] Machine-managed vault-root folders (.git, .trash) are PERMANENTLY excluded
@@ -62,5 +63,21 @@ describe('[SPEC:EXCL-HARD-1] hard-excluded machine folders (.git / .trash)', () 
   it('does not touch ordinary vault files', () => {
     expect(isSystemExcluded('note.md')).toBe(false);
     expect(isSystemExcluded('folder/sub/doc.md')).toBe(false);
+  });
+});
+
+// Feature 056: the mass-delete breaker report notes (fixed vault-root filenames, regenerated and
+// overwritten on demand — see src/ui/breakerReport.ts) are device-local diagnostic snapshots, not
+// vault content worth syncing. Same rationale as the per-device debug log exclusion
+// (isActiveLogFile): syncing a snapshot that's about to be overwritten again just churns.
+describe('[SPEC:MDV-5] breaker report notes are excluded from sync (feature 056)', () => {
+  it('excludes both fixed report filenames at the vault root', () => {
+    expect(isSystemExcluded(DIR_BREAKER_REPORT_FILENAME)).toBe(true);
+    expect(isSystemExcluded(FILE_BREAKER_REPORT_FILENAME)).toBe(true);
+  });
+
+  it('does not exclude an ordinary vault file with a similar-looking name', () => {
+    expect(isSystemExcluded('nextcloud-sync-dir-breaker-report-old.md')).toBe(false);
+    expect(isSystemExcluded('notes/nextcloud-sync-dir-breaker-report.md')).toBe(false);
   });
 });
