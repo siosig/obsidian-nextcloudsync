@@ -1,5 +1,11 @@
 import { App, Modal, Setting } from 'obsidian';
 import { SyncErrorDetail, SyncFileOp, SyncHistoryEntry } from '../types';
+import {
+  DIR_BREAKER_REPORT_FILENAME,
+  FILE_BREAKER_REPORT_FILENAME,
+  formatDirBreakerReportNote,
+  formatFileBreakerReportNote,
+} from './breakerReport';
 import { FORCE_CHOICES, ForceChoice } from './forceResolution';
 import {
   ALL_FILTER_OPS,
@@ -65,6 +71,9 @@ export class SyncStatusModal extends Modal {
   /** Bulk "Apply to all" force-resolve guard (G6-1); a separate instance so it can never collide
    * with a per-file key in `resolveGate`. */
   private readonly bulkResolveGate = new KeyedBusyGate();
+  /** Feature 056: dir mass-delete breaker bulk-resolve guard; a separate instance from the conflict
+   * bulk-resolve gates above so the two capabilities can never collide. */
+  private readonly dirBreakerBulkResolveGate = new KeyedBusyGate();
 
   constructor(
     app: App,
@@ -94,6 +103,15 @@ export class SyncStatusModal extends Modal {
      * `onForceResolve` omitted for per-file rows).
      */
     private readonly onBulkForceResolve?: (choice: ForceChoice, paths: string[]) => Promise<void>,
+    /**
+     * Feature 056: bulk-resolve every path the dir mass-delete breaker skipped, with a single chosen
+     * action ("remote" recreates/deletes to match the remote side, "local" the mirror). The HOST owns
+     * the "are you sure?" confirmation and the result Notice (same split as `onBulkForceResolve`);
+     * this modal only disables the Apply button while the batch runs and re-renders once the host's
+     * promise settles. When omitted, no bulk-resolve row is rendered for the dir breaker (capability
+     * gate, same degradation as the other `onBulk*` callbacks).
+     */
+    private readonly onResolveDirBreaker?: (choice: 'remote' | 'local') => Promise<void>,
   ) {
     super(app);
   }
@@ -236,6 +254,18 @@ export class SyncStatusModal extends Modal {
     }
   }
 
+  /**
+   * (Re)writes `filename` with `content` and opens it — used for the mass-delete breaker report
+   * notes (feature 056). A plain `vault.adapter.write` + `openLinkText`, same pattern every other
+   * click-to-open row in this modal already uses, just backed by generated content instead of an
+   * existing vault file.
+   */
+  private async openReportNote(filename: string, content: string): Promise<void> {
+    await this.app.vault.adapter.write(filename, content);
+    await this.app.workspace.openLinkText(filename, '', false);
+    this.close();
+  }
+
   /** What went wrong in the last session: one row per error, with the file (clickable) and reason. */
   private addErrorSection(errors: SyncErrorDetail[]): void {
     if (errors.length === 0) return;
@@ -251,13 +281,71 @@ export class SyncStatusModal extends Modal {
       const row = list.createEl('div', { cls: 'ncs-status-row' });
       row.createEl('div', { text: e.path || '(entire sync session)' });
       row.createEl('div', { text: e.message, cls: 'setting-item-description' });
-      if (e.path) {
+
+      if (e.dirBreakerSkipped) {
+        // Feature 056: pseudo-label rows for the dir breaker never open e.path itself (that used to
+        // create an empty note literally named "(dir mass-delete breaker)" — a bug). Instead they
+        // (re)write and open a full report note listing every skipped directory.
+        const skipped = e.dirBreakerSkipped;
+        row.createEl('div', {
+          text: 'Click to open a report note listing every skipped directory.',
+          cls: 'setting-item-description',
+        });
+        row.addEventListener('click', () => {
+          void this.openReportNote(DIR_BREAKER_REPORT_FILENAME, formatDirBreakerReportNote(skipped));
+        });
+        if (this.onResolveDirBreaker) this.addDirBreakerBulkResolveRow(list, skipped);
+      } else if (e.skippedPaths) {
+        // Same pseudo-label rework for the file (absence-deletion) breaker; report-note-only, no
+        // bulk-resolve action for this side (feature 056 scope: dir-only).
+        const all = e.skippedPaths.all;
+        row.createEl('div', {
+          text: 'Click to open a report note listing every skipped file.',
+          cls: 'setting-item-description',
+        });
+        row.addEventListener('click', () => {
+          void this.openReportNote(FILE_BREAKER_REPORT_FILENAME, formatFileBreakerReportNote(all));
+        });
+      } else if (e.path) {
         row.addEventListener('click', () => {
           void this.app.workspace.openLinkText(e.path, '', false);
           this.close();
         });
       }
     }
+  }
+
+  /**
+   * Feature 056: single bulk-resolve row for the dir mass-delete breaker, rendered directly under its
+   * error row. Applies one choice ("Use remote" / "Use local") to every skipped directory at once —
+   * no per-item controls (the user asked for one bulk action, not N individual ones).
+   */
+  private addDirBreakerBulkResolveRow(
+    list: HTMLElement,
+    skipped: { deleteRemote: string[]; trashLocal: string[] },
+  ): void {
+    const total = skipped.deleteRemote.length + skipped.trashLocal.length;
+    const bulkRow = list.createEl('div', { cls: 'setting-item ncs-bulk-conflict-row' });
+    bulkRow.addEventListener('click', (evt) => evt.stopPropagation()); // don't trigger the error row's own click
+    const info = bulkRow.createDiv({ cls: 'setting-item-info' });
+    info.createDiv({ cls: 'setting-item-name', text: `Resolve all ${total} skipped directories` });
+    info.createDiv({
+      cls: 'setting-item-description',
+      text: '"Use remote" recreates/keeps the remote side; "Use local" recreates/keeps the local side.',
+    });
+    const control = bulkRow.createDiv({ cls: 'setting-item-control' });
+    const select = control.createEl('select', { cls: 'dropdown ncs-conflict-select' });
+    select.createEl('option', { text: 'Use remote', value: 'remote' });
+    select.createEl('option', { text: 'Use local', value: 'local' });
+    const applyBtn = control.createEl('button', { text: 'Apply', cls: 'ncs-conflict-apply mod-warning' });
+    applyBtn.addEventListener('click', () => {
+      if (!this.dirBreakerBulkResolveGate.tryEnter('dir-breaker-bulk')) return;
+      applyBtn.disabled = true;
+      void this.onResolveDirBreaker!(select.value as 'remote' | 'local').then(() => {
+        this.dirBreakerBulkResolveGate.leave('dir-breaker-bulk');
+        this.render();
+      });
+    });
   }
 
   /**

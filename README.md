@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.28)
+## What's new in this release (0.7.29-beta.2)
 
-- **Fixed the plugin dropping out of the community directory (0.7.28)** — the previous release failed Obsidian's automated review because it disabled the `sentence-case` UI-text lint rule, which the reviewer explicitly disallows. Fixed the actual cause instead of suppressing the check: the rule's brand list was forcing "git" to "Git" wherever it appeared, which was wrong for the real, always-lowercase `.git` folder name — the brand override no longer includes it. No user-facing behavior changes.
+- **Mass-delete breaker: full report note + one-click bulk resolve for directories (0.7.29-beta.2)** — clicking a mass-delete breaker error in the sync status dialog now opens a report note listing every skipped path in full (no more capped "…and N more"), and previously that same click could accidentally create an empty note named after the error label — that's fixed. For the directory breaker specifically, a single "Use remote" / "Use local" action now resolves every skipped directory at once, instead of leaving you to fix each one by hand.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 

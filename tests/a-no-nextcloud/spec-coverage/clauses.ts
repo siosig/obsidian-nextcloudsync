@@ -38,6 +38,15 @@ const DEFER_SERVER = 'b-1 e2e deferred (it.skip) — cannot force the required l
 const BRC_DOM =
   'DOM/host wiring verified via quickstart manual check (specs/042-bulk-resolve-conflicts/quickstart.md); ' +
   'batch logic core covered by BRC-1..7,9 (forceResolution.test.ts, layer a)';
+// spec 056 (mass-delete breaker report notes + dir bulk-resolve): SyncStatusModal.addErrorSection /
+// addDirBreakerBulkResolveRow DOM rendering (click opens a report note; the dir-only bulk-resolve
+// row) cannot be exercised under jest's testEnvironment: 'node' (no `document`) — same constraint as
+// BRC_DOM/SNI-5/SNI-6. The pure logic it depends on (report note formatting, resolveSkippedDir/
+// resolveAllSkippedDirs, sync exclusion) is covered at layer a by MDV-6..9.
+const MDV_DOM =
+  'DOM rendering verified via quickstart manual check ' +
+  '(specs/056-massdelete-breaker-report-bulk-resolve/quickstart.md); ' +
+  'pure logic covered by MDV-6..9 (dirSync.test.ts/breakerReport.test.ts, layer a)';
 
 export const CLAUSES: Clause[] = [
   // --- CN: connection/auth ---
@@ -422,4 +431,13 @@ export const CLAUSES: Clause[] = [
   { id: 'WF-3', source: 'specs/046-watch-folder-propagation/spec.md (FR-003/010: renameSingleFolder MOVE, retarget tracking, exclusions honored)', layer: 'a' },
   { id: 'WF-B1-1', source: 'specs/046-watch-folder-propagation (live: folder create/delete/rename propagate immediately as MKCOL/collection-delete/MOVE)', layer: 'b-1', waiver: 'deferred b-1 end-to-end stub (it.skip): needs a live Nextcloud; validated manually via quickstart until executed' },
   { id: 'WF-B1-2', source: 'specs/046-watch-folder-propagation (live: after an immediate folder-op failure, the next full sync converges remote==local — self-healing)', layer: 'b-1', waiver: 'deferred b-1 end-to-end stub (it.skip): needs a live Nextcloud; validated manually via quickstart until executed' },
+  // --- MDV: mass-delete breaker skipped-paths visibility (feature 055) + report notes/dir bulk-resolve (feature 056) ---
+  { id: 'MDV-2', source: 'specs/main/spec.md §8 (file mass-delete breaker records skippedPaths.all, full/uncapped)', layer: 'a' },
+  { id: 'MDV-4', source: 'specs/main/spec.md §8 (ordinary errors unaffected — regression)', layer: 'a' },
+  { id: 'MDV-5', source: 'specs/main/spec.md §8 (breaker report notes excluded from sync — isSystemExcluded)', layer: 'a' },
+  { id: 'MDV-6', source: 'specs/056-massdelete-breaker-report-bulk-resolve/spec.md (dir mass-delete breaker records dirBreakerSkipped, full/uncapped/category-split)', layer: 'a' },
+  { id: 'MDV-7', source: 'specs/056-massdelete-breaker-report-bulk-resolve/spec.md (report note formatting: full listing, no truncation, per-category counts)', layer: 'a' },
+  { id: 'MDV-8', source: 'specs/056-massdelete-breaker-report-bulk-resolve/spec.md (resolveSkippedDir: 4 category×choice branches)', layer: 'a' },
+  { id: 'MDV-9', source: 'specs/056-massdelete-breaker-report-bulk-resolve/spec.md (resolveAllSkippedDirs: aggregation, in-place mutation, running-guard)', layer: 'a' },
+  { id: 'MDV-10', source: 'specs/056-massdelete-breaker-report-bulk-resolve/spec.md (SyncStatusModal: click opens report note, dir-only bulk-resolve row)', layer: 'a', waiver: MDV_DOM },
 ];

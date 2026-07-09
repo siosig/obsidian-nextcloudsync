@@ -81,7 +81,7 @@ function makeEngine(opts: {
   const deleteDir = jest.fn();
   const stateDB = {
     getAllFiles: () => [], getFile: () => undefined,
-    getAllDirs: () => opts.tracked ?? [], setDir, deleteDir,
+    getAllDirs: () => opts.tracked ?? [], setDir, deleteDir, requestSave: jest.fn(),
   };
   const engine = new SyncEngine({
     app, settings: opts.settings ?? settings(), localAdapter: adapter,
@@ -189,6 +189,31 @@ describe('SyncEngine.reconcileDirectories — directory create/delete propagatio
     expect(client.createDirectory).toHaveBeenCalledWith('newdir'); // creation still happens
   });
 
+  it('[SPEC:MDV-6] dir mass-delete breaker records dirBreakerSkipped — full, uncapped, category-split', async () => {
+    // 15 deleteRemote candidates (tracked, remote-present, local-absent) + 15 trashLocal candidates
+    // (tracked, local-present, remote-absent) = 30 total candidates. denom = max(tracked=30,
+    // remoteDirs=15, localDirs=15) = 30; effectiveMassDeleteLimit(30) = max(20, floor(30*0.2)=6) = 20.
+    // 30 > 20 trips the breaker.
+    const deleteRemoteDirs = Array.from({ length: 15 }, (_, i) => dirState(`rm${i}`));
+    const trashLocalDirs = Array.from({ length: 15 }, (_, i) => dirState(`tr${i}`));
+    const tracked = [...deleteRemoteDirs, ...trashLocalDirs];
+    const client = makeClient({ remoteDirs: deleteRemoteDirs.map((d) => d.path) });
+    const { engine } = makeEngine({
+      client, localDirs: trashLocalDirs.map((d) => d.path), tracked,
+    });
+    const summary = makeSummary();
+    await reconcile(engine, summary);
+    expect(client.deleteCollection).not.toHaveBeenCalled(); // breaker refused the destructive batch
+
+    const breakerError = summary.errors.find((e) => e.path === '(dir mass-delete breaker)');
+    expect(breakerError).toBeDefined();
+    expect(breakerError!.skippedPaths).toBeUndefined(); // dir breaker no longer uses the capped field
+    expect(breakerError!.dirBreakerSkipped).toBeDefined();
+    // Full, UNCAPPED lists (no 10-item truncation) — every candidate present, split by category.
+    expect(breakerError!.dirBreakerSkipped!.deleteRemote.sort()).toEqual(deleteRemoteDirs.map((d) => d.path).sort());
+    expect(breakerError!.dirBreakerSkipped!.trashLocal.sort()).toEqual(trashLocalDirs.map((d) => d.path).sort());
+  });
+
   // DP-12 (lock ON wraps the remote delete) was removed in feature 033: file locking is always off,
   // so the remote delete is never lock-wrapped. DP-13 below is now the only behaviour.
 
@@ -223,5 +248,106 @@ describe('SyncEngine.reconcileDirectories — directory create/delete propagatio
     const { engine } = makeEngine({ client, localDirs: ['x'] });
     await expect(reconcile(engine, makeSummary())).resolves.toBeUndefined();
     expect(client.createDirectory).not.toHaveBeenCalled();
+  });
+});
+
+describe('SyncEngine.resolveSkippedDir — per-path force resolution for a mass-delete breaker candidate (feature 056)', () => {
+  it('[SPEC:MDV-8] deleteRemote + choice=remote → recreate locally (undo the apparent local deletion)', async () => {
+    const client = makeClient({ remoteDirs: [] });
+    const { engine, mkdir, setDir } = makeEngine({ client, localDirs: [] });
+    await engine.resolveSkippedDir('gone', 'deleteRemote', 'remote');
+    expect(mkdir).toHaveBeenCalledWith('gone');
+    expect(setDir).toHaveBeenCalledWith({ path: 'gone', remoteFileId: null });
+    expect(client.deleteCollection).not.toHaveBeenCalled();
+  });
+
+  it('[SPEC:MDV-8] deleteRemote + choice=local → confirm the deletion on the remote', async () => {
+    const client = makeClient({ remoteDirs: ['gone'] });
+    const { engine, deleteDir } = makeEngine({ client, localDirs: [] });
+    await engine.resolveSkippedDir('gone', 'deleteRemote', 'local');
+    expect(client.deleteCollection).toHaveBeenCalledWith('gone');
+    expect(deleteDir).toHaveBeenCalledWith('gone');
+  });
+
+  it('[SPEC:MDV-8] trashLocal + choice=remote → confirm the deletion locally (trash it)', async () => {
+    const client = makeClient({ remoteDirs: [] });
+    const { engine, trashFile, deleteDir } = makeEngine({ client, localDirs: ['stillhere'] });
+    await engine.resolveSkippedDir('stillhere', 'trashLocal', 'remote');
+    expect(trashFile).toHaveBeenCalled();
+    expect(deleteDir).toHaveBeenCalledWith('stillhere');
+  });
+
+  it('[SPEC:MDV-8] trashLocal + choice=local → recreate on the remote (undo the apparent remote deletion)', async () => {
+    const client = makeClient({ remoteDirs: [] });
+    const { engine, setDir } = makeEngine({ client, localDirs: ['stillhere'] });
+    await engine.resolveSkippedDir('stillhere', 'trashLocal', 'local');
+    expect(client.createDirectory).toHaveBeenCalledWith('stillhere');
+    expect(setDir).toHaveBeenCalledWith({ path: 'stillhere', remoteFileId: null });
+  });
+});
+
+describe('SyncEngine.resolveAllSkippedDirs — bulk-apply one choice to every skipped dir-breaker candidate (feature 056)', () => {
+  function summaryWithBreakerError(dirBreakerSkipped: { deleteRemote: string[]; trashLocal: string[] }): SyncSessionSummary {
+    const summary = makeSummary();
+    summary.errorCount = 1;
+    summary.errors.push({
+      path: '(dir mass-delete breaker)',
+      message: 'Skipped dir deletions — exceeds safety limit',
+      dirBreakerSkipped,
+    });
+    return summary;
+  }
+
+  const setLastSummary = (engine: SyncEngine, summary: SyncSessionSummary): void => {
+    (engine as unknown as { lastSummary: SyncSessionSummary }).lastSummary = summary;
+  };
+
+  it('[SPEC:MDV-9] all-success: resolves every path and removes the breaker error entry', async () => {
+    const client = makeClient({ remoteDirs: ['rm0', 'rm1'] });
+    const { engine } = makeEngine({ client, localDirs: ['tr0', 'tr1'] });
+    const summary = summaryWithBreakerError({ deleteRemote: ['rm0', 'rm1'], trashLocal: ['tr0', 'tr1'] });
+    setLastSummary(engine, summary);
+
+    const result = await engine.resolveAllSkippedDirs('remote');
+
+    expect(result).toEqual({ resolved: 4, failed: 0 });
+    expect(summary.errors.find((e) => e.path === '(dir mass-delete breaker)')).toBeUndefined();
+  });
+
+  it('[SPEC:MDV-9] partial failure: tallies failures and keeps only the still-failed paths in dirBreakerSkipped', async () => {
+    const client = makeClient({
+      remoteDirs: ['rm0', 'rm1'],
+      deleteImpl: async (p: string) => { if (p === 'rm1') throw new Error('network error'); },
+    });
+    const { engine } = makeEngine({ client, localDirs: [] });
+    const summary = summaryWithBreakerError({ deleteRemote: ['rm0', 'rm1'], trashLocal: [] });
+    setLastSummary(engine, summary);
+
+    const result = await engine.resolveAllSkippedDirs('local'); // deleteRemote+local => client.deleteCollection
+
+    expect(result).toEqual({ resolved: 1, failed: 1 });
+    const remaining = summary.errors.find((e) => e.path === '(dir mass-delete breaker)');
+    expect(remaining).toBeDefined();
+    expect(remaining!.dirBreakerSkipped).toEqual({ deleteRemote: ['rm1'], trashLocal: [] });
+  });
+
+  it('[SPEC:MDV-9] refuses to run while a full sync is in progress', async () => {
+    const client = makeClient({ remoteDirs: ['rm0'] });
+    const { engine } = makeEngine({ client, localDirs: [] });
+    const summary = summaryWithBreakerError({ deleteRemote: ['rm0'], trashLocal: [] });
+    setLastSummary(engine, summary);
+    (engine as unknown as { running: boolean }).running = true;
+
+    await expect(engine.resolveAllSkippedDirs('remote')).rejects.toThrow(/sync in progress/i);
+    expect(client.createDirectory).not.toHaveBeenCalled();
+  });
+
+  it('[SPEC:MDV-9] no-op with {resolved:0, failed:0} when there is no current breaker error', async () => {
+    const client = makeClient({ remoteDirs: [] });
+    const { engine } = makeEngine({ client, localDirs: [] });
+    setLastSummary(engine, makeSummary()); // no dir-breaker entry
+
+    const result = await engine.resolveAllSkippedDirs('remote');
+    expect(result).toEqual({ resolved: 0, failed: 0 });
   });
 });
