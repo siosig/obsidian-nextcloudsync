@@ -11,6 +11,16 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.29] - 2026-07-09
+
+### Added
+- The mass-delete safety breaker now records every skipped path in full (no cap), instead of only a count.
+- Clicking a mass-delete breaker error in the sync status dialog opens a full report note listing every skipped path, instead of a capped inline preview.
+- The directory mass-delete breaker gained a single "Use remote" / "Use local" action to resolve every skipped directory at once.
+
+### Fixed
+- Clicking a mass-delete breaker error row used to be able to create an empty note named after the error label; it now opens the report note instead.
+
 ## [0.7.28] - 2026-07-08
 
 ### Fixed
@@ -283,6 +293,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.29]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.29
 [0.7.28]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.28
 [0.7.27]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.27
 [0.7.26]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.26
