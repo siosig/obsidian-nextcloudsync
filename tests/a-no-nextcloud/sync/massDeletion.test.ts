@@ -58,12 +58,12 @@ describe('[SPEC:DEL-3] mass-delete circuit breaker threshold', () => {
   });
 });
 
-// Feature 055 (specs/055-massdelete-skip-visibility): when the FILE-side (absence-deletion) breaker
-// above trips, the skipped candidate paths are recorded as diagnostic info on the SyncErrorDetail
-// (`skippedPaths.sample` truncated to 10 + `skippedPaths.totalCount`), so the sync-status dialog can
-// show the user WHICH files were skipped, not just that "some files" were. This drives SyncEngine's
-// private `processLocalModifications` full-scan absence-deletion path directly, mirroring the
-// `[SPEC:MDV-1]` dir-breaker harness in tests/a-no-nextcloud/sync/dirSync.test.ts.
+// Feature 055/056: when the FILE-side (absence-deletion) breaker above trips, the skipped candidate
+// paths are recorded as diagnostic info on the SyncErrorDetail (`skippedPaths.all`, full/uncapped —
+// feature 056 backs the report-note view), so the sync-status dialog can show the user WHICH files
+// were skipped, not just that "some files" were. This drives SyncEngine's private
+// `processLocalModifications` full-scan absence-deletion path directly, mirroring the `[SPEC:MDV-6]`
+// dir-breaker harness in tests/a-no-nextcloud/sync/dirSync.test.ts.
 describe('[SPEC:MDV-2] SyncEngine file mass-delete breaker — skippedPaths diagnostic (feature 055)', () => {
   const CONFIG_DIR = '.obsidian';
   const PLUGIN_DIR = `${CONFIG_DIR}/plugins/nextcloud-sync`;
@@ -121,13 +121,13 @@ describe('[SPEC:MDV-2] SyncEngine file mass-delete breaker — skippedPaths diag
       ): Promise<void>;
     }).processLocalModifications(remoteFiles, summary, true);
 
-  it('[SPEC:MDV-2] file mass-delete breaker records skippedPaths with sample and totalCount', async () => {
+  it('[SPEC:MDV-2] file mass-delete breaker records skippedPaths.all (full, uncapped)', async () => {
     const unchangedData = new TextEncoder().encode('unchanged-content').buffer;
     const hash = await sha256(unchangedData);
     // 25 tracked files, all present locally with content matching the stored hash (so they are NOT
     // filtered out as "locally modified"), but absent from the (complete) remote listing → all 25
     // become absence-deletion candidates. effectiveMassDeleteLimit(-1, 25) = massDeleteLimit(25) =
-    // max(20, floor(25*0.2)) = 20, so 25 > 20 trips the breaker (same scale as dirSync's MDV-1 case).
+    // max(20, floor(25*0.2)) = 20, so 25 > 20 trips the breaker (same scale as dirSync's MDV-6 case).
     const tracked = Array.from({ length: 25 }, (_, i) => fstate(`note${i}.md`, hash));
     const { engine } = makeEngine(tracked, unchangedData);
     const summary = makeSummary();
@@ -142,12 +142,9 @@ describe('[SPEC:MDV-2] SyncEngine file mass-delete breaker — skippedPaths diag
     const breakerError = summary.errors.find((e) => e.path === '(mass-delete breaker)');
     expect(breakerError).toBeDefined();
     expect(breakerError!.skippedPaths).toBeDefined();
-    expect(breakerError!.skippedPaths!.totalCount).toBe(tracked.length); // 25 skipped candidates total
-    expect(breakerError!.skippedPaths!.sample.length).toBeLessThanOrEqual(10);
+    // Full, UNCAPPED list — no 10-item truncation (feature 056: needed for the report-note view).
     const expectedCandidates = tracked.map((f) => f.path);
-    for (const p of breakerError!.skippedPaths!.sample) {
-      expect(expectedCandidates).toContain(p);
-    }
+    expect(breakerError!.skippedPaths!.all.slice().sort()).toEqual(expectedCandidates.slice().sort());
   });
 
   // Drives the private `recordError` directly (same private-method-cast pattern as `runFullScan`

@@ -376,13 +376,22 @@ export interface SyncErrorDetail {
   path: string;
   message: string;
   /**
-   * Skipped deletion candidate paths, set only when the mass-delete breaker fires.
-   * `sample` is truncated to the display limit; `totalCount` is the count before truncation.
-   * See specs/055-massdelete-skip-visibility/data-model.md for details.
+   * Skipped deletion candidate paths (full, uncapped), set only when the FILE (absence-deletion)
+   * mass-delete breaker fires. The modal derives a capped inline preview from `all` at render time;
+   * the full list also backs the "open report note" action (feature 056).
    */
   skippedPaths?: {
-    sample: string[];
-    totalCount: number;
+    all: string[];
+  };
+  /**
+   * Full, uncapped, category-split candidate paths, set only when the DIR mass-delete breaker
+   * fires (mutually exclusive with `skippedPaths`, which the file-side breaker uses instead).
+   * `deleteRemote`/`trashLocal` mirror reconcileDirectories' own candidate categories, so a bulk
+   * resolution (`SyncEngine.resolveAllSkippedDirs`) knows which primitive to apply per path.
+   */
+  dirBreakerSkipped?: {
+    deleteRemote: string[];
+    trashLocal: string[];
   };
 }
 
