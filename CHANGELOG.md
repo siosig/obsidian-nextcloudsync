@@ -11,6 +11,11 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.30] - 2026-07-12
+
+### Fixed
+- Background sync no longer closes the note you're editing. When a sync (automatic or "Sync now") applied a remote change to a file you had open, the note's view used to disappear, leaving an empty pane until you reopened it. Files that are currently open are now updated in place instead, so your view stays put and simply shows the latest content.
+
 ## [0.7.29] - 2026-07-09
 
 ### Added
@@ -293,6 +298,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.30]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.30
 [0.7.29]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.29
 [0.7.28]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.28
 [0.7.27]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.27
