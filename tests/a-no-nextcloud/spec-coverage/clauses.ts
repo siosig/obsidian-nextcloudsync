@@ -440,4 +440,8 @@ export const CLAUSES: Clause[] = [
   { id: 'MDV-8', source: 'specs/056-massdelete-breaker-report-bulk-resolve/spec.md (resolveSkippedDir: 4 category×choice branches)', layer: 'a' },
   { id: 'MDV-9', source: 'specs/056-massdelete-breaker-report-bulk-resolve/spec.md (resolveAllSkippedDirs: aggregation, in-place mutation, running-guard)', layer: 'a' },
   { id: 'MDV-10', source: 'specs/056-massdelete-breaker-report-bulk-resolve/spec.md (SyncStatusModal: click opens report note, dir-only bulk-resolve row)', layer: 'a', waiver: MDV_DOM },
+  // --- OL: open-leaf survives sync (feature 057, GitHub issue #15) ---
+  { id: 'OL-1', source: 'specs/main/spec.md §9.5 (text file open -> in-place vault.modify, no delete event)', layer: 'a' },
+  { id: 'OL-2', source: 'specs/main/spec.md §9.5 (binary file open -> in-place vault.modifyBinary, no delete event)', layer: 'a' },
+  { id: 'OL-3', source: 'specs/main/spec.md §9.5 (not-open file / no workspace injected -> existing tmp-write/remove/rename path unchanged)', layer: 'a' },
 ];

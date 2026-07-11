@@ -34,8 +34,11 @@ export const config: WebdriverIO.Config = {
         // Throwaway vault opened as a copy so tests never mutate the template.
         vault: 'tests/b2-nextcloud-ui/support/vault',
       },
-      // Electron sandbox off for CI containers.
-      'goog:chromeOptions': { args: ['--no-sandbox'] },
+      // Electron sandbox off for CI containers. The ephemeral test instance
+      // (nextcloud-testinstance) uses a self-signed cert; accept it so requestUrl
+      // (Chromium's net stack under Electron) doesn't reject with ERR_CERT_AUTHORITY_INVALID.
+      'goog:chromeOptions': { args: ['--no-sandbox', '--ignore-certificate-errors'] },
+      acceptInsecureCerts: true,
     } as WebdriverIO.Capabilities,
   ],
 
