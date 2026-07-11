@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.30-beta.1)
+## What's new in this release (0.7.30)
 
-- **Fix: background sync no longer closes the note you're editing (0.7.30-beta.1)** — when a sync (automatic or "Sync now") applied a remote change to a file you had open, the note's view used to disappear, leaving an empty pane until you reopened it. Files that are currently open are now updated in place instead, so your view stays put and simply shows the latest content. Files that aren't open are unaffected.
+- **Fix: background sync no longer closes the note you're editing (0.7.30)** — when a sync (automatic or "Sync now") applied a remote change to a file you had open, the note's view used to disappear, leaving an empty pane until you reopened it. Files that are currently open are now updated in place instead, so your view stays put and simply shows the latest content. Files that aren't open are unaffected.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
