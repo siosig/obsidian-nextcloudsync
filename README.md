@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.29)
+## What's new in this release (0.7.30-beta.1)
 
-- **Mass-delete breaker: full report note + one-click bulk resolve for directories (0.7.29)** — clicking a mass-delete breaker error in the sync status dialog now opens a report note listing every skipped path in full (no more capped "…and N more"), and previously that same click could accidentally create an empty note named after the error label — that's fixed. For the directory breaker specifically, a single "Use remote" / "Use local" action now resolves every skipped directory at once, instead of leaving you to fix each one by hand.
+- **Fix: background sync no longer closes the note you're editing (0.7.30-beta.1)** — when a sync (automatic or "Sync now") applied a remote change to a file you had open, the note's view used to disappear, leaving an empty pane until you reopened it. Files that are currently open are now updated in place instead, so your view stays put and simply shows the latest content. Files that aren't open are unaffected.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
