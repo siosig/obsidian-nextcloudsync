@@ -1,4 +1,4 @@
-import { DataAdapter, Notice, Platform, Vault, normalizePath } from 'obsidian';
+import { DataAdapter, FileView, Notice, Platform, TFile, Vault, Workspace, normalizePath } from 'obsidian';
 
 export interface LocalFileEntry { path: string; size: number; mtime: number; }
 
@@ -75,7 +75,27 @@ export function isSyncTmpPath(path: string): boolean {
 export class LocalAdapter {
   private ignoreList: Map<string, number> = new Map();
 
-  constructor(private readonly adapter: DataAdapter, private readonly vault?: Vault) {}
+  constructor(
+    private readonly adapter: DataAdapter,
+    private readonly vault?: Vault,
+    private readonly workspace?: Workspace,
+  ) {}
+
+  /**
+   * The TFile currently displayed by any open leaf at `path`, or null if none (or no `workspace`
+   * was injected, e.g. in unit tests). `FileView` is the common base for every file-backed view
+   * (markdown, image, PDF, ...), so this covers both text and binary attachments uniformly.
+   */
+  private findOpenTFile(path: string): TFile | null {
+    if (!this.workspace) return null;
+    let found: TFile | null = null;
+    this.workspace.iterateAllLeaves((leaf) => {
+      if (found) return;
+      const view = leaf.view;
+      if (view instanceof FileView && view.file?.path === path) found = view.file;
+    });
+    return found;
+  }
 
   /** Register a path to be ignored for Vault events (prevents sync loop). */
   ignore(path: string): void {
@@ -121,9 +141,20 @@ export class LocalAdapter {
     }
   }
 
-  /** Atomically write text content: write to tmp → remove existing → rename. */
+  /**
+   * Write text content to `targetPath`. If the path is currently displayed by an open leaf
+   * (issue #15: a background sync must not evict the user's open note), update it in place via
+   * `Vault.modify` — a single write with no delete event, so Obsidian never detaches the leaf.
+   * Otherwise fall back to the tmp-write → remove existing → rename atomicity below unchanged.
+   */
   async atomicWrite(targetPath: string, content: string): Promise<void> {
     targetPath = normalizePath(targetPath);
+    const openFile = this.findOpenTFile(targetPath);
+    if (openFile) {
+      this.ignore(targetPath);
+      await this.vault!.modify(openFile, content);
+      return;
+    }
     const tmpPath = tmpPathFor(targetPath);
     this.ignore(tmpPath);
     this.ignore(targetPath);
@@ -149,9 +180,20 @@ export class LocalAdapter {
     }
   }
 
-  /** Atomically write binary content: write to tmp → remove existing → rename. */
+  /**
+   * Write binary content to `targetPath`. Same open-file in-place path as {@link atomicWrite}
+   * (via `Vault.modifyBinary`), covering binary attachments (images, PDFs, ...) shown in a
+   * non-markdown `FileView`. Falls back to the tmp-write → remove → rename atomicity (with its
+   * read-back verification) when the path is not currently open.
+   */
   async atomicWriteBinary(targetPath: string, data: ArrayBuffer): Promise<void> {
     targetPath = normalizePath(targetPath);
+    const openFile = this.findOpenTFile(targetPath);
+    if (openFile) {
+      this.ignore(targetPath);
+      await this.vault!.modifyBinary(openFile, data);
+      return;
+    }
     const tmpPath = tmpPathFor(targetPath);
     this.ignore(tmpPath);
     this.ignore(targetPath);

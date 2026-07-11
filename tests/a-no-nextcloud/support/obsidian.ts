@@ -96,6 +96,20 @@ export class TFolder {
   }
 }
 
+/** Common base for every file-backed view (markdown, image, PDF, ...). Real `instanceof` target
+ *  for LocalAdapter's open-file detection, so it must be a class (not just a type). */
+export class FileView {
+  file: TFile | null = null;
+}
+
+export interface WorkspaceLeaf {
+  view: FileView | Record<string, unknown>;
+}
+
+export interface Workspace {
+  iterateAllLeaves(callback: (leaf: WorkspaceLeaf) => void): void;
+}
+
 export const requestUrl = jest.fn(
   (_req: RequestUrlParam): Promise<RequestUrlResponse> =>
     Promise.resolve({ status: 200, text: '', json: {}, arrayBuffer: new ArrayBuffer(0), headers: {} }),
