@@ -24,6 +24,15 @@ export default defineConfig([
       // `-- reason` description. The reviewer flags undescribed directives even though
       // obsidianmd/recommended does not, so enforce it here to catch them pre-push.
       "@eslint-community/eslint-comments/require-description": ["error", { ignore: [] }],
+      // Pinned explicitly rather than relying on obsidianmd/recommended's inherited
+      // typescript-eslint config, so a future plugin upgrade can't silently relax these.
+      "@typescript-eslint/no-explicit-any": "error",
+      // console.log is banned (debug-only per typescript.md); warn/error are allowed —
+      // they are this codebase's only always-on error surface. FileLogger is opt-in
+      // (no-ops unless the user enables debug logging), so routing these through it
+      // instead would silence sync-failure diagnostics for any user who hasn't
+      // pre-enabled debug mode before hitting the bug.
+      "no-console": ["error", { allow: ["warn", "error"] }],
       // The sentence-case rule's autosuggest naively lowercases proper nouns
       // (Nextcloud, WebDAV) and mangles URLs. Allowlist them so the rule only
       // flags genuine Title Case. (The directory reviewer does not block on this.)
