@@ -3,6 +3,7 @@ import {
   fromRemotePath,
   toRemotePath,
   isSafeVaultRelativePath,
+  encodeRemoteUrl,
 } from '../../../src/network/remotePath';
 
 describe('hrefToRelative', () => {
@@ -78,5 +79,23 @@ describe('fromRemotePath (traversal hardening)', () => {
   });
   it('returns null for traversal when no base is configured', () => {
     expect(fromRemotePath('', '../secret.md')).toBeNull();
+  });
+});
+
+describe('encodeRemoteUrl', () => {
+  const baseUrl = 'https://example.com/remote.php/dav/files/alice';
+
+  it('leaves Chinese path characters for the Obsidian request layer to encode once', () => {
+    expect(encodeRemoteUrl(baseUrl, '中文仓库/日记.md'))
+      .toBe(`${baseUrl}/中文仓库/日记.md`);
+  });
+
+  it('preserves Unicode while escaping ASCII URL delimiters inside file names', () => {
+    expect(encodeRemoteUrl(baseUrl, '资料 目录/问题#1?.md'))
+      .toBe(`${baseUrl}/资料%20目录/问题%231%3F.md`);
+  });
+
+  it('keeps path separators instead of escaping them', () => {
+    expect(encodeRemoteUrl(baseUrl, 'a/b/c.md')).toBe(`${baseUrl}/a/b/c.md`);
   });
 });
