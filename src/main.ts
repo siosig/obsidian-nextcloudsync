@@ -304,6 +304,11 @@ export default class ObsidianNextcloudsync extends Plugin {
         const { resolved, failed } = await this.syncEngine!.resolveAllSkippedDirs(choice);
         new Notice(`Resolved ${resolved} skipped directories` + (failed ? `; ${failed} failed` : ''));
       },
+      // Feature 059: second entry point to Mirror from remote, on the Sync status dialog's top action
+      // row. Delegates to the same runRemoteMirror() the Settings-tab button uses (single source of
+      // truth) — it owns the confirmation modal, Notice, and mirrorInProgress guard, so nothing is
+      // duplicated here.
+      () => this.runRemoteMirror(),
     ).open();
   }
 

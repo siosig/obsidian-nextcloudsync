@@ -35,6 +35,9 @@ export async function sha256Hex(ab: ArrayBuffer): Promise<string> {
 /** A vault-relative path with a non-secret international segment (kept per language rules). */
 export const INTL_PATH = 'メモ/テスト 🗂️.md';
 
+/** Matches the exact repro string from PR #17 (CJK path, independent of INTL_PATH). */
+export const CJK_PATH = '中文目录/日记.md';
+
 /** Megabyte in bytes. */
 export const MB = 1024 * 1024;
 
