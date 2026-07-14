@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.31-beta.2)
+## What's new in this release (0.7.31)
 
-- **Mirror from remote is now reachable from the Sync status dialog (0.7.31-beta.2)** — the Sync status dialog gains a **Mirror from remote** button next to **Sync now**, so you can start a mirror without opening Settings. It opens the same confirmation (showing how many files will be downloaded and deleted) and does exactly the same thing as the existing Settings → Maintenance button — it is just a second, more convenient entry point. The Settings button is unchanged.
+- **Mirror from remote is now reachable from the Sync status dialog (0.7.31)** — the Sync status dialog gains a **Mirror from remote** button next to **Sync now**, so you can start a mirror without opening Settings. It opens the same confirmation (showing how many files will be downloaded and deleted) and does exactly the same thing as the existing Settings → Maintenance button — it is just a second, more convenient entry point. The Settings button is unchanged.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 

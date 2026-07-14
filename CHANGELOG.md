@@ -11,6 +11,14 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.31] - 2026-07-14
+
+### Added
+- Mirror from remote is now reachable from the Sync status dialog: a **Mirror from remote** button sits next to **Sync now**, opening the same confirmation (download/delete counts) and running the exact same action as the existing Settings → Maintenance button — just a second, more convenient entry point. The Settings button is unchanged.
+
+### Changed
+- Internal: stricter coding-rule enforcement in the merge engine (no user-visible behavior change). `any` types and stray `console.log` calls are now blocked by lint rules instead of relying on manual review, and one merge-strategy dependency was switched from a CommonJS require to a standard ES module import (verified against the full test suite, including a real Nextcloud server run).
+
 ## [0.7.30] - 2026-07-12
 
 ### Fixed
@@ -298,6 +306,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.31]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.31
 [0.7.30]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.30
 [0.7.29]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.29
 [0.7.28]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.28
