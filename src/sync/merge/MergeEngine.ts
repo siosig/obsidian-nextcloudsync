@@ -156,6 +156,11 @@ export class MergeEngine {
 
     let chunks: Diff3Chunk[];
     try {
+      // node-diff3's package.json ships only an `exports` map (no `main`), so it is unresolvable
+      // under tsconfig.test.json's legacy `moduleResolution: "node"` (ts-jest) — confirmed by
+      // running `pnpm test` against an ESM `import` here (feature 058): TS2307 "Cannot find
+      // module 'node-diff3'". esbuild (bundler resolution) has no such issue, so require() is kept
+      // to stay working under both.
       // eslint-disable-next-line @typescript-eslint/no-require-imports, no-undef -- CJS interop for an untyped bundled dependency (esbuild inlines this)
       const { diff3Merge } = require('node-diff3') as {
         diff3Merge: (a: string[], o: string[], b: string[], opts?: Record<string, unknown>) => Diff3Chunk[];

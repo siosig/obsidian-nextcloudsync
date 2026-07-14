@@ -444,4 +444,13 @@ export const CLAUSES: Clause[] = [
   { id: 'OL-1', source: 'specs/main/spec.md §9.5 (text file open -> in-place vault.modify, no delete event)', layer: 'a' },
   { id: 'OL-2', source: 'specs/main/spec.md §9.5 (binary file open -> in-place vault.modifyBinary, no delete event)', layer: 'a' },
   { id: 'OL-3', source: 'specs/main/spec.md §9.5 (not-open file / no workspace injected -> existing tmp-write/remove/rename path unchanged)', layer: 'a' },
+  // --- SMB: Sync status "Mirror from remote" button (feature 059) ---
+  // A second entry point to Mirror from remote on the Sync status dialog's top action row. Pure DOM
+  // wiring: no new logic. The button delegates entirely to runRemoteMirror() (single source of truth,
+  // FR-002/004) — its plan/apply/guard logic is already covered at layer a by MIR-1..3, so nothing is
+  // duplicated. The button rendering (same row, mod-warning, capability gate) + host wiring can't be
+  // exercised under jest testEnvironment 'node' (no `document`; constructing SyncStatusModal throws) —
+  // same constraint as BRC_DOM/MDV_DOM — so it is DOM-waived to quickstart manual check / the b-2 layer.
+  { id: 'SMB-1', source: 'specs/059-sync-status-mirror-button/spec.md (FR-001/003/005 + contracts/sync-status-modal.md: Mirror button on the Sync now row, mod-warning, re-render after settle)', layer: 'a', waiver: 'DOM rendering verified via quickstart manual check (specs/059-sync-status-mirror-button/quickstart.md); the mirror logic it invokes is covered by MIR-1..3 (layer a)' },
+  { id: 'SMB-2', source: 'specs/059-sync-status-mirror-button/spec.md (FR-002/004: button delegates to the same runRemoteMirror() as the Settings-tab button — single source of truth, Settings-tab button unchanged)', layer: 'a', waiver: 'host wiring verified via quickstart manual check; single-source-of-truth reuse of runRemoteMirror (covered by MIR-1..3, layer a) — no logic duplicated' },
 ];

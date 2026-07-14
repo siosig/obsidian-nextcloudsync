@@ -6,7 +6,7 @@ import { isSafeVaultRelativePath } from '../../../src/network/remotePath';
 import { describeLive } from '../support/env';
 import { cleanupWorkspace, IsolatedWorkspace } from '../support/isolation';
 import { setupWorkspace } from '../support/workspace';
-import { textBuf, buffersEqual, bytesBuf, INTL_PATH, sha256Hex } from '../support/helpers';
+import { textBuf, buffersEqual, bytesBuf, INTL_PATH, CJK_PATH, sha256Hex } from '../support/helpers';
 
 describeLive('Layer A — CRUD + boundaries (UP/DL/DEL/MV)', (getEnv) => {
   let ws: IsolatedWorkspace;
@@ -53,6 +53,19 @@ describeLive('Layer A — CRUD + boundaries (UP/DL/DEL/MV)', (getEnv) => {
     await client.uploadFile(INTL_PATH, data);
     const back = await client.downloadFile(INTL_PATH);
     expect(buffersEqual(back, data)).toBe(true);
+  });
+
+  it('UP-6 CJK filename is preserved verbatim on the server (independent PROPFIND check)', async () => {
+    // UP-4 round-trips upload/download through the same encodeRemoteUrl(), so it can't
+    // detect a mismatch between what we uploaded and what the server actually stored.
+    // getFiles() decodes hrefs via hrefToRelative(), an independent code path — this is
+    // what actually asserts the server-side name is correct.
+    const data = textBuf('cjk body');
+    await client.uploadFile(CJK_PATH, data);
+    const files = await client.getFiles('');
+    const match = files.find((f) => f.path === CJK_PATH);
+    expect(match).toBeDefined();
+    expect(files.some((f) => f.path.includes('%'))).toBe(false);
   });
 
   it('UP-5 path traversal is rejected by isSafeVaultRelativePath', () => {
