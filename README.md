@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.31)
+## What's new in this release (0.7.32-beta.1)
 
-- **Mirror from remote is now reachable from the Sync status dialog (0.7.31)** — the Sync status dialog gains a **Mirror from remote** button next to **Sync now**, so you can start a mirror without opening Settings. It opens the same confirmation (showing how many files will be downloaded and deleted) and does exactly the same thing as the existing Settings → Maintenance button — it is just a second, more convenient entry point. The Settings button is unchanged.
+- **Fix: non-ASCII file and folder names could be uploaded percent-encoded on iOS (0.7.32-beta.1)** — a note or folder with Chinese, Japanese, emoji, or other non-ASCII characters in its name could be created on Nextcloud with its percent-encoded form as the literal name (e.g. `%E4%B8%AD%E6%96%87` instead of `中文`). The URL builder no longer pre-encodes non-ASCII characters, so the request layer encodes them exactly once. Desktop was unaffected; this targets the iOS behavior.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
