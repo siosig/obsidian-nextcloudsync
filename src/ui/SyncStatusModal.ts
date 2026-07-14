@@ -112,6 +112,15 @@ export class SyncStatusModal extends Modal {
      * gate, same degradation as the other `onBulk*` callbacks).
      */
     private readonly onResolveDirBreaker?: (choice: 'remote' | 'local') => Promise<void>,
+    /**
+     * Feature 059: a second entry point to the existing "Mirror from remote" maintenance action
+     * (the first lives in the Settings tab). Wired to the host's `runRemoteMirror()`, which owns the
+     * whole flow — the confirmation modal (download/delete counts), the result/error Notice, and the
+     * `mirrorInProgress` exclusion guard — so this modal adds NO new logic, only a button. When
+     * omitted, no Mirror button is rendered (capability gate, same degradation as the `onBulk*`
+     * callbacks above). The modal re-renders after it settles to reflect the mirrored state.
+     */
+    private readonly onMirrorFromRemote?: () => Promise<void>,
   ) {
     super(app);
   }
@@ -126,14 +135,29 @@ export class SyncStatusModal extends Modal {
     contentEl.empty();
     this.setTitle('Sync status');
 
-    // Top action: run a manual sync, then re-render with the new session's report.
-    new Setting(contentEl).addButton(btn => btn
+    // Top action row: run a manual sync, then re-render with the new session's report. Feature 059
+    // adds a second button on the same row — a Mirror-from-remote entry point (only when the host
+    // wired `onMirrorFromRemote`) — styled mod-warning as a destructive action. It delegates entirely
+    // to the host's runRemoteMirror() (confirmation modal, Notice, exclusion guard live there), then
+    // re-renders to reflect the mirrored state, mirroring the Sync now handler.
+    const topActions = new Setting(contentEl).addButton(btn => btn
       .setButtonText('Sync now')
       .setCta()
       .onClick(async () => {
         await this.onSyncNow();
         this.render();
       }));
+    if (this.onMirrorFromRemote) {
+      topActions.addButton(btn => btn
+        .setButtonText('Mirror from remote')
+        // `mod-warning` is the destructive-button class; setDestructive() needs 1.13.0 > minAppVersion
+        // (same rationale as the Settings-tab button).
+        .setClass('mod-warning')
+        .onClick(async () => {
+          await this.onMirrorFromRemote!();
+          this.render();
+        }));
+    }
 
     const report = this.getReport();
 
