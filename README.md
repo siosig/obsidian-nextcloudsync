@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.30)
+## What's new in this release (0.7.31-beta.2)
 
-- **Fix: background sync no longer closes the note you're editing (0.7.30)** — when a sync (automatic or "Sync now") applied a remote change to a file you had open, the note's view used to disappear, leaving an empty pane until you reopened it. Files that are currently open are now updated in place instead, so your view stays put and simply shows the latest content. Files that aren't open are unaffected.
+- **Mirror from remote is now reachable from the Sync status dialog (0.7.31-beta.2)** — the Sync status dialog gains a **Mirror from remote** button next to **Sync now**, so you can start a mirror without opening Settings. It opens the same confirmation (showing how many files will be downloaded and deleted) and does exactly the same thing as the existing Settings → Maintenance button — it is just a second, more convenient entry point. The Settings button is unchanged.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
