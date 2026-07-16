@@ -453,4 +453,14 @@ export const CLAUSES: Clause[] = [
   // same constraint as BRC_DOM/MDV_DOM — so it is DOM-waived to quickstart manual check / the b-2 layer.
   { id: 'SMB-1', source: 'specs/059-sync-status-mirror-button/spec.md (FR-001/003/005 + contracts/sync-status-modal.md: Mirror button on the Sync now row, mod-warning, re-render after settle)', layer: 'a', waiver: 'DOM rendering verified via quickstart manual check (specs/059-sync-status-mirror-button/quickstart.md); the mirror logic it invokes is covered by MIR-1..3 (layer a)' },
   { id: 'SMB-2', source: 'specs/059-sync-status-mirror-button/spec.md (FR-002/004: button delegates to the same runRemoteMirror() as the Settings-tab button — single source of truth, Settings-tab button unchanged)', layer: 'a', waiver: 'host wiring verified via quickstart manual check; single-source-of-truth reuse of runRemoteMirror (covered by MIR-1..3, layer a) — no logic duplicated' },
+  // --- RIB: sync ribbon button (feature 060, GitHub issue #19) ---
+  // A ribbon entry point for manual sync so mobile users get a one-tap sync (Obsidian renders ribbon
+  // icons inside the hamburger menu on mobile). Unlike the SyncStatusModal DOM clauses above, the
+  // wiring is extracted into registerSyncRibbon(host) against a minimal SyncRibbonHost interface, so
+  // it IS exercised for real at layer a (no `document` needed — a plain fake records the args and
+  // counts runSyncNow calls). RIB-3 (Obsidian's own placement of ribbon icons into the mobile
+  // hamburger menu) is not our code, so it stays a quickstart/b-2 manual check.
+  { id: 'RIB-1', source: 'specs/main/spec.md §13 / specs/060-mobile-sync-ribbon/spec.md (FR-001/006: onload registers exactly one ribbon icon; icon refresh-cw, label "Sync with Nextcloud")', layer: 'a' },
+  { id: 'RIB-2', source: 'specs/main/spec.md §13 / specs/060-mobile-sync-ribbon/spec.md (FR-002: ribbon callback invokes the same runSyncNow() as the "Sync now" command — shared entry point, no separate path)', layer: 'a' },
+  { id: 'RIB-3', source: 'specs/main/spec.md §13 / specs/060-mobile-sync-ribbon/spec.md (FR-004: on mobile the ribbon icon appears inside the hamburger menu — Obsidian-controlled placement)', layer: 'b-2', waiver: 'Obsidian-controlled ribbon placement on mobile; verified via quickstart manual check (specs/060-mobile-sync-ribbon/quickstart.md). The registration itself (single addRibbonIcon call, no platform branch) is covered at layer a by RIB-1/RIB-2.' },
 ];
