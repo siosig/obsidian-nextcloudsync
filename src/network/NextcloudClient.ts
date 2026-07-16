@@ -1,4 +1,4 @@
-import { RequestUrlParam, RequestUrlResponse } from 'obsidian';
+import { Platform, RequestUrlParam, RequestUrlResponse } from 'obsidian';
 import { requestUrlWithTimeout } from './requestWithTimeout';
 import {
   NextcloudFeatures,
@@ -59,6 +59,13 @@ export class NextcloudClient implements IWebDAVClient {
    * we don't pay a 415 round-trip on every sync.
    */
   private syncCollectionUnsupported = false;
+  /**
+   * iOS's native request layer re-encodes the whole URL string, so pre-encoding ASCII structural
+   * characters (space, `#`, `?`, `%`, ...) there double-encodes them into a literal `%2520`-style
+   * remote name (see {@link encodeRemoteUrl}). Resolved once here since Android's behavior is
+   * unconfirmed to match iOS (see specs/061-ios-space-encoding-fix/research.md).
+   */
+  private readonly isIosApp = Platform.isIosApp;
 
   constructor(
     private readonly settings: DavSyncSettings,
@@ -85,7 +92,7 @@ export class NextcloudClient implements IWebDAVClient {
 
   /** Converts a Vault-relative path into a WebDAV URL under the base folder. */
   private remoteUrl(rel: string): string {
-    return encodeRemoteUrl(this.baseUrl, toRemotePath(this.remoteBase, rel));
+    return encodeRemoteUrl(this.baseUrl, toRemotePath(this.remoteBase, rel), this.isIosApp);
   }
 
   /**
@@ -266,7 +273,7 @@ export class NextcloudClient implements IWebDAVClient {
     // ensureRemoteDir MKCOLs every segment of the path it is given EXCEPT the last (it assumes a
     // trailing file name), so append a dummy segment to have `path` itself (and its ancestors) created.
     await ensureRemoteDir(
-      { baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs },
+      { baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs, isIosApp: this.isIosApp },
       toRemotePath(this.remoteBase, `${path}/_`),
       this.createdDirs,
     );
@@ -333,7 +340,7 @@ export class NextcloudClient implements IWebDAVClient {
       // entries so ensureRemoteDir actually re-issues the MKCOLs — otherwise a stale positive cache
       // entry makes the retry PUT 404 forever and the local change never reaches the remote (spec 024).
       this.forgetCreatedAncestors(toRemotePath(this.remoteBase, remotePath));
-      await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
+      await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs, isIosApp: this.isIosApp }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
       res = await this.req({ url: this.remoteUrl(remotePath), method: 'PUT', headers, body: data, throw: false });
     }
     if (res.status === 412) throw new PreconditionFailedError(remotePath); // remote changed (If-Match)
@@ -357,7 +364,7 @@ export class NextcloudClient implements IWebDAVClient {
 
   async moveFile(oldPath: string, newPath: string): Promise<void> {
     // Ensure the destination's parent directory exists before MOVE.
-    await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs }, toRemotePath(this.remoteBase, newPath), this.createdDirs);
+    await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs, isIosApp: this.isIosApp }, toRemotePath(this.remoteBase, newPath), this.createdDirs);
     const res = await this.req({
       url: this.remoteUrl(oldPath),
       method: 'MOVE',
@@ -542,7 +549,7 @@ export class NextcloudClient implements IWebDAVClient {
       // Drop any stale "already created" cache entries first so a folder another device deleted is
       // genuinely re-created (spec 024) — otherwise the assembling MOVE would target a missing parent.
       this.forgetCreatedAncestors(toRemotePath(this.remoteBase, remotePath));
-      await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
+      await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs, isIosApp: this.isIosApp }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
       const moveHeaders: Record<string, string> = {
         Authorization: this.authHeader,
         Destination: finalUrl,
