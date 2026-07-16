@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.32-beta.2)
+## What's new in this release (0.7.32)
 
-- **New: sync button in the ribbon (0.7.32-beta.2)** — a "Sync with Nextcloud" ribbon icon now triggers a manual sync in one click. On mobile, Obsidian shows ribbon icons inside the hamburger menu, so you can start a sync without opening the command palette or the plugin settings ([#19](https://github.com/siosig/obsidian-nextcloudsync/issues/19)). It runs the exact same "Sync now" action; the command and the settings button are unchanged.
+- **New: sync button in the ribbon (0.7.32)** — a "Sync with Nextcloud" ribbon icon now triggers a manual sync in one click. On mobile, Obsidian shows ribbon icons inside the hamburger menu, so you can start a sync without opening the command palette or the plugin settings ([#19](https://github.com/siosig/obsidian-nextcloudsync/issues/19)). It runs the exact same "Sync now" action; the command and the settings button are unchanged.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 

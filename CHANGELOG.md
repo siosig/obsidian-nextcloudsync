@@ -11,6 +11,11 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.32] - 2026-07-16
+
+### Added
+- **Sync button in the ribbon** — a "Sync with Nextcloud" ribbon icon now triggers a manual sync in one click. On mobile, Obsidian shows ribbon icons inside the hamburger menu, so you can start a sync without opening the command palette or the plugin settings ([#19](https://github.com/siosig/obsidian-nextcloudsync/issues/19)). It runs the exact same "Sync now" action; the command and the settings button are unchanged.
+
 ## [0.7.31] - 2026-07-14
 
 ### Added
@@ -306,6 +311,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.32]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.32
 [0.7.31]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.31
 [0.7.30]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.30
 [0.7.29]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.29
