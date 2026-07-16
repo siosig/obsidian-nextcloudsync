@@ -9,6 +9,7 @@ import { CompareModal } from './ui/CompareModal';
 import { applyForceResolution, applyBulkForceResolution, FORCE_CHOICES, ForceChoice } from './ui/forceResolution';
 import { confirmModal } from './ui/ConfirmModal';
 import { openMirrorFromRemoteModal } from './ui/MirrorFromRemoteModal';
+import { registerSyncRibbon } from './ui/syncRibbon';
 import { FileLogger } from './util/FileLogger';
 import { isSyncTmpPath, LocalAdapter } from './data/LocalAdapter';
 import type { MergeBaseStore } from './data/MergeBaseStore';
@@ -98,6 +99,11 @@ export default class ObsidianNextcloudsync extends Plugin {
         await this.runSyncNow();
       },
     });
+
+    // Ribbon entry point for the same manual sync (feature 060 / issue #19). On mobile, Obsidian
+    // shows ribbon icons inside the hamburger menu, so this gives a one-tap sync without opening the
+    // command palette. Shares runSyncNow with the command above — no new setting, no platform branch.
+    registerSyncRibbon(this);
 
     this.addCommand({
       id: 'show-version-history',
