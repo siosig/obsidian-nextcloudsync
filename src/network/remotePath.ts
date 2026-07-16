@@ -85,20 +85,25 @@ export function hrefToRelative(baseUrl: string, base: string, href: string): str
  * Build a WebDAV URL from a files-root-relative path.
  *
  * Obsidian's request layer performs the UTF-8 percent-encoding when it sends the request. Encoding
- * non-ASCII characters here as well double-encodes them on some platforms (notably iOS): our
- * `%E4%B8%AD` gets its `%` escaped again to `%25E4...`, so Nextcloud stores the literal string
- * `%E4%B8%AD` as the file/folder name instead of `中`. Leave non-ASCII characters intact so the
- * request layer encodes them exactly once, while still escaping ASCII characters that carry
- * structural meaning in a URL (space, `#`, `?`, `%`, ...). Slashes remain path separators.
+ * characters here as well double-encodes them on some platforms: our `%E4%B8%AD` (or `%20`) gets
+ * its `%` escaped again to `%25E4...` (or `%2520`), so Nextcloud stores the literal percent-encoded
+ * string as the file/folder name instead of the intended character. On iOS the request layer's
+ * re-encoding pass covers every character, not just non-ASCII, so `isIosApp` leaves the entire path
+ * untouched there and lets the request layer encode it exactly once. Elsewhere (desktop, Android —
+ * unconfirmed to share iOS's behavior) only non-ASCII characters are left intact, while ASCII
+ * characters that carry structural meaning in a URL (space, `#`, `?`, `%`, ...) are still escaped
+ * here, matching the request layer's behavior on those platforms. Slashes remain path separators.
  * Iterating by code point keeps surrogate pairs (emoji) intact.
  */
-export function encodeRemoteUrl(baseUrl: string, remotePath: string): string {
+export function encodeRemoteUrl(baseUrl: string, remotePath: string, isIosApp: boolean): string {
   if (!remotePath) return baseUrl;
   const encodedPath = remotePath
     .split('/')
-    .map((segment) => Array.from(segment, (char) =>
-      (char.codePointAt(0) ?? 0) > 0x7f ? char : encodeURIComponent(char),
-    ).join(''))
+    .map((segment) => isIosApp
+      ? segment
+      : Array.from(segment, (char) =>
+          (char.codePointAt(0) ?? 0) > 0x7f ? char : encodeURIComponent(char),
+        ).join(''))
     .join('/');
   return `${baseUrl}/${encodedPath}`;
 }
@@ -109,7 +114,7 @@ export function encodeRemoteUrl(baseUrl: string, remotePath: string): string {
  * Required before upload because WebDAV PUT does not auto-create parent directories.
  */
 export async function ensureRemoteDir(
-  ctx: { baseUrl: string; authHeader: string; timeoutMs?: number },
+  ctx: { baseUrl: string; authHeader: string; timeoutMs?: number; isIosApp: boolean },
   remoteFilePath: string,
   createdCache: Set<string>,
 ): Promise<void> {
@@ -120,7 +125,7 @@ export async function ensureRemoteDir(
     acc = acc ? `${acc}/${seg}` : seg;
     if (createdCache.has(acc)) continue;
     await requestUrlWithTimeout({
-      url: encodeRemoteUrl(ctx.baseUrl, acc),
+      url: encodeRemoteUrl(ctx.baseUrl, acc, ctx.isIosApp),
       method: 'MKCOL',
       headers: { Authorization: ctx.authHeader, ...NO_CACHE_HEADERS },
       throw: false,

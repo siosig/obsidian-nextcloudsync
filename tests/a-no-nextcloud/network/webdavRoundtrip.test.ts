@@ -1,4 +1,4 @@
-import { requestUrl } from 'obsidian';
+import { requestUrl, Platform } from 'obsidian';
 import { NextcloudClient } from '../../../src/network/NextcloudClient';
 import { DEFAULT_SETTINGS, DavSyncSettings, PreconditionFailedError, NetworkError } from '../../../src/types';
 
@@ -79,5 +79,40 @@ describe('NextcloudClient.deleteFile — blind delete (P1-B)', () => {
   it('still throws on a real failure (500)', async () => {
     mockRequestUrl.mockImplementation(() => res(500));
     await expect(new NextcloudClient(settings, 'pw', 'Vault').deleteFile('x.md', 'rid')).rejects.toBeInstanceOf(NetworkError);
+  });
+});
+
+// [SPEC:URL-1] [SPEC:URL-2] [SPEC:URL-3]: feature 061. NextcloudClient resolves
+// Platform.isIosApp once per instance (constructor time), so toggling the mock before
+// `new NextcloudClient(...)` is what actually takes effect. Covers the client-level wiring
+// (URL-3) on top of the pure-function cases in remotePath.test.ts, including the MOVE
+// Destination header (also built via remoteUrl()).
+describe('NextcloudClient — remote URL encoding by platform (feature 061)', () => {
+  const originalIsIosApp = Platform.isIosApp;
+  beforeEach(() => mockRequestUrl.mockReset());
+  afterEach(() => { Platform.isIosApp = originalIsIosApp; });
+
+  it('[US1] on iOS, sends the PUT url with the space left raw (no %20)', async () => {
+    Platform.isIosApp = true;
+    mockRequestUrl.mockImplementation(() => res(201));
+    await new NextcloudClient(settings, 'pw', 'Vault').uploadFile('00 收件箱/未命名.md', new ArrayBuffer(2));
+    const put = calls('PUT')[0];
+    expect(put.url).toBe('https://nc/remote.php/dav/files/alice/Vault/00 收件箱/未命名.md');
+  });
+
+  it('[US1] on iOS, MOVE Destination is also left raw', async () => {
+    Platform.isIosApp = true;
+    mockRequestUrl.mockImplementation(() => res(201));
+    await new NextcloudClient(settings, 'pw', 'Vault').moveFile('a.md', '00 收件箱/未命名.md');
+    const move = calls('MOVE')[0];
+    expect(move.headers?.Destination).toBe('https://nc/remote.php/dav/files/alice/Vault/00 收件箱/未命名.md');
+  });
+
+  it('[US2] on desktop/Android (isIosApp=false), the PUT url still percent-encodes the space unchanged from before feature 061', async () => {
+    Platform.isIosApp = false;
+    mockRequestUrl.mockImplementation(() => res(201));
+    await new NextcloudClient(settings, 'pw', 'Vault').uploadFile('00 收件箱/未命名.md', new ArrayBuffer(2));
+    const put = calls('PUT')[0];
+    expect(put.url).toBe('https://nc/remote.php/dav/files/alice/Vault/00%20收件箱/未命名.md');
   });
 });

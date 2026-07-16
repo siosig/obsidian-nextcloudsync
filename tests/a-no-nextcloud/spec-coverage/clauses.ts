@@ -463,4 +463,15 @@ export const CLAUSES: Clause[] = [
   { id: 'RIB-1', source: 'specs/main/spec.md §13 / specs/060-mobile-sync-ribbon/spec.md (FR-001/006: onload registers exactly one ribbon icon; icon refresh-cw, label "Sync with Nextcloud")', layer: 'a' },
   { id: 'RIB-2', source: 'specs/main/spec.md §13 / specs/060-mobile-sync-ribbon/spec.md (FR-002: ribbon callback invokes the same runSyncNow() as the "Sync now" command — shared entry point, no separate path)', layer: 'a' },
   { id: 'RIB-3', source: 'specs/main/spec.md §13 / specs/060-mobile-sync-ribbon/spec.md (FR-004: on mobile the ribbon icon appears inside the hamburger menu — Obsidian-controlled placement)', layer: 'b-2', waiver: 'Obsidian-controlled ribbon placement on mobile; verified via quickstart manual check (specs/060-mobile-sync-ribbon/quickstart.md). The registration itself (single addRibbonIcon call, no platform branch) is covered at layer a by RIB-1/RIB-2.' },
+  // --- URL: iOS remote-URL double-encoding fix (feature 061, GitHub PR #17) ---
+  // encodeRemoteUrl()'s isIosApp branch: on iOS every character is left raw so the native request
+  // layer's own re-encoding pass (which re-escapes an already-percent-encoded `%` into `%25...`)
+  // only happens once. Desktop/Android keep the pre-061 behaviour unchanged (non-ASCII raw, ASCII
+  // structural characters percent-encoded here). No iOS device automation exists in this repo, so
+  // the final on-device confirmation is deferred to post-release user feedback (spec.md
+  // Clarifications) — these clauses cover what IS mechanically provable: the pure encoding logic
+  // and its wiring into both WebDAV clients.
+  { id: 'URL-1', source: 'specs/main/spec.md §11.1 / specs/061-ios-space-encoding-fix/spec.md (FR-001: on iOS, encodeRemoteUrl leaves every character — space, CJK, #, ?, %, emoji — unencoded)', layer: 'a' },
+  { id: 'URL-2', source: 'specs/main/spec.md §11.1 / specs/061-ios-space-encoding-fix/spec.md (FR-002/FR-005: desktop/Android encoding is byte-for-byte unchanged from before feature 061 — explicit regression check)', layer: 'a' },
+  { id: 'URL-3', source: 'specs/main/spec.md §11.1 / specs/061-ios-space-encoding-fix/spec.md (FR-004: the isIosApp branch is applied consistently across every encodeRemoteUrl/ensureRemoteDir call site in both NextcloudClient and StandardWebDAVClient, including the MOVE Destination header)', layer: 'a' },
 ];
