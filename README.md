@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.32)
+## What's new in this release (0.7.33-beta.1)
 
-- **New: sync button in the ribbon (0.7.32)** — a "Sync with Nextcloud" ribbon icon now triggers a manual sync in one click. On mobile, Obsidian shows ribbon icons inside the hamburger menu, so you can start a sync without opening the command palette or the plugin settings ([#19](https://github.com/siosig/obsidian-nextcloudsync/issues/19)). It runs the exact same "Sync now" action; the command and the settings button are unchanged.
+- **Fix: remote paths with spaces on iOS (0.7.33-beta.1)** — iOS's native request layer re-encodes the whole URL it is handed, so pre-encoding ASCII structural characters (space, `#`, `?`, `%`) here double-encoded them into a literal `%20`-style remote name, splitting a folder like `00 Inbox` into two divergent folders on iOS vs. the server. On iOS the remote path is now left entirely raw so the request layer encodes it exactly once; desktop and Android behavior is unchanged.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
