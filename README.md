@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.31)
+## What's new in this release (0.7.32-beta.2)
 
-- **Mirror from remote is now reachable from the Sync status dialog (0.7.31)** — the Sync status dialog gains a **Mirror from remote** button next to **Sync now**, so you can start a mirror without opening Settings. It opens the same confirmation (showing how many files will be downloaded and deleted) and does exactly the same thing as the existing Settings → Maintenance button — it is just a second, more convenient entry point. The Settings button is unchanged.
+- **New: sync button in the ribbon (0.7.32-beta.2)** — a "Sync with Nextcloud" ribbon icon now triggers a manual sync in one click. On mobile, Obsidian shows ribbon icons inside the hamburger menu, so you can start a sync without opening the command palette or the plugin settings ([#19](https://github.com/siosig/obsidian-nextcloudsync/issues/19)). It runs the exact same "Sync now" action; the command and the settings button are unchanged.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
