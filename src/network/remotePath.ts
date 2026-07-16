@@ -81,10 +81,26 @@ export function hrefToRelative(baseUrl: string, base: string, href: string): str
   return fromRemotePath(base, fromRoot);
 }
 
-/** Build a WebDAV URL from a files-root-relative path (keep slashes, URL-encode each segment). */
+/**
+ * Build a WebDAV URL from a files-root-relative path.
+ *
+ * Obsidian's request layer performs the UTF-8 percent-encoding when it sends the request. Encoding
+ * non-ASCII characters here as well double-encodes them on some platforms (notably iOS): our
+ * `%E4%B8%AD` gets its `%` escaped again to `%25E4...`, so Nextcloud stores the literal string
+ * `%E4%B8%AD` as the file/folder name instead of `中`. Leave non-ASCII characters intact so the
+ * request layer encodes them exactly once, while still escaping ASCII characters that carry
+ * structural meaning in a URL (space, `#`, `?`, `%`, ...). Slashes remain path separators.
+ * Iterating by code point keeps surrogate pairs (emoji) intact.
+ */
 export function encodeRemoteUrl(baseUrl: string, remotePath: string): string {
   if (!remotePath) return baseUrl;
-  return `${baseUrl}/${encodeURIComponent(remotePath).replace(/%2F/g, '/')}`;
+  const encodedPath = remotePath
+    .split('/')
+    .map((segment) => Array.from(segment, (char) =>
+      (char.codePointAt(0) ?? 0) > 0x7f ? char : encodeURIComponent(char),
+    ).join(''))
+    .join('/');
+  return `${baseUrl}/${encodedPath}`;
 }
 
 /**
