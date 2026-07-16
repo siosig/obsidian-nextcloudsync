@@ -3,6 +3,7 @@ import {
   fromRemotePath,
   toRemotePath,
   isSafeVaultRelativePath,
+  encodeRemoteUrl,
 } from '../../../src/network/remotePath';
 
 describe('hrefToRelative', () => {
@@ -78,5 +79,72 @@ describe('fromRemotePath (traversal hardening)', () => {
   });
   it('returns null for traversal when no base is configured', () => {
     expect(fromRemotePath('', '../secret.md')).toBeNull();
+  });
+});
+
+// [SPEC:URL-1] [SPEC:URL-2]: feature 061. iOS's native request layer re-encodes the whole URL
+// string it is handed, so pre-encoding anything here (ASCII or not) gets double-encoded there
+// (e.g. our `%20` becomes the server-side literal `%2520`). isIosApp=true must therefore leave
+// every character raw (URL-1); isIosApp=false must stay byte-for-byte identical to pre-061 (URL-2).
+describe('encodeRemoteUrl', () => {
+  const baseUrl = 'https://example.com/remote.php/dav/files/alice';
+
+  describe('isIosApp: true', () => {
+    it('leaves an ASCII space raw (no %20)', () => {
+      expect(encodeRemoteUrl(baseUrl, '00 收件箱/未命名.md', true))
+        .toBe(`${baseUrl}/00 收件箱/未命名.md`);
+    });
+
+    it('leaves CJK characters raw', () => {
+      expect(encodeRemoteUrl(baseUrl, '中文目录/日记.md', true))
+        .toBe(`${baseUrl}/中文目录/日记.md`);
+    });
+
+    it('leaves URL-structural ASCII characters (#, ?, %) raw', () => {
+      expect(encodeRemoteUrl(baseUrl, 'a#b?c%d.md', true))
+        .toBe(`${baseUrl}/a#b?c%d.md`);
+    });
+
+    it('leaves an emoji (surrogate pair) raw', () => {
+      expect(encodeRemoteUrl(baseUrl, '📁folder/note.md', true))
+        .toBe(`${baseUrl}/📁folder/note.md`);
+    });
+
+    it('still treats "/" as the path separator, not a literal character', () => {
+      expect(encodeRemoteUrl(baseUrl, 'a/b/c.md', true))
+        .toBe(`${baseUrl}/a/b/c.md`);
+    });
+
+    it('returns baseUrl unchanged for an empty path', () => {
+      expect(encodeRemoteUrl(baseUrl, '', true)).toBe(baseUrl);
+    });
+  });
+
+  // isIosApp: false must match the pre-061 behavior exactly (desktop/Android — Android's
+  // native layer is unconfirmed to share iOS's re-encoding behavior, so it keeps this path).
+  describe('isIosApp: false (desktop/Android — unchanged from 0.7.32)', () => {
+    it('percent-encodes an ASCII space', () => {
+      expect(encodeRemoteUrl(baseUrl, 'my note.md', false))
+        .toBe(`${baseUrl}/my%20note.md`);
+    });
+
+    it('leaves CJK characters raw but encodes ASCII structural characters', () => {
+      expect(encodeRemoteUrl(baseUrl, '中文目录/日记 a.md', false))
+        .toBe(`${baseUrl}/中文目录/日记%20a.md`);
+    });
+
+    it('percent-encodes #, ?, % individually', () => {
+      expect(encodeRemoteUrl(baseUrl, 'a#b?c%d.md', false))
+        .toBe(`${baseUrl}/a%23b%3Fc%25d.md`);
+    });
+
+    it('leaves an emoji (surrogate pair) raw', () => {
+      expect(encodeRemoteUrl(baseUrl, '📁folder/note.md', false))
+        .toBe(`${baseUrl}/📁folder/note.md`);
+    });
+
+    it('returns baseUrl unchanged for an empty path', () => {
+      expect(encodeRemoteUrl(baseUrl, '', false)).toBe(baseUrl);
+    });
   });
 });

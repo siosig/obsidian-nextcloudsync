@@ -1,4 +1,4 @@
-import { RequestUrlParam, RequestUrlResponse } from 'obsidian';
+import { Platform, RequestUrlParam, RequestUrlResponse } from 'obsidian';
 import { requestUrlWithTimeout } from './requestWithTimeout';
 import {
   NextcloudFeatures,
@@ -20,6 +20,13 @@ import { NO_CACHE_HEADERS } from './noCacheHeaders';
 export class StandardWebDAVClient implements IWebDAVClient {
   /** Remote directories already created via MKCOL (in-session cache). */
   private readonly createdDirs = new Set<string>();
+  /**
+   * iOS's native request layer re-encodes the whole URL string, so pre-encoding ASCII structural
+   * characters (space, `#`, `?`, `%`, ...) there double-encodes them into a literal `%2520`-style
+   * remote name (see {@link encodeRemoteUrl}). Resolved once here since Android's behavior is
+   * unconfirmed to match iOS (see specs/061-ios-space-encoding-fix/research.md).
+   */
+  private readonly isIosApp = Platform.isIosApp;
 
   constructor(
     private readonly settings: DavSyncSettings,
@@ -34,7 +41,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
 
   /** Converts a Vault-relative path into a WebDAV URL under the base folder. */
   private remoteUrl(rel: string): string {
-    return encodeRemoteUrl(this.baseUrl, toRemotePath(this.remoteBase, rel));
+    return encodeRemoteUrl(this.baseUrl, toRemotePath(this.remoteBase, rel), this.isIosApp);
   }
 
   private get authHeader(): string {
@@ -143,7 +150,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
 
   async createDirectory(path: string): Promise<void> {
     await ensureRemoteDir(
-      { baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs },
+      { baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs, isIosApp: this.isIosApp },
       toRemotePath(this.remoteBase, `${path}/_`),
       this.createdDirs,
     );
@@ -183,7 +190,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
     // Standard WebDAV returns 409; Nextcloud's files DAV returns 404 for a missing parent — handle both.
     let res = await this.req({ url: this.remoteUrl(remotePath), method: 'PUT', headers, body: data, throw: false });
     if (res.status === 409 || res.status === 404) {
-      await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
+      await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs, isIosApp: this.isIosApp }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
       res = await this.req({ url: this.remoteUrl(remotePath), method: 'PUT', headers, body: data, throw: false });
     }
     if (res.status === 412) throw new PreconditionFailedError(remotePath);
@@ -191,7 +198,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
   }
 
   async moveFile(oldPath: string, newPath: string): Promise<void> {
-    await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs }, toRemotePath(this.remoteBase, newPath), this.createdDirs);
+    await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs, isIosApp: this.isIosApp }, toRemotePath(this.remoteBase, newPath), this.createdDirs);
     const res = await this.req({ url: this.remoteUrl(oldPath), method: 'MOVE', headers: { Authorization: this.authHeader, Destination: this.remoteUrl(newPath), Overwrite: 'F', ...NO_CACHE_HEADERS }, throw: false });
     if (res.status === 412) throw new ConflictError(newPath);
     if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
