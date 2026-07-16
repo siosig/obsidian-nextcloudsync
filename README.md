@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.32-beta.1)
+## What's new in this release (0.7.32-beta.2)
 
-- **Fix: non-ASCII file and folder names could be uploaded percent-encoded on iOS (0.7.32-beta.1)** — a note or folder with Chinese, Japanese, emoji, or other non-ASCII characters in its name could be created on Nextcloud with its percent-encoded form as the literal name (e.g. `%E4%B8%AD%E6%96%87` instead of `中文`). The URL builder no longer pre-encodes non-ASCII characters, so the request layer encodes them exactly once. Desktop was unaffected; this targets the iOS behavior.
+- **New: sync button in the ribbon (0.7.32-beta.2)** — a "Sync with Nextcloud" ribbon icon now triggers a manual sync in one click. On mobile, Obsidian shows ribbon icons inside the hamburger menu, so you can start a sync without opening the command palette or the plugin settings ([#19](https://github.com/siosig/obsidian-nextcloudsync/issues/19)). It runs the exact same "Sync now" action; the command and the settings button are unchanged.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
