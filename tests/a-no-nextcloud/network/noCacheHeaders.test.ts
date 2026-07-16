@@ -1,4 +1,4 @@
-import { requestUrl } from 'obsidian';
+import { requestUrl, Platform } from 'obsidian';
 import { NO_CACHE_HEADERS } from '../../../src/network/noCacheHeaders';
 import { NextcloudClient } from '../../../src/network/NextcloudClient';
 import { StandardWebDAVClient } from '../../../src/network/StandardWebDAVClient';
@@ -316,5 +316,32 @@ describe('T009: StandardWebDAVClient remaining methods send NO_CACHE_HEADERS', (
     mockRequestUrl.mockReturnValueOnce(res(200));
     await makeClient().remoteExists('Notes/a.md');
     expectAllCallsNoCache();
+  });
+});
+
+// [SPEC:URL-1] [SPEC:URL-2] [SPEC:URL-3]: feature 061. StandardWebDAVClient resolves
+// Platform.isIosApp once per instance (constructor time), so toggling the mock before
+// `new StandardWebDAVClient(...)` is what actually takes effect.
+describe('StandardWebDAVClient — remote URL encoding by platform (feature 061)', () => {
+  const originalIsIosApp = Platform.isIosApp;
+  beforeEach(() => mockRequestUrl.mockReset());
+  afterEach(() => { Platform.isIosApp = originalIsIosApp; });
+
+  it('[US1] on iOS, sends the PUT url with the space left raw (no %20)', async () => {
+    Platform.isIosApp = true;
+    mockRequestUrl.mockReturnValue(res(201));
+    const client = new StandardWebDAVClient(settings, 'pw', 'Vault');
+    await client.uploadFile('00 收件箱/未命名.md', new ArrayBuffer(2), 1000);
+    const put = mockRequestUrl.mock.calls.map((c) => c[0]).find((r) => r.method === 'PUT');
+    expect(put?.url).toBe('https://nc/remote.php/dav/files/alice/Vault/00 收件箱/未命名.md');
+  });
+
+  it('[US2] on desktop/Android (isIosApp=false), the PUT url still percent-encodes the space unchanged from before feature 061', async () => {
+    Platform.isIosApp = false;
+    mockRequestUrl.mockReturnValue(res(201));
+    const client = new StandardWebDAVClient(settings, 'pw', 'Vault');
+    await client.uploadFile('00 收件箱/未命名.md', new ArrayBuffer(2), 1000);
+    const put = mockRequestUrl.mock.calls.map((c) => c[0]).find((r) => r.method === 'PUT');
+    expect(put?.url).toBe('https://nc/remote.php/dav/files/alice/Vault/00%20收件箱/未命名.md');
   });
 });
