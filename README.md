@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.33-beta.1)
+## What's new in this release (0.7.33-beta.2)
 
-- **Fix: remote paths with spaces on iOS (0.7.33-beta.1)** — iOS's native request layer re-encodes the whole URL it is handed, so pre-encoding ASCII structural characters (space, `#`, `?`, `%`) here double-encoded them into a literal `%20`-style remote name, splitting a folder like `00 Inbox` into two divergent folders on iOS vs. the server. On iOS the remote path is now left entirely raw so the request layer encodes it exactly once; desktop and Android behavior is unchanged.
+- **Internal: lint gate resynced with the Obsidian reviewer (0.7.33-beta.2)** — bumped `eslint-plugin-obsidianmd` to the version the Obsidian community-directory reviewer uses, fixed the resulting `createEl`-shortcut warnings, and moved a test-only dependency out of production dependencies. No user-visible behavior, settings, or sync logic changed.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
