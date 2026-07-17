@@ -111,7 +111,7 @@ class MirrorFromRemoteModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
     this.heading();
-    const info = contentEl.createEl('div', { cls: 'setting-item-description' });
+    const info = contentEl.createDiv({ cls: 'setting-item-description' });
     info.createEl('p', { text: 'This will make this device exactly match the remote:' });
     const ul = info.createEl('ul');
     ul.createEl('li', { text: `Download: ${plan.downloads.length} file(s)` });
