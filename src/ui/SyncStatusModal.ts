@@ -243,27 +243,27 @@ export class SyncStatusModal extends Modal {
     }
 
     const now = Date.now();
-    const list = contentEl.createEl('div', { cls: 'ncs-status-list ncs-history-list' });
+    const list = contentEl.createDiv({ cls: 'ncs-status-list ncs-history-list' });
     // Group the (already-filtered) entries by the sync run that produced them, newest run first, and
     // head each group with a separator showing that run's start time in 24-hour absolute format, so a
     // user can tell which sync execution every line belongs to.
     for (const group of groupByRun(history)) {
-      list.createEl('div', {
+      list.createDiv({
         cls: 'ncs-history-run-sep',
         text: `— sync ${formatClock24(group.runStartedAt, now)} —`,
       });
       for (const e of group.entries) {
         const op = OP_LABEL[e.op];
-        const row = list.createEl('div', { cls: 'ncs-status-row' });
+        const row = list.createDiv({ cls: 'ncs-status-row' });
         // One compact line per entry: a leading status icon (hover shows the word) conveys the
         // outcome, then the path, then the entry's own 24-hour time.
-        const line = row.createEl('div', { cls: 'ncs-history-line' });
+        const line = row.createDiv({ cls: 'ncs-history-line' });
         line.createSpan({ cls: 'ncs-history-icon', text: op.icon, attr: { 'aria-label': op.text, title: op.text } });
         line.createSpan({ cls: 'ncs-history-path', text: e.path });
         line.createSpan({ cls: 'ncs-history-time', text: formatClock24(e.at, now) });
         // Errors keep their reason on a second, muted line; the icon already encodes the status.
         if (e.op === 'error' && e.message) {
-          row.createEl('div', { text: e.message, cls: 'setting-item-description ncs-history-errmsg' });
+          row.createDiv({ text: e.message, cls: 'setting-item-description ncs-history-errmsg' });
         }
         // Deleted files no longer exist locally — don't make them clickable (would recreate the note).
         if (e.op === 'deleted') {
@@ -300,18 +300,18 @@ export class SyncStatusModal extends Modal {
       cls: 'setting-item-description',
     });
 
-    const list = contentEl.createEl('div', { cls: 'ncs-status-list' });
+    const list = contentEl.createDiv({ cls: 'ncs-status-list' });
     for (const e of errors) {
-      const row = list.createEl('div', { cls: 'ncs-status-row' });
-      row.createEl('div', { text: e.path || '(entire sync session)' });
-      row.createEl('div', { text: e.message, cls: 'setting-item-description' });
+      const row = list.createDiv({ cls: 'ncs-status-row' });
+      row.createDiv({ text: e.path || '(entire sync session)' });
+      row.createDiv({ text: e.message, cls: 'setting-item-description' });
 
       if (e.dirBreakerSkipped) {
         // Feature 056: pseudo-label rows for the dir breaker never open e.path itself (that used to
         // create an empty note literally named "(dir mass-delete breaker)" — a bug). Instead they
         // (re)write and open a full report note listing every skipped directory.
         const skipped = e.dirBreakerSkipped;
-        row.createEl('div', {
+        row.createDiv({
           text: 'Click to open a report note listing every skipped directory.',
           cls: 'setting-item-description',
         });
@@ -323,7 +323,7 @@ export class SyncStatusModal extends Modal {
         // Same pseudo-label rework for the file (absence-deletion) breaker; report-note-only, no
         // bulk-resolve action for this side (feature 056 scope: dir-only).
         const all = e.skippedPaths.all;
-        row.createEl('div', {
+        row.createDiv({
           text: 'Click to open a report note listing every skipped file.',
           cls: 'setting-item-description',
         });
@@ -349,7 +349,7 @@ export class SyncStatusModal extends Modal {
     skipped: { deleteRemote: string[]; trashLocal: string[] },
   ): void {
     const total = skipped.deleteRemote.length + skipped.trashLocal.length;
-    const bulkRow = list.createEl('div', { cls: 'setting-item ncs-bulk-conflict-row' });
+    const bulkRow = list.createDiv({ cls: 'setting-item ncs-bulk-conflict-row' });
     bulkRow.addEventListener('click', (evt) => evt.stopPropagation()); // don't trigger the error row's own click
     const info = bulkRow.createDiv({ cls: 'setting-item-info' });
     info.createDiv({ cls: 'setting-item-name', text: `Resolve all ${total} skipped directories` });
@@ -418,10 +418,10 @@ export class SyncStatusModal extends Modal {
       });
     }
 
-    const list = contentEl.createEl('div', { cls: 'ncs-status-list' });
+    const list = contentEl.createDiv({ cls: 'ncs-status-list' });
     for (const path of files) {
-      const row = list.createEl('div', { cls: 'ncs-status-row ncs-conflict-row' });
-      const nameEl = row.createEl('span', { text: path, cls: 'ncs-conflict-path' });
+      const row = list.createDiv({ cls: 'ncs-status-row ncs-conflict-row' });
+      const nameEl = row.createSpan({ text: path, cls: 'ncs-conflict-path' });
       nameEl.addEventListener('click', () => {
         void this.app.workspace.openLinkText(path, '', false);
         this.close();
@@ -430,7 +430,7 @@ export class SyncStatusModal extends Modal {
 
       // Per-file force resolution: a dropdown of the four actions + an Apply button. Executes now and
       // re-renders; a resolved file drops out of the list because its conflicted flag is cleared.
-      const controls = row.createEl('div', { cls: 'ncs-conflict-controls' });
+      const controls = row.createDiv({ cls: 'ncs-conflict-controls' });
       const select = controls.createEl('select', { cls: 'dropdown ncs-conflict-select' });
       for (const c of FORCE_CHOICES) select.createEl('option', { text: c.label, value: c.id });
       const applyBtn = controls.createEl('button', { text: 'Apply', cls: 'ncs-conflict-apply' });
@@ -457,9 +457,9 @@ export class SyncStatusModal extends Modal {
     new Setting(contentEl).setName(`${title} (${files.length})`).setHeading();
     contentEl.createEl('p', { text: desc, cls: 'setting-item-description' });
 
-    const list = contentEl.createEl('div', { cls: 'ncs-status-list' });
+    const list = contentEl.createDiv({ cls: 'ncs-status-list' });
     for (const path of files) {
-      const row = list.createEl('div', { text: path, cls: 'ncs-status-row' });
+      const row = list.createDiv({ text: path, cls: 'ncs-status-row' });
       row.addEventListener('click', () => {
         void this.app.workspace.openLinkText(path, '', false);
         this.close();

@@ -474,4 +474,15 @@ export const CLAUSES: Clause[] = [
   { id: 'URL-1', source: 'specs/main/spec.md §11.1 / specs/061-ios-space-encoding-fix/spec.md (FR-001: on iOS, encodeRemoteUrl leaves every character — space, CJK, #, ?, %, emoji — unencoded)', layer: 'a' },
   { id: 'URL-2', source: 'specs/main/spec.md §11.1 / specs/061-ios-space-encoding-fix/spec.md (FR-002/FR-005: desktop/Android encoding is byte-for-byte unchanged from before feature 061 — explicit regression check)', layer: 'a' },
   { id: 'URL-3', source: 'specs/main/spec.md §11.1 / specs/061-ios-space-encoding-fix/spec.md (FR-004: the isIosApp branch is applied consistently across every encodeRemoteUrl/ensureRemoteDir call site in both NextcloudClient and StandardWebDAVClient, including the MOVE Destination header)', layer: 'a' },
+  // --- SWC: Source-code Warning Cleanup — lint gate resync with the reviewer (feature 062) ---
+  // C1 (lint gate follows the reviewer-equivalent plugin version, `pnpm lint` exits 0) is a
+  // whole-gate outcome that isn't itself a unit-testable value; it's covered by the SWC-1/SWC-3
+  // static checks plus the quickstart.md manual `pnpm lint` run (0 errors/0 warnings). C5
+  // (end-user-visible behaviour unchanged) is a regression meta-clause, guaranteed by the existing
+  // a-suite corpus staying green under this change, not by a dedicated new test.
+  { id: 'SWC-1', source: 'specs/062-source-warning-cleanup/contracts/lint-gate-contract.md (C1: eslint-plugin-obsidianmd pinned to reviewer-equivalent ^0.4.1)', layer: 'a' },
+  { id: 'SWC-2', source: 'specs/062-source-warning-cleanup/contracts/lint-gate-contract.md (C2: no createEl(\'div\'/\'span\') call sites remain in src/**, prefer-create-el promoted to error)', layer: 'a' },
+  { id: 'SWC-3', source: 'specs/062-source-warning-cleanup/contracts/lint-gate-contract.md (C2/C3: eslint.config.mjs pins prefer-create-el=error and prefer-setting-definitions=off with the spec-062 deferral reason)', layer: 'a' },
+  { id: 'SWC-4', source: 'specs/062-source-warning-cleanup/contracts/lint-gate-contract.md (C4: js-yaml is a devDependency only, not a production dependency)', layer: 'a' },
+  { id: 'SWC-5', source: 'specs/062-source-warning-cleanup/contracts/lint-gate-contract.md (C5: end-user-visible settings/UI/sync behaviour is unchanged)', layer: 'a', waiver: 'regression meta-clause; guaranteed by the pre-existing settings/UI/sync test corpus staying green under this change, not by a dedicated new test' },
 ];
