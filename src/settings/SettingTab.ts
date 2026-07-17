@@ -43,7 +43,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     // Nextcloud version. This no longer blocks syncing — it only advises an upgrade.
     const serverVersion = this.plugin.settings.lastKnownServerVersion;
     if (serverVersion && !isSupportedNextcloudVersion(serverVersion)) {
-      containerEl.createEl('div', {
+      containerEl.createDiv({
         text: `⚠️ Connected Nextcloud server is ${serverVersion}. Nextcloud ${MIN_NEXTCLOUD_VERSION} (Hub 26 "Winter") or later is recommended; some features may be unavailable or degrade on older servers.`,
         cls: 'ncs-setting-warning',
       });
@@ -79,7 +79,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
       authWarningEl.addClass('ncs-auth-warning');
       authWarningEl.createSpan({ text: '⚠️ ' });
       authWarningEl.createEl('strong', { text: 'Not signed in yet' });
-      authWarningEl.createEl('div', {
+      authWarningEl.createDiv({
         text: 'Enter the server URL below, then log in (or fill in a username and app password). Syncing stays disabled until you do.',
       });
     };
@@ -480,7 +480,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
     // Feature 049: options that can cause data loss. Gated behind a visible warning banner.
     new Setting(containerEl).setName('Advanced (use with caution)').setHeading();
 
-    const advWarn = containerEl.createEl('div', { cls: 'ncs-setting-warning' });
+    const advWarn = containerEl.createDiv({ cls: 'ncs-setting-warning' });
     advWarn.createSpan({ text: '⚠️ ' });
     advWarn.createEl('strong', { text: 'Caution: these options can cause data loss.' });
     advWarn.createSpan({ text: ' Change them only if you understand the risk.' });
