@@ -31,9 +31,11 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.33-beta.3)
+## What's new in this release (0.7.33)
 
-- **Sync status: less redundant "Recent activity" list (0.7.33-beta.3)** — the per-run separator (`— sync HH:MM —`) is now only shown when a run synced more than one file. A single-file run no longer repeats the same timestamp on both the separator and the row below it; each such file now renders as a single, clean line.
+- **Fix: avoid double-encoding remote URLs on iOS (0.7.33)** — the iOS WebDAV client was percent-encoding paths that `requestUrl` already encodes internally, corrupting URLs containing spaces or other special characters. Encoding is now skipped on iOS while remaining unchanged on desktop and Android.
+- **Sync status: less redundant "Recent activity" list (0.7.33)** — the per-run separator (`— sync HH:MM —`) is now only shown when a run synced more than one file. A single-file run no longer repeats the same timestamp on both the separator and the row below it; each such file now renders as a single, clean line.
+- **Internal: lint gate resynced with the Obsidian reviewer (0.7.33)** — bumped `eslint-plugin-obsidianmd` to the version the Obsidian community-directory reviewer uses and fixed the resulting `createEl`-shortcut warnings. No user-visible behavior change.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
