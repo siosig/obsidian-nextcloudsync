@@ -245,13 +245,16 @@ export class SyncStatusModal extends Modal {
     const now = Date.now();
     const list = contentEl.createDiv({ cls: 'ncs-status-list ncs-history-list' });
     // Group the (already-filtered) entries by the sync run that produced them, newest run first, and
-    // head each group with a separator showing that run's start time in 24-hour absolute format, so a
-    // user can tell which sync execution every line belongs to.
+    // head each MULTI-entry group with a separator showing that run's start time in 24-hour absolute
+    // format, so a user can tell which files were synced together. A single-entry group already shows
+    // its own time on the row below, so the separator would just repeat it — skip it in that case.
     for (const group of groupByRun(history)) {
-      list.createDiv({
-        cls: 'ncs-history-run-sep',
-        text: `— sync ${formatClock24(group.runStartedAt, now)} —`,
-      });
+      if (group.entries.length > 1) {
+        list.createDiv({
+          cls: 'ncs-history-run-sep',
+          text: `— sync ${formatClock24(group.runStartedAt, now)} —`,
+        });
+      }
       for (const e of group.entries) {
         const op = OP_LABEL[e.op];
         const row = list.createDiv({ cls: 'ncs-status-row' });
