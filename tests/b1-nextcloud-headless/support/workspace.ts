@@ -26,7 +26,7 @@ export async function setupWorkspace(
   const client = makeClient(env, ws.remoteBase, overrides);
   await client.connect();
   await ensureRemoteDir(
-    { baseUrl: baseUrlOf(env), authHeader: authHeaderOf(env) },
+    { baseUrl: baseUrlOf(env), authHeader: authHeaderOf(env), isIosApp: false },
     `${ws.remoteBase}/_init.md`,
     new Set(),
   );
@@ -44,7 +44,7 @@ export async function ensureParentDirs(
   relPath: string,
 ): Promise<void> {
   await ensureRemoteDir(
-    { baseUrl: baseUrlOf(env), authHeader: authHeaderOf(env) },
+    { baseUrl: baseUrlOf(env), authHeader: authHeaderOf(env), isIosApp: false },
     `${ws.remoteBase}/${relPath}`,
     new Set(),
   );
