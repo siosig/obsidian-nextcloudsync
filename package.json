@@ -1,6 +1,6 @@
 {
   "name": "obsidian-nextcloudsync",
-  "version": "0.7.32",
+  "version": "0.7.33-beta.3",
   "description": "Bidirectional sync between Obsidian and Nextcloud",
   "main": "main.js",
   "packageManager": "pnpm@11.4.0",
@@ -40,8 +40,9 @@
     "@xmldom/xmldom": "^0.9.10",
     "esbuild": "0.28.1",
     "eslint": "^10.5.0",
-    "eslint-plugin-obsidianmd": "^0.3.0",
+    "eslint-plugin-obsidianmd": "^0.4.1",
     "jest": "^30.4.2",
+    "js-yaml": "^5.2.0",
     "mocha": "^11.7.6",
     "obsidian": "^1.13.1",
     "secretlint": "^13.0.2",
@@ -52,7 +53,6 @@
     "wdio-obsidian-service": "^3.1.1"
   },
   "dependencies": {
-    "js-yaml": "^5.2.0",
     "node-diff3": "^3.2.1",
     "reconcile-text": "^0.12.1"
   }

@@ -463,4 +463,26 @@ export const CLAUSES: Clause[] = [
   { id: 'RIB-1', source: 'specs/main/spec.md §13 / specs/060-mobile-sync-ribbon/spec.md (FR-001/006: onload registers exactly one ribbon icon; icon refresh-cw, label "Sync with Nextcloud")', layer: 'a' },
   { id: 'RIB-2', source: 'specs/main/spec.md §13 / specs/060-mobile-sync-ribbon/spec.md (FR-002: ribbon callback invokes the same runSyncNow() as the "Sync now" command — shared entry point, no separate path)', layer: 'a' },
   { id: 'RIB-3', source: 'specs/main/spec.md §13 / specs/060-mobile-sync-ribbon/spec.md (FR-004: on mobile the ribbon icon appears inside the hamburger menu — Obsidian-controlled placement)', layer: 'b-2', waiver: 'Obsidian-controlled ribbon placement on mobile; verified via quickstart manual check (specs/060-mobile-sync-ribbon/quickstart.md). The registration itself (single addRibbonIcon call, no platform branch) is covered at layer a by RIB-1/RIB-2.' },
+  // --- URL: iOS remote-URL double-encoding fix (feature 061, GitHub PR #17) ---
+  // encodeRemoteUrl()'s isIosApp branch: on iOS every character is left raw so the native request
+  // layer's own re-encoding pass (which re-escapes an already-percent-encoded `%` into `%25...`)
+  // only happens once. Desktop/Android keep the pre-061 behaviour unchanged (non-ASCII raw, ASCII
+  // structural characters percent-encoded here). No iOS device automation exists in this repo, so
+  // the final on-device confirmation is deferred to post-release user feedback (spec.md
+  // Clarifications) — these clauses cover what IS mechanically provable: the pure encoding logic
+  // and its wiring into both WebDAV clients.
+  { id: 'URL-1', source: 'specs/main/spec.md §11.1 / specs/061-ios-space-encoding-fix/spec.md (FR-001: on iOS, encodeRemoteUrl leaves every character — space, CJK, #, ?, %, emoji — unencoded)', layer: 'a' },
+  { id: 'URL-2', source: 'specs/main/spec.md §11.1 / specs/061-ios-space-encoding-fix/spec.md (FR-002/FR-005: desktop/Android encoding is byte-for-byte unchanged from before feature 061 — explicit regression check)', layer: 'a' },
+  { id: 'URL-3', source: 'specs/main/spec.md §11.1 / specs/061-ios-space-encoding-fix/spec.md (FR-004: the isIosApp branch is applied consistently across every encodeRemoteUrl/ensureRemoteDir call site in both NextcloudClient and StandardWebDAVClient, including the MOVE Destination header)', layer: 'a' },
+  // --- SWC: Source-code Warning Cleanup — lint gate resync with the reviewer (feature 062) ---
+  // C1 (lint gate follows the reviewer-equivalent plugin version, `pnpm lint` exits 0) is a
+  // whole-gate outcome that isn't itself a unit-testable value; it's covered by the SWC-1/SWC-3
+  // static checks plus the quickstart.md manual `pnpm lint` run (0 errors/0 warnings). C5
+  // (end-user-visible behaviour unchanged) is a regression meta-clause, guaranteed by the existing
+  // a-suite corpus staying green under this change, not by a dedicated new test.
+  { id: 'SWC-1', source: 'specs/062-source-warning-cleanup/contracts/lint-gate-contract.md (C1: eslint-plugin-obsidianmd pinned to reviewer-equivalent ^0.4.1)', layer: 'a' },
+  { id: 'SWC-2', source: 'specs/062-source-warning-cleanup/contracts/lint-gate-contract.md (C2: no createEl(\'div\'/\'span\') call sites remain in src/**, prefer-create-el promoted to error)', layer: 'a' },
+  { id: 'SWC-3', source: 'specs/062-source-warning-cleanup/contracts/lint-gate-contract.md (C2/C3: eslint.config.mjs pins prefer-create-el=error and prefer-setting-definitions=off with the spec-062 deferral reason)', layer: 'a' },
+  { id: 'SWC-4', source: 'specs/062-source-warning-cleanup/contracts/lint-gate-contract.md (C4: js-yaml is a devDependency only, not a production dependency)', layer: 'a' },
+  { id: 'SWC-5', source: 'specs/062-source-warning-cleanup/contracts/lint-gate-contract.md (C5: end-user-visible settings/UI/sync behaviour is unchanged)', layer: 'a', waiver: 'regression meta-clause; guaranteed by the pre-existing settings/UI/sync test corpus staying green under this change, not by a dedicated new test' },
 ];
