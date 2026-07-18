@@ -27,6 +27,18 @@ export default defineConfig([
       // Pinned explicitly rather than relying on obsidianmd/recommended's inherited
       // typescript-eslint config, so a future plugin upgrade can't silently relax these.
       "@typescript-eslint/no-explicit-any": "error",
+      // obsidianmd/recommended ships this as "warn", so a bare createEl('div'/'span', …)
+      // would pass pre-push silently. Promoted to "error" here (spec 062) so the local
+      // lint gate stays in sync with the Obsidian community-directory reviewer, which
+      // runs the same plugin and would otherwise be the only place this gets flagged.
+      "obsidianmd/prefer-create-el": "error",
+      // Deferred (spec 062, "明示的に対象外（Deferred）"): adopting the declarative
+      // settings API (getSettingDefinitions()) would force dual-defining every setting
+      // as declarative metadata, conflicting with this project's single-source-of-truth
+      // design principle (CLAUDE.md), while the settings surface is actively shrinking
+      // (specs 028/032/033), not growing. Off rather than left at "warn" so it doesn't
+      // become permanent lint noise; the reviewer dashboard still surfaces it independently.
+      "obsidianmd/settings-tab/prefer-setting-definitions": "off",
       // console.log is banned (debug-only per typescript.md); warn/error are allowed —
       // they are this codebase's only always-on error surface. FileLogger is opt-in
       // (no-ops unless the user enables debug logging), so routing these through it
