@@ -11,6 +11,15 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.33] - 2026-07-18
+
+### Fixed
+- Avoid double-encoding remote URLs on iOS — the iOS WebDAV client was percent-encoding paths that `requestUrl` already encodes internally, corrupting URLs containing spaces or other special characters. Encoding is now skipped on iOS while remaining unchanged on desktop and Android.
+- Sync status: less redundant "Recent activity" list — the per-run separator (`— sync HH:MM —`) is now only shown when a run synced more than one file. A single-file run no longer repeats the same timestamp on both the separator and the row below it.
+
+### Changed
+- Internal: lint gate resynced with the Obsidian reviewer — bumped `eslint-plugin-obsidianmd` to the version the Obsidian community-directory reviewer uses and fixed the resulting `createEl`-shortcut warnings. No user-visible behavior change.
+
 ## [0.7.32] - 2026-07-16
 
 ### Added
@@ -311,6 +320,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.33]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.33
 [0.7.32]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.32
 [0.7.31]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.31
 [0.7.30]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.30
