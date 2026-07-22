@@ -7,7 +7,8 @@ allowBuilds:
   unrs-resolver: false
 
 # Force patched versions of vulnerable TRANSITIVE dev/test-only deps (not bundled into the plugin;
-# both only execute under tooling we do not run in CI: mocha=wdio b2, js-yaml=istanbul/secretlint coverage).
+# all only execute under tooling we do not run in CI: mocha=wdio b2, js-yaml=istanbul/secretlint coverage,
+# brace-expansion=minimatch glob matching in eslint/jest/wdio/mocha).
 # Range-scoped where only some versions are vulnerable; unconditional where the whole line is safe to pin.
 # (pnpm v11 reads overrides here, not in package.json.)
 overrides:
@@ -16,3 +17,9 @@ overrides:
   # whole tree to the latest patched line and close both the <4.2.0 (GHSA quadratic DoS, <=4.1.1) and the
   # 5.0.0-5.2.0 (GHSA-724g-mxrg-4qvm quadratic DoS via !!omap) holes at once, via istanbul/secretlint/mocha.
   js-yaml: '>=5.2.1'
+  # GHSA-3jxr-9vmj-r5cp exponential-time DoS. Three independently-vulnerable major lines coexist
+  # (minimatch 3.x pulls brace-expansion 1.x, minimatch 5/8/9.x pulls 2.x, minimatch 10.x pulls 5.x),
+  # each pinned to its own patched floor so no consumer is bumped across an incompatible major version.
+  brace-expansion@1.1.15: '>=1.1.16 <2.0.0'  # via eslint-plugin-* / jest coverage / wdio (minimatch 3.x)
+  brace-expansion@2.1.1: '>=2.1.2 <3.0.0'    # via wdio / eslint-plugin-obsidianmd (minimatch 5/8/9.x)
+  brace-expansion@5.0.6: '>=5.0.7'           # via eslint 10 / typescript-eslint (minimatch 10.x)
