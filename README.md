@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.34-beta.1)
+## What's new in this release (0.7.34)
 
-- **Internal: patched two dev-tooling security advisories (0.7.34-beta.1)** — bumped `js-yaml` to 5.2.1 (GHSA-724g-mxrg-4qvm, quadratic-complexity DoS) and pinned transitive `brace-expansion` copies to their patched versions (GHSA-3jxr-9vmj-r5cp, exponential-time DoS). Both are development-only dependencies used by the test/lint tooling, not bundled into the plugin; no user-visible behavior change.
+- **Internal: patched two dev-tooling security advisories (0.7.34)** — bumped `js-yaml` to 5.2.1 (GHSA-724g-mxrg-4qvm, quadratic-complexity DoS) and pinned transitive `brace-expansion` copies to their patched versions (GHSA-3jxr-9vmj-r5cp, exponential-time DoS). Both are development-only dependencies used by the test/lint tooling, not bundled into the plugin; no user-visible behavior change.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 

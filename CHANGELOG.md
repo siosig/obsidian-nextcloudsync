@@ -11,6 +11,13 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.34] - 2026-07-22
+
+### Security
+- Bumped `js-yaml` to 5.2.1, fixing [GHSA-724g-mxrg-4qvm](https://github.com/nodeca/js-yaml/security/advisories/GHSA-724g-mxrg-4qvm) (quadratic-complexity DoS via `!!omap`).
+- Pinned transitive `brace-expansion` copies (pulled in by three different `minimatch` major lines) to their patched versions, fixing [GHSA-3jxr-9vmj-r5cp](https://github.com/juliangruber/brace-expansion/security/advisories/GHSA-3jxr-9vmj-r5cp) (exponential-time DoS).
+- Both are development-only dependencies used by the test/lint tooling, not bundled into the plugin; no user-visible behavior change.
+
 ## [0.7.33] - 2026-07-18
 
 ### Fixed
@@ -320,6 +327,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.34]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.34
 [0.7.33]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.33
 [0.7.32]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.32
 [0.7.31]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.31
