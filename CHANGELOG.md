@@ -11,6 +11,12 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.35] - 2026-07-27
+
+### Fixed
+- **A note that exists on two devices is no longer silently overwritten** — when a file existed both locally and on the server but the plugin had no synced record of it (for example the same note was created independently on two devices), the sync treated it as a remote-only change and downloaded straight over the local file, losing the local edit without reporting a conflict. Such files are now resolved as a real conflict — Markdown is merged, so both sides survive — exactly like the first-ever sync already did. If both copies are byte-identical the plugin just records them as in sync, with no transfer at all ([#23](https://github.com/siosig/obsidian-nextcloudsync/issues/23)).
+- **A merge whose upload failed is no longer stranded** — if the network dropped while pushing a merged file, the next sync could read the file as already converged and never retry, so the merged result stayed on that device and never reached the others. The retry now happens on the next sync.
+
 ## [0.7.34] - 2026-07-22
 
 ### Security
@@ -327,6 +333,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.35]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.35
 [0.7.34]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.34
 [0.7.33]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.33
 [0.7.32]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.32
