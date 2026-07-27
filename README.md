@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.36-beta.1)
+## What's new in this release (0.7.36)
 
-- **Internal: patched four dev-tooling security advisories (0.7.36-beta.1)** — bumped `js-yaml` to 5.2.2 (GHSA-pm4m-ph32-ghv5) and pinned the transitive `fast-uri` (GHSA-4c8g-83qw-93j6, GHSA-v2hh-gcrm-f6hx), `fast-xml-parser` (GHSA-8r6m-32jq-jx6q) and `tar` (GHSA-w8wr-v893-vjvp) copies to their patched versions. All four are development-only dependencies used by the test and lint tooling, not bundled into the plugin; no user-visible behavior change.
+- **Internal: patched four dev-tooling security advisories (0.7.36)** — bumped `js-yaml` to 5.2.2 (GHSA-pm4m-ph32-ghv5) and pinned the transitive `fast-uri` (GHSA-4c8g-83qw-93j6, GHSA-v2hh-gcrm-f6hx), `fast-xml-parser` (GHSA-8r6m-32jq-jx6q) and `tar` (GHSA-w8wr-v893-vjvp) copies to their patched versions. All four are development-only dependencies used by the test and lint tooling, not bundled into the plugin; no user-visible behavior change.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
