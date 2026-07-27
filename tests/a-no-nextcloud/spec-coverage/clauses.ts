@@ -485,4 +485,19 @@ export const CLAUSES: Clause[] = [
   { id: 'SWC-3', source: 'specs/062-source-warning-cleanup/contracts/lint-gate-contract.md (C2/C3: eslint.config.mjs pins prefer-create-el=error and prefer-setting-definitions=off with the spec-062 deferral reason)', layer: 'a' },
   { id: 'SWC-4', source: 'specs/062-source-warning-cleanup/contracts/lint-gate-contract.md (C4: js-yaml is a devDependency only, not a production dependency)', layer: 'a' },
   { id: 'SWC-5', source: 'specs/062-source-warning-cleanup/contracts/lint-gate-contract.md (C5: end-user-visible settings/UI/sync behaviour is unchanged)', layer: 'a', waiver: 'regression meta-clause; guaranteed by the pre-existing settings/UI/sync test corpus staying green under this change, not by a dedicated new test' },
+
+  // Feature 063 (GitHub issue #23): rows 8/9 of the sync classification contract — a file present on
+  // BOTH sides with NO StateDB record. The incremental path skipped local-change detection whenever
+  // base was missing and downloaded over the local content (silent data loss). Tests drive the REAL
+  // processRemoteFile; they must never reimplement the classification (that reimplementation in
+  // syncEngine.test.ts `classify()` is why the bug went unnoticed).
+  { id: 'UBC-1', source: 'specs/063-fix-untracked-overwrite/contracts/sync-classification.md (row 9 / C-1: untracked file on both sides with differing content — local content is never silently replaced)', layer: 'a' },
+  { id: 'UBC-2', source: 'specs/063-fix-untracked-overwrite/contracts/sync-classification.md (row 9: an untracked .md on both sides is resolved by merge, so the result carries both sides)', layer: 'a' },
+  { id: 'UBC-3', source: 'specs/063-fix-untracked-overwrite/contracts/sync-classification.md (row 8: an untracked file whose server checksum proves both sides match seeds the state with no transfer)', layer: 'a' },
+  { id: 'UBC-5', source: 'specs/063-fix-untracked-overwrite/contracts/sync-classification.md (row 9: non-mergeable types settle via the configured strategy; a missing base never switches the strategy)', layer: 'a' },
+  { id: 'UBC-6', source: 'specs/063-fix-untracked-overwrite/contracts/sync-classification.md (C-3: the outcome is counted as merged/conflicted, not as a plain download)', layer: 'a' },
+  { id: 'UBC-7', source: 'specs/063-fix-untracked-overwrite/contracts/sync-classification.md (C-4: a failed push during resolution keeps the local body, stays conflicted, and converges on the next sync — completes the G1-1 fix, whose flag alone was dropped by the converged arm)', layer: 'a' },
+  { id: 'UBC-4', source: 'specs/063-fix-untracked-overwrite/contracts/sync-classification.md (row 7: no record AND no local file is still a plain download — regression guard)', layer: 'a' },
+  { id: 'UBC-8', source: 'specs/063-fix-untracked-overwrite/contracts/sync-classification.md (C-2: rows 1-6 — tracked files keep their existing classification: remote-only download, local-only upload, converged no-op, local deletion propagated)', layer: 'a' },
+  { id: 'UBC-9', source: 'specs/063-fix-untracked-overwrite/contracts/sync-classification.md (row 9 end-to-end against a live server: same path created independently on two devices keeps both bodies)', layer: 'b-1' },
 ];
