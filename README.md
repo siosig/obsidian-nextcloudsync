@@ -31,10 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.35)
+## What's new in this release (0.7.36-beta.1)
 
-- **Fix: a note that exists on two devices is no longer silently overwritten (0.7.35)** — when a file existed both locally and on the server but the plugin had no synced record of it (for example the same note was created independently on two devices), the sync treated it as a remote-only change and downloaded straight over the local file, losing the local edit without reporting a conflict. Such files are now resolved as a real conflict — Markdown is merged, so both sides survive — exactly like the first-ever sync already did. If both copies are byte-identical the plugin just records them as in sync, with no transfer at all ([#23](https://github.com/siosig/obsidian-nextcloudsync/issues/23)).
-- **Fix: a merge whose upload failed is no longer stranded (0.7.35)** — if the network dropped while pushing a merged file, the next sync could read the file as already converged and never retry, so the merged result stayed on that device and never reached the others. The retry now happens on the next sync.
+- **Internal: patched four dev-tooling security advisories (0.7.36-beta.1)** — bumped `js-yaml` to 5.2.2 (GHSA-pm4m-ph32-ghv5) and pinned the transitive `fast-uri` (GHSA-4c8g-83qw-93j6, GHSA-v2hh-gcrm-f6hx), `fast-xml-parser` (GHSA-8r6m-32jq-jx6q) and `tar` (GHSA-w8wr-v893-vjvp) copies to their patched versions. All four are development-only dependencies used by the test and lint tooling, not bundled into the plugin; no user-visible behavior change.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
