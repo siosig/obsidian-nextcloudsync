@@ -11,6 +11,15 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.36] - 2026-07-27
+
+### Security
+- Bumped `js-yaml` to 5.2.2, fixing [GHSA-pm4m-ph32-ghv5](https://github.com/nodeca/js-yaml/security/advisories/GHSA-pm4m-ph32-ghv5) (exponential parsing time in flow collections).
+- Pinned the transitive `fast-uri` copy to a patched version, fixing [GHSA-4c8g-83qw-93j6](https://github.com/advisories/GHSA-4c8g-83qw-93j6) and [GHSA-v2hh-gcrm-f6hx](https://github.com/advisories/GHSA-v2hh-gcrm-f6hx) (host confusion).
+- Pinned the transitive `fast-xml-parser` copy to a patched version, fixing [GHSA-8r6m-32jq-jx6q](https://github.com/advisories/GHSA-8r6m-32jq-jx6q) (entity-expansion limits reset by repeated DOCTYPE declarations).
+- Pinned the transitive `tar` copy to a patched version, fixing [GHSA-w8wr-v893-vjvp](https://github.com/advisories/GHSA-w8wr-v893-vjvp) (process crash via PAX numeric path type confusion).
+- All four are development-only dependencies used by the test and lint tooling, not bundled into the plugin; no user-visible behavior change.
+
 ## [0.7.35] - 2026-07-27
 
 ### Fixed
@@ -333,6 +342,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.36]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.36
 [0.7.35]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.35
 [0.7.34]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.34
 [0.7.33]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.33

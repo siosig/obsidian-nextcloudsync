@@ -11,6 +11,15 @@
 
 > 英語版（原文）は [`CHANGELOG.md`](CHANGELOG.md) を参照してください。
 
+## [0.7.36] - 2026-07-27
+
+### Security
+- `js-yaml` を 5.2.2 へ更新し、[GHSA-pm4m-ph32-ghv5](https://github.com/nodeca/js-yaml/security/advisories/GHSA-pm4m-ph32-ghv5)（フローコレクションの指数時間パース）を修正。
+- 推移的依存の `fast-uri` をパッチ版へ固定し、[GHSA-4c8g-83qw-93j6](https://github.com/advisories/GHSA-4c8g-83qw-93j6) と [GHSA-v2hh-gcrm-f6hx](https://github.com/advisories/GHSA-v2hh-gcrm-f6hx)（ホスト混同）を修正。
+- 推移的依存の `fast-xml-parser` をパッチ版へ固定し、[GHSA-8r6m-32jq-jx6q](https://github.com/advisories/GHSA-8r6m-32jq-jx6q)（DOCTYPE 重複宣言によるエンティティ展開上限のリセット）を修正。
+- 推移的依存の `tar` をパッチ版へ固定し、[GHSA-w8wr-v893-vjvp](https://github.com/advisories/GHSA-w8wr-v893-vjvp)（PAX 数値パスの型混同によるプロセスクラッシュ）を修正。
+- いずれもテスト・lint ツール専用の devDependency でプラグイン本体には同梱されず、ユーザーに見える挙動の変更はありません。
+
 ## [0.7.35] - 2026-07-27
 
 ### Fixed
@@ -333,6 +342,7 @@ Nextcloud 特化同期エンジンの初回公開リリース（0.2.0 〜 0.2.1�
 - **Dry-run でのコンフリクト結果の明確化** — 初回同期プレビューがコンフリクト解決の結果を説明し、各コンフリクトファイルをクリックするとマージ後の内容（変更前後）をプレビューできます。
 - **汎用 WebDAV より高速な同期** — 内容ハッシュと Nextcloud の `sync-token` を突き合わせ、毎回リモートツリー全体を再帰的に走査するのではなく、実際に変更された分だけを転送します。更新日時ベースの WebDAV プラグインより同期が明確に速くなります。
 
+[0.7.36]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.36
 [0.7.35]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.35
 [0.7.34]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.34
 [0.7.33]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.33

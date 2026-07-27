@@ -31,9 +31,9 @@ Obsidian Vault と Nextcloud を双方向同期します。汎用的な WebDAV �
 
 ---
 
-## このリリースでの変更点（0.7.36-beta.1）
+## このリリースでの変更点（0.7.36）
 
-- **内部整備：開発ツール依存の脆弱性を4件修正（0.7.36-beta.1）** — `js-yaml` を 5.2.2 へ更新（GHSA-pm4m-ph32-ghv5）、推移的依存の `fast-uri`（GHSA-4c8g-83qw-93j6、GHSA-v2hh-gcrm-f6hx）・`fast-xml-parser`（GHSA-8r6m-32jq-jx6q）・`tar`（GHSA-w8wr-v893-vjvp）をパッチ版へ固定しました。いずれもテスト・lint ツール専用の devDependency でプラグイン本体には同梱されず、ユーザーに見える挙動の変更はありません。
+- **内部整備：開発ツール依存の脆弱性を4件修正（0.7.36）** — `js-yaml` を 5.2.2 へ更新（GHSA-pm4m-ph32-ghv5）、推移的依存の `fast-uri`（GHSA-4c8g-83qw-93j6、GHSA-v2hh-gcrm-f6hx）・`fast-xml-parser`（GHSA-8r6m-32jq-jx6q）・`tar`（GHSA-w8wr-v893-vjvp）をパッチ版へ固定しました。いずれもテスト・lint ツール専用の devDependency でプラグイン本体には同梱されず、ユーザーに見える挙動の変更はありません。
 
 全リリースの完全なバージョン履歴は **[変更履歴（CHANGELOG）](CHANGELOG.ja.md)** を参照してください。
 
