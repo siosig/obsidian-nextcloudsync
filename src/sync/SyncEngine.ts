@@ -1491,7 +1491,33 @@ export class SyncEngine {
         localHash = await sha256(buf);
         localChanged = localHash !== base.localHash;
       }
-    } else if (!localStat) {
+    } else if (localStat) {
+      // Feature 063 (issue #23): the file exists on BOTH sides but we have NO recorded baseline, so
+      // there is nothing to prove it came from this remote. Treating "no base" as "local unchanged"
+      // (the old behaviour, since this branch simply did not exist) let the !localChanged &&
+      // remoteChanged arm below download straight over a local edit — silent data loss, e.g. when the
+      // same note was created independently on two devices. Hash the local body and treat it as
+      // CHANGED unless it provably matches the remote, so the both-changed arm resolves it as a
+      // conflict — exactly what initialSync already does via plan.conflicts.
+      const buf = await this.opts.localAdapter.readBinary(remote.path);
+      localHash = await sha256(buf);
+      if (idType === 'sha256' && localHash === remoteId) {
+        // Provably the same bytes on both sides: the only thing missing was the record. Seed it and
+        // converge without moving any data. Identity is asserted from the SERVER-SUPPLIED CHECKSUM
+        // only — an ETag is an opaque, server-defined token that cannot be recomputed from local
+        // content, so trusting it here would reintroduce the very overwrite this branch prevents.
+        // Without a checksum we fall through to conflict resolution, which fetches the remote and
+        // compares the real bytes (a wasted round-trip at worst, never data loss).
+        void this.opts.logger?.log(`sync: untracked file matches remote checksum → seeding state, no transfer → ${remote.path}`);
+        this.opts.stateDB.setFile(await this.withLocalSignature({
+          path: remote.path, localHash, remoteId, idType,
+          size: localStat.size, mtime: remote.lastModified || localStat.mtime,
+          remoteFileId: remote.fileId, isConflicted: false,
+        }, remote.lastModified));
+        return;
+      }
+      localChanged = true;
+    } else {
       localChanged = false; // new from remote
     }
 
@@ -1947,8 +1973,16 @@ export class SyncEngine {
     }
 
     const stat = await this.opts.localAdapter.stat(path);
-    this.opts.stateDB.setFile(await this.withLocalSignature({
-      path, localHash: mergedHash,
+    const prior = this.opts.stateDB.getFile(path);
+    const nextState: FileState = {
+      path,
+      // Claiming the merged body as the local baseline is only truthful once it reached the server.
+      // Feature 063: when the push failed, recording it here made the NEXT sync read "local
+      // unchanged + remote unchanged" and take the converged arm — which even clears isConflicted —
+      // so the merge stayed local forever and never reached the other devices. The G1-1 flag alone
+      // cannot prevent that (nothing consumes it on the converged arm). Keeping the previous
+      // baseline instead leaves a genuine local change for the next sync to detect and re-push.
+      localHash: uploaded ? mergedHash : (prior?.localHash ?? ''),
       // When the merged content is on the server, record it as the synced remote id so the next sync
       // sees both sides as identical (converged) instead of re-detecting the conflict.
       remoteId: uploaded ? mergedHash : remoteId,
@@ -1960,7 +1994,13 @@ export class SyncEngine {
       // state pairs the OLD remoteId with the NEW localHash and isConflicted:false, which the next
       // sync reads as "converged" and never retries pushing the merge result.
       isConflicted: !clean || !uploaded,
-    }, remote.lastModified));
+    };
+    // Stamp the post-write stat signature ONLY when the state describes the body actually on disk.
+    // After a failed push the recorded localHash deliberately differs from the file, so a signature
+    // would let the local-unchanged fast path skip the re-hash that drives the retry.
+    this.opts.stateDB.setFile(
+      uploaded ? await this.withLocalSignature(nextState, remote.lastModified) : nextState,
+    );
     const mergeDetail: SyncHistoryDetail = {
       localHash: mergedHash,
       remoteId: uploaded ? mergedHash : remoteId,
