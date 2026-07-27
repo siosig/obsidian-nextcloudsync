@@ -37,6 +37,10 @@ function makeEngine() {
     },
     stateDB: {
       setFile: jest.fn((fs: FileState) => { setFileCalls.push(fs); }),
+      // Feature 063: resolveByWrite now reads the prior baseline so a FAILED push does not record the
+      // merged body as the local baseline (which made the next sync declare convergence and strand
+      // the merge). No prior record in these cases.
+      getFile: jest.fn(() => undefined),
     },
     statusBar: {}, webdavFactory: {}, pluginDir: '', configDir: '.obsidian',
   };
