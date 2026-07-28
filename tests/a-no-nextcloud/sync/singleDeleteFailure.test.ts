@@ -7,12 +7,24 @@
 // actually succeeded. Dropping the tracking entry on a real failure makes the next sync see
 // base=undefined for a file/folder that is STILL PRESENT on the server, so it is read as "new
 // remote" and re-downloaded — silently reverting the user's local deletion.
+//
+// Feature 064: deleteSingleFile now stats the remote first and delegates to the SAME guarded delete
+// the full sync uses (applyLocalDeletion), so the doubles below must answer `statFile`. The remote is
+// returned with a checksum EQUAL to the base localHash — i.e. "the server copy is still the one we
+// last synced" — which is the only case where a deletion may propagate at all. The G1-2 guarantee
+// asserted here is unchanged: a failing DELETE must keep the tracking entry.
 import { SyncEngine } from '../../../src/sync/SyncEngine';
-import { FileState, DirState } from '../../../src/types';
+import { FileState, DirState, RemoteFileInfo } from '../../../src/types';
+
+/** Remote state whose checksum matches `hash`, i.e. unchanged since our base → deletion allowed. */
+const unchangedRemote = (path: string, hash: string): RemoteFileInfo => ({
+  path, fileId: null, checksum: hash, etag: 'e1', size: 1, lastModified: 1,
+});
 
 function makeFileEngine(base: FileState) {
   const files = new Map<string, FileState>([[base.path, base]]);
   const deleteFile = jest.fn(async () => { throw new Error('500 Internal Server Error'); });
+  const statFile = jest.fn(async (p: string) => unchangedRemote(p, base.localHash));
   const stateDB = {
     getFile: (p: string) => files.get(p),
     deleteFile: jest.fn((p: string) => { files.delete(p); }),
@@ -20,10 +32,10 @@ function makeFileEngine(base: FileState) {
   };
   const engine = new SyncEngine({
     app: {}, settings: {}, localAdapter: {}, stateDB, statusBar: { setStatus: jest.fn() },
-    webdavFactory: { createClient: jest.fn(async () => ({ client: { deleteFile }, features: {} })) },
+    webdavFactory: { createClient: jest.fn(async () => ({ client: { deleteFile, statFile }, features: {} })) },
     pluginDir: '', configDir: '.obsidian',
   } as never);
-  return { engine, files, stateDB, deleteFile };
+  return { engine, files, stateDB, deleteFile, statFile };
 }
 
 function makeFolderEngine(dir: DirState) {
@@ -62,6 +74,7 @@ describe('[G1-2] SyncEngine.deleteSingleFile — remote delete failure must not 
   it('drops the StateDB entry when the remote DELETE succeeds', async () => {
     const files = new Map<string, FileState>([['Notes/gone.md', fileState('Notes/gone.md')]]);
     const deleteFile = jest.fn(async () => undefined);
+    const statFile = jest.fn(async (p: string) => unchangedRemote(p, 'h1'));
     const stateDB = {
       getFile: (p: string) => files.get(p),
       deleteFile: jest.fn((p: string) => { files.delete(p); }),
@@ -69,7 +82,7 @@ describe('[G1-2] SyncEngine.deleteSingleFile — remote delete failure must not 
     };
     const engine = new SyncEngine({
       app: {}, settings: {}, localAdapter: {}, stateDB, statusBar: { setStatus: jest.fn() },
-      webdavFactory: { createClient: jest.fn(async () => ({ client: { deleteFile }, features: {} })) },
+      webdavFactory: { createClient: jest.fn(async () => ({ client: { deleteFile, statFile }, features: {} })) },
       pluginDir: '', configDir: '.obsidian',
     } as never);
 
