@@ -81,6 +81,26 @@ export class StandardWebDAVClient implements IWebDAVClient {
     return results;
   }
 
+  /**
+   * Feature 064 (C-0): remote state of ONE file via Depth:0, reusing {@link parseListing} so the
+   * fields match what getFiles produces. `requestRel` is passed as '' ON PURPOSE: parseListing drops
+   * the entry equal to it (the "self" collection when listing a folder), and here the self entry IS
+   * the file we want. A collection lands in `folders`, never in `files`, so it yields null.
+   */
+  async statFile(remotePath: string): Promise<RemoteFileInfo | null> {
+    const res = await this.req({
+      url: this.remoteUrl(remotePath),
+      method: 'PROPFIND',
+      headers: { Authorization: this.authHeader, Depth: '0', 'Content-Type': 'application/xml', ...NO_CACHE_HEADERS },
+      body: `<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:getetag/><d:getcontentlength/><d:getlastmodified/><d:resourcetype/></d:prop></d:propfind>`,
+      throw: false,
+    });
+    if (res.status === 404) return null;
+    if (res.status !== 207) throw new NetworkError(res.status, res.text);
+    const { files } = this.parseListing(res.text, '');
+    return files[0] ?? null;
+  }
+
   async getRootEtag(): Promise<string | null> {
     // Root-ETag short-circuit is Nextcloud-only: plain WebDAV does not guarantee that a child change
     // propagates to the parent/root collection's ETag, so returning null makes the engine always

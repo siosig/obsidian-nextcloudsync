@@ -132,6 +132,22 @@ export class SyncEngine {
   /** Feature 046: number of watch-mode single-file/folder ops currently propagating to the remote.
    *  Drives the status bar so the user can see immediate (watch) propagation happening. */
   private watchInFlight = 0;
+  /**
+   * Feature 064 (C-5): paths whose watch-mode single-file sync arrived while a full sync was running.
+   * Held in memory only — losing them on a plugin reload is harmless because the next full sync
+   * detects the same local change anyway (self-healing); persisting them would add a second, weaker
+   * source of truth for "what changed locally".
+   */
+  private readonly watchPendingPaths = new Set<string>();
+  /**
+   * Feature 064 (C-6): monotonic count of handleConflict entries. Only ever read as a DELTA around a
+   * single watch-mode operation, to answer "did this touch a conflict at all?". The summary counters
+   * cannot answer that: a conflict settled by a deterministic strategy (local-win / remote-win /
+   * biggest-size / latest-mtime) lands in uploadedCount/downloadedCount, indistinguishable from a
+   * routine transfer — yet that is precisely the outcome where one side's content was discarded and
+   * the user most needs to hear about it.
+   */
+  private conflictEncounters = 0;
   private renameTracker: RenameTracker | null = null;
   /**
    * Decides which `.obsidian` config-folder paths sync (category-level opt-in, issue #1) and
@@ -213,6 +229,14 @@ export class SyncEngine {
       await run;
     } finally {
       this.currentRun = null;
+      // C-5: the run is over (runSyncSession's finally already cleared `running`), so any watch-mode
+      // edit that arrived meanwhile can now be evaluated. Best-effort: a failure here must not
+      // propagate out of "Sync now" — the paths stay detectable as local changes for the next sync.
+      try {
+        await this.drainWatchPending();
+      } catch (err) {
+        console.warn('[SyncEngine] Deferred watch-mode sync failed:', err);
+      }
     }
   }
 
@@ -299,66 +323,178 @@ export class SyncEngine {
     if (this.watchInFlight === 0 && !this.running) this.opts.statusBar.setStatus('idle');
   }
 
-  /** Upload a single locally-modified or created file. No-ops if content is unchanged. */
+  /**
+   * Sync ONE locally-changed file (watch mode). No-ops if the content is unchanged.
+   *
+   * Feature 064 (GitHub issue #23): this used to PUT the local body straight to the server —
+   * no PROPFIND, no base comparison, and (because it passed `etag: null`) no If-Match either. Any
+   * edit made on another device since our last sync was therefore overwritten silently: no conflict,
+   * no merge, no notice. Since "Sync on file change" defaults to ON on desktop, that was the DEFAULT
+   * path to losing data. The fix is not to bolt a precondition onto the blind upload but to give this
+   * path the one thing it lacked — the remote's current state — and then hand it to the SAME
+   * classifier the full sync uses (processRemoteFile). Watch mode and "Sync now" now converge on
+   * identical results (contract C-3); nothing about the decision lives here.
+   */
   async syncSingleFile(path: string): Promise<void> {
     if (this.isSystemExcluded(path)) return;
-    await this.ensureClient();
+    // C-5: never run alongside a full sync. The multi-step resolve below (stat → compare → write →
+    // push) must not interleave with the full sync's writes to the same file, so defer the path and
+    // re-evaluate it once the run finishes — deferring rather than dropping keeps the edit from being
+    // missed when the full sync had already passed this file.
+    if (this.running) {
+      this.watchPendingPaths.add(path);
+      void this.opts.logger?.log(`watch: full sync in progress → deferred ${path}`);
+      return;
+    }
     const stat = await this.opts.localAdapter.stat(path);
     if (!stat) return; // already deleted before the debounce fired
+    const base = this.opts.stateDB.getFile(path);
+    // FR-006: decide "nothing changed" from LOCAL data only, before touching the network. The stat
+    // signature fast-path (P0-A) answers most saves without even reading the file; a signature miss
+    // falls back to hashing. Only a real content change is worth a round-trip.
+    if (base && this.isLocallyUnchanged(base, stat)) return;
     const data = await this.opts.localAdapter.readBinary(path);
     const localHash = await sha256(data);
-    const base = this.opts.stateDB.getFile(path);
-    if (base && localHash === base.localHash) return; // content unchanged, skip
-    const remoteId = base?.remoteId ?? localHash;
-    const idType: FileState['idType'] = base?.idType ?? 'sha256';
-    const dummySummary = this.initSummary();
+    if (base && localHash === base.localHash) return; // content unchanged (e.g. mtime-only touch)
+
+    await this.ensureClient();
+    // A real (not dummy) summary: its counters are what tells us whether to notify the user (C-6),
+    // and processRemoteFile/handleConflict already maintain them exactly as they do in a full sync.
+    const summary = this.initSummary();
+    const conflictsBefore = this.conflictEncounters;
     this.beginWatchActivity();
     try {
-      await this.uploadFile(
-        path, localHash, remoteId, idType,
-        { path, fileId: base?.remoteFileId ?? null, checksum: null, etag: null, size: stat.size, lastModified: stat.mtime },
-        dummySummary,
-      );
+      const remote = await this.client!.statFile(path);
+      if (remote) {
+        // The whole classification (upload / download / conflict → merge, If-Match from remote.etag,
+        // size guards, marker re-entrancy, feature-063 untracked handling) is the full sync's code.
+        void this.opts.logger?.log(`watch: remote state fetched → classifying ${path}`);
+        await this.processFileWithRetry(remote, summary);
+      } else {
+        // C-1 row 4: not on the server at all → a plain create. A precondition would be wrong here
+        // (If-Match against a non-existent resource always fails), so keep the synthetic null etag.
+        void this.opts.logger?.log(`watch: not on remote → upload as new ${path}`);
+        await this.uploadFile(
+          path, localHash, base?.remoteId ?? localHash, base?.idType ?? 'sha256',
+          { path, fileId: base?.remoteFileId ?? null, checksum: null, etag: null, size: stat.size, lastModified: stat.mtime },
+          summary,
+        );
+      }
       // Watch-mode single-file op: coalesce the state write via a trailing debounce so rapid
       // edits don't each rewrite the whole state file (P0-B). onunload flushes any pending save.
       this.opts.stateDB.requestSave();
-      await this.opts.historyStore?.save(); // persist any 'uploaded' entry recorded by uploadFile
+      await this.opts.historyStore?.save(); // persist the entry recorded by the branch above
     } catch (err) {
-      console.warn(`[SyncEngine] Single-file upload failed for ${path}:`, err);
+      // FR-009: never lose the edit. A network failure queues the path so the next sync re-evaluates
+      // it; the local file is untouched either way.
+      console.warn(`[SyncEngine] Single-file sync failed for ${path}:`, err);
+      void this.opts.logger?.log(`watch: FAILED ${path} — ${(err as Error).message}`, 'error');
+      this.recordError(summary, path, err);
+      if (err instanceof NetworkError) this.retryQueue.push(path);
     } finally {
       this.endWatchActivity();
+    }
+    this.notifyWatchOutcome(path, summary, conflictsBefore);
+  }
+
+  /**
+   * C-6: watch mode runs unattended, so it stays silent for the routine outcomes (upload, download,
+   * nothing to do) and speaks up only when the user has to know — the sync failed, or the two sides
+   * had diverged and something had to be decided about it.
+   *
+   * `conflictsBefore` is the conflictEncounters value captured before the operation: a conflict
+   * settled by a deterministic strategy shows up in NO summary counter (it is recorded as a plain
+   * upload/download), and that is exactly the case where one side's content was dropped. Notifying
+   * only on merged/conflicted would stay silent about the most destructive resolution of all.
+   */
+  private notifyWatchOutcome(path: string, summary: SyncSessionSummary, conflictsBefore: number): void {
+    if (summary.errorCount > 0) {
+      new Notice(`❌ Sync failed: ${path}`, 6000);
+      return;
+    }
+    if (summary.conflictedCount > 0) {
+      new Notice(`⚠️ Conflict in ${path} — the note holds both versions; review and resolve it.`, 8000);
+      return;
+    }
+    if (summary.mergedCount > 0) {
+      new Notice(`🔀 Merged remote changes into ${path}`, 6000);
+      return;
+    }
+    if (this.conflictEncounters > conflictsBefore) {
+      new Notice(`🔀 ${path} changed on both sides — resolved by your conflict settings.`, 6000);
     }
   }
 
-  /** Delete a single file from the remote when it was deleted locally. */
+  /**
+   * C-5: re-evaluate every path whose watch-mode sync was deferred by a full sync. Called once the
+   * run has finished (running === false). The set is drained into a local copy first so a path
+   * deferred again mid-drain (it cannot be — running is false — but also so re-entry is impossible)
+   * never loops. Failures are per-path and already handled inside syncSingleFile.
+   */
+  private async drainWatchPending(): Promise<void> {
+    if (this.watchPendingPaths.size === 0) return;
+    const paths = [...this.watchPendingPaths];
+    this.watchPendingPaths.clear();
+    void this.opts.logger?.log(`watch: full sync finished → re-evaluating ${paths.length} deferred path(s)`);
+    for (const p of paths) {
+      await this.syncSingleFile(p);
+    }
+  }
+
+  /**
+   * Delete a single file from the remote when it was deleted locally (watch mode).
+   *
+   * Feature 064 (C-2): this used to DELETE unconditionally. `deleteFile(path, expectedRemoteId)`
+   * reads like a guarded delete, but every client ignores that argument (blind DELETE, spec 023), so a
+   * note another device had just edited was removed anyway — the full sync's delete path has guarded
+   * against exactly that since spec 023, and this one did not. It now runs the SAME guard
+   * (applyLocalDeletion): delete only while the server's recomputed checksum still matches our base,
+   * otherwise restore the remote copy locally instead of destroying it.
+   */
   async deleteSingleFile(path: string): Promise<void> {
     if (this.isSystemExcluded(path)) return;
-    await this.ensureClient();
     const base = this.opts.stateDB.getFile(path);
     if (!base) return; // not tracked — nothing to do on remote
+    // C-2 row 1: during a full sync, do nothing — and do NOT defer either. The running scan detects a
+    // tracked path that is gone locally and propagates the deletion itself, so queuing it here would
+    // only risk a second delete against a path the scan already handled.
+    if (this.running) {
+      void this.opts.logger?.log(`watch: full sync in progress → deletion of ${path} left to the running scan`);
+      return;
+    }
+    await this.ensureClient();
+    const summary = this.initSummary();
+    const conflictsBefore = this.conflictEncounters;
     this.beginWatchActivity();
-    let succeeded = false;
     try {
-      await this.client!.deleteFile(path, base.remoteId); // resolves on 404 too (already gone = success)
-      this.recordHistory(path, 'deleted');
-      succeeded = true;
-    } catch (err) {
-      if (!(err instanceof NetworkError && err.status === 404)) {
-        console.warn(`[SyncEngine] Single-file delete failed for ${path}:`, err);
+      const remote = await this.client!.statFile(path);
+      if (!remote) {
+        // C-2 row 3: already absent on the server — that IS the desired end state. Stop tracking it.
+        void this.opts.logger?.log(`watch: already gone on remote → dropping tracking for ${path}`);
+        this.recordHistory(path, 'deleted');
+        this.opts.stateDB.deleteFile(path);
+        this.dropMergeBase(path); // feature 038: file gone → drop its merge base
+        this.dropCleanSnapshot(path); // feature 044: file gone → drop any captured clean sides
+      } else {
+        const remoteId = remote.checksum ?? remote.etag ?? String(remote.size);
+        const idType: FileState['idType'] = remote.checksum ? 'sha256' : (remote.etag ? 'etag' : 'size');
+        // Shared with the full sync: deletes on a checksum match, restores the remote copy when it
+        // diverged, and does nothing when the server cannot prove the copy is unchanged. It owns the
+        // StateDB cleanup too — including the G1-2 rule of keeping the entry when the DELETE fails,
+        // so a failed delete is retried instead of coming back as a re-download.
+        await this.applyLocalDeletion(remote, base, remoteId, idType, summary);
+        if (!this.opts.stateDB.getFile(path)) this.dropCleanSnapshot(path);
       }
+      this.opts.stateDB.requestSave(); // coalesced watch-mode save (P0-B)
+      await this.opts.historyStore?.save();
+    } catch (err) {
+      console.warn(`[SyncEngine] Single-file delete failed for ${path}:`, err);
+      void this.opts.logger?.log(`watch: delete FAILED ${path} — ${(err as Error).message}`, 'error');
+      this.recordError(summary, path, err);
     } finally {
       this.endWatchActivity();
     }
-    // BUG G1-2 fix: only drop the StateDB tracking entry when the remote delete actually succeeded.
-    // Dropping it on a real failure (423/500/timeout) would make the next sync see base=undefined,
-    // read the still-present remote file as "new", and re-download it — silently reverting the
-    // user's deletion. Keep the entry so the delete is retried next sync.
-    if (!succeeded) return;
-    this.opts.stateDB.deleteFile(path);
-    this.dropMergeBase(path); // feature 038: file gone → drop its merge base
-    this.dropCleanSnapshot(path); // feature 044: file gone → drop any captured clean sides
-    this.opts.stateDB.requestSave(); // coalesced watch-mode save (P0-B)
-    await this.opts.historyStore?.save();
+    this.notifyWatchOutcome(path, summary, conflictsBefore);
   }
 
   /** MOVE a single file on the remote when it was renamed/moved locally. */
@@ -1654,13 +1790,21 @@ export class SyncEngine {
 
     if (outcome === 'skipped') return; // Size limit exceeded. Already warned by the strategy (no retry needed).
     summary.uploadedCount++;
+    // Feature 064 (C-4): record the state the server now holds, not the one it held before the PUT.
+    // Both upload strategies send `OC-Checksum: SHA256:<localHash>` (NextcloudClient.uploadFile /
+    // the chunked assembling MOVE), and Nextcloud persists it and returns it as oc:checksums — so the
+    // remote id of what we just stored IS localHash. Keeping the PRE-upload remoteId here made every
+    // following sync read "remote changed" and download the file we had just uploaded, over and over.
+    // resolveByWrite already records the merged body this way; this brings the plain upload in line.
+    const uploadedRemoteId = localHash;
+    const uploadedIdType: FileState['idType'] = 'sha256';
     this.recordHistory(path, 'uploaded', undefined, {
-      localHash, remoteId, remoteIdType: idType,
+      localHash, remoteId: uploadedRemoteId, remoteIdType: uploadedIdType,
       localSize: stat.size, remoteSize: remote.size,
     });
 
     this.opts.stateDB.setFile(await this.withLocalSignature({
-      path, localHash, remoteId, idType,
+      path, localHash, remoteId: uploadedRemoteId, idType: uploadedIdType,
       size: stat.size, mtime: stat.mtime,
       remoteFileId: remote.fileId, isConflicted: false,
     }, remote.lastModified));
@@ -1822,6 +1966,7 @@ export class SyncEngine {
     path: string, base: FileState | undefined, remote: RemoteFileInfo,
     remoteId: string, idType: FileState['idType'], summary: SyncSessionSummary,
   ): Promise<void> {
+    this.conflictEncounters++; // C-6: lets the watch path notice a conflict settled without a counter
     // Size guard (spec 035, FR-010): a both-sides conflict needs the remote body to merge, but an
     // oversized remote cannot be fetched without risking OOM. Skip the download, keep local untouched,
     // and flag the file conflicted so the UI surfaces it. Do NOT queue a retry — re-fetching would
