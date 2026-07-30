@@ -203,6 +203,34 @@ export class NextcloudClient implements IWebDAVClient {
     return await this.parsePropfindResponse(res.text);
   }
 
+  /**
+   * Feature 064 (C-0): remote state of ONE file via a Depth:0 PROPFIND, so the watch-mode single-file
+   * path can classify against the real remote instead of uploading blind. The response is parsed by
+   * the SAME {@link parsePropfindResponse} the full scan uses, so every field (checksum/etag/size/
+   * mtime/fileId) carries identical semantics — that is what lets the caller reuse processRemoteFile.
+   * A collection yields no entry there (it is skipped as non-file), hence null. Unlike getFiles, a
+   * non-207 other than 404 THROWS: silently reading an ambiguous failure as "absent" would send the
+   * caller down the create path and blind-overwrite the very file it could not read.
+   */
+  async statFile(remotePath: string): Promise<RemoteFileInfo | null> {
+    const res = await this.req({
+      url: this.remoteUrl(remotePath),
+      method: 'PROPFIND',
+      headers: {
+        Authorization: this.authHeader,
+        Depth: '0',
+        'Content-Type': 'application/xml; charset=utf-8',
+        ...NO_CACHE_HEADERS,
+      },
+      body: PROPFIND_BODY,
+      throw: false,
+    });
+    if (res.status === 404) return null; // no such file (or its parent folder does not exist)
+    if (res.status !== 207) throw new NetworkError(res.status, res.text);
+    const entries = await this.parsePropfindResponse(res.text);
+    return entries[0] ?? null;
+  }
+
   async getRootEtag(): Promise<string | null> {
     // Root-ETag short-circuit (spec 023): a single Depth:0 PROPFIND on the vault root. Nextcloud
     // propagates any descendant change up to the root collection's ETag, so a matching value means
