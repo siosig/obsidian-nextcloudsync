@@ -1,4 +1,4 @@
-import { Platform, RequestUrlParam, RequestUrlResponse } from 'obsidian';
+import { RequestUrlParam, RequestUrlResponse } from 'obsidian';
 import { requestUrlWithTimeout } from './requestWithTimeout';
 import {
   NextcloudFeatures,
@@ -14,19 +14,12 @@ import {
 } from '../types';
 import { IWebDAVClient } from './IWebDAVClient';
 import { DavSyncSettings } from '../types';
-import { toRemotePath, hrefToRelative, encodeRemoteUrl, ensureRemoteDir } from './remotePath';
+import { toRemotePath, hrefToRelative, encodeRemoteUrl, encodeServerUrl, ensureRemoteDir } from './remotePath';
 import { NO_CACHE_HEADERS } from './noCacheHeaders';
 
 export class StandardWebDAVClient implements IWebDAVClient {
   /** Remote directories already created via MKCOL (in-session cache). */
   private readonly createdDirs = new Set<string>();
-  /**
-   * iOS's native request layer re-encodes the whole URL string, so pre-encoding ASCII structural
-   * characters (space, `#`, `?`, `%`, ...) there double-encodes them into a literal `%2520`-style
-   * remote name (see {@link encodeRemoteUrl}). Resolved once here since Android's behavior is
-   * unconfirmed to match iOS (see specs/061-ios-space-encoding-fix/research.md).
-   */
-  private readonly isIosApp = Platform.isIosApp;
 
   constructor(
     private readonly settings: DavSyncSettings,
@@ -36,12 +29,14 @@ export class StandardWebDAVClient implements IWebDAVClient {
   ) {}
 
   private get baseUrl(): string {
-    return this.settings.serverUrl.replace(/\/$/, '');
+    // encodeServerUrl: the configured Server URL may end in a subfolder containing a space or
+    // non-ASCII characters, and it is the base of every request URL (see remotePath.ts).
+    return encodeServerUrl(this.settings.serverUrl.replace(/\/$/, ''));
   }
 
   /** Converts a Vault-relative path into a WebDAV URL under the base folder. */
   private remoteUrl(rel: string): string {
-    return encodeRemoteUrl(this.baseUrl, toRemotePath(this.remoteBase, rel), this.isIosApp);
+    return encodeRemoteUrl(this.baseUrl, toRemotePath(this.remoteBase, rel));
   }
 
   private get authHeader(): string {
@@ -70,7 +65,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
       headers: { Authorization: this.authHeader, Depth: '0', ...NO_CACHE_HEADERS },
       throw: false,
     });
-    if (res.status !== 207 && res.status !== 200) throw new NetworkError(res.status, res.text);
+    if (res.status !== 207 && res.status !== 200) throw new NetworkError(res.status, res.text, 'PROPFIND');
     return { isNextcloud: false, version: '', hasChecksums: false, hasFilesLocking: false, hasBulkUpload: false, syncToken: null };
   }
 
@@ -96,7 +91,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
       throw: false,
     });
     if (res.status === 404) return null;
-    if (res.status !== 207) throw new NetworkError(res.status, res.text);
+    if (res.status !== 207) throw new NetworkError(res.status, res.text, 'PROPFIND');
     const { files } = this.parseListing(res.text, '');
     return files[0] ?? null;
   }
@@ -121,7 +116,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
     });
     // A missing folder (e.g. before the first sync) returns 404. Treat it as empty.
     if (res.status === 404) return;
-    if (res.status !== 207) throw new NetworkError(res.status, res.text);
+    if (res.status !== 207) throw new NetworkError(res.status, res.text, 'PROPFIND');
     const { files, folders } = this.parseListing(res.text, rel);
     out.push(...files);
     for (const folder of folders) {
@@ -147,7 +142,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
       throw: false,
     });
     if (res.status === 404) return;
-    if (res.status !== 207) throw new NetworkError(res.status, res.text);
+    if (res.status !== 207) throw new NetworkError(res.status, res.text, 'PROPFIND');
     const { folders } = this.parseListing(res.text, rel);
     for (const folder of folders) {
       out.push({ path: folder, fileId: null, etag: null, lastModified: 0 });
@@ -170,7 +165,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
 
   async createDirectory(path: string): Promise<void> {
     await ensureRemoteDir(
-      { baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs, isIosApp: this.isIosApp },
+      { baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs },
       toRemotePath(this.remoteBase, `${path}/_`),
       this.createdDirs,
     );
@@ -179,7 +174,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
   async deleteCollection(path: string): Promise<void> {
     const res = await this.req({ url: this.remoteUrl(path), method: 'DELETE', headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS }, throw: false });
     if (res.status === 404) return;
-    if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
+    if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text, 'DELETE');
   }
 
   async getChanges(_syncToken: string): Promise<SyncChanges> {
@@ -189,7 +184,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
 
   async downloadFile(remotePath: string): Promise<ArrayBuffer> {
     const res = await this.req({ url: this.remoteUrl(remotePath), method: 'GET', headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS }, throw: false });
-    if (res.status !== 200) throw new NetworkError(res.status, '');
+    if (res.status !== 200) throw new NetworkError(res.status, '', 'GET');
     return res.arrayBuffer;
   }
 
@@ -210,24 +205,24 @@ export class StandardWebDAVClient implements IWebDAVClient {
     // Standard WebDAV returns 409; Nextcloud's files DAV returns 404 for a missing parent — handle both.
     let res = await this.req({ url: this.remoteUrl(remotePath), method: 'PUT', headers, body: data, throw: false });
     if (res.status === 409 || res.status === 404) {
-      await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs, isIosApp: this.isIosApp }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
+      await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
       res = await this.req({ url: this.remoteUrl(remotePath), method: 'PUT', headers, body: data, throw: false });
     }
     if (res.status === 412) throw new PreconditionFailedError(remotePath);
-    if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
+    if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text, 'PUT');
   }
 
   async moveFile(oldPath: string, newPath: string): Promise<void> {
-    await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs, isIosApp: this.isIosApp }, toRemotePath(this.remoteBase, newPath), this.createdDirs);
+    await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs }, toRemotePath(this.remoteBase, newPath), this.createdDirs);
     const res = await this.req({ url: this.remoteUrl(oldPath), method: 'MOVE', headers: { Authorization: this.authHeader, Destination: this.remoteUrl(newPath), Overwrite: 'F', ...NO_CACHE_HEADERS }, throw: false });
     if (res.status === 412) throw new ConflictError(newPath);
-    if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
+    if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text, 'MOVE');
   }
 
   async deleteFile(path: string, _expectedRemoteId: string): Promise<void> {
     const res = await this.req({ url: this.remoteUrl(path), method: 'DELETE', headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS }, throw: false });
     if (res.status === 404) return; // blind delete (P1-B): already gone = success
-    if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
+    if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text, 'DELETE');
   }
 
   async getSyncToken(): Promise<string | null> {

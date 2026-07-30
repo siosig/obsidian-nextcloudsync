@@ -537,9 +537,24 @@ export class ConflictError extends Error {
     super(`Conflict at ${path}`); this.name = 'ConflictError';
   }
 }
+/**
+ * A remote request that came back with an unusable status.
+ *
+ * `method` (feature 065) names the HTTP verb that failed, so a sync error reads "HTTP 404 (GET)"
+ * instead of a bare "HTTP 404" — without it, a 404 could equally be a download, an upload, or a
+ * PROPFIND, and issue #25 showed that ambiguity alone can stall a diagnosis. It is optional so the
+ * body-only call form still compiles, and the message keeps `HTTP <status>` as its PREFIX so
+ * anything matching on that shape is unaffected. The response body is deliberately NOT part of the
+ * message: it is server-controlled text that ends up in logs users paste into public issues.
+ */
 export class NetworkError extends Error {
-  constructor(public readonly status: number, public readonly body: string) {
-    super(`HTTP ${status}`); this.name = 'NetworkError';
+  constructor(
+    public readonly status: number,
+    public readonly body: string,
+    public readonly method?: string,
+  ) {
+    super(method ? `HTTP ${status} (${method})` : `HTTP ${status}`);
+    this.name = 'NetworkError';
   }
 }
 export class MaintenanceModeError extends Error {
