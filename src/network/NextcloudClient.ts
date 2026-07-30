@@ -1,4 +1,4 @@
-import { Platform, RequestUrlParam, RequestUrlResponse } from 'obsidian';
+import { RequestUrlParam, RequestUrlResponse } from 'obsidian';
 import { requestUrlWithTimeout } from './requestWithTimeout';
 import {
   NextcloudFeatures,
@@ -16,7 +16,7 @@ import {
 } from '../types';
 import { IWebDAVClient } from './IWebDAVClient';
 import { DavSyncSettings } from '../types';
-import { toRemotePath, hrefToRelative, encodeRemoteUrl, ensureRemoteDir } from './remotePath';
+import { toRemotePath, hrefToRelative, encodeRemoteUrl, encodeServerUrl, ensureRemoteDir } from './remotePath';
 import { sha256 } from '../util/hash';
 import { PARSE_YIELD_EVERY } from '../util/limits';
 import { NO_CACHE_HEADERS } from './noCacheHeaders';
@@ -59,13 +59,6 @@ export class NextcloudClient implements IWebDAVClient {
    * we don't pay a 415 round-trip on every sync.
    */
   private syncCollectionUnsupported = false;
-  /**
-   * iOS's native request layer re-encodes the whole URL string, so pre-encoding ASCII structural
-   * characters (space, `#`, `?`, `%`, ...) there double-encodes them into a literal `%2520`-style
-   * remote name (see {@link encodeRemoteUrl}). Resolved once here since Android's behavior is
-   * unconfirmed to match iOS (see specs/061-ios-space-encoding-fix/research.md).
-   */
-  private readonly isIosApp = Platform.isIosApp;
 
   constructor(
     private readonly settings: DavSyncSettings,
@@ -77,12 +70,14 @@ export class NextcloudClient implements IWebDAVClient {
   ) {}
 
   private get baseUrl(): string {
-    return this.settings.serverUrl.replace(/\/$/, '');
+    // encodeServerUrl: the configured Server URL may end in a subfolder containing a space or
+    // non-ASCII characters, and it is the base of every request URL (see remotePath.ts).
+    return encodeServerUrl(this.settings.serverUrl.replace(/\/$/, ''));
   }
 
   /** The server's base URL, derived by stripping `/remote.php/...` and everything after it from the WebDAV endpoint URL. */
   private serverBaseUrl(): string {
-    return this.settings.serverUrl.replace(/\/remote\.php.*$/, '').replace(/\/$/, '');
+    return encodeServerUrl(this.settings.serverUrl.replace(/\/remote\.php.*$/, '').replace(/\/$/, ''));
   }
 
   /** Returns the base URL for non-files DAV namespaces such as versions / uploads. */
@@ -92,7 +87,7 @@ export class NextcloudClient implements IWebDAVClient {
 
   /** Converts a Vault-relative path into a WebDAV URL under the base folder. */
   private remoteUrl(rel: string): string {
-    return encodeRemoteUrl(this.baseUrl, toRemotePath(this.remoteBase, rel), this.isIosApp);
+    return encodeRemoteUrl(this.baseUrl, toRemotePath(this.remoteBase, rel));
   }
 
   /**
@@ -199,7 +194,7 @@ export class NextcloudClient implements IWebDAVClient {
     });
     // A missing base folder (before the first sync) returns 404. Treat it as an empty list and proceed to the initial upload.
     if (res.status === 404) return [];
-    if (res.status !== 207) throw new NetworkError(res.status, res.text);
+    if (res.status !== 207) throw new NetworkError(res.status, res.text, 'PROPFIND');
     return await this.parsePropfindResponse(res.text);
   }
 
@@ -226,7 +221,7 @@ export class NextcloudClient implements IWebDAVClient {
       throw: false,
     });
     if (res.status === 404) return null; // no such file (or its parent folder does not exist)
-    if (res.status !== 207) throw new NetworkError(res.status, res.text);
+    if (res.status !== 207) throw new NetworkError(res.status, res.text, 'PROPFIND');
     const entries = await this.parsePropfindResponse(res.text);
     return entries[0] ?? null;
   }
@@ -268,7 +263,7 @@ export class NextcloudClient implements IWebDAVClient {
       throw: false,
     });
     if (res.status === 404) return [];
-    if (res.status !== 207) throw new NetworkError(res.status, res.text);
+    if (res.status !== 207) throw new NetworkError(res.status, res.text, 'PROPFIND');
     return await this.parsePropfindDirectories(res.text);
   }
 
@@ -301,7 +296,7 @@ export class NextcloudClient implements IWebDAVClient {
     // ensureRemoteDir MKCOLs every segment of the path it is given EXCEPT the last (it assumes a
     // trailing file name), so append a dummy segment to have `path` itself (and its ancestors) created.
     await ensureRemoteDir(
-      { baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs, isIosApp: this.isIosApp },
+      { baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs },
       toRemotePath(this.remoteBase, `${path}/_`),
       this.createdDirs,
     );
@@ -312,7 +307,7 @@ export class NextcloudClient implements IWebDAVClient {
       url: this.remoteUrl(path), method: 'DELETE', headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS }, throw: false,
     });
     if (res.status === 404) return; // already gone — the desired end state.
-    if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
+    if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text, 'DELETE');
   }
 
   async getChanges(syncToken: string): Promise<SyncChanges> {
@@ -329,13 +324,13 @@ export class NextcloudClient implements IWebDAVClient {
       throw: false,
     });
     if (res.status === 410) throw new SyncTokenExpiredError();
-    if (res.status !== 207) throw new NetworkError(res.status, res.text);
+    if (res.status !== 207) throw new NetworkError(res.status, res.text, 'REPORT');
     return await this.parseSyncChanges(res.text);
   }
 
   async downloadFile(remotePath: string): Promise<ArrayBuffer> {
     const res = await this.req({ url: this.remoteUrl(remotePath), method: 'GET', headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS }, throw: false });
-    if (res.status !== 200) throw new NetworkError(res.status, '');
+    if (res.status !== 200) throw new NetworkError(res.status, '', 'GET');
     // Return the bytes directly (no shared field) so concurrent downloads cannot race each other.
     return res.arrayBuffer;
   }
@@ -368,11 +363,11 @@ export class NextcloudClient implements IWebDAVClient {
       // entries so ensureRemoteDir actually re-issues the MKCOLs — otherwise a stale positive cache
       // entry makes the retry PUT 404 forever and the local change never reaches the remote (spec 024).
       this.forgetCreatedAncestors(toRemotePath(this.remoteBase, remotePath));
-      await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs, isIosApp: this.isIosApp }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
+      await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
       res = await this.req({ url: this.remoteUrl(remotePath), method: 'PUT', headers, body: data, throw: false });
     }
     if (res.status === 412) throw new PreconditionFailedError(remotePath); // remote changed (If-Match)
-    if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
+    if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text, 'PUT');
   }
 
   async recalcChecksum(remotePath: string): Promise<string | null> {
@@ -392,7 +387,7 @@ export class NextcloudClient implements IWebDAVClient {
 
   async moveFile(oldPath: string, newPath: string): Promise<void> {
     // Ensure the destination's parent directory exists before MOVE.
-    await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs, isIosApp: this.isIosApp }, toRemotePath(this.remoteBase, newPath), this.createdDirs);
+    await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs }, toRemotePath(this.remoteBase, newPath), this.createdDirs);
     const res = await this.req({
       url: this.remoteUrl(oldPath),
       method: 'MOVE',
@@ -400,7 +395,7 @@ export class NextcloudClient implements IWebDAVClient {
       throw: false,
     });
     if (res.status === 412) throw new ConflictError(newPath);
-    if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
+    if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text, 'MOVE');
   }
 
   async deleteFile(path: string, _expectedRemoteId: string): Promise<void> {
@@ -410,7 +405,7 @@ export class NextcloudClient implements IWebDAVClient {
     // Blind delete (P1-B): a 404 means the file is already gone — exactly the desired end state, so
     // treat it as success rather than an error (no pre-deletion existence probe is needed).
     if (res.status === 404) return;
-    if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
+    if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text, 'DELETE');
   }
 
   async getSyncToken(): Promise<string | null> {
@@ -480,7 +475,7 @@ export class NextcloudClient implements IWebDAVClient {
       throw: false,
     });
     if (res.status === 404) return [];
-    if (res.status !== 207) throw new NetworkError(res.status, res.text);
+    if (res.status !== 207) throw new NetworkError(res.status, res.text, 'PROPFIND');
     return this.parseVersions(res.text, fileId);
   }
 
@@ -492,7 +487,7 @@ export class NextcloudClient implements IWebDAVClient {
       headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS },
       throw: false,
     });
-    if (res.status !== 200) throw new NetworkError(res.status, '');
+    if (res.status !== 200) throw new NetworkError(res.status, '', 'GET');
     return res.arrayBuffer;
   }
 
@@ -505,7 +500,7 @@ export class NextcloudClient implements IWebDAVClient {
       headers: { Authorization: this.authHeader, Destination: destination, ...NO_CACHE_HEADERS },
       throw: false,
     });
-    if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
+    if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text, 'MOVE');
   }
 
   /** Builds the URL used for GET/MOVE on a version. */
@@ -556,7 +551,7 @@ export class NextcloudClient implements IWebDAVClient {
     try {
       // 1. Create the upload session.
       const mk = await this.req({ url: sessionUrl, method: 'MKCOL', headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS }, throw: false });
-      if (mk.status < 200 || mk.status >= 300) throw new NetworkError(mk.status, mk.text);
+      if (mk.status < 200 || mk.status >= 300) throw new NetworkError(mk.status, mk.text, 'MKCOL');
 
       // 2. PUT each chunk named by its start byte offset (15-digit zero-padded) so lexical order = assembly order.
       for (let offset = 0; offset < total; offset += chunkSizeBytes) {
@@ -570,14 +565,14 @@ export class NextcloudClient implements IWebDAVClient {
           body: chunk,
           throw: false,
         });
-        if (put.status < 200 || put.status >= 300) throw new NetworkError(put.status, put.text);
+        if (put.status < 200 || put.status >= 300) throw new NetworkError(put.status, put.text, 'PUT');
       }
 
       // 3. Ensure the parent directory of the final file exists, then assemble by MOVE-ing .file.
       // Drop any stale "already created" cache entries first so a folder another device deleted is
       // genuinely re-created (spec 024) — otherwise the assembling MOVE would target a missing parent.
       this.forgetCreatedAncestors(toRemotePath(this.remoteBase, remotePath));
-      await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs, isIosApp: this.isIosApp }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
+      await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
       const moveHeaders: Record<string, string> = {
         Authorization: this.authHeader,
         Destination: finalUrl,
@@ -596,7 +591,7 @@ export class NextcloudClient implements IWebDAVClient {
         throw: false,
       });
       if (move.status === 412) throw new PreconditionFailedError(remotePath); // remote changed (If-Match)
-      if (move.status < 200 || move.status >= 300) throw new NetworkError(move.status, move.text);
+      if (move.status < 200 || move.status >= 300) throw new NetworkError(move.status, move.text, 'MOVE');
 
       // 4. Verify the checksum after assembly (FR-012). Pass the precomputed hash to avoid
       //    hashing the full buffer a second time.
@@ -639,7 +634,7 @@ export class NextcloudClient implements IWebDAVClient {
       throw: false,
     });
     if (res.status === 423) throw new FileLockedError(remotePath);
-    if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text);
+    if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text, 'LOCK');
     // Nextcloud's files_lock app returns the token in the XML body (<nc:lock-token>files_lock/…),
     // NOT in a Lock-Token response header. Parse the body first; fall back to headers for
     // RFC-4918 servers that do use the header. Without this the token is '' and UNLOCK cannot
