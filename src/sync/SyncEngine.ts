@@ -283,6 +283,7 @@ export class SyncEngine {
         `sync: done up=${summary.uploadedCount} down=${summary.downloadedCount} ` +
         `del=${summary.deletedCount} merged=${summary.mergedCount} conflicted=${summary.conflictedCount} err=${summary.errorCount} cancelled=${cancelled}`,
       );
+      this.logSessionErrors(summary);
       summary.completedAt = Date.now();
       this.lastSummary = summary;
       this.opts.stateDB.setLastSyncTime(Date.now());
@@ -303,6 +304,24 @@ export class SyncEngine {
       // Result display is owned by the status bar surface: StatusBarItem on desktop, and
       // NoticeStatusBar (a result toast) on mobile, both via setSyncComplete above. Genuine
       // failures still surface via the catch-block notice / NextcloudErrorParser.
+    }
+  }
+
+  /**
+   * Feature 065 (issue #25): write every collected per-file failure to the debug log.
+   *
+   * The summary line alone carries only `err=<count>`. That reporter's log said `err=162` and named
+   * none of the 162 paths, so the log — the one artefact a user can hand over — could not locate a
+   * single failure. The entries already exist for the status dialog; this puts them where they can
+   * be shared.
+   *
+   * Deliberately uncapped: a truncated list reads as "that was all of them" when it wasn't. Only
+   * path and message go in, never the server response body, because these logs get pasted into
+   * public issues (NetworkError keeps the body off `message` for the same reason).
+   */
+  private logSessionErrors(summary: SyncSessionSummary): void {
+    for (const e of summary.errors) {
+      void this.opts.logger?.log(`sync: error ${e.path} — ${e.message}`);
     }
   }
 

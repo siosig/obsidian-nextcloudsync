@@ -463,17 +463,21 @@ export const CLAUSES: Clause[] = [
   { id: 'RIB-1', source: 'specs/main/spec.md §13 / specs/060-mobile-sync-ribbon/spec.md (FR-001/006: onload registers exactly one ribbon icon; icon refresh-cw, label "Sync with Nextcloud")', layer: 'a' },
   { id: 'RIB-2', source: 'specs/main/spec.md §13 / specs/060-mobile-sync-ribbon/spec.md (FR-002: ribbon callback invokes the same runSyncNow() as the "Sync now" command — shared entry point, no separate path)', layer: 'a' },
   { id: 'RIB-3', source: 'specs/main/spec.md §13 / specs/060-mobile-sync-ribbon/spec.md (FR-004: on mobile the ribbon icon appears inside the hamburger menu — Obsidian-controlled placement)', layer: 'b-2', waiver: 'Obsidian-controlled ribbon placement on mobile; verified via quickstart manual check (specs/060-mobile-sync-ribbon/quickstart.md). The registration itself (single addRibbonIcon call, no platform branch) is covered at layer a by RIB-1/RIB-2.' },
-  // --- URL: iOS remote-URL double-encoding fix (feature 061, GitHub PR #17) ---
-  // encodeRemoteUrl()'s isIosApp branch: on iOS every character is left raw so the native request
-  // layer's own re-encoding pass (which re-escapes an already-percent-encoded `%` into `%25...`)
-  // only happens once. Desktop/Android keep the pre-061 behaviour unchanged (non-ASCII raw, ASCII
-  // structural characters percent-encoded here). No iOS device automation exists in this repo, so
-  // the final on-device confirmation is deferred to post-release user feedback (spec.md
-  // Clarifications) — these clauses cover what IS mechanically provable: the pure encoding logic
-  // and its wiring into both WebDAV clients.
-  { id: 'URL-1', source: 'specs/main/spec.md §11.1 / specs/061-ios-space-encoding-fix/spec.md (FR-001: on iOS, encodeRemoteUrl leaves every character — space, CJK, #, ?, %, emoji — unencoded)', layer: 'a' },
-  { id: 'URL-2', source: 'specs/main/spec.md §11.1 / specs/061-ios-space-encoding-fix/spec.md (FR-002/FR-005: desktop/Android encoding is byte-for-byte unchanged from before feature 061 — explicit regression check)', layer: 'a' },
-  { id: 'URL-3', source: 'specs/main/spec.md §11.1 / specs/061-ios-space-encoding-fix/spec.md (FR-004: the isIosApp branch is applied consistently across every encodeRemoteUrl/ensureRemoteDir call site in both NextcloudClient and StandardWebDAVClient, including the MOVE Destination header)', layer: 'a' },
+  // --- URE: one URL-encoding path for every platform (feature 065, GitHub issue #25) ---
+  // Feature 061 made encodeRemoteUrl leave the whole path raw on iOS, betting that the native
+  // request layer re-encodes every character exactly once. Issue #25 disproved that: a raw space
+  // is NOT encoded there, so every path containing one 404s. The bet is not retried in the other
+  // direction either — 065 removes the platform branch entirely and adopts the scheme the rest of
+  // the ecosystem uses (webdav-client's encodePath, which remotely-save ships to iOS users at
+  // scale): percent-encode every segment, keep `/` as the separator. See remotePath.ts for why a
+  // regression on the CJK side points at a reverse proxy rather than at this function.
+  // No iOS device automation exists in this repo, so on-device confirmation stays a release gate
+  // (both reporters must verify the beta) — these clauses cover what IS mechanically provable.
+  { id: 'URE-1', source: 'specs/065-unify-url-encoding/contracts/remote-url-encoding.md (C-1: encodeRemoteUrl percent-encodes every segment — space, #, ?, %, &, CJK, emoji — keeps `/` as separator, and takes no platform argument)', layer: 'a' },
+  { id: 'URE-2', source: 'specs/065-unify-url-encoding/contracts/remote-url-encoding.md (C-2: every remote-URL call site in both clients uses that one scheme — GET/PUT/DELETE/PROPFIND/REPORT/PATCH/MKCOL/MOVE, including the MOVE Destination header)', layer: 'a' },
+  { id: 'URE-3', source: 'specs/065-unify-url-encoding/contracts/remote-url-encoding.md (C-3: encode → hrefToRelative round-trips back to the original vault-relative path)', layer: 'a' },
+  { id: 'URE-4', source: 'specs/065-unify-url-encoding/contracts/remote-url-encoding.md (C-4: encodeServerUrl leaves an already-encoded Server URL untouched and encodes a raw one, never producing %25)', layer: 'a' },
+  { id: 'URE-5', source: 'specs/065-unify-url-encoding/contracts/remote-url-encoding.md (C-5: NetworkError carries the HTTP method, message keeps the "HTTP <status>" prefix, and every collected sync error is written to the debug log individually without credentials)', layer: 'a' },
   // --- SWC: Source-code Warning Cleanup — lint gate resync with the reviewer (feature 062) ---
   // C1 (lint gate follows the reviewer-equivalent plugin version, `pnpm lint` exits 0) is a
   // whole-gate outcome that isn't itself a unit-testable value; it's covered by the SWC-1/SWC-3
