@@ -2,7 +2,7 @@ import { requestUrl, Platform } from 'obsidian';
 import { NO_CACHE_HEADERS } from '../../../src/network/noCacheHeaders';
 import { NextcloudClient } from '../../../src/network/NextcloudClient';
 import { StandardWebDAVClient } from '../../../src/network/StandardWebDAVClient';
-import { DEFAULT_SETTINGS, DavSyncSettings, FileVersion } from '../../../src/types';
+import { DEFAULT_SETTINGS, DavSyncSettings, FileVersion, NetworkError } from '../../../src/types';
 
 const mockRequestUrl = requestUrl as unknown as jest.Mock;
 
@@ -319,29 +319,67 @@ describe('T009: StandardWebDAVClient remaining methods send NO_CACHE_HEADERS', (
   });
 });
 
-// [SPEC:URL-1] [SPEC:URL-2] [SPEC:URL-3]: feature 061. StandardWebDAVClient resolves
-// Platform.isIosApp once per instance (constructor time), so toggling the mock before
-// `new StandardWebDAVClient(...)` is what actually takes effect.
-describe('StandardWebDAVClient — remote URL encoding by platform (feature 061)', () => {
+// [SPEC:URE-2] [SPEC:URE-5]: feature 065 (issue #25). The generic WebDAV client must use the SAME
+// single encoding scheme as NextcloudClient — a fix applied to only one of the two clients would
+// leave half the users broken. Platform.isIosApp is forced ON throughout: it is the platform
+// feature 061 special-cased, and under 061 every expectation below was inverted.
+describe('StandardWebDAVClient — remote URL encoding is platform-independent (feature 065)', () => {
   const originalIsIosApp = Platform.isIosApp;
-  beforeEach(() => mockRequestUrl.mockReset());
+  const ENCODED = 'https://nc/remote.php/dav/files/alice/Vault/00%20%E6%94%B6%E4%BB%B6%E7%AE%B1/%E6%9C%AA%E5%91%BD%E5%90%8D.md';
+  const RAW_PATH = '00 收件箱/未命名.md';
+
+  beforeEach(() => {
+    mockRequestUrl.mockReset();
+    Platform.isIosApp = true;
+  });
   afterEach(() => { Platform.isIosApp = originalIsIosApp; });
 
-  it('[US1] on iOS, sends the PUT url with the space left raw (no %20)', async () => {
-    Platform.isIosApp = true;
+  const urlsOf = (method: string) =>
+    mockRequestUrl.mock.calls.map((c) => c[0]).filter((r) => r.method === method);
+
+  it('PUT (upload) percent-encodes the path', async () => {
     mockRequestUrl.mockReturnValue(res(201));
-    const client = new StandardWebDAVClient(settings, 'pw', 'Vault');
-    await client.uploadFile('00 收件箱/未命名.md', new ArrayBuffer(2), 1000);
-    const put = mockRequestUrl.mock.calls.map((c) => c[0]).find((r) => r.method === 'PUT');
-    expect(put?.url).toBe('https://nc/remote.php/dav/files/alice/Vault/00 收件箱/未命名.md');
+    await new StandardWebDAVClient(settings, 'pw', 'Vault').uploadFile(RAW_PATH, new ArrayBuffer(2), 1000);
+    expect(urlsOf('PUT')[0]?.url).toBe(ENCODED);
   });
 
-  it('[US2] on desktop/Android (isIosApp=false), the PUT url still percent-encodes the space unchanged from before feature 061', async () => {
-    Platform.isIosApp = false;
+  it('GET (download) percent-encodes the path', async () => {
+    mockRequestUrl.mockReturnValue(res(200));
+    await new StandardWebDAVClient(settings, 'pw', 'Vault').downloadFile(RAW_PATH);
+    expect(urlsOf('GET')[0]?.url).toBe(ENCODED);
+  });
+
+  it('DELETE percent-encodes the path', async () => {
+    mockRequestUrl.mockReturnValue(res(204));
+    await new StandardWebDAVClient(settings, 'pw', 'Vault').deleteFile(RAW_PATH, 'rid');
+    expect(urlsOf('DELETE')[0]?.url).toBe(ENCODED);
+  });
+
+  it('MOVE percent-encodes BOTH the request url and the Destination header', async () => {
+    mockRequestUrl.mockReturnValue(res(201));
+    await new StandardWebDAVClient(settings, 'pw', 'Vault').moveFile('a.md', RAW_PATH);
+    const move = urlsOf('MOVE')[0];
+    expect(move?.url).toBe('https://nc/remote.php/dav/files/alice/Vault/a.md');
+    expect(move?.headers?.Destination).toBe(ENCODED);
+  });
+
+  it('never emits a raw space or a double-encoded %25 on any request', async () => {
     mockRequestUrl.mockReturnValue(res(201));
     const client = new StandardWebDAVClient(settings, 'pw', 'Vault');
-    await client.uploadFile('00 收件箱/未命名.md', new ArrayBuffer(2), 1000);
-    const put = mockRequestUrl.mock.calls.map((c) => c[0]).find((r) => r.method === 'PUT');
-    expect(put?.url).toBe('https://nc/remote.php/dav/files/alice/Vault/00%20收件箱/未命名.md');
+    await client.uploadFile(RAW_PATH, new ArrayBuffer(2), 1000);
+    await client.moveFile('a.md', RAW_PATH);
+    const urls = mockRequestUrl.mock.calls.flatMap((c) => [c[0].url, c[0].headers?.Destination ?? '']);
+    for (const u of urls) {
+      expect(u).not.toMatch(/ /);
+      expect(u).not.toContain('%25');
+    }
+  });
+
+  it('[SPEC:URE-5] a failed transfer names the HTTP method that failed', async () => {
+    mockRequestUrl.mockReturnValue(res(404));
+    const err = await new StandardWebDAVClient(settings, 'pw', 'Vault')
+      .downloadFile(RAW_PATH).catch((e: unknown) => e);
+    expect((err as NetworkError).method).toBe('GET');
+    expect((err as NetworkError).message).toBe('HTTP 404 (GET)');
   });
 });

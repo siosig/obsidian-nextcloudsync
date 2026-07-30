@@ -4,6 +4,7 @@ import {
   toRemotePath,
   isSafeVaultRelativePath,
   encodeRemoteUrl,
+  encodeServerUrl,
 } from '../../../src/network/remotePath';
 
 describe('hrefToRelative', () => {
@@ -82,69 +83,120 @@ describe('fromRemotePath (traversal hardening)', () => {
   });
 });
 
-// [SPEC:URL-1] [SPEC:URL-2]: feature 061. iOS's native request layer re-encodes the whole URL
-// string it is handed, so pre-encoding anything here (ASCII or not) gets double-encoded there
-// (e.g. our `%20` becomes the server-side literal `%2520`). isIosApp=true must therefore leave
-// every character raw (URL-1); isIosApp=false must stay byte-for-byte identical to pre-061 (URL-2).
+
+// [SPEC:URE-1] [SPEC:URE-3] [SPEC:URE-4]: feature 065 (issue #25). ONE encoding scheme for every
+// platform — encodeRemoteUrl takes no platform argument at all, which is what makes "iOS behaves
+// differently here" unrepresentable rather than merely discouraged. Feature 061's iOS branch (leave
+// the path raw and let the request layer encode it) is gone: a raw space is NOT encoded there, so
+// every path containing one 404'd. The scheme below is byte-for-byte webdav-client's encodePath(),
+// which remotely-save ships to iOS users at scale.
 describe('encodeRemoteUrl', () => {
   const baseUrl = 'https://example.com/remote.php/dav/files/alice';
 
-  describe('isIosApp: true', () => {
-    it('leaves an ASCII space raw (no %20)', () => {
-      expect(encodeRemoteUrl(baseUrl, '00 收件箱/未命名.md', true))
-        .toBe(`${baseUrl}/00 收件箱/未命名.md`);
-    });
-
-    it('leaves CJK characters raw', () => {
-      expect(encodeRemoteUrl(baseUrl, '中文目录/日记.md', true))
-        .toBe(`${baseUrl}/中文目录/日记.md`);
-    });
-
-    it('leaves URL-structural ASCII characters (#, ?, %) raw', () => {
-      expect(encodeRemoteUrl(baseUrl, 'a#b?c%d.md', true))
-        .toBe(`${baseUrl}/a#b?c%d.md`);
-    });
-
-    it('leaves an emoji (surrogate pair) raw', () => {
-      expect(encodeRemoteUrl(baseUrl, '📁folder/note.md', true))
-        .toBe(`${baseUrl}/📁folder/note.md`);
-    });
-
-    it('still treats "/" as the path separator, not a literal character', () => {
-      expect(encodeRemoteUrl(baseUrl, 'a/b/c.md', true))
-        .toBe(`${baseUrl}/a/b/c.md`);
-    });
-
-    it('returns baseUrl unchanged for an empty path', () => {
-      expect(encodeRemoteUrl(baseUrl, '', true)).toBe(baseUrl);
-    });
+  it('percent-encodes an ASCII space (the issue #25 regression)', () => {
+    expect(encodeRemoteUrl(baseUrl, 'Directory Name/FileName.md'))
+      .toBe(`${baseUrl}/Directory%20Name/FileName.md`);
+    expect(encodeRemoteUrl(baseUrl, 'This Is A Note.md'))
+      .toBe(`${baseUrl}/This%20Is%20A%20Note.md`);
   });
 
-  // isIosApp: false must match the pre-061 behavior exactly (desktop/Android — Android's
-  // native layer is unconfirmed to share iOS's re-encoding behavior, so it keeps this path).
-  describe('isIosApp: false (desktop/Android — unchanged from 0.7.32)', () => {
-    it('percent-encodes an ASCII space', () => {
-      expect(encodeRemoteUrl(baseUrl, 'my note.md', false))
-        .toBe(`${baseUrl}/my%20note.md`);
-    });
+  it('percent-encodes CJK characters as UTF-8', () => {
+    expect(encodeRemoteUrl(baseUrl, '中文目录/日记.md'))
+      .toBe(`${baseUrl}/%E4%B8%AD%E6%96%87%E7%9B%AE%E5%BD%95/%E6%97%A5%E8%AE%B0.md`);
+  });
 
-    it('leaves CJK characters raw but encodes ASCII structural characters', () => {
-      expect(encodeRemoteUrl(baseUrl, '中文目录/日记 a.md', false))
-        .toBe(`${baseUrl}/中文目录/日记%20a.md`);
-    });
+  it('percent-encodes a mixed space + CJK path (the PR #17 folder name)', () => {
+    expect(encodeRemoteUrl(baseUrl, '00 收件箱/未命名.md'))
+      .toBe(`${baseUrl}/00%20%E6%94%B6%E4%BB%B6%E7%AE%B1/%E6%9C%AA%E5%91%BD%E5%90%8D.md`);
+  });
 
-    it('percent-encodes #, ?, % individually', () => {
-      expect(encodeRemoteUrl(baseUrl, 'a#b?c%d.md', false))
-        .toBe(`${baseUrl}/a%23b%3Fc%25d.md`);
-    });
+  it('percent-encodes URL-structural ASCII characters (#, ?, %)', () => {
+    expect(encodeRemoteUrl(baseUrl, 'a#b?c%d.md'))
+      .toBe(`${baseUrl}/a%23b%3Fc%25d.md`);
+  });
 
-    it('leaves an emoji (surrogate pair) raw', () => {
-      expect(encodeRemoteUrl(baseUrl, '📁folder/note.md', false))
-        .toBe(`${baseUrl}/📁folder/note.md`);
-    });
+  // The reporter of issue #25 noted `&` synced fine while spaces did not — `&` is legal raw in a
+  // path, a space is not. Encoding it anyway is correct and costs nothing.
+  it('percent-encodes & as well', () => {
+    expect(encodeRemoteUrl(baseUrl, 'Test&Note.md')).toBe(`${baseUrl}/Test%26Note.md`);
+  });
 
-    it('returns baseUrl unchanged for an empty path', () => {
-      expect(encodeRemoteUrl(baseUrl, '', false)).toBe(baseUrl);
+  it('keeps an emoji (surrogate pair) intact as 4-byte UTF-8', () => {
+    expect(encodeRemoteUrl(baseUrl, '📁folder/note.md'))
+      .toBe(`${baseUrl}/%F0%9F%93%81folder/note.md`);
+  });
+
+  it('treats "/" as the path separator, never encoding it to %2F', () => {
+    const url = encodeRemoteUrl(baseUrl, 'a/b/c.md');
+    expect(url).toBe(`${baseUrl}/a/b/c.md`);
+    expect(url).not.toContain('%2F');
+  });
+
+  it('preserves empty segments (consecutive slashes) rather than collapsing them', () => {
+    expect(encodeRemoteUrl(baseUrl, 'a//b.md')).toBe(`${baseUrl}/a//b.md`);
+  });
+
+  it('returns baseUrl unchanged for an empty path', () => {
+    expect(encodeRemoteUrl(baseUrl, '')).toBe(baseUrl);
+  });
+
+  // Guards the actual defect shape: encoding twice yields %25.. and the server stores the literal
+  // percent sequence as the name. One pass, and only one, may ever be applied here.
+  it('encodes exactly once — no %25 appears for input that contains no literal %', () => {
+    expect(encodeRemoteUrl(baseUrl, '00 收件箱/未命名.md')).not.toContain('%25');
+  });
+
+  // [SPEC:URE-3] send/receive symmetry: whatever we encode, hrefToRelative must decode back.
+  describe('round-trips through hrefToRelative', () => {
+    const base = 'MyVault';
+    const paths = [
+      'Directory Name/FileName.md',
+      'This Is A Note.md',
+      '00 收件箱/未命名.md',
+      'Test&Note.md',
+      'a#b?c%d.md',
+      '📁folder/note.md',
+      'plain.md',
+    ];
+    it.each(paths)('%s', (rel) => {
+      const url = encodeRemoteUrl(baseUrl, toRemotePath(base, rel));
+      expect(hrefToRelative(baseUrl, base, url)).toBe(rel);
     });
+  });
+});
+
+// [SPEC:URE-4]: the Server URL may end in a subfolder holding a space or non-ASCII characters, and
+// it is the base of every request URL — so it needs the same one-pass treatment. A value that
+// already contains `%` was pasted pre-encoded (browsers show URLs that way) and must be left alone,
+// otherwise `%20` would become `%2520` — the exact corruption this feature exists to prevent.
+describe('encodeServerUrl', () => {
+  it('encodes a space in a raw Server URL', () => {
+    expect(encodeServerUrl('https://example.com/dav/My Folder'))
+      .toBe('https://example.com/dav/My%20Folder');
+  });
+
+  it('encodes non-ASCII in a raw Server URL', () => {
+    expect(encodeServerUrl('https://example.com/dav/フォルダ'))
+      .toBe('https://example.com/dav/%E3%83%95%E3%82%A9%E3%83%AB%E3%83%80');
+  });
+
+  it('leaves an already-encoded Server URL untouched (no %2520)', () => {
+    const encoded = 'https://example.com/dav/My%20Folder';
+    expect(encodeServerUrl(encoded)).toBe(encoded);
+    expect(encodeServerUrl(encoded)).not.toContain('%2520');
+  });
+
+  it('leaves a plain ASCII Server URL unchanged', () => {
+    const plain = 'https://example.com/remote.php/dav/files/alice';
+    expect(encodeServerUrl(plain)).toBe(plain);
+  });
+
+  it('keeps scheme, host, port and path separators intact', () => {
+    expect(encodeServerUrl('https://example.com:8443/a b/c'))
+      .toBe('https://example.com:8443/a%20b/c');
+  });
+
+  it('returns an empty string unchanged', () => {
+    expect(encodeServerUrl('')).toBe('');
   });
 });
