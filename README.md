@@ -31,11 +31,11 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.37-beta.1)
+## What's new in this release (0.7.37)
 
-- **Fixed: "Sync on file change" could overwrite another device's edit (0.7.37-beta.1)** — editing a note triggered an immediate upload that never looked at the server first, so a change another device had made since your last sync was replaced with no conflict, no merge and no notice. That path now checks the file's current remote state and goes through the same conflict resolution a full sync uses, so both sides survive (Markdown is merged). Deleting a file locally likewise no longer removes a copy another device just edited — it is restored instead.
-- **Fixed: a file was re-downloaded right after it was uploaded (0.7.37-beta.1)** — the sync state recorded the pre-upload remote identifier, so the next sync always saw the file as "changed on the server" and fetched back what it had just sent.
-- **New: you are told when a conflict was resolved automatically (0.7.37-beta.1)** — background syncs stay silent for ordinary uploads and downloads, but now report a merge, conflict markers, or a resolution that had to pick one side.
+- **Fixed: "Sync on file change" could overwrite another device's edit (0.7.37)** — editing a note triggered an immediate upload that never looked at the server first, so a change another device had made since your last sync was replaced with no conflict, no merge and no notice. That path now checks the file's current remote state and goes through the same conflict resolution a full sync uses, so both sides survive (Markdown is merged). Deleting a file locally likewise no longer removes a copy another device just edited — it is restored instead.
+- **Fixed: a file was re-downloaded right after it was uploaded (0.7.37)** — the sync state recorded the pre-upload remote identifier, so the next sync always saw the file as "changed on the server" and fetched back what it had just sent.
+- **New: you are told when a conflict was resolved automatically (0.7.37)** — background syncs stay silent for ordinary uploads and downloads, but now report a merge, conflict markers, or a resolution that had to pick one side.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
