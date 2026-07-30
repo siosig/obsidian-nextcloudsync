@@ -4,6 +4,22 @@ export interface IWebDAVClient {
   connect(): Promise<NextcloudFeatures>;
   getFiles(path: string): Promise<RemoteFileInfo[]>;
   /**
+   * Remote state of ONE file (PROPFIND Depth:0), or null when the path holds no file.
+   *
+   * Feature 064: the watch-mode single-file path had no way to learn the current remote state, so it
+   * uploaded blind and silently overwrote another device's edit. This is that missing piece — the
+   * returned {@link RemoteFileInfo} is shaped exactly like a full-scan listing entry so the caller can
+   * hand it to the SAME classification/conflict code the full sync uses, instead of duplicating it.
+   *
+   * Contract (specs/064-watch-single-file-conflict/contracts/watch-single-file-sync.md, C-0):
+   * - file present            → RemoteFileInfo (checksum/etag/size/lastModified/fileId as in getFiles)
+   * - 404 (file or parent)    → null
+   * - the path is a collection→ null (a folder is not a file; never treated as one)
+   * - any other non-207       → throws NetworkError (an ambiguous failure must NOT read as "absent",
+   *                             which would turn into a blind create/overwrite)
+   */
+  statFile(remotePath: string): Promise<RemoteFileInfo | null>;
+  /**
    * Returns the ETag of the sync-root collection (the vault folder), or null when it cannot be
    * obtained or is not meaningful for change detection (root-ETag short-circuit, spec 023). Nextcloud
    * propagates child changes up to the root, so a matching root ETag means the remote tree is
