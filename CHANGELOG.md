@@ -11,6 +11,15 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.37] - 2026-07-30
+
+### Fixed
+- "Sync on file change" uploaded an edited note without first checking the server, so an edit made on another device since the last sync was replaced with no conflict, no merge and no notice ([#23](https://github.com/siosig/obsidian-nextcloudsync/issues/23)). That path now reads the file's current remote state and runs the same conflict resolution a full sync uses, so both sides survive (Markdown is merged). A local delete no longer removes a copy another device just edited — it is restored instead.
+- A file was downloaded again immediately after being uploaded: the sync state kept the pre-upload remote identifier, so the next sync always classified it as "changed on the server".
+
+### Added
+- Automatic conflict resolutions are now reported. Background syncs stay silent for ordinary uploads and downloads, but a merge, conflict markers, or a resolution that had to pick one side is surfaced.
+
 ## [0.7.36] - 2026-07-27
 
 ### Security
@@ -342,6 +351,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.37]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.37
 [0.7.36]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.36
 [0.7.35]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.35
 [0.7.34]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.34
