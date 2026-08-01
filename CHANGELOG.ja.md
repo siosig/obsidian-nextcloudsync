@@ -11,6 +11,15 @@
 
 > 英語版（原文）は [`CHANGELOG.md`](CHANGELOG.md) を参照してください。
 
+## [0.7.38] - 2026-08-01
+
+### Fixed
+- iOS で名前に半角スペースを含むファイル・フォルダが同期できなかった（[#25](https://github.com/siosig/obsidian-nextcloudsync/issues/25)）。スペースを含むパスがすべて HTTP 404 になり、対象のノートが一切同期されなかった。0.7.33 で別の問題に対処するため iOS だけ URL エンコードをやめていたが、その判断が誤りだったため、全プラットフォームで同じ方式に統一した。
+- Server URL の末尾がスペースや非ラテン文字を含むフォルダ名の場合に、正しくエンコードするようにした。エンコード済みの URL を貼り付けた場合はそのまま扱う。
+
+### Added
+- デバッグログに失敗したファイル名がすべて出るようにした。同期が失敗してもログにはエラー件数しか残らず、どのファイルが影響を受けたのか分からなかった。各失敗をパス付きで記録し、通信エラーはどの操作で失敗したか（例: `HTTP 404 (GET)`）も表示する。
+
 ## [0.7.37] - 2026-07-30
 
 ### Fixed
@@ -351,6 +360,7 @@ Nextcloud 特化同期エンジンの初回公開リリース（0.2.0 〜 0.2.1�
 - **Dry-run でのコンフリクト結果の明確化** — 初回同期プレビューがコンフリクト解決の結果を説明し、各コンフリクトファイルをクリックするとマージ後の内容（変更前後）をプレビューできます。
 - **汎用 WebDAV より高速な同期** — 内容ハッシュと Nextcloud の `sync-token` を突き合わせ、毎回リモートツリー全体を再帰的に走査するのではなく、実際に変更された分だけを転送します。更新日時ベースの WebDAV プラグインより同期が明確に速くなります。
 
+[0.7.38]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.38
 [0.7.37]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.37
 [0.7.36]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.36
 [0.7.35]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.35

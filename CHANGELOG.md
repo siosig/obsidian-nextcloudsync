@@ -11,6 +11,15 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.38] - 2026-08-01
+
+### Fixed
+- On iOS, files and folders whose names contain a space failed to sync ([#25](https://github.com/siosig/obsidian-nextcloudsync/issues/25)). Every path with a space in it came back as HTTP 404, so those notes never synced at all. Version 0.7.33 had stopped URL-encoding paths on iOS to fix a different problem; that turned out to be the wrong call, and encoding is now done the same way on every platform.
+- A Server URL ending in a folder whose name contains a space or non-Latin characters is now encoded correctly, while one you pasted already encoded is left untouched.
+
+### Added
+- The debug log now names every file that failed. A failed sync used to log only the number of errors, which made it impossible to tell which files were affected. Each failure is listed with its path, and network errors say which operation failed (for example `HTTP 404 (GET)`).
+
 ## [0.7.37] - 2026-07-30
 
 ### Fixed
@@ -351,6 +360,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.38]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.38
 [0.7.37]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.37
 [0.7.36]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.36
 [0.7.35]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.35
