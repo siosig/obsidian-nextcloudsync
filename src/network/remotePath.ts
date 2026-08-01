@@ -84,28 +84,57 @@ export function hrefToRelative(baseUrl: string, base: string, href: string): str
 /**
  * Build a WebDAV URL from a files-root-relative path.
  *
- * Obsidian's request layer performs the UTF-8 percent-encoding when it sends the request. Encoding
- * characters here as well double-encodes them on some platforms: our `%E4%B8%AD` (or `%20`) gets
- * its `%` escaped again to `%25E4...` (or `%2520`), so Nextcloud stores the literal percent-encoded
- * string as the file/folder name instead of the intended character. On iOS the request layer's
- * re-encoding pass covers every character, not just non-ASCII, so `isIosApp` leaves the entire path
- * untouched there and lets the request layer encode it exactly once. Elsewhere (desktop, Android —
- * unconfirmed to share iOS's behavior) only non-ASCII characters are left intact, while ASCII
- * characters that carry structural meaning in a URL (space, `#`, `?`, `%`, ...) are still escaped
- * here, matching the request layer's behavior on those platforms. Slashes remain path separators.
- * Iterating by code point keeps surrogate pairs (emoji) intact.
+ * ONE scheme for every platform: percent-encode each path segment, keep `/` as the separator.
+ * `encodeURIComponent` escapes both the ASCII characters that carry structural meaning in a URL
+ * (space, `#`, `?`, `%`, `&`, ...) and every non-ASCII character as UTF-8, and it operates on code
+ * points, so surrogate pairs (emoji) survive. This is byte-for-byte the scheme webdav-client uses
+ * (`encodePath()`: protect the slashes, `encodeURIComponent`, restore the slashes), which
+ * remotely-save ships to iOS users at scale with no platform branch of its own.
+ *
+ * Why there is deliberately NO iOS branch here (feature 065, issue #25) — do not reintroduce one:
+ * feature 061 made iOS pass the path RAW, on the theory that the native request layer re-encodes
+ * every character exactly once and would otherwise double-escape our `%` into `%25`. Issue #25
+ * disproved the theory: a raw space is not encoded there, so every path containing one 404s (a raw
+ * `&`, legal in a URL path, went through fine — which is what pins the failure on the unencoded
+ * space rather than on the request layer as a whole).
+ *
+ * The observation that motivated 061 (a pre-encoded `%20` surfacing as a LITERAL `%20` in the
+ * remote folder name) is equally well explained by the reverse proxy in front of Nextcloud:
+ * nginx rebuilds a normalized — i.e. percent-decoded — URI whenever `proxy_pass` carries a URI or a
+ * `rewrite` changed it, and Apache's `RewriteRule` double-encodes any percent-encoding already
+ * present unless `[NE]` is set. Both reporters ran the same client (Obsidian 1.12.7 / iOS 26.5.x),
+ * so the difference between them is far more likely server-side than client-side.
+ *
+ * If a literal-`%XX` name is ever reported again: ask for the reverse-proxy configuration BEFORE
+ * touching this function. Flipping the scheme back would re-break issue #25 for everyone.
  */
-export function encodeRemoteUrl(baseUrl: string, remotePath: string, isIosApp: boolean): string {
+export function encodeRemoteUrl(baseUrl: string, remotePath: string): string {
   if (!remotePath) return baseUrl;
-  const encodedPath = remotePath
-    .split('/')
-    .map((segment) => isIosApp
-      ? segment
-      : Array.from(segment, (char) =>
-          (char.codePointAt(0) ?? 0) > 0x7f ? char : encodeURIComponent(char),
-        ).join(''))
-    .join('/');
+  const encodedPath = remotePath.split('/').map(encodeURIComponentSegment).join('/');
   return `${baseUrl}/${encodedPath}`;
+}
+
+/** `encodeURIComponent` as a standalone reference so `.map()` never receives the index argument. */
+function encodeURIComponentSegment(segment: string): string {
+  return encodeURIComponent(segment);
+}
+
+/**
+ * Normalize the user-entered Server URL so its path is percent-encoded exactly once.
+ *
+ * The Server URL may end in an arbitrary subfolder (the only way to place the vault somewhere other
+ * than the WebDAV files root), and that subfolder can contain a space or non-ASCII characters. We
+ * pass this value through as the base of every request URL, so leaving it raw reproduces the very
+ * failure {@link encodeRemoteUrl} exists to prevent.
+ *
+ * A `%` anywhere in the value means the user pasted an already-encoded URL (browsers show them that
+ * way), so it is returned untouched — encoding it again would turn `%20` into `%2520`. This is the
+ * same guard remotely-save applies to its own address setting. `encodeURI` (not
+ * `encodeURIComponent`) is used so the scheme, host, port and path separators survive.
+ */
+export function encodeServerUrl(url: string): string {
+  if (!url || url.includes('%')) return url;
+  return encodeURI(url);
 }
 
 /**
@@ -114,7 +143,7 @@ export function encodeRemoteUrl(baseUrl: string, remotePath: string, isIosApp: b
  * Required before upload because WebDAV PUT does not auto-create parent directories.
  */
 export async function ensureRemoteDir(
-  ctx: { baseUrl: string; authHeader: string; timeoutMs?: number; isIosApp: boolean },
+  ctx: { baseUrl: string; authHeader: string; timeoutMs?: number },
   remoteFilePath: string,
   createdCache: Set<string>,
 ): Promise<void> {
@@ -125,7 +154,7 @@ export async function ensureRemoteDir(
     acc = acc ? `${acc}/${seg}` : seg;
     if (createdCache.has(acc)) continue;
     await requestUrlWithTimeout({
-      url: encodeRemoteUrl(ctx.baseUrl, acc, ctx.isIosApp),
+      url: encodeRemoteUrl(ctx.baseUrl, acc),
       method: 'MKCOL',
       headers: { Authorization: ctx.authHeader, ...NO_CACHE_HEADERS },
       throw: false,
