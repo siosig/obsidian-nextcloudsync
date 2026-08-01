@@ -31,11 +31,11 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.37)
+## What's new in this release (0.7.38-beta.1)
 
-- **Fixed: "Sync on file change" could overwrite another device's edit (0.7.37)** — editing a note triggered an immediate upload that never looked at the server first, so a change another device had made since your last sync was replaced with no conflict, no merge and no notice. That path now checks the file's current remote state and goes through the same conflict resolution a full sync uses, so both sides survive (Markdown is merged). Deleting a file locally likewise no longer removes a copy another device just edited — it is restored instead.
-- **Fixed: a file was re-downloaded right after it was uploaded (0.7.37)** — the sync state recorded the pre-upload remote identifier, so the next sync always saw the file as "changed on the server" and fetched back what it had just sent.
-- **New: you are told when a conflict was resolved automatically (0.7.37)** — background syncs stay silent for ordinary uploads and downloads, but now report a merge, conflict markers, or a resolution that had to pick one side.
+- **Fixed: on iOS, files and folders whose names contain a space failed to sync (0.7.38-beta.1)** — every path with a space in it came back as HTTP 404, so those notes never synced at all. Version 0.7.33 had stopped URL-encoding paths on iOS to fix a different problem; that turned out to be the wrong call, and encoding is now done the same way on every platform.
+- **New: the debug log names every file that failed (0.7.38-beta.1)** — a failed sync used to log only the number of errors, which made it impossible to tell which files were affected. Each failure is now listed with its path, and network errors say which operation failed (for example `HTTP 404 (GET)`).
+- **Fixed: a Server URL ending in a folder with a space or non-Latin characters (0.7.38-beta.1)** — such a URL is now encoded correctly, while one you pasted already encoded is left untouched.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
