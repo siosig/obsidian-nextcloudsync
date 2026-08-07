@@ -11,6 +11,11 @@
 
 > 英語版（原文）は [`CHANGELOG.md`](CHANGELOG.md) を参照してください。
 
+## [0.7.39] - 2026-08-07
+
+### Security
+- 開発・テスト用の依存パッケージに残っていた脆弱性の指摘を、`undici` / `ip-address` / `fast-uri` / `brace-expansion` / `diff` を修正済みバージョンへ固定することですべて解消した。いずれもビルド時・テスト時にのみ使うパッケージであり、実行時の依存パッケージは変更なし。リリースされる `main.js` も 0.7.38 とバイト単位で同一のため、動作の変更はない。
+
 ## [0.7.38] - 2026-08-01
 
 ### Fixed
@@ -360,6 +365,7 @@ Nextcloud 特化同期エンジンの初回公開リリース（0.2.0 〜 0.2.1�
 - **Dry-run でのコンフリクト結果の明確化** — 初回同期プレビューがコンフリクト解決の結果を説明し、各コンフリクトファイルをクリックするとマージ後の内容（変更前後）をプレビューできます。
 - **汎用 WebDAV より高速な同期** — 内容ハッシュと Nextcloud の `sync-token` を突き合わせ、毎回リモートツリー全体を再帰的に走査するのではなく、実際に変更された分だけを転送します。更新日時ベースの WebDAV プラグインより同期が明確に速くなります。
 
+[0.7.39]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.39
 [0.7.38]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.38
 [0.7.37]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.37
 [0.7.36]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.36

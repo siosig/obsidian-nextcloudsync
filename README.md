@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.39-beta.1)
+## What's new in this release (0.7.39)
 
-- **Security housekeeping in the build toolchain only (0.7.39-beta.1)** — every outstanding advisory against the development and test dependencies was closed by pinning patched versions. Nothing that ships was touched: the runtime dependencies are unchanged and the built `main.js` is byte-for-byte identical to 0.7.38, so there is no change in behaviour.
+- **Security housekeeping in the build toolchain only (0.7.39)** — every outstanding advisory against the development and test dependencies was closed by pinning patched versions. Nothing that ships was touched: the runtime dependencies are unchanged and the built `main.js` is byte-for-byte identical to 0.7.38, so there is no change in behaviour.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
