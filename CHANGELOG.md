@@ -11,6 +11,11 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.39] - 2026-08-07
+
+### Security
+- Closed every outstanding advisory against the development and test dependencies by pinning patched versions of `undici`, `ip-address`, `fast-uri`, `brace-expansion` and `diff`. These are build- and test-time packages only; the runtime dependencies are unchanged and the released `main.js` is byte-for-byte identical to 0.7.38, so there is no change in behaviour.
+
 ## [0.7.38] - 2026-08-01
 
 ### Fixed
@@ -360,6 +365,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.39]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.39
 [0.7.38]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.38
 [0.7.37]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.37
 [0.7.36]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.36
