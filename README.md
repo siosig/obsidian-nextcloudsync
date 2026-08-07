@@ -31,11 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.38)
+## What's new in this release (0.7.39-beta.1)
 
-- **Fixed: on iOS, files and folders whose names contain a space failed to sync (0.7.38)** — every path with a space in it came back as HTTP 404, so those notes never synced at all. Version 0.7.33 had stopped URL-encoding paths on iOS to fix a different problem; that turned out to be the wrong call, and encoding is now done the same way on every platform.
-- **New: the debug log names every file that failed (0.7.38)** — a failed sync used to log only the number of errors, which made it impossible to tell which files were affected. Each failure is now listed with its path, and network errors say which operation failed (for example `HTTP 404 (GET)`).
-- **Fixed: a Server URL ending in a folder with a space or non-Latin characters (0.7.38)** — such a URL is now encoded correctly, while one you pasted already encoded is left untouched.
+- **Security housekeeping in the build toolchain only (0.7.39-beta.1)** — every outstanding advisory against the development and test dependencies was closed by pinning patched versions. Nothing that ships was touched: the runtime dependencies are unchanged and the built `main.js` is byte-for-byte identical to 0.7.38, so there is no change in behaviour.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
