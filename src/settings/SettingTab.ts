@@ -412,6 +412,32 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         .setCta()
         .onClick(() => { void addExcluded(excludeInput?.getValue() ?? ''); }));
 
+    // ── Hidden files / dotfolders (opt-in) ──────────────────────────────────────
+    // Feature: let users keep machine/tooling dot content device-local. Two independent toggles so a
+    // user can drop hidden files (e.g. .env) without also excluding whole dotfolders, or vice versa.
+    // Both are OFF by default — a fresh install keeps today's behaviour (only .git/.trash hard-excluded).
+    makeSetting(containerEl)
+      .setName('Exclude hidden files')
+      .setDesc('Never sync files whose name starts with "." (for example .env and .gitignore). Hidden files inside ordinary folders are still excluded. Off by default.')
+      .setTooltip(TOOLTIPS.excludeHiddenFiles)
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.excludeHiddenFiles)
+        .onChange(async (value) => {
+          this.plugin.settings.excludeHiddenFiles = value;
+          await this.plugin.saveSettings();
+        }));
+
+    makeSetting(containerEl)
+      .setName('Exclude dotfolders')
+      .setDesc('Never sync folders whose name starts with "." (for example .git and .hidden) and everything inside them. This is an opt-in generalization of the always-on .git/.trash exclusion to all dotfolders. Off by default.')
+      .setTooltip(TOOLTIPS.excludeDotFolders)
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.excludeDotFolders)
+        .onChange(async (value) => {
+          this.plugin.settings.excludeDotFolders = value;
+          await this.plugin.saveSettings();
+        }));
+
     // ── Config folder (.obsidian) ──────────────────────────────────────────────
     // Category-level opt-in for the config folder (issue #1), modelled on Obsidian native
     // Sync's "Vault configuration sync". Community plugins and the plugin's own state DB are

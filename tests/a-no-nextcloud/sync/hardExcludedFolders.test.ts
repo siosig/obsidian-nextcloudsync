@@ -81,3 +81,65 @@ describe('[SPEC:MDV-5] breaker report notes are excluded from sync (feature 056)
     expect(isSystemExcluded('notes/nextcloud-sync-dir-breaker-report.md')).toBe(false);
   });
 });
+
+// Feature: opt-in exclusion of hidden files and dotfolders (joplin-server-sync PR).
+function isSystemExcludedWith(path: string, overrides: Partial<DavSyncSettings>): boolean {
+  const settings = {
+    configDir: '.obsidian',
+    logsFolder: '',
+    loggingEnabled: false,
+    syncConfigFolder: false,
+    excludedFolders: [],
+    excludeHiddenFiles: false,
+    excludeDotFolders: false,
+    configSync: { appearance: false, themesSnippets: false, hotkeys: false, corePlugins: false, bookmarks: false },
+    ...overrides,
+  } as unknown as DavSyncSettings;
+  const engine = new SyncEngine({
+    app: {}, settings, configDir: '.obsidian', pluginDir: '.obsidian/plugins/nextcloud-sync',
+    localAdapter: {}, stateDB: {}, statusBar: {}, webdavFactory: {},
+  } as never);
+  return (engine as unknown as { isSystemExcluded(p: string): boolean }).isSystemExcluded(path);
+}
+
+describe('opt-in exclude hidden files', () => {
+  it('excludes files whose basename starts with "." when enabled', () => {
+    expect(isSystemExcludedWith('.env', { excludeHiddenFiles: true })).toBe(true);
+    expect(isSystemExcludedWith('.gitignore', { excludeHiddenFiles: true })).toBe(true);
+    expect(isSystemExcludedWith('secret/.env', { excludeHiddenFiles: true })).toBe(true);
+  });
+
+  it('does NOT exclude hidden files when the toggle is off (preserves prior behaviour)', () => {
+    expect(isSystemExcludedWith('.env', {})).toBe(false);
+    expect(isSystemExcludedWith('.gitignore', {})).toBe(false);
+  });
+
+  it('does NOT exclude ordinary files even when enabled', () => {
+    expect(isSystemExcludedWith('note.md', { excludeHiddenFiles: true })).toBe(false);
+    expect(isSystemExcludedWith('Attachments/clip.mp4', { excludeHiddenFiles: true })).toBe(false);
+  });
+});
+
+describe('opt-in exclude dotfolders', () => {
+  it('excludes dotfolders and their subtree when enabled', () => {
+    expect(isSystemExcludedWith('.obsidian', { excludeDotFolders: true })).toBe(true);
+    expect(isSystemExcludedWith('.obsidian/config.json', { excludeDotFolders: true })).toBe(true);
+    expect(isSystemExcludedWith('.hidden/note.md', { excludeDotFolders: true })).toBe(true);
+    expect(isSystemExcludedWith('Notes/.hidden/deep/doc.md', { excludeDotFolders: true })).toBe(true);
+  });
+
+  it('does NOT exclude dotfolders when the toggle is off — matches the targeted-hard-list contract', () => {
+    expect(isSystemExcludedWith('.archive/note.md', {})).toBe(false);
+    expect(isSystemExcludedWith('.env', {})).toBe(false);
+  });
+
+  it('does NOT exclude ordinary folders even when enabled', () => {
+    expect(isSystemExcludedWith('Notes/note.md', { excludeDotFolders: true })).toBe(false);
+    expect(isSystemExcludedWith('Attachments/Large media/clip.mp4', { excludeDotFolders: true })).toBe(false);
+  });
+
+  it('hard .git/.trash exclusion still applies even when the toggle is off', () => {
+    expect(isSystemExcludedWith('.git/config', {})).toBe(true);
+    expect(isSystemExcludedWith('.trash/x.md', {})).toBe(true);
+  });
+});

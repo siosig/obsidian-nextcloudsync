@@ -58,6 +58,10 @@ export const TOOLTIPS = {
     'Folders listed here are never synced (folder-prefix match). .git, .trash, the config plugins folder, and plugin state are already excluded automatically.',
   addExcludedFolder:
     'Pick or type a vault-relative folder to exclude. The path is added to the list below.',
+  excludeHiddenFiles:
+    'When ON, files whose name starts with "." are never uploaded or downloaded — for example .env and .gitignore. Folder names are unaffected by this toggle; use "Exclude dotfolders" for those.',
+  excludeDotFolders:
+    'When ON, folders whose name starts with "." and everything inside them are never synced — for example .git and .hidden. This extends the always-on .git/.trash exclusion to every dotfolder. Turning this ON also excludes the config folder, so config-folder sync is moot while it is enabled.',
 
   // Config folder section
   syncConfigFolder:

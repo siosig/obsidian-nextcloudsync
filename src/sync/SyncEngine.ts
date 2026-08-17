@@ -35,7 +35,7 @@ import { ConflictResolver, hasOrphanMarker } from './ConflictResolver';
 import { ConfigSyncResolver } from './ConfigSyncResolver';
 import { sha256 } from '../util/hash';
 import { FIXED, chunkThresholdMB } from '../util/fixedSyncConfig';
-import { isUnderExcludedFolder, HARD_EXCLUDED_FOLDERS } from '../util/excludedFolders';
+import { isUnderExcludedFolder, HARD_EXCLUDED_FOLDERS, isHiddenFile, isUnderDotFolder } from '../util/excludedFolders';
 import { FileLogger } from '../util/FileLogger';
 import {
   isCellularBlocked, SIGNATURE_SAFETY_WINDOW_MS, MAX_HASH_SIZE,
@@ -2865,6 +2865,12 @@ export class SyncEngine {
     // path before the config-folder logic so it covers ordinary vault files too. This is an
     // additive layer on top of the hard exclusions above — those always take precedence.
     if (isUnderExcludedFolder(path, this.opts.settings?.excludedFolders ?? [])) return true;
+    // Opt-in exclusion of hidden files (basename starts with "."): `.env`, `.gitignore`, `.DS_Store`, …
+    // Independent of the folder rule above — a hidden file inside an ordinary folder is still excluded.
+    if (this.opts.settings?.excludeHiddenFiles && isHiddenFile(path)) return true;
+    // Opt-in exclusion of dotfolders (any path segment starts with ".") and their whole subtree:
+    // `.obsidian`, `.git`, `.hidden/x`. Generalizes the permanent `.git`/`.trash` hard exclusion.
+    if (this.opts.settings?.excludeDotFolders && isUnderDotFolder(path)) return true;
     // Ordinary vault files (outside the config folder) are never system-excluded.
     if (!this.configSync.isUnderConfigDir(path)) return false;
     // Inside the config folder: excluded unless an enabled config-sync category includes it.

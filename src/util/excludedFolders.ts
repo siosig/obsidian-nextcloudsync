@@ -56,6 +56,29 @@ export function isUnderExcludedFolder(path: string, folders: readonly string[]):
 }
 
 /**
+ * True when `path`'s basename is a hidden file — i.e. its name starts with ".".
+ * Examples: `.env`, `.gitignore`, `.DS_Store`. Folder segments are NOT considered here;
+ * a path like `secret/.env` has a hidden-file basename, while `.obsidian/config.json`
+ * does not (its basename `config.json` is ordinary — the hidden *folder* is judged by
+ * {@link isUnderDotFolder}). Vault-relative, "/"-separated paths only.
+ */
+export function isHiddenFile(path: string): boolean {
+  const base = path.split('/').pop() ?? '';
+  return base.startsWith('.');
+}
+
+/**
+ * True when any folder segment of `path` starts with "." — i.e. the path lives inside a
+ * hidden (dot) folder or IS a hidden folder itself. Examples: `.obsidian`, `.git/config`,
+ * `Notes/.hidden/note.md`. This covers both the dotfolder and everything nested beneath it,
+ * so excluding a dotfolder prunes its whole subtree in one rule. Vault-relative, "/"-separated
+ * paths only (no leading slash).
+ */
+export function isUnderDotFolder(path: string): boolean {
+  return path.split('/').some(seg => seg.length > 0 && seg.startsWith('.'));
+}
+
+/**
  * Candidate folders for the "Add excluded folder" input suggestion (feature 029). The match pool is
  * every vault folder that is NOT already excluded — neither registered exactly nor nested under a
  * registered entry — and whose normalized path contains `query` (case-insensitive substring). The

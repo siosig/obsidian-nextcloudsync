@@ -1,4 +1,26 @@
-import { normalizeExcludedFolder, isUnderExcludedFolder, filterExcludableFolders } from '../../../src/util/excludedFolders';
+import { normalizeExcludedFolder, isUnderExcludedFolder, filterExcludableFolders, isHiddenFile, isUnderDotFolder } from '../../../src/util/excludedFolders';
+
+describe('isHiddenFile / isUnderDotFolder (exclude hidden + dotfolders)', () => {
+  it('isHiddenFile: true only for files whose basename starts with "."', () => {
+    expect(isHiddenFile('.env')).toBe(true);
+    expect(isHiddenFile('.gitignore')).toBe(true);
+    expect(isHiddenFile('secret/.env')).toBe(true);
+    expect(isHiddenFile('Notes/note.md')).toBe(false);
+    expect(isHiddenFile('Attachments/clip.mp4')).toBe(false);
+    // a dotfolder segment does NOT make the basename a hidden file
+    expect(isHiddenFile('.obsidian/config.json')).toBe(false);
+  });
+
+  it('isUnderDotFolder: true for any path segment starting with "." (folder + subtree)', () => {
+    expect(isUnderDotFolder('.obsidian')).toBe(true);
+    expect(isUnderDotFolder('.git/config')).toBe(true);
+    expect(isUnderDotFolder('Notes/.hidden/note.md')).toBe(true);
+    expect(isUnderDotFolder('.hidden')).toBe(true);
+    // ordinary folders are not caught
+    expect(isUnderDotFolder('Notes/note.md')).toBe(false);
+    expect(isUnderDotFolder('Attachments/Large media/clip.mp4')).toBe(false);
+  });
+});
 
 describe('filterExcludableFolders (029 — Add suggestion pool)', () => {
   const all = ['Attachments', 'Attachments/Large media', 'Notes', 'Notes/Daily', '.git', 'Archive'];
