@@ -82,7 +82,7 @@ describe('[SPEC:MDV-5] breaker report notes are excluded from sync (feature 056)
   });
 });
 
-// Feature: opt-in exclusion of hidden files and dotfolders (joplin-server-sync PR).
+// Feature: exclusion of hidden files and dotfolders (default ON; toggles allow opt-out).
 function isSystemExcludedWith(path: string, overrides: Partial<DavSyncSettings>): boolean {
   const settings = {
     configDir: '.obsidian',
@@ -141,5 +141,19 @@ describe('opt-in exclude dotfolders', () => {
   it('hard .git/.trash exclusion still applies even when the toggle is off', () => {
     expect(isSystemExcludedWith('.git/config', {})).toBe(true);
     expect(isSystemExcludedWith('.trash/x.md', {})).toBe(true);
+  });
+});
+
+describe('DEFAULT_SETTINGS: dot-file/dot-folder exclusion is ON by default', () => {
+  it('excludeHiddenFiles and excludeDotFolders default to true', () => {
+    const { DEFAULT_SETTINGS } = require('../../../src/types');
+    expect(DEFAULT_SETTINGS.excludeHiddenFiles).toBe(true);
+    expect(DEFAULT_SETTINGS.excludeDotFolders).toBe(true);
+  });
+
+  it('a fresh-install engine excludes dot content without any explicit setting', () => {
+    expect(isSystemExcludedWith('.env', { excludeHiddenFiles: true, excludeDotFolders: true })).toBe(true);
+    expect(isSystemExcludedWith('Notes/.hidden/doc.md', { excludeHiddenFiles: true, excludeDotFolders: true })).toBe(true);
+    expect(isSystemExcludedWith('note.md', { excludeHiddenFiles: true, excludeDotFolders: true })).toBe(false);
   });
 });

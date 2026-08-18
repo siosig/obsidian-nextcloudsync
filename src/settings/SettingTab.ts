@@ -412,13 +412,13 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
         .setCta()
         .onClick(() => { void addExcluded(excludeInput?.getValue() ?? ''); }));
 
-    // ── Hidden files / dotfolders (opt-in) ──────────────────────────────────────
-    // Feature: let users keep machine/tooling dot content device-local. Two independent toggles so a
-    // user can drop hidden files (e.g. .env) without also excluding whole dotfolders, or vice versa.
-    // Both are OFF by default — a fresh install keeps today's behaviour (only .git/.trash hard-excluded).
+    // ── Hidden files / dotfolders ──────────────────────────────────────────────
+    // Feature: keep machine/tooling dot content device-local. Two independent toggles so a user
+    // can drop hidden files (e.g. .env) without also excluding whole dotfolders, or vice versa.
+    // Both default ON — dot files/folders are excluded out of the box; turn OFF to sync them.
     makeSetting(containerEl)
       .setName('Exclude hidden files')
-      .setDesc('Never sync files whose name starts with "." (for example .env and .gitignore). Hidden files inside ordinary folders are still excluded. Off by default.')
+      .setDesc('Never sync files whose name starts with "." (for example .env and .gitignore). Hidden files inside ordinary folders are still excluded. On by default.')
       .setTooltip(TOOLTIPS.excludeHiddenFiles)
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.excludeHiddenFiles)
@@ -429,7 +429,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab {
 
     makeSetting(containerEl)
       .setName('Exclude dotfolders')
-      .setDesc('Never sync folders whose name starts with "." (for example .git and .hidden) and everything inside them. This is an opt-in generalization of the always-on .git/.trash exclusion to all dotfolders. Off by default.')
+      .setDesc('Never sync folders whose name starts with "." (for example .git and .hidden) and everything inside them. This is a generalization of the always-on .git/.trash exclusion to all dotfolders. On by default.')
       .setTooltip(TOOLTIPS.excludeDotFolders)
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.excludeDotFolders)

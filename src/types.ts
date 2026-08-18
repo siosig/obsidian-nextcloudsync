@@ -168,16 +168,16 @@ export interface DavSyncSettings {
   excludedFolders: string[];
   /**
    * When ON, files whose name starts with "." (hidden files, e.g. `.env`, `.gitignore`,
-   * `.DS_Store`) are never synced — neither uploaded nor downloaded. Off by default so a fresh
-   * install keeps its current behaviour. Additive on top of the permanent hard exclusions.
+   * `.DS_Store`) are never synced — neither uploaded nor downloaded. ON by default; turn OFF
+   * to sync hidden files. Additive on top of the permanent hard exclusions.
    */
   excludeHiddenFiles: boolean;
   /**
    * When ON, folders whose name starts with "." (dotfolders, e.g. `.obsidian`, `.git`, `.hidden`)
-   * and everything beneath them are never synced. Off by default: this is an OPT-IN generalization
-   * of the permanent `.git`/`.trash` hard exclusion to ALL dotfolders, since some users want every
-   * dotfolder kept device-local (Task 7 / collectDotPaths keeps the targeted hard list as-is for
-   * safety regardless of this toggle).
+   * and everything beneath them are never synced. ON by default: a generalization of the permanent
+   * `.git`/`.trash` hard exclusion to ALL dotfolders, so dot content stays device-local out of the
+   * box (Task 7 / collectDotPaths keeps the targeted hard list as-is for safety regardless of this
+   * toggle). Turn OFF to sync dotfolders again.
    */
   excludeDotFolders: boolean;
   /**
@@ -247,8 +247,8 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   autoMergeFileStrategy: 'merge',
   otherFileStrategy: 'latest-mtime',
   excludedFolders: [],
-  excludeHiddenFiles: false,
-  excludeDotFolders: false,
+  excludeHiddenFiles: true,
+  excludeDotFolders: true,
   frontmatterStrategy: 'merge',
   // Feature 048: default keeps the 047 behaviour — a real merge conflict writes both-side markers.
   conflictStrategy: 'conflict-markers',
