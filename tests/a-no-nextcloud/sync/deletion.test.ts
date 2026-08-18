@@ -90,6 +90,24 @@ describe('SyncEngine.processRemoteDeletion', () => {
   });
 
   // T5: a delete failure does not propagate and does not call StateDB.deleteFile (invariant C3 / FR-006)
+  // Issue #32 mechanism check. A remote rename is NOT applied as a rename: the engine keeps a
+  // per-file `remoteFileId` (which survives a rename on Nextcloud) but has no rename-detection step
+  // and calls neither `fileManager.renameFile` nor `vault.rename` anywhere for user files. The old
+  // path therefore arrives here as a plain remote deletion and is trashed — including when the user
+  // has that very note open, since this sink has no open-leaf awareness at all. Trashing the open
+  // file is what makes Obsidian fall back to the previous note in that tab's history ("navigates
+  // Back"). Asserting the CURRENT behaviour so any future rename handling has to update this test.
+  it('T7: a remote deletion is trashed with no open-leaf awareness, which is what evicts an open note (issue #32)', async () => {
+    const file = new (TFile as unknown as new (p: string) => TFile)('Notes/open-and-renamed-elsewhere.md');
+    const { run, trashFile, remove, deleteFile } = makeEngine({ resolved: file });
+
+    await run('Notes/open-and-renamed-elsewhere.md');
+
+    expect(trashFile).toHaveBeenCalledWith(file);
+    expect(remove).not.toHaveBeenCalled();
+    expect(deleteFile).toHaveBeenCalledWith('Notes/open-and-renamed-elsewhere.md');
+  });
+
   it('T5: when trashFile fails, the error is not propagated and deleteFile is not called (leaving room for retry)', async () => {
     const file = new (TFile as unknown as new (p: string) => TFile)('Notes/b.md');
     const { run, deleteFile } = makeEngine({ resolved: file, trashRejects: true });
