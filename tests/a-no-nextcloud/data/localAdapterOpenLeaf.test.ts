@@ -56,6 +56,8 @@ function makeVault(file: TFile): { vault: Vault; modify: jest.Mock; modifyBinary
   const vault = {
     adapter: undefined as unknown as DataAdapter,
     getAbstractFileByPath: () => file,
+    // Deferred leaves carry no FileView, so the open-file lookup resolves the path through the Vault.
+    getFileByPath: (p: string) => (p === file.path ? file : null),
     getFiles: () => [file],
     trash: jest.fn(),
     modify,
@@ -98,6 +100,104 @@ describe('[OL-2] binary file open -> in-place vault.modifyBinary, no delete even
     expect(adapter.remove).not.toHaveBeenCalled();
     expect(adapter.rename).not.toHaveBeenCalled();
     expect(adapter.writeBinary).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A Workspace double whose single leaf holds `openPath` but is DEFERRED: per obsidian.d.ts
+ * (`WorkspaceLeaf.isDeferred`, @since 1.7.2) a background leaf carries a `DeferredView` instead of
+ * the FileView it would normally have, so `view instanceof FileView` is false even though the file
+ * IS open in that tab. The file identity is still recoverable from `getViewState().state.file`.
+ */
+function makeDeferredWorkspace(openPath: string): Workspace {
+  const leaf = {
+    view: { getViewType: () => 'markdown' } as Record<string, unknown>, // stands in for DeferredView
+    isDeferred: true,
+    getViewState: () => ({ type: 'markdown', state: { file: openPath } }),
+  };
+  return {
+    iterateAllLeaves: (callback: (leaf: unknown) => void) => [leaf].forEach(callback),
+  } as unknown as Workspace;
+}
+
+/**
+ * Issue #32. `findOpenTFile` used to recognise an open file only through `view instanceof FileView`.
+ * Since Obsidian 1.7.2 a background leaf carries a `DeferredView` instead — confirmed against the
+ * shipped app bundle, where the deferred class's prototype chain has none of FileView's members — so
+ * a note sitting in an inactive tab was classified as "not open" and took the destructive
+ * tmp-write -> remove -> rename path. That `remove()` is the physical delete that makes Obsidian drop
+ * the leaf back to the previous note. Detection now also consults the leaf's serialized view state.
+ */
+describe('[OL-4] file open in a DEFERRED (background) leaf -> must still update in place (issue #32)', () => {
+  it('applies the update via vault.modify and never touches adapter.remove/adapter.rename', async () => {
+    const path = 'Notes/background-tab.md';
+    const file = makeTFile(path);
+    const { adapter, files } = makeAdapter();
+    files.set(path, 'old content');
+    const { vault, modify } = makeVault(file);
+    const workspace = makeDeferredWorkspace(path);
+    const local = new LocalAdapter(adapter, vault, workspace);
+
+    await local.atomicWrite(path, 'remote content');
+
+    expect(modify).toHaveBeenCalledWith(file, 'remote content');
+    expect(adapter.remove).not.toHaveBeenCalled();
+    expect(adapter.rename).not.toHaveBeenCalled();
+  });
+
+  // Binary attachments share the same detection, so a deferred image/PDF tab is covered too.
+  it('applies a binary update via vault.modifyBinary for a deferred leaf', async () => {
+    const path = 'attachments/background.png';
+    const file = makeTFile(path);
+    const { adapter, files } = makeAdapter();
+    files.set(path, new ArrayBuffer(2));
+    const { vault, modifyBinary } = makeVault(file);
+    const workspace = makeDeferredWorkspace(path);
+    const local = new LocalAdapter(adapter, vault, workspace);
+    const data = new ArrayBuffer(4);
+
+    await local.atomicWriteBinary(path, data);
+
+    expect(modifyBinary).toHaveBeenCalledWith(file, data);
+    expect(adapter.remove).not.toHaveBeenCalled();
+    expect(adapter.rename).not.toHaveBeenCalled();
+  });
+
+  // Guard against over-matching: a deferred leaf holding some OTHER note must not divert the write
+  // for this path away from the atomic tmp-write path.
+  it('leaves the atomic tmp-write path in place when the deferred leaf holds a different file', async () => {
+    const path = 'Notes/target.md';
+    const file = makeTFile(path);
+    const { adapter, files } = makeAdapter();
+    files.set(path, 'old content');
+    const { vault, modify } = makeVault(file);
+    const workspace = makeDeferredWorkspace('Notes/some-other-tab.md');
+    const local = new LocalAdapter(adapter, vault, workspace);
+
+    await local.atomicWrite(path, 'new content');
+
+    expect(modify).not.toHaveBeenCalled();
+    expect(adapter.remove).toHaveBeenCalledWith(path);
+    expect(adapter.rename).toHaveBeenCalled();
+    expect(files.get(path)).toBe('new content');
+  });
+
+  // A deferred leaf whose state path is a folder (or a since-deleted file) resolves to null via
+  // getFileByPath; that must fall through rather than be treated as an open file.
+  it('falls through to the atomic tmp-write path when the deferred path does not resolve to a file', async () => {
+    const path = 'Notes/unresolvable.md';
+    const other = makeTFile('Notes/elsewhere.md');
+    const { adapter, files } = makeAdapter();
+    files.set(path, 'old content');
+    const { vault, modify } = makeVault(other); // getFileByPath only resolves 'Notes/elsewhere.md'
+    const workspace = makeDeferredWorkspace(path);
+    const local = new LocalAdapter(adapter, vault, workspace);
+
+    await local.atomicWrite(path, 'new content');
+
+    expect(modify).not.toHaveBeenCalled();
+    expect(adapter.remove).toHaveBeenCalledWith(path);
+    expect(files.get(path)).toBe('new content');
   });
 });
 
