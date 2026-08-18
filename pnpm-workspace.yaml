@@ -61,7 +61,17 @@ overrides:
   # Upgrading wdio does not help (9.31.1 still declares @puppeteer/browsers ^2.2.0). @puppeteer/browsers
   # 3.x drops extract-zip entirely (deps are just modern-tar + yargs) and still exports every symbol
   # @wdio/utils calls: Browser, ChromeReleaseChannel, canDownload, computeExecutablePath,
-  # detectBrowserPlatform, install, resolveBuildId. The second major-crossing override here, and unlike
-  # the diff one it is NOT yet proven by execution — the code path only runs under b-2, which the
-  # stable-release gate exercises. If b-2 fails at that gate, drop this line and dismiss the alert.
+  # detectBrowserPlatform, install, resolveBuildId. The second major-crossing override here, and the
+  # safest of the three: instrumenting the module's entry point during a full b-2 run showed it is
+  # never loaded at all, because wdio-obsidian-service downloads and manages its own
+  # electron-chromedriver instead of going through @wdio/utils' startWebDriver. So this only prunes a
+  # vulnerable package out of the tree; it changes no code path we actually execute.
   '@puppeteer/browsers@>=2.0.0 <3.0.0': '>=3.0.0 <4.0.0'   # @wdio/utils declares ^2.2.0
+  # GHSA stack exhaustion when merging recursive object graphs (<8.0.0). Every wdio package declares
+  # ^7.0.3, so this is the third major-crossing override. 8.0.0 renamed the mergeInfo system and
+  # "aligned shorthand", which is exactly what webdriver's only call site uses
+  # (`deepmergeCustom({ mergeArrays: false })` in its utils), so both that call and plain `deepmerge`
+  # were run side by side on 7.1.5 and 8.0.1: identical output on nested records and arrays. b-2
+  # exercises this for real — unlike @puppeteer/browsers, which wdio-obsidian-service never loads
+  # because it manages its own electron-chromedriver (verified by instrumenting the module).
+  'deepmerge-ts@<8.0.0': '>=8.0.0 <9.0.0'   # wdio declares ^7.0.3
