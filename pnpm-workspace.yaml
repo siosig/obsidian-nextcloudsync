@@ -54,3 +54,14 @@ overrides:
   # paths it uses — diffWordsWithSpace (string) and createPatch (object) — and both render correctly;
   # jsdiff 8 still ships CJS. Scoped so mocha 10.x (@wdio/mocha-framework, diff@5.2.2) is untouched.
   'diff@>=6.0.0 <8.0.3': '>=8.0.3 <9.0.0'   # via our direct mocha 11.x devDependency
+  # GHSA-jmr9-qjv8-65gv / CVE-2026-56876 (CVSS 8.1): extract-zip does not validate symlink targets.
+  # extract-zip itself CANNOT be overridden — 2.0.1 is the newest release (2023) and is the vulnerable
+  # one, so no patched floor exists. It reaches us only as @puppeteer/browsers -> @wdio/utils -> wdio,
+  # i.e. b-2 driver downloads on a developer machine; it is not in CI and not in the shipped plugin.
+  # Upgrading wdio does not help (9.31.1 still declares @puppeteer/browsers ^2.2.0). @puppeteer/browsers
+  # 3.x drops extract-zip entirely (deps are just modern-tar + yargs) and still exports every symbol
+  # @wdio/utils calls: Browser, ChromeReleaseChannel, canDownload, computeExecutablePath,
+  # detectBrowserPlatform, install, resolveBuildId. The second major-crossing override here, and unlike
+  # the diff one it is NOT yet proven by execution — the code path only runs under b-2, which the
+  # stable-release gate exercises. If b-2 fails at that gate, drop this line and dismiss the alert.
+  '@puppeteer/browsers@>=2.0.0 <3.0.0': '>=3.0.0 <4.0.0'   # @wdio/utils declares ^2.2.0
