@@ -11,6 +11,14 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.40] - 2026-08-18
+
+### Fixed
+- A note open in a background (inactive) tab could still be closed by a sync ([#32](https://github.com/siosig/obsidian-nextcloudsync/issues/32)). The in-place update added in 0.7.30 recognised an open file only through its loaded view, but since Obsidian 1.7.2 a background tab carries a placeholder view instead, so such notes were replaced on disk and the tab jumped back to the previously viewed note. Background tabs are now updated in place as well, for both notes and binary attachments.
+
+### Security
+- Closed the remaining advisories against the development and test dependencies by removing `extract-zip` from the tree (via `@puppeteer/browsers` 3.x) and pinning `deepmerge-ts` to 8.x. These are build- and test-time packages only; the runtime dependencies are unchanged.
+
 ## [0.7.39] - 2026-08-07
 
 ### Security
@@ -365,6 +373,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.40]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.40
 [0.7.39]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.39
 [0.7.38]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.38
 [0.7.37]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.37
