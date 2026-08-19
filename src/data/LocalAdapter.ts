@@ -86,13 +86,38 @@ export class LocalAdapter {
    * was injected, e.g. in unit tests). `FileView` is the common base for every file-backed view
    * (markdown, image, PDF, ...), so this covers both text and binary attachments uniformly.
    */
+  /**
+   * Resolve `path` to the TFile a leaf currently holds, or null when no leaf holds it.
+   *
+   * Two kinds of leaf can hold a file, and BOTH must be recognised — missing either one sends the
+   * write down the destructive tmp-write -> remove -> rename path, whose `remove()` is what makes
+   * Obsidian detach the leaf and fall back to the previous note in its history (issues #15, #32):
+   *
+   * 1. A loaded leaf, whose `view` is the real `FileView` subclass for its type.
+   * 2. A DEFERRED leaf. Since Obsidian 1.7.2 a background leaf carries a `DeferredView` instead of
+   *    its real view (`WorkspaceLeaf.isDeferred`), and `DeferredView` is NOT a `FileView` — verified
+   *    against the shipped app bundle, where the deferred class's prototype chain has none of
+   *    FileView's members. So `instanceof FileView` alone silently misses every note sitting in an
+   *    inactive tab. The path survives in the leaf's serialized view state, so resolve it there and
+   *    look the TFile up through the Vault.
+   */
   private findOpenTFile(path: string): TFile | null {
     if (!this.workspace) return null;
     let found: TFile | null = null;
     this.workspace.iterateAllLeaves((leaf) => {
       if (found) return;
       const view = leaf.view;
-      if (view instanceof FileView && view.file?.path === path) found = view.file;
+      if (view instanceof FileView && view.file?.path === path) {
+        found = view.file;
+        return;
+      }
+      if (!leaf.isDeferred || !this.vault) return;
+      const statePath = leaf.getViewState()?.state?.file;
+      if (typeof statePath === 'string' && statePath === path) {
+        // getFileByPath returns null for a folder or a missing path, which correctly falls through
+        // to the tmp-write path rather than pretending the file is open.
+        found = this.vault.getFileByPath(path);
+      }
     });
     return found;
   }
