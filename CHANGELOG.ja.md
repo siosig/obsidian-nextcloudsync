@@ -11,6 +11,14 @@
 
 > 英語版（原文）は [`CHANGELOG.md`](CHANGELOG.md) を参照してください。
 
+## [0.7.40] - 2026-08-18
+
+### Fixed
+- 背面（非アクティブ）タブで開いていたノートが、同期によって閉じられることがあった（[#32](https://github.com/siosig/obsidian-nextcloudsync/issues/32)）。0.7.30 で入れたその場更新は、ロード済みビューを通してしか「開いている」と判定できておらず、Obsidian 1.7.2 以降は背面タブがプレースホルダのビューを持つため、該当ノートがディスク上で置き換えられてタブが直前のノートに戻っていた。背面タブについても、ノート・バイナリ添付の双方をその場で更新するようにした。
+
+### Security
+- 開発・テスト用の依存パッケージに残っていた脆弱性の指摘を、`extract-zip` をツリーから除去し（`@puppeteer/browsers` 3.x 経由）、`deepmerge-ts` を 8.x に固定することで解消した。いずれもビルド時・テスト時にのみ使うパッケージであり、実行時の依存パッケージは変更なし。
+
 ## [0.7.39] - 2026-08-07
 
 ### Security
@@ -365,6 +373,7 @@ Nextcloud 特化同期エンジンの初回公開リリース（0.2.0 〜 0.2.1�
 - **Dry-run でのコンフリクト結果の明確化** — 初回同期プレビューがコンフリクト解決の結果を説明し、各コンフリクトファイルをクリックするとマージ後の内容（変更前後）をプレビューできます。
 - **汎用 WebDAV より高速な同期** — 内容ハッシュと Nextcloud の `sync-token` を突き合わせ、毎回リモートツリー全体を再帰的に走査するのではなく、実際に変更された分だけを転送します。更新日時ベースの WebDAV プラグインより同期が明確に速くなります。
 
+[0.7.40]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.40
 [0.7.39]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.39
 [0.7.38]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.38
 [0.7.37]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.37
