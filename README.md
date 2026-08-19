@@ -31,9 +31,10 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.40-beta.1)
+## What's new in this release (0.7.40-beta.2)
 
 - **Fixed: a note in a background tab could still be closed by a sync (0.7.40-beta.1)** — when sync applied a remote change to a note you had open in an inactive tab, that tab lost the note and jumped back to whatever you were viewing before. Notes in background tabs are now updated in place, the same way the active note already was.
+- **Security housekeeping in the build toolchain only (0.7.40-beta.2)** — the remaining advisories against the development and test dependencies were closed. Nothing that ships was touched: the runtime dependencies are unchanged and there is no change in behaviour.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
