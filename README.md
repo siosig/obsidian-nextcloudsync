@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.40)
+## What's new in this release (0.7.41-beta.1)
 
-- **Fixed: a note in a background tab could still be closed by a sync (0.7.40)** — when sync applied a remote change to a note you had open in an inactive tab, that tab lost the note and jumped back to whatever you were viewing before. Notes in background tabs are now updated in place, the same way the active note already was.
+- **Fixed: signing in via the browser never completed on Android (0.7.41-beta.1)** — approving in the browser put Obsidian in the background, where the system suspends its timers, so the plugin stopped checking whether you had granted access and never picked up the app password. It now resumes checking the moment you return to Obsidian, and keeps trying for the full 20 minutes the server allows.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
