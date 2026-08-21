@@ -128,7 +128,10 @@ Mobile is supported, with a few platform-aware differences (desktop behaviour is
 ## Getting started
 
 1. Open **Settings → Nextcloud Sync**.
-2. Enter your **Server URL** (e.g. `https://cloud.example.com`).
+2. Enter your **Server URL** — the full WebDAV endpoint, `https://<host>/remote.php/dav/files/<user>/`,
+   **not just the host**. Entering only `https://cloud.example.com` fails with **HTTP 405**. `<user>` is your
+   Nextcloud user ID (usually not your email). You may append a subfolder (e.g. `.../<user>/Documents`) to
+   sync there instead of at the account root.
 3. Authenticate:
    - **Recommended:** click **Login with browser** (Login Flow v2), approve in the browser, and credentials are filled in and stored automatically; **or**
    - enter your **username** and a manually issued **app password**.
