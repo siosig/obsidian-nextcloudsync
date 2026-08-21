@@ -128,7 +128,10 @@ Obsidian Vault と Nextcloud を双方向同期します。汎用的な WebDAV �
 ## はじめかた
 
 1. **設定 → Nextcloud Sync** を開きます。
-2. **サーバー URL** を入力します（例: `https://cloud.example.com`）。
+2. **サーバー URL** を入力します。**ホストだけでは不十分**で、WebDAV エンドポイント全体
+   （`https://<host>/remote.php/dav/files/<user>/`）を指定してください。`https://cloud.example.com` のように
+   ホストだけを入れると **HTTP 405** で失敗します。`<user>` は Nextcloud のユーザー ID（通常メールアドレス
+   ではありません）。末尾にサブフォルダ（例: `.../<user>/Documents`）を付けると、その配下へ同期できます。
 3. 認証します：
    - **推奨:** **ブラウザでログイン**（Login Flow v2）をクリックし、ブラウザで承認すると、認証情報が自動入力・保存されます。**または**
    - **ユーザー名** と手動発行の**アプリパスワード**を入力します。
