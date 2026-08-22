@@ -170,10 +170,13 @@ describe('T008: NextcloudClient remaining methods send NO_CACHE_HEADERS', () => 
     expectAllCallsNoCache();
   });
 
-  it('getSyncToken() sends NO_CACHE_HEADERS on the REPORT call', async () => {
+  // getSyncToken() no longer issues a REPORT (issue #37), so there is no request to carry the
+  // no-cache headers. Kept as an explicit assertion so a future change that reintroduces the
+  // request has to come back through this file and add the headers. Covered by SCR-1.
+  it('getSyncToken() makes no request, so there are no headers to check', async () => {
     mockRequestUrl.mockReturnValueOnce(res(207, { text: EMPTY_MULTISTATUS }));
-    await makeClient().getSyncToken();
-    expectAllCallsNoCache();
+    await expect(makeClient().getSyncToken()).resolves.toBeNull();
+    expect(mockRequestUrl).not.toHaveBeenCalled();
   });
 
   it('remoteExists() sends NO_CACHE_HEADERS on the PROPFIND call', async () => {

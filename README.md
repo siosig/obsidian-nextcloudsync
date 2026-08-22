@@ -31,9 +31,11 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.40)
+## What's new in this release (0.7.41-beta.3)
 
-- **Fixed: a note in a background tab could still be closed by a sync (0.7.40)** — when sync applied a remote change to a note you had open in an inactive tab, that tab lost the note and jumped back to whatever you were viewing before. Notes in background tabs are now updated in place, the same way the active note already was.
+- **Fixed: signing in via the browser never completed on Android (0.7.41-beta.1)** — approving in the browser put Obsidian in the background, where the system suspends its timers, so the plugin stopped checking whether you had granted access. It now resumes checking the moment you return to Obsidian, and keeps trying for the full 20 minutes the server allows.
+- **Fixed: an occasional sync failure right after returning to Obsidian (0.7.41-beta.2)** — the first read-only WebDAV request issued right after the app resumes from the background could occasionally time out even though the connection was fine a moment later. Read-only requests now retry automatically instead of surfacing that as a sync failure.
+- **Fixed: an error was written to the Nextcloud server log on every plugin load (0.7.41-beta.3)** — the plugin asked the server for a change-listing feature that Nextcloud's file storage does not implement, and the server logged the rejection as an ERROR with a stack trace. That request is no longer sent at all. Syncing is unaffected; only your server's log is quieter.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
