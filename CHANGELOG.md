@@ -11,6 +11,13 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.41] - 2026-08-23
+
+### Fixed
+- Signing in via the browser never completed on Android ([#34](https://github.com/siosig/obsidian-nextcloudsync/issues/34)). Approving the request in the browser put Obsidian in the background, where the system suspends its timers, so the plugin stopped polling for the granted credentials and the login silently stalled. Polling now resumes the moment the app returns to the foreground, and keeps running for the full 20 minutes the server allows.
+- An occasional sync failure right after returning to Obsidian. The first read-only WebDAV request issued as the app resumed from the background could time out even though the connection was fine a moment later. Read-only requests are now retried on a transient timeout instead of surfacing as a sync failure.
+- An error was written to the Nextcloud server log on every plugin load ([#37](https://github.com/siosig/obsidian-nextcloudsync/issues/37)). The plugin issued a `sync-collection` REPORT, which Nextcloud's file storage does not implement, and the server logged the rejection as an ERROR with a stack trace. That request is no longer sent at all; syncing is unaffected and only the server log is quieter.
+
 ## [0.7.40] - 2026-08-18
 
 ### Fixed
@@ -373,6 +380,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.41]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.41
 [0.7.40]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.40
 [0.7.39]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.39
 [0.7.38]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.38
