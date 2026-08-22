@@ -11,6 +11,13 @@
 
 > 英語版（原文）は [`CHANGELOG.md`](CHANGELOG.md) を参照してください。
 
+## [0.7.41] - 2026-08-23
+
+### 修正
+- Android でブラウザ経由のログインが完了しませんでした（[#34](https://github.com/siosig/obsidian-nextcloudsync/issues/34)）。ブラウザで承認する間 Obsidian が背面に回ると OS がタイマーを停止するため、認可済み資格情報のポーリングが止まり、ログインが無言のまま進まなくなっていました。アプリが前面に戻った時点でポーリングを再開し、サーバが許可する 20 分間は試行を続けます。
+- Obsidian に戻った直後に同期がまれに失敗しました。背面から復帰した直後の最初の読み取り系 WebDAV リクエストが、接続自体は正常でもタイムアウトすることがありました。読み取り系は一過性のタイムアウト時に自動リトライし、同期失敗として表面化しないようにしました。
+- プラグイン読み込みのたびに Nextcloud のサーバログにエラーが記録されていました（[#37](https://github.com/siosig/obsidian-nextcloudsync/issues/37)）。Nextcloud のファイルストレージが実装していない `sync-collection` REPORT を発行しており、サーバがその拒否を ERROR としてスタックトレース付きで記録していました。このリクエスト自体を送らないようにしました。同期の動作に影響はなく、サーバのログが静かになるだけです。
+
 ## [0.7.40] - 2026-08-18
 
 ### Fixed
@@ -373,6 +380,7 @@ Nextcloud 特化同期エンジンの初回公開リリース（0.2.0 〜 0.2.1�
 - **Dry-run でのコンフリクト結果の明確化** — 初回同期プレビューがコンフリクト解決の結果を説明し、各コンフリクトファイルをクリックするとマージ後の内容（変更前後）をプレビューできます。
 - **汎用 WebDAV より高速な同期** — 内容ハッシュと Nextcloud の `sync-token` を突き合わせ、毎回リモートツリー全体を再帰的に走査するのではなく、実際に変更された分だけを転送します。更新日時ベースの WebDAV プラグインより同期が明確に速くなります。
 
+[0.7.41]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.41
 [0.7.40]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.40
 [0.7.39]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.39
 [0.7.38]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.38
