@@ -127,6 +127,9 @@ export const CLAUSES: Clause[] = [
   // retryQueue enqueue policy (specs/main/spec.md §6.3): NetworkError → retry, other errors → record only.
   // Verified at layer a via the real processFileWithRetry wiring (retryQueue.test.ts).
   { id: 'RT-1', source: 'specs/main/spec.md §6.3 (retryQueue)', layer: 'a' },
+  // withRetry() shouldRetry predicate injection (specs/main/spec.md §6.3, feature 067): default
+  // preserves legacy NetworkError-only behavior; callers may inject a custom predicate.
+  { id: 'RT-2', source: 'specs/main/spec.md §6.3 (withRetry shouldRetry injection, feature 067)', layer: 'a' },
   // --- CG: config-folder categories ---
   { id: 'CG-1', source: 'report/mock_test.md §3.G', layer: 'b-1' },
   { id: 'CG-2', source: 'report/mock_test.md §3.G', layer: 'b-1' },
@@ -168,6 +171,9 @@ export const CLAUSES: Clause[] = [
   { id: 'CONC-1', source: 'specs/main/spec.md §5 (a failed ensureClient must not strand the running guard; feature 053)', layer: 'a' },
   // --- NET: network request timeout (feature 054) ---
   { id: 'NET-1', source: 'specs/main/spec.md §5.6 (networkTimeoutSeconds bounds every WebDAV request so a hang cannot lock the engine)', layer: 'a' },
+  // Read-only WebDAV requests (PROPFIND/GET) retry up to 2x on a transient req() rejection; writes and
+  // REPORT are explicitly out of scope (specs/main/spec.md §5.6a, feature 067).
+  { id: 'NET-3', source: 'specs/main/spec.md §5.6a (read-only WebDAV requests retry up to 2x on transient failure, writes/REPORT excluded)', layer: 'a' },
   // --- BUG: findbugs 2026-07-06 high-priority data-safety / concurrency fixes (feature 055) ---
   { id: 'G1-1', source: 'specs/main/spec.md §18.1 (a merge upload failure keeps the file flagged; the merge result is never silently dropped)', layer: 'a' },
   { id: 'G1-2', source: 'specs/main/spec.md §18.1 (StateDB tracking is cleared only on a successful remote delete; a real failure keeps the entry so the deletion retries)', layer: 'a' },
@@ -445,6 +451,11 @@ export const CLAUSES: Clause[] = [
   { id: 'OL-2', source: 'specs/main/spec.md §9.5 (binary file open -> in-place vault.modifyBinary, no delete event)', layer: 'a' },
   { id: 'OL-3', source: 'specs/main/spec.md §9.5 (not-open file / no workspace injected -> existing tmp-write/remove/rename path unchanged)', layer: 'a' },
   { id: 'OL-4', source: 'specs/main/spec.md §9.5 (deferred/background leaf counts as open -> in-place update; unresolvable state path falls back to OL-3) — GitHub issue #32', layer: 'a' },
+  // --- LF: Login Flow v2 polling survives a suspended webview (GitHub issue #34) ---
+  { id: 'LF-1', source: 'specs/main/spec.md §17 (poll waits on the interval timer OR an app-resume signal, whichever is first) — GitHub issue #34', layer: 'a' },
+  { id: 'LF-2', source: 'specs/main/spec.md §17 (wall-clock deadline matched to Nextcloud LoginFlowV2Mapper::lifetime = 1200 s, replacing the 90-iteration cap)', layer: 'a' },
+  // --- SCR: the sync-collection REPORT is never issued (GitHub issue #37) ---
+  { id: 'SCR-1', source: 'specs/main/spec.md §18 F1a (getSyncToken never issues the REPORT; no server-side ERROR log per client) — GitHub issue #37', layer: 'a' },
   // --- SMB: Sync status "Mirror from remote" button (feature 059) ---
   // A second entry point to Mirror from remote on the Sync status dialog's top action row. Pure DOM
   // wiring: no new logic. The button delegates entirely to runRemoteMirror() (single source of truth,

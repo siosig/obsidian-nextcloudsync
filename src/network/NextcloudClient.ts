@@ -20,6 +20,7 @@ import { toRemotePath, hrefToRelative, encodeRemoteUrl, encodeServerUrl, ensureR
 import { sha256 } from '../util/hash';
 import { PARSE_YIELD_EVERY } from '../util/limits';
 import { NO_CACHE_HEADERS } from './noCacheHeaders';
+import { withRetry } from '../util/retry';
 
 const PROPFIND_BODY = `<?xml version="1.0" encoding="utf-8" ?>
 <d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">
@@ -52,13 +53,6 @@ export class NextcloudClient implements IWebDAVClient {
   private features: NextcloudFeatures | null = null;
   /** Remote directories already created via MKCOL (in-session cache). */
   private readonly createdDirs = new Set<string>();
-  /**
-   * Set once a sync-collection REPORT returns 415: Nextcloud's files DAV does not implement
-   * the RFC 6578 sync-collection REPORT (it raises Sabre ReportNotSupported). After the first
-   * detection we skip the REPORT for the rest of this client's life and rely on full-scan, so
-   * we don't pay a 415 round-trip on every sync.
-   */
-  private syncCollectionUnsupported = false;
 
   constructor(
     private readonly settings: DavSyncSettings,
@@ -124,10 +118,25 @@ export class NextcloudClient implements IWebDAVClient {
     return requestUrlWithTimeout(params, this.timeoutMs);
   }
 
+  /** Read-only requests (PROPFIND/GET) retry up to 2x on a transient req() rejection (timeout, connection
+   *  failure). req() only rejects when no HTTP response was received at all — any status code (incl.
+   *  401/404/415) resolves normally and is handled by the caller, so every rejection reaching here is
+   *  transient by construction; no error-type check is needed. Logs a single debug line per retry via
+   *  the existing diag sink so a captured debug log shows when this kicked in. Write requests (PUT/
+   *  DELETE/MOVE/MKCOL/PATCH/LOCK/UNLOCK) and the REPORT-based sync-token/getChanges calls stay on the
+   *  plain req() (never retried here) — see the T004/T006 task notes for the rationale.
+   */
+  private reqReadonly(params: RequestUrlParam): Promise<RequestUrlResponse> {
+    return withRetry(() => this.req(params), 2, 1000, (err) => {
+      this.diag?.(`reqReadonly retry: ${params.method ?? 'GET'} ${params.url} (${err instanceof Error ? err.message : String(err)})`);
+      return true;
+    });
+  }
+
   async connect(): Promise<NextcloudFeatures> {
     // Check /status.php for maintenance mode
     const statusUrl = this.settings.serverUrl.replace(/\/remote\.php.*$/, '') + '/status.php';
-    const statusRes = await this.req({ url: statusUrl, method: 'GET', headers: { ...NO_CACHE_HEADERS }, throw: false });
+    const statusRes = await this.reqReadonly({ url: statusUrl, method: 'GET', headers: { ...NO_CACHE_HEADERS }, throw: false });
     if (statusRes.status === 200) {
       const status = statusRes.json as Record<string, unknown>;
       if (status.maintenance === true) {
@@ -137,7 +146,7 @@ export class NextcloudClient implements IWebDAVClient {
 
     // Get capabilities
     const capUrl = this.settings.serverUrl.replace(/\/remote\.php.*$/, '') + '/ocs/v1.php/cloud/capabilities?format=json';
-    const capRes = await this.req({
+    const capRes = await this.reqReadonly({
       url: capUrl,
       method: 'GET',
       headers: { Authorization: this.authHeader, 'OCS-APIRequest': 'true', ...NO_CACHE_HEADERS },
@@ -180,7 +189,7 @@ export class NextcloudClient implements IWebDAVClient {
   }
 
   async getFiles(path: string): Promise<RemoteFileInfo[]> {
-    const res = await this.req({
+    const res = await this.reqReadonly({
       url: this.remoteUrl(path),
       method: 'PROPFIND',
       headers: {
@@ -208,7 +217,7 @@ export class NextcloudClient implements IWebDAVClient {
    * caller down the create path and blind-overwrite the very file it could not read.
    */
   async statFile(remotePath: string): Promise<RemoteFileInfo | null> {
-    const res = await this.req({
+    const res = await this.reqReadonly({
       url: this.remoteUrl(remotePath),
       method: 'PROPFIND',
       headers: {
@@ -232,7 +241,7 @@ export class NextcloudClient implements IWebDAVClient {
     // the remote tree is unchanged since the last full scan. Never throws — any non-207 (incl. 404
     // before the folder exists) or error yields null so the caller falls back to a real full scan.
     try {
-      const res = await this.req({
+      const res = await this.reqReadonly({
         url: this.remoteUrl(''),
         method: 'PROPFIND',
         headers: { Authorization: this.authHeader, Depth: '0', 'Content-Type': 'application/xml; charset=utf-8', ...NO_CACHE_HEADERS },
@@ -250,7 +259,7 @@ export class NextcloudClient implements IWebDAVClient {
   }
 
   async getDirectories(path: string): Promise<RemoteDirInfo[]> {
-    const res = await this.req({
+    const res = await this.reqReadonly({
       url: this.remoteUrl(path),
       method: 'PROPFIND',
       headers: {
@@ -272,7 +281,7 @@ export class NextcloudClient implements IWebDAVClient {
     // semantics) ⇔ the only response is the collection itself. Conservative on any
     // ambiguity: never report "empty" unless the server clearly says so, so a recursive
     // DELETE is never issued against a directory that might still hold data.
-    const res = await this.req({
+    const res = await this.reqReadonly({
       url: this.remoteUrl(path),
       method: 'PROPFIND',
       headers: { Authorization: this.authHeader, Depth: '1', 'Content-Type': 'application/xml; charset=utf-8', ...NO_CACHE_HEADERS },
@@ -329,7 +338,7 @@ export class NextcloudClient implements IWebDAVClient {
   }
 
   async downloadFile(remotePath: string): Promise<ArrayBuffer> {
-    const res = await this.req({ url: this.remoteUrl(remotePath), method: 'GET', headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS }, throw: false });
+    const res = await this.reqReadonly({ url: this.remoteUrl(remotePath), method: 'GET', headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS }, throw: false });
     if (res.status !== 200) throw new NetworkError(res.status, '', 'GET');
     // Return the bytes directly (no shared field) so concurrent downloads cannot race each other.
     return res.arrayBuffer;
@@ -408,44 +417,30 @@ export class NextcloudClient implements IWebDAVClient {
     if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text, 'DELETE');
   }
 
+  /**
+   * Always null: this client never issues the RFC 6578 sync-collection REPORT.
+   *
+   * Nextcloud's files DAV does not implement it — Sabre answers with ReportNotSupported, i.e.
+   * HTTP 415 — so the request can only ever fail, and the engine already treats "no token" as its
+   * normal path here (full scan, narrowed by the root-ETag short-circuit). Issuing it anyway cost
+   * one guaranteed-415 round-trip per client, and, because Nextcloud logs the rejection at ERROR
+   * level, wrote a stack trace into the administrator's server log every time the plugin loaded
+   * (issue #37). A latch used to suppress the retries after the first 415; not sending the request
+   * at all removes the log noise entirely instead of merely rationing it.
+   *
+   * `getChanges()` is deliberately left in place. It is unreachable while this returns null, but it
+   * is the code that would drive an incremental sync if a token ever did arrive, and deleting it
+   * would throw away the only implementation of that path.
+   */
   async getSyncToken(): Promise<string | null> {
-    // Nextcloud's files DAV does not implement the RFC 6578 sync-collection REPORT (it raises
-    // Sabre ReportNotSupported → HTTP 415). Once we've seen that, skip the REPORT entirely and
-    // let the engine full-scan, instead of paying a guaranteed-415 round-trip every sync.
-    if (this.syncCollectionUnsupported) return null;
-    // Bootstrap the token the RFC 6578 way (servers that DO support it): a sync-collection REPORT
-    // with an EMPTY token ("initial sync") whose multistatus carries the current <d:sync-token>.
-    const res = await this.req({
-      url: this.remoteUrl(''),
-      method: 'REPORT',
-      headers: { Authorization: this.authHeader, 'Content-Type': 'application/xml; charset=utf-8', ...NO_CACHE_HEADERS },
-      body: REPORT_BODY(''),
-      throw: false,
-    });
-    // 415 = sync-collection REPORT unsupported (Nextcloud files DAV). Remember it and full-scan.
-    if (res.status === 415) {
-      this.syncCollectionUnsupported = true;
-      this.diag?.('getSyncToken(REPORT): 415 sync-collection unsupported — full-scan for the rest of this session');
-      return null;
-    }
-    // Match regardless of the XML namespace prefix; require a non-empty value (skip <…sync-token/>).
-    const match = res.status === 207 ? res.text.match(/<(?:\w+:)?sync-token>([^<]+)<\/(?:\w+:)?sync-token>/) : null;
-    const token = match ? match[1].trim() : '';
-    if (token.length === 0) {
-      // Diagnose: log the status and a short, sanitised body snippet so a captured debug log reveals
-      // the actual server response if a token still cannot be obtained.
-      const snippet = (res.text ?? '').replace(/\s+/g, ' ').slice(0, 400);
-      this.diag?.(`getSyncToken(REPORT): NO TOKEN (status=${res.status}) body[0:400]=${snippet}`);
-      return null;
-    }
-    return token;
+    return null;
   }
 
   async remoteExists(remotePath: string): Promise<boolean> {
     // Targeted existence probe (PROPFIND Depth 0). Only a definitive 404 means "gone"; any other
     // status (incl. transient errors) is treated as "present" so callers never delete on ambiguity.
     try {
-      const res = await this.req({
+      const res = await this.reqReadonly({
         url: this.remoteUrl(remotePath),
         method: 'PROPFIND',
         headers: { Authorization: this.authHeader, Depth: '0', ...NO_CACHE_HEADERS },
@@ -462,7 +457,7 @@ export class NextcloudClient implements IWebDAVClient {
   async listVersions(fileId: string): Promise<FileVersion[]> {
     if (!fileId) throw new FeatureUnsupportedError('versions');
     const collectionUrl = `${this.davBase('versions')}/versions/${encodeURIComponent(fileId)}`;
-    const res = await this.req({
+    const res = await this.reqReadonly({
       url: collectionUrl,
       method: 'PROPFIND',
       headers: {
@@ -481,7 +476,7 @@ export class NextcloudClient implements IWebDAVClient {
 
   async getVersionContent(version: FileVersion, fileId: string): Promise<ArrayBuffer> {
     if (!fileId) throw new FeatureUnsupportedError('versions');
-    const res = await this.req({
+    const res = await this.reqReadonly({
       url: this.versionUrl(version, fileId),
       method: 'GET',
       headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS },
@@ -607,7 +602,7 @@ export class NextcloudClient implements IWebDAVClient {
    *  Skips verification if unavailable. Accepts an optional precomputed hash to avoid
    *  redundant hashing of the same buffer (used by uploadChunked). */
   private async verifyRemoteChecksum(remotePath: string, data: ArrayBuffer, precomputed?: string): Promise<void> {
-    const res = await this.req({
+    const res = await this.reqReadonly({
       url: this.remoteUrl(remotePath),
       method: 'PROPFIND',
       headers: { Authorization: this.authHeader, Depth: '0', 'Content-Type': 'application/xml; charset=utf-8', ...NO_CACHE_HEADERS },
