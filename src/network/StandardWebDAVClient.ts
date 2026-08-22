@@ -1,5 +1,6 @@
 import { RequestUrlParam, RequestUrlResponse } from 'obsidian';
 import { requestUrlWithTimeout } from './requestWithTimeout';
+import { withRetry } from '../util/retry';
 import {
   NextcloudFeatures,
   RemoteFileInfo,
@@ -57,9 +58,17 @@ export class StandardWebDAVClient implements IWebDAVClient {
     return requestUrlWithTimeout(params, this.timeoutMs);
   }
 
+  /** Read-only requests (PROPFIND/GET) retry up to 2x on a transient req() rejection (timeout, connection
+   *  failure). req() only rejects when no HTTP response was received at all — any status code (incl.
+   *  401/404) resolves normally and is handled by the caller, so every rejection reaching here is
+   *  transient by construction; no error-type check is needed. */
+  private reqReadonly(params: RequestUrlParam): Promise<RequestUrlResponse> {
+    return withRetry(() => this.req(params), 2, 1000, () => true);
+  }
+
   async connect(): Promise<NextcloudFeatures> {
     // Standard WebDAV: just verify connectivity
-    const res = await this.req({
+    const res = await this.reqReadonly({
       url: this.baseUrl,
       method: 'PROPFIND',
       headers: { Authorization: this.authHeader, Depth: '0', ...NO_CACHE_HEADERS },
@@ -83,7 +92,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
    * the file we want. A collection lands in `folders`, never in `files`, so it yields null.
    */
   async statFile(remotePath: string): Promise<RemoteFileInfo | null> {
-    const res = await this.req({
+    const res = await this.reqReadonly({
       url: this.remoteUrl(remotePath),
       method: 'PROPFIND',
       headers: { Authorization: this.authHeader, Depth: '0', 'Content-Type': 'application/xml', ...NO_CACHE_HEADERS },
@@ -107,7 +116,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
   private async propfindRecursive(rel: string, out: RemoteFileInfo[], visited: Set<string>): Promise<void> {
     if (visited.has(rel)) return; // Guard against self-reference and cycles
     visited.add(rel);
-    const res = await this.req({
+    const res = await this.reqReadonly({
       url: this.remoteUrl(rel),
       method: 'PROPFIND',
       headers: { Authorization: this.authHeader, Depth: '1', 'Content-Type': 'application/xml', ...NO_CACHE_HEADERS },
@@ -134,7 +143,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
   private async dirsRecursive(rel: string, out: RemoteDirInfo[], visited: Set<string>): Promise<void> {
     if (visited.has(rel)) return;
     visited.add(rel);
-    const res = await this.req({
+    const res = await this.reqReadonly({
       url: this.remoteUrl(rel),
       method: 'PROPFIND',
       headers: { Authorization: this.authHeader, Depth: '1', 'Content-Type': 'application/xml', ...NO_CACHE_HEADERS },
@@ -151,7 +160,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
   }
 
   async isRemoteDirEmpty(path: string): Promise<boolean> {
-    const res = await this.req({
+    const res = await this.reqReadonly({
       url: this.remoteUrl(path),
       method: 'PROPFIND',
       headers: { Authorization: this.authHeader, Depth: '1', 'Content-Type': 'application/xml', ...NO_CACHE_HEADERS },
@@ -183,7 +192,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
   }
 
   async downloadFile(remotePath: string): Promise<ArrayBuffer> {
-    const res = await this.req({ url: this.remoteUrl(remotePath), method: 'GET', headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS }, throw: false });
+    const res = await this.reqReadonly({ url: this.remoteUrl(remotePath), method: 'GET', headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS }, throw: false });
     if (res.status !== 200) throw new NetworkError(res.status, '', 'GET');
     return res.arrayBuffer;
   }
@@ -232,7 +241,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
   async remoteExists(remotePath: string): Promise<boolean> {
     // Only a definitive 404 means "gone"; any other status is treated as "present" (conservative).
     try {
-      const res = await this.req({
+      const res = await this.reqReadonly({
         url: this.remoteUrl(remotePath),
         method: 'PROPFIND',
         headers: { Authorization: this.authHeader, Depth: '0', ...NO_CACHE_HEADERS },
