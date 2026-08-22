@@ -53,13 +53,6 @@ export class NextcloudClient implements IWebDAVClient {
   private features: NextcloudFeatures | null = null;
   /** Remote directories already created via MKCOL (in-session cache). */
   private readonly createdDirs = new Set<string>();
-  /**
-   * Set once a sync-collection REPORT returns 415: Nextcloud's files DAV does not implement
-   * the RFC 6578 sync-collection REPORT (it raises Sabre ReportNotSupported). After the first
-   * detection we skip the REPORT for the rest of this client's life and rely on full-scan, so
-   * we don't pay a 415 round-trip on every sync.
-   */
-  private syncCollectionUnsupported = false;
 
   constructor(
     private readonly settings: DavSyncSettings,
@@ -424,37 +417,23 @@ export class NextcloudClient implements IWebDAVClient {
     if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text, 'DELETE');
   }
 
+  /**
+   * Always null: this client never issues the RFC 6578 sync-collection REPORT.
+   *
+   * Nextcloud's files DAV does not implement it — Sabre answers with ReportNotSupported, i.e.
+   * HTTP 415 — so the request can only ever fail, and the engine already treats "no token" as its
+   * normal path here (full scan, narrowed by the root-ETag short-circuit). Issuing it anyway cost
+   * one guaranteed-415 round-trip per client, and, because Nextcloud logs the rejection at ERROR
+   * level, wrote a stack trace into the administrator's server log every time the plugin loaded
+   * (issue #37). A latch used to suppress the retries after the first 415; not sending the request
+   * at all removes the log noise entirely instead of merely rationing it.
+   *
+   * `getChanges()` is deliberately left in place. It is unreachable while this returns null, but it
+   * is the code that would drive an incremental sync if a token ever did arrive, and deleting it
+   * would throw away the only implementation of that path.
+   */
   async getSyncToken(): Promise<string | null> {
-    // Nextcloud's files DAV does not implement the RFC 6578 sync-collection REPORT (it raises
-    // Sabre ReportNotSupported → HTTP 415). Once we've seen that, skip the REPORT entirely and
-    // let the engine full-scan, instead of paying a guaranteed-415 round-trip every sync.
-    if (this.syncCollectionUnsupported) return null;
-    // Bootstrap the token the RFC 6578 way (servers that DO support it): a sync-collection REPORT
-    // with an EMPTY token ("initial sync") whose multistatus carries the current <d:sync-token>.
-    const res = await this.req({
-      url: this.remoteUrl(''),
-      method: 'REPORT',
-      headers: { Authorization: this.authHeader, 'Content-Type': 'application/xml; charset=utf-8', ...NO_CACHE_HEADERS },
-      body: REPORT_BODY(''),
-      throw: false,
-    });
-    // 415 = sync-collection REPORT unsupported (Nextcloud files DAV). Remember it and full-scan.
-    if (res.status === 415) {
-      this.syncCollectionUnsupported = true;
-      this.diag?.('getSyncToken(REPORT): 415 sync-collection unsupported — full-scan for the rest of this session');
-      return null;
-    }
-    // Match regardless of the XML namespace prefix; require a non-empty value (skip <…sync-token/>).
-    const match = res.status === 207 ? res.text.match(/<(?:\w+:)?sync-token>([^<]+)<\/(?:\w+:)?sync-token>/) : null;
-    const token = match ? match[1].trim() : '';
-    if (token.length === 0) {
-      // Diagnose: log the status and a short, sanitised body snippet so a captured debug log reveals
-      // the actual server response if a token still cannot be obtained.
-      const snippet = (res.text ?? '').replace(/\s+/g, ' ').slice(0, 400);
-      this.diag?.(`getSyncToken(REPORT): NO TOKEN (status=${res.status}) body[0:400]=${snippet}`);
-      return null;
-    }
-    return token;
+    return null;
   }
 
   async remoteExists(remotePath: string): Promise<boolean> {

@@ -139,10 +139,12 @@ describe('NextcloudClient — read-only retry on transient req() rejection (feat
     expect(mockRequestUrl).toHaveBeenCalledTimes(1);
   });
 
-  it('getSyncToken (REPORT) does NOT retry on a transient rejection — fails after exactly 1 call', async () => {
+  // getSyncToken no longer performs any request (issue #37): Nextcloud's files DAV cannot answer a
+  // sync-collection REPORT, so there is nothing here to retry or not retry. Covered by SCR-1.
+  it('getSyncToken issues no request at all, so retry behaviour does not apply', async () => {
     mockRequestUrl.mockImplementation(() => Promise.reject(new Error('timeout')));
 
-    await expect(client().getSyncToken()).rejects.toThrow('timeout');
-    expect(mockRequestUrl).toHaveBeenCalledTimes(1);
+    await expect(client().getSyncToken()).resolves.toBeNull();
+    expect(mockRequestUrl).not.toHaveBeenCalled();
   });
 });
