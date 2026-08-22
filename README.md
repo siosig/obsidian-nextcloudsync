@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.41-beta.1)
+## What's new in this release (0.7.41-beta.2)
 
-- **Fixed: signing in via the browser never completed on Android (0.7.41-beta.1)** — approving in the browser put Obsidian in the background, where the system suspends its timers, so the plugin stopped checking whether you had granted access and never picked up the app password. It now resumes checking the moment you return to Obsidian, and keeps trying for the full 20 minutes the server allows.
+- **Fixed: an occasional sync failure right after returning to Obsidian (0.7.41-beta.2)** — the first read-only WebDAV request issued right after the app resumes from the background (for example, right after approving sign-in in the browser) could occasionally time out even though the connection was fine a moment later. Read-only requests now retry automatically instead of surfacing that as a sync failure.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
