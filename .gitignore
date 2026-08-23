@@ -57,3 +57,6 @@ CLAUDE.md
 
 # Project-local MCP config (contains no secret, but kept out of the public repo)
 .mcp.json
+
+# b-3 (Android) diagnostic bundles pulled from the emulator on failure
+.b3-diagnostics/

@@ -1,4 +1,10 @@
 allowBuilds:
+  # appium's postinstall (autoinstall-extensions.js) only auto-installs the drivers/plugins declared
+  # in an `appium` package.json field. We declare appium-uiautomator2-driver as an explicit
+  # devDependency instead, which appium discovers on its own (`appium driver list --installed` reports
+  # `uiautomator2 [installed (npm)]` with this denied), so the script buys nothing and would add
+  # network activity to every install.
+  appium: false
   classic-level: false
   edgedriver: false
   esbuild: true
@@ -13,7 +19,7 @@ allowBuilds:
 # Range-scoped where only some versions are vulnerable; unconditional where the whole line is safe to pin.
 # (pnpm v11 reads overrides here, not in package.json.)
 overrides:
-  serialize-javascript@<7.0.5: '>=7.0.5'  # GHSA RCE/DoS (<=7.0.2 high, <7.0.5 moderate), via mocha
+  serialize-javascript@<7.0.5: '>=7.0.5' # GHSA RCE/DoS (<=7.0.2 high, <7.0.5 moderate), via mocha
   # Unconditional (not range-scoped): every transitive dependent already tolerates 4.x/5.x, so pin the
   # whole tree to the latest patched line and close the <4.2.0 (GHSA quadratic DoS, <=4.1.1), the
   # 5.0.0-5.2.0 (GHSA-724g-mxrg-4qvm quadratic DoS via !!omap) and the <=5.2.1
@@ -24,36 +30,36 @@ overrides:
   # each pinned to its own patched floor so no consumer is bumped across an incompatible major version.
   # Floors also cover the later unbounded-expansion OOM advisory (<1.1.17 / <2.1.3 / <5.0.8) and the
   # CVE-2026-14257 mitigation bypass via unbounded intermediate arrays (<5.0.9).
-  brace-expansion@1.1.15: '>=1.1.17 <2.0.0'  # via eslint-plugin-* / jest coverage / wdio (minimatch 3.x)
-  brace-expansion@2.1.1: '>=2.1.3 <3.0.0'    # via wdio / eslint-plugin-obsidianmd (minimatch 5/8/9.x)
-  brace-expansion@5.0.6: '>=5.0.9'           # via eslint 10 / typescript-eslint (minimatch 10.x)
+  brace-expansion@1.1.15: '>=1.1.17 <2.0.0' # via eslint-plugin-* / jest coverage / wdio (minimatch 3.x)
+  brace-expansion@2.1.1: '>=2.1.3 <3.0.0' # via wdio / eslint-plugin-obsidianmd (minimatch 5/8/9.x)
+  brace-expansion@5.0.6: '>=5.0.9' # via eslint 10 / typescript-eslint (minimatch 10.x)
   # Host confusion via failed IDN canonicalization (GHSA-4c8g-83qw-93j6, <3.1.3), via a literal
   # backslash authority delimiter (GHSA-v2hh-gcrm-f6hx, <=3.1.3) and via a backslash authority
   # introducer (<3.1.5). 3.1.5 closes all three; via ajv (secretlint config-loader /
   # eslint-plugin-json-schema-validator).
-  fast-uri: '>=3.1.5 <4.0.0'   # ajv declares ^3.0.1; an unbounded floor lands on 4.x, outside its range
+  fast-uri: '>=3.1.5 <4.0.0' # ajv declares ^3.0.1; an unbounded floor lands on 4.x, outside its range
   # GHSA-8r6m-32jq-jx6q: repeated DOCTYPE declarations reset entity-expansion limits; via wdio's
   # edgedriver downloader (@wdio/utils), i.e. b-2 tooling only.
-  fast-xml-parser: '>=5.10.1 <6.0.0'   # edgedriver declares ^5.3.3
+  fast-xml-parser: '>=5.10.1 <6.0.0' # edgedriver declares ^5.3.3
   # GHSA-w8wr-v893-vjvp: process crash via PAX numeric path type confusion; via wdio-obsidian-service
   # (unpacks the downloaded Obsidian build for b-2).
-  tar: '>=7.5.18 <8.0.0'   # wdio-obsidian-service declares ^7.5.3
+  tar: '>=7.5.18 <8.0.0' # wdio-obsidian-service declares ^7.5.3
   # GHSA leading-zero octet confusion (<=10.3.0, SSRF/trust-boundary bypass), CIDR-suffix suppression
   # of special-use classification (<=10.2.1) and IPv4-mapped/NAT64 misclassification (<=10.2.0);
   # via socks -> socks-proxy-agent, i.e. the wdio driver downloader's proxy support.
-  ip-address: '>=10.3.1 <11.0.0'   # socks declares ^10.1.1
+  ip-address: '>=10.3.1 <11.0.0' # socks declares ^10.1.1
   # Two undici major lines coexist and are independently vulnerable, so neither an unbounded floor nor
   # a single selector works; each is pinned inside its own major. Advisories closed: cookie attribute
   # injection, CRLF injection via blob-like body 'type', retry-interceptor response desynchronization
   # (both lines), plus Cache-Control whitespace and degenerate private-cache-directive disclosure (7.x).
-  'undici@>=6.0.0 <6.28.0': '>=6.28.0 <7.0.0'   # via webdriver (^6.21.3) — b-2 wdio only
-  'undici@>=7.0.0 <7.29.0': '>=7.29.0 <8.0.0'   # via @electron/get (^7.24.4) and cheerio (^7.12.0)
+  'undici@>=6.0.0 <6.28.0': '>=6.28.0 <7.0.0' # via webdriver (^6.21.3) — b-2 wdio only
+  'undici@>=7.0.0 <7.29.0': '>=7.29.0 <8.0.0' # via @electron/get (^7.24.4) and cheerio (^7.12.0)
   # GHSA-73rr-hh4g-fpgx: jsdiff DoS in parsePatch/applyPatch. The ONLY override here that crosses a
   # major: mocha declares diff@^7.0.0 and the fix ships in 8.0.3+, with no mocha release (checked up to
   # 11.8.0) that moves to ^8. Verified by running mocha against jsdiff 8.0.4 with both failure diff
   # paths it uses — diffWordsWithSpace (string) and createPatch (object) — and both render correctly;
   # jsdiff 8 still ships CJS. Scoped so mocha 10.x (@wdio/mocha-framework, diff@5.2.2) is untouched.
-  'diff@>=6.0.0 <8.0.3': '>=8.0.3 <9.0.0'   # via our direct mocha 11.x devDependency
+  'diff@>=6.0.0 <8.0.3': '>=8.0.3 <9.0.0' # via our direct mocha 11.x devDependency
   # GHSA-jmr9-qjv8-65gv / CVE-2026-56876 (CVSS 8.1): extract-zip does not validate symlink targets.
   # extract-zip itself CANNOT be overridden — 2.0.1 is the newest release (2023) and is the vulnerable
   # one, so no patched floor exists. It reaches us only as @puppeteer/browsers -> @wdio/utils -> wdio,
@@ -66,7 +72,7 @@ overrides:
   # never loaded at all, because wdio-obsidian-service downloads and manages its own
   # electron-chromedriver instead of going through @wdio/utils' startWebDriver. So this only prunes a
   # vulnerable package out of the tree; it changes no code path we actually execute.
-  '@puppeteer/browsers@>=2.0.0 <3.0.0': '>=3.0.0 <4.0.0'   # @wdio/utils declares ^2.2.0
+  '@puppeteer/browsers@>=2.0.0 <3.0.0': '>=3.0.0 <4.0.0' # @wdio/utils declares ^2.2.0
   # GHSA stack exhaustion when merging recursive object graphs (<8.0.0). Every wdio package declares
   # ^7.0.3, so this is the third major-crossing override. 8.0.0 renamed the mergeInfo system and
   # "aligned shorthand", which is exactly what webdriver's only call site uses
@@ -74,4 +80,4 @@ overrides:
   # were run side by side on 7.1.5 and 8.0.1: identical output on nested records and arrays. b-2
   # exercises this for real — unlike @puppeteer/browsers, which wdio-obsidian-service never loads
   # because it manages its own electron-chromedriver (verified by instrumenting the module).
-  'deepmerge-ts@<8.0.0': '>=8.0.0 <9.0.0'   # wdio declares ^7.0.3
+  'deepmerge-ts@<8.0.0': '>=8.0.0 <9.0.0' # wdio declares ^7.0.3
