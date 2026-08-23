@@ -11,7 +11,7 @@
 //
 // Stored as a typed TS module (not YAML) to avoid adding a parser dependency.
 
-export type Layer = 'a' | 'b-1' | 'b-2';
+export type Layer = 'a' | 'b-1' | 'b-2' | 'b-3';
 
 export interface Clause {
   id: string;
@@ -532,5 +532,15 @@ export const CLAUSES: Clause[] = [
   { id: 'WSF-8', source: 'specs/064-watch-single-file-conflict/contracts/watch-single-file-sync.md (C-6: watch mode notifies only on a resolved conflict or an error — routine upload/download/no-op stay silent)', layer: 'a' },
   { id: 'WSF-9', source: 'specs/064-watch-single-file-conflict/contracts/watch-single-file-sync.md (C-3 end-to-end against a live server: two devices editing different lines keep both edits, and syncSingleFile ends in the same state as syncManual)', layer: 'b-1' },
   { id: 'WSF-10', source: 'specs/064-watch-single-file-conflict/contracts/watch-single-file-sync.md (C-7: a write made by the watch path is marked as our own, so it never triggers another single-file sync — no PUT→event→PUT loop)', layer: 'a' },
+  // Feature 072 (b-3): the Capacitor runtime layer. These four are the ONLY clauses whose layer is
+  // 'b-3', and each carries the one sentence the dedup rule demands — why a / b-1 / b-2 cannot
+  // reproduce it. Desktop "mobile emulation" (app.emulateMobile) does not qualify as a substitute:
+  // it flips the UI mode while still running on Electron/Chromium/Node.
+  { id: 'AND-1', source: 'specs/072-b3-android-e2e-layer/spec.md (US2 / issue #34: browser sign-in completes after the app is backgrounded). Not reproducible elsewhere: the failure IS the OS suspending the webview timers, which desktop Electron never does to an unfocused window.', layer: 'b-3', waiver: 'the END-TO-END half is not yet proven to catch the regression: with the issue #34 fix reverted the scenario still passes, because this emulator image does not suspend the webview timers when the app loses the foreground (verified twice — HOME key, then a real activity pushed in front). The other half (the platform delivers visibilitychange/focus on return) IS verified and passes. Needs a way to force timer suspension, e.g. Doze, before the waiver can be lifted.' },
+  { id: 'AND-2', source: 'specs/072-b3-android-e2e-layer/spec.md (US2: an atomic write near NAME_MAX succeeds and leaves no temp file). Not reproducible elsewhere: the 255-byte limit is enforced by the Android filesystem; on desktop the same write simply succeeds.', layer: 'b-3' },
+  { id: 'AND-3', source: 'specs/072-b3-android-e2e-layer/spec.md (US2: paths with spaces/non-ASCII and binary bodies survive a round trip byte-for-byte). Not reproducible elsewhere: requestUrl is a different implementation on Capacitor than the Electron net stack b-2 exercises.', layer: 'b-3' },
+  { id: 'AND-5', source: 'specs/072-b3-android-e2e-layer/spec.md (US2: "Mirror from remote" plans and applies without timing out). Reported from a real Android device alongside the sign-in timeout. Not reproducible elsewhere: the planning stage lists the whole remote over the mobile HTTP implementation, which only exists on Capacitor.', layer: 'b-3' },
+  { id: 'AND-4', source: 'specs/072-b3-android-e2e-layer/spec.md (US1: one sync round trip completes in each direction on the real Android runtime). Not reproducible elsewhere: same reason as AND-3 — the transfer itself runs through the mobile HTTP implementation.', layer: 'b-3' },
+
   { id: 'WSF-11', source: 'specs/064-watch-single-file-conflict/spec.md (FR-011: watch-path decisions are logged with a `watch:` prefix so the two entry points are distinguishable in the debug log)', layer: 'a', waiver: 'log text is a diagnostic surface, not a behavioural contract: asserting exact strings would freeze wording without protecting any user-visible outcome. Verified by reading the debug log in quickstart.md' },
 ];
