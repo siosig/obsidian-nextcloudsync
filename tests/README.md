@@ -11,6 +11,7 @@ updated (waiver) if the implementation is intentionally the canonical one.
 | `b1-nextcloud-headless/` | b-1 | ✓ | ✗ | `pnpm test:b1` | ✗ |
 | `b2-nextcloud-ui/` | b-2 | ✓ | ✓ (wdio, desktop Electron) | `pnpm test:b2` | ✗ |
 | `b3-android-ui/` | b-3 | ✓ | ✓ (wdio + Appium, real Android) | `pnpm test:b3:instance` | ✗ |
+| `b4-plain-webdav/` | b-4 | **✗ (deliberately NOT Nextcloud)** | ✗ | `pnpm test:b4` | ✗ |
 | `fixtures/` | shared | — | — | — | — |
 
 - **a** — pure logic + the spec-coverage meta-test. No network, no UI. Runs everywhere.
@@ -20,8 +21,17 @@ updated (waiver) if the implementation is intentionally the canonical one.
   **Measured cycle time** (2026-08-23, `n2-standard-8` + API 33 emulator): scenarios ~1m45s; the whole
   procedure including both instances is ~20 minutes, dominated by AVD host provisioning (~13 min) —
   budget for that, not for the test run.
+- **b-4** — a live **plain WebDAV** server (Apache httpd + `mod_dav` in a local container). This is the
+  one layer that is deliberately *not* Nextcloud, and that is its entire reason to exist: b-1/b-2/b-3
+  all point at Nextcloud, so the plugin's documented degradation for non-Nextcloud servers was never
+  exercised by anything but mocks — which is how a dispatch bug survived long enough for a user to
+  report it (feature 073). Apache refuses `PROPFIND Depth: infinity` by default, so it also exercises
+  the `Depth: 1` recursion that `StandardWebDAVClient` was written for. Needs Docker, **not** a
+  Nextcloud instance, and **must not read `NEXTCLOUD_*`** — letting those leak in would quietly turn
+  this back into another Nextcloud test. `pnpm test:b4` starts and stops the container itself
+  (a local container, unlike the shared cloud instances the other live layers use).
 
-File naming: `*.test.ts` (a), `*.b1.test.ts` (b-1), `*.b2.test.ts` (b-2), `*.b3.test.ts` (b-3).
+File naming: `*.test.ts` (a), `*.b1.test.ts` (b-1), `*.b2.test.ts` (b-2), `*.b3.test.ts` (b-3), `*.b4.test.ts` (b-4).
 
 ## Dedup rule (one behaviour, one class)
 

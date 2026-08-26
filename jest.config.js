@@ -2,8 +2,8 @@
 // Classification "a" (Nextcloud-independent, no UI). This is the DEFAULT `pnpm test`
 // and the only suite that runs in CI: pure logic + the spec-coverage meta-test.
 // The live suites live under tests/b1-nextcloud-headless/ (pnpm test:b1),
-// tests/b2-nextcloud-ui/ (pnpm test:b2) and tests/b3-android-ui/ (pnpm test:b3:instance)
-// and are excluded here.
+// tests/b2-nextcloud-ui/ (pnpm test:b2), tests/b3-android-ui/ (pnpm test:b3:instance) and
+// tests/b4-plain-webdav/ (pnpm test:b4) and are excluded here.
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
@@ -19,11 +19,13 @@ module.exports = {
     '/tests/b1-nextcloud-headless/',
     '/tests/b2-nextcloud-ui/',
     '/tests/b3-android-ui/',
+    '/tests/b4-plain-webdav/',
   ],
   modulePathIgnorePatterns: [
     '<rootDir>/tests/b1-nextcloud-headless/',
     '<rootDir>/tests/b2-nextcloud-ui/',
     '<rootDir>/tests/b3-android-ui/',
+    '<rootDir>/tests/b4-plain-webdav/',
   ],
   transform: {
     '^.+\\.tsx?$': ['ts-jest', { tsconfig: 'tsconfig.test.json' }],
