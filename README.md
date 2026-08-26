@@ -31,11 +31,10 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.41)
+## What's new in this release (0.7.42-beta.1)
 
-- **Fixed: signing in via the browser never completed on Android (0.7.41)** — approving in the browser put Obsidian in the background, where the system suspends its timers, so the plugin stopped checking whether you had granted access. It now resumes checking the moment you return to Obsidian, and keeps trying for the full 20 minutes the server allows.
-- **Fixed: an occasional sync failure right after returning to Obsidian (0.7.41)** — the first read-only WebDAV request issued right after the app resumes from the background could occasionally time out even though the connection was fine a moment later. Read-only requests now retry automatically instead of surfacing that as a sync failure.
-- **Fixed: an error was written to the Nextcloud server log on every plugin load (0.7.41)** — the plugin asked the server for a change-listing feature that Nextcloud's file storage does not implement, and the server logged the rejection as an ERROR with a stack trace. That request is no longer sent at all. Syncing is unaffected; only your server's log is quieter.
+- **Fixed: a non-Nextcloud WebDAV server was not treated as one (0.7.42-beta.1)** — the plugin is meant to switch its Nextcloud-only features off and fall back to standard WebDAV when the server is not Nextcloud, as the README describes. It never did: the check only took effect if the connection attempt failed outright, so an ordinary WebDAV server was still driven as if it were Nextcloud. Such servers now get the standard client, which also lists folders in a way plain WebDAV servers accept. Connecting to Nextcloud is unchanged.
+- **Fixed: a server in maintenance mode did not say so (0.7.42-beta.1)** — the message was being swallowed, so instead of being told the server was down for maintenance you saw a generic `HTTP 503` error.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
