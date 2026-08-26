@@ -137,11 +137,16 @@ export class NextcloudClient implements IWebDAVClient {
     // Check /status.php for maintenance mode
     const statusUrl = this.settings.serverUrl.replace(/\/remote\.php.*$/, '') + '/status.php';
     const statusRes = await this.reqReadonly({ url: statusUrl, method: 'GET', headers: { ...NO_CACHE_HEADERS }, throw: false });
+    // `productname` is the second witness for detection below. It is read here because /status.php is
+    // already being parsed for maintenance, and because it needs no authentication — which is exactly
+    // what makes it useful when a genuine Nextcloud has its OCS endpoint closed off (feature 073, D-2).
+    let statusProductName = '';
     if (statusRes.status === 200) {
       const status = statusRes.json as Record<string, unknown>;
       if (status.maintenance === true) {
         throw new MaintenanceModeError();
       }
+      statusProductName = typeof status.productname === 'string' ? status.productname : '';
     }
 
     // Get capabilities
@@ -157,10 +162,13 @@ export class NextcloudClient implements IWebDAVClient {
     let hasChecksums = false;
     let hasFilesLocking = false;
     let hasBulkUpload = false;
+    /** Whether OCS actually yielded capabilities — the primary detection witness (feature 073). */
+    let ocsAnswered = false;
 
     if (capRes.status === 200) {
       const cap = capRes.json as Record<string, unknown>;
       const data = (cap as Record<string, Record<string, unknown>>).ocs?.data as Record<string, unknown> | undefined;
+      ocsAnswered = data != null;
       version = (data?.version as Record<string, string>)?.string ?? '';
       const caps = data?.capabilities as Record<string, unknown> | undefined;
       const checksums = caps?.checksums as Record<string, unknown> | undefined;
@@ -177,8 +185,17 @@ export class NextcloudClient implements IWebDAVClient {
     // Get current sync-token
     const syncToken = await this.getSyncToken();
 
+    // Detection is taken from what the probes ANSWERED, never from this class being the one asking
+    // (feature 073, GitHub-adjacent report). Capabilities is the primary witness because every other
+    // flag above is derived from it: a connection that cannot read it has nothing to back an
+    // `isNextcloud: true` with, and the engine would then gate Nextcloud-only work on a value with no
+    // substance behind it. /status.php is the second witness so a genuine Nextcloud whose OCS is
+    // closed off (401/403) is not misfiled as plain WebDAV. Neither witness answering means the
+    // caller should be using StandardWebDAVClient instead — WebDAVFactory acts on that.
+    const isNextcloud = ocsAnswered || /nextcloud/i.test(statusProductName);
+
     this.features = {
-      isNextcloud: true,
+      isNextcloud,
       version,
       hasChecksums,
       hasFilesLocking,

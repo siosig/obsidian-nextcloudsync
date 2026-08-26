@@ -18,7 +18,8 @@
     "test:b2": "wdio run wdio.conf.mts",
     "test:b2:instance": "bash scripts/b2-instance.sh",
     "test:b3": "wdio run wdio.android.conf.mts",
-    "test:b3:instance": "bash scripts/b3-android.sh"
+    "test:b3:instance": "bash scripts/b3-android.sh",
+    "test:b4": "bash scripts/b4-plain-webdav.sh"
   },
   "keywords": [
     "obsidian",
