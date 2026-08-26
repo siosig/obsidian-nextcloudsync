@@ -11,7 +11,7 @@
 //
 // Stored as a typed TS module (not YAML) to avoid adding a parser dependency.
 
-export type Layer = 'a' | 'b-1' | 'b-2' | 'b-3';
+export type Layer = 'a' | 'b-1' | 'b-2' | 'b-3' | 'b-4';
 
 export interface Clause {
   id: string;
@@ -456,6 +456,10 @@ export const CLAUSES: Clause[] = [
   { id: 'LF-2', source: 'specs/main/spec.md §17 (wall-clock deadline matched to Nextcloud LoginFlowV2Mapper::lifetime = 1200 s, replacing the 90-iteration cap)', layer: 'a' },
   // --- SCR: the sync-collection REPORT is never issued (GitHub issue #37) ---
   { id: 'SCR-1', source: 'specs/main/spec.md §18 F1a (getSyncToken never issues the REPORT; no server-side ERROR log per client) — GitHub issue #37', layer: 'a' },
+  // --- SD: server-type detection and client dispatch (feature 073) ---
+  { id: 'SD-1', source: 'specs/main/spec.md §1 (detection from probe answers; case table D-1..D-7 in specs/073-webdav-client-dispatch/contracts/server-detection.md)', layer: 'a' },
+  { id: 'SD-2', source: 'specs/main/spec.md §1 (detection adds no probe round-trips on the Nextcloud path — INV-4)', layer: 'a' },
+  { id: 'SD-3', source: 'specs/main/spec.md §1 (degradation proven against a real plain WebDAV server: standard client, isNextcloud false, listing without Depth: infinity, full round-trip)', layer: 'b-4', waiver: 'Verified in the b-4 layer against a live Apache mod_dav container (pnpm test:b4); cannot run in the default CI suite, which has no server.' },
   // --- SMB: Sync status "Mirror from remote" button (feature 059) ---
   // A second entry point to Mirror from remote on the Sync status dialog's top action row. Pure DOM
   // wiring: no new logic. The button delegates entirely to runRemoteMirror() (single source of truth,
