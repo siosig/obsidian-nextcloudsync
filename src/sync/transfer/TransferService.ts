@@ -163,6 +163,15 @@ export class TransferService {
     this.deps.mergeBase.record(remote.path, new TextDecoder().decode(data));
   }
 
+  /**
+   * Download-side size guard (spec 035, symmetric with the upload strategies' `isOverFileSizeLimit`).
+   * Decides — BEFORE issuing a GET — whether a remote file exceeds `maxFileSizeMB`, using the size the
+   * server advertised in PROPFIND (`RemoteFileInfo.size`, getcontentlength) as the source of truth. No
+   * body is fetched. `maxFileSizeMB` of 0 means unlimited. This is the single decision point shared by
+   * every remote-body fetch path (normal download, deletion-vs-edit restore, conflict, compare, pull):
+   * `requestUrl` buffers the whole body in memory and Android base64-encodes it, so a large remote file
+   * would OOM the app (issue #8). The threshold logic is reused from upload so both directions agree.
+   */
   isRemoteOverSizeLimit(remote: RemoteFileInfo): boolean {
     return isOverFileSizeLimit(remote.size, this.deps.maxFileSizeMB());
   }

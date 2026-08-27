@@ -1,4 +1,4 @@
-import { App, Notice, Platform, TFile, TFolder, Vault, normalizePath } from 'obsidian';
+import { App, Notice, Platform, TFolder, Vault, normalizePath } from 'obsidian';
 import {
   DavSyncSettings,
   FileState,
@@ -14,7 +14,6 @@ import {
   SyncTokenExpiredError,
   NetworkError,
   FileLockedError,
-  FeatureUnsupportedError,
   PreconditionFailedError,
   RemoteCompareResult,
   ConflictResolution,
@@ -36,6 +35,8 @@ import { SyncJournal } from './session/SyncJournal';
 import { MergeBaseRecorder } from './session/MergeBaseRecorder';
 import { withLocalSignature } from '../data/localSignature';
 import { TransferService } from './transfer/TransferService';
+import { VersionService } from './versions/VersionService';
+import { DeletionService } from './deletion/DeletionService';
 import { isMarkdown } from '../util/mergeableExtensions';
 import { SyncHistoryStore } from '../data/SyncHistoryStore';
 import { IStatusBar } from '../ui/StatusBarItem';
@@ -53,7 +54,6 @@ import {
   isAnomalousRemoteContent,
 } from '../util/limits';
 import { createLimiter, ByteSemaphore } from '../util/ConcurrencyLimiter';
-import { isSafeVaultRelativePath } from '../network/remotePath';
 import { buildMirrorPlan, MirrorPlan, MirrorResult, LocalFileEntry } from './mirrorPlan';
 import { IUploadStrategy } from './upload/IUploadStrategy';
 import { SimpleUploadStrategy } from './upload/SimpleUploadStrategy';
@@ -142,6 +142,12 @@ export class SyncEngine {
   /** Currently held lock tokens (path → token). */
   /** Single-file transfer, locking and size guards (feature 074). Owns the locks it holds. */
   private readonly transfer: TransferService;
+
+  /** Nextcloud version history (feature 074). Takes no part in a sync session. */
+  private readonly versions: VersionService;
+
+  /** Deletion propagation, both directions (feature 074). */
+  private readonly deletion: DeletionService;
   /** Progress counters updated during a sync run (reset each run). */
   private syncProgress = { processed: 0, total: 0 };
   /** Feature 046: number of watch-mode single-file/folder ops currently propagating to the remote.
@@ -206,6 +212,16 @@ export class SyncEngine {
       maxFileSizeMB: () => this.opts.settings.maxFileSizeMB,
       hasFilesLocking: () => this.features?.hasFilesLocking === true,
       queueRetry: (p) => { this.retryQueue.push(p); },
+      logger: opts.logger,
+    });
+    this.versions = new VersionService({ localAdapter: opts.localAdapter, stateDB: opts.stateDB });
+    this.deletion = new DeletionService({
+      app: opts.app,
+      stateDB: opts.stateDB,
+      journal: this.journal,
+      mergeBase: this.mergeBase,
+      transfer: this.transfer,
+      isSystemExcluded: (p) => this.isSystemExcluded(p),
       logger: opts.logger,
     });
     this.remoteListing = new RemoteListingSource({
@@ -1666,42 +1682,12 @@ export class SyncEngine {
    * The decision uses the server-side checksum (recalc, no download) for reliability; deletions go
    * to the Nextcloud trashbin (recoverable).
    */
-  private async applyLocalDeletion(
+  /** @see DeletionService.applyLocalDeletion */
+  private applyLocalDeletion(
     remote: RemoteFileInfo, base: FileState, remoteId: string, idType: FileState['idType'],
     summary: SyncSessionSummary,
   ): Promise<void> {
-    // Decide ONLY from a real content hash of the server copy. A SHA-256 match against what we last
-    // synced is the only proof that the server copy is unchanged and the deletion is genuinely local.
-    let serverHash = remote.checksum ?? null;
-    if (!serverHash) {
-      try { serverHash = await this.client!.recalcChecksum(remote.path); } catch { serverHash = null; }
-    }
-
-    if (serverHash && serverHash === base.localHash) {
-      // Server copy is byte-identical to our base → genuine local deletion → propagate (trashbin).
-      void this.opts.logger?.log(`delete-remote: local deletion (server checksum matches base) → ${remote.path}`);
-      try {
-        await this.client!.deleteFile(remote.path, base.remoteId);
-        summary.deletedCount++;
-        this.recordHistory(remote.path, 'deleted', undefined, {
-          localHash: base.localHash, remoteId, remoteIdType: idType,
-          localSize: base.size, remoteSize: remote.size,
-        });
-      } catch (err) {
-        if (!(err instanceof NetworkError && err.status === 404)) throw err;
-      }
-      this.opts.stateDB.deleteFile(remote.path);
-      this.dropMergeBase(remote.path); // feature 038: local deletion propagated → drop merge base
-    } else if (serverHash && serverHash !== base.localHash) {
-      // Server copy diverged after our base → restore it locally so a remote edit is never dropped.
-      void this.opts.logger?.log(`conflict(local-delete vs remote-edit): restoring remote → ${remote.path}`);
-      await this.downloadFile(remote, remoteId, idType, summary);
-    } else {
-      // No reliable server checksum (e.g. plain WebDAV, or recalc failed) → do NOT delete. The
-      // etag/size are not proof of unchanged content, so deleting here could discard a remote edit.
-      // Leave both sides as-is; the deletion still propagates via the incremental token path.
-      void this.opts.logger?.log(`delete-remote: SKIPPED — no reliable server checksum to confirm unchanged → ${remote.path}`);
-    }
+    return this.deletion.applyLocalDeletion(this.client!, remote, base, remoteId, idType, summary);
   }
 
   // Delegators to the transfer service (feature 074): the client and upload strategy are resolved
@@ -1721,47 +1707,18 @@ export class SyncEngine {
 
   // ── US2: Version history ───────────────────────────────────────────────────
 
-  /** Return the version list for the active note. Throws FeatureUnsupportedError if unsupported or fileId is missing. */
+  /** @see VersionService.listVersions */
   async listVersions(path: string): Promise<FileVersion[]> {
     const { client, features } = await this.ensureClient();
-    if (!features.isNextcloud) throw new FeatureUnsupportedError('versions');
-    const fileId = this.opts.stateDB.getFile(path)?.remoteFileId;
-    if (!fileId) throw new FeatureUnsupportedError('versions');
-    return client.listVersions(fileId);
+    return this.versions.listVersions(client, features, path);
   }
 
-  /** Restore the specified version, apply it locally, and update the state DB (FR-007/008). */
+  /** @see VersionService.restoreVersion */
   async restoreVersion(path: string, version: FileVersion): Promise<void> {
     const { client, features } = await this.ensureClient();
-    if (!features.isNextcloud) throw new FeatureUnsupportedError('versions');
-    const fileId = this.opts.stateDB.getFile(path)?.remoteFileId;
-    if (!fileId) throw new FeatureUnsupportedError('versions');
-
-    // 1. Restore on the server side (MOVE restore).
-    await client.restoreVersion(version, fileId);
-    // 2. Fetch the current content after restore and atomically apply it locally.
-    const data = await client.downloadFile(path);
-    await this.opts.localAdapter.atomicWriteBinary(path, data);
-    // 3. Update the state DB (localHash=remoteId=hash of restored content, isConflicted=false).
-    const localHash = await sha256(data);
-    const stat = await this.opts.localAdapter.stat(path);
-    this.opts.stateDB.setFile(await this.withLocalSignature({
-      path, localHash, remoteId: localHash, idType: 'sha256',
-      size: stat?.size ?? data.byteLength, mtime: stat?.mtime ?? Date.now(),
-      remoteFileId: fileId, isConflicted: false,
-    }));
-    await this.opts.stateDB.save();
+    return this.versions.restoreVersion(client, features, path, version);
   }
 
-  /**
-   * Download-side size guard (spec 035, symmetric with the upload strategies' `isOverFileSizeLimit`).
-   * Decides — BEFORE issuing a GET — whether a remote file exceeds `maxFileSizeMB`, using the size the
-   * server advertised in PROPFIND (`RemoteFileInfo.size`, getcontentlength) as the source of truth. No
-   * body is fetched. `maxFileSizeMB` of 0 means unlimited. This is the single decision point shared by
-   * every remote-body fetch path (normal download, deletion-vs-edit restore, conflict, compare, pull):
-   * `requestUrl` buffers the whole body in memory and Android base64-encodes it, so a large remote file
-   * would OOM the app (issue #8). The threshold logic is reused from upload so both directions agree.
-   */
   /** @see TransferService.acquireLock */
   private acquireLock(path: string): Promise<string | null> {
     return this.transfer.acquireLock(this.client!, path);
@@ -2081,45 +2038,9 @@ export class SyncEngine {
     void this.opts.logger?.log(`conflict: resolved by prefer-remote (local overwritten) → ${path}`);
   }
 
-  private async processRemoteDeletion(path: string, summary: SyncSessionSummary): Promise<void> {
-    // Security boundary (centralized at the delete sink): never act on a server-reported deletion
-    // for a path the engine treats as out of scope (the Obsidian config folder, other plugins, etc.).
-    // A malicious/compromised server could fabricate a REPORT deletion for `.obsidian/...`; without
-    // this guard it would reach the raw fs remove below and permanently destroy config the sync
-    // engine otherwise never touches. Every other server-driven sink already filters with
-    // isSystemExcluded; enforcing it here covers all callers (incremental + full-scan).
-    if (this.isSystemExcluded(path)) {
-      void this.opts.logger?.log(`delete-local: ignored out-of-scope remote deletion → ${path}`);
-      return;
-    }
-    void this.opts.logger?.log(`delete-local: applying remote deletion → ${path}`);
-    const file = this.opts.app.vault.getAbstractFileByPath(path);
-    const normalized = normalizePath(path);
-    try {
-      if (file instanceof TFile || file instanceof TFolder) {
-        // Honor the user's Obsidian "Deleted files" setting (system trash / .trash / permanent
-        // delete) instead of forcing one behavior. trashFile handles both files and folders.
-        await this.opts.app.fileManager.trashFile(file);
-        summary.downloadedCount++;
-        this.recordHistory(path, 'deleted'); // remote deletion applied locally
-      } else if (isSafeVaultRelativePath(path) && await this.opts.app.vault.adapter.exists(normalized)) {
-        // Not a vault-tracked abstract file (e.g. dotfiles under a config folder): delete it
-        // directly so the deletion is never silently skipped. Defense-in-depth: only when the
-        // path is safe (no traversal / not absolute), so an attacker-controlled remote path can
-        // never reach this raw fs sink even if the boundary guard is ever bypassed.
-        await this.opts.app.vault.adapter.remove(normalized);
-        summary.downloadedCount++;
-        this.recordHistory(path, 'deleted'); // remote deletion applied locally (config dotfile)
-      }
-      // else: already gone locally — nothing to delete, fall through to state cleanup.
-    } catch (err) {
-      // Don't abort the whole sync session for one failed deletion; notify and keep the
-      // StateDB entry so the next sync retries this path.
-      new Notice(`❌ Failed to delete ${path}: ${(err as Error).message}`, 6000);
-      return;
-    }
-    this.opts.stateDB.deleteFile(path);
-    this.dropMergeBase(path); // feature 038: remote deletion applied locally → drop merge base
+  /** @see DeletionService.processRemoteDeletion */
+  private processRemoteDeletion(path: string, summary: SyncSessionSummary): Promise<void> {
+    return this.deletion.processRemoteDeletion(path, summary);
   }
 
   private async processLocalModifications(
