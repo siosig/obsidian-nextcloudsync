@@ -10,12 +10,14 @@
 // of the plan is refused wholesale and recorded as a session error. The two resolve* methods below
 // are how the user then settles those refused paths without waiting for another sync.
 import { TFolder, normalizePath, Vault, App } from 'obsidian';
-import { SyncSessionSummary, RemoteDirInfo, DirState } from '../../types';
+import { SyncSessionSummary, RemoteDirInfo } from '../../types';
 import { StateDB } from '../../data/StateDB';
 import { IWebDAVClient } from '../../network/IWebDAVClient';
 import { SyncJournal } from '../session/SyncJournal';
 import { TransferService } from '../transfer/TransferService';
-import { effectiveMassDeleteLimit } from '../../util/limits';
+import {
+  classifyDirectories, shouldTripMassDeleteBreaker, breakerDenominator,
+} from './classify';
 import { FileLogger } from '../../util/FileLogger';
 
 export interface DirectoryDeps {
@@ -64,28 +66,11 @@ export class DirectoryReconciler {
     );
     const tracked = new Map(this.deps.stateDB.getAllDirs().map(d => [d.path, d]));
 
-    const all = new Set<string>(
-      [...remoteDirs.keys(), ...localDirs, ...tracked.keys()].filter(p => p !== '' && !this.deps.isSystemExcluded(p)),
-    );
-
-    const mkcolRemote: string[] = []; // L !R !T — created here → push to remote
-    const mkdirLocal: string[] = [];  // !L R !T — created elsewhere → create here
-    const deleteRemote: string[] = []; // !L R T — deleted here → remove on remote
-    const trashLocal: string[] = [];   // L !R T — deleted elsewhere → remove here
-    const ensureTracked: DirState[] = []; // L R — keep tracked
-    const dropTracked: string[] = [];  // !L !R T — gone everywhere → forget
-
-    for (const p of all) {
-      const L = localDirs.has(p), R = remoteDirs.has(p), T = tracked.has(p);
-      if (L && R) ensureTracked.push({ path: p, remoteFileId: remoteDirs.get(p)!.fileId });
-      else if (L && !R) (T ? trashLocal : mkcolRemote).push(p);
-      else if (!L && R) (T ? deleteRemote : mkdirLocal).push(p);
-      else if (T) dropTracked.push(p);
-    }
+    const plan = classifyDirectories(remoteDirs, localDirs, tracked, (p) => this.deps.isSystemExcluded(p));
+    const { mkcolRemote, mkdirLocal, deleteRemote, trashLocal, ensureTracked, dropTracked } = plan;
 
     // Circuit breaker on the destructive set (a partial listing would make many dirs look deleted).
-    const denom = Math.max(tracked.size, remoteDirs.size, localDirs.size);
-    if (deleteRemote.length + trashLocal.length > effectiveMassDeleteLimit(this.deps.massDeleteLimit(), denom)) {
+    if (shouldTripMassDeleteBreaker(plan, breakerDenominator(remoteDirs, localDirs, tracked), this.deps.massDeleteLimit())) {
       void this.deps.logger?.log(`dir-sync: SKIPPED ${deleteRemote.length + trashLocal.length} dir deletions — exceeds safety limit; likely a partial listing`);
       // Record as an error so the root-ETag short-circuit convergence gate (spec 023 §8a.5) invalidates
       // the stored etag and the next sync really re-scans instead of short-circuiting on stale State.
