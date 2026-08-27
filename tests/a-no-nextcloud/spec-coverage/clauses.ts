@@ -366,7 +366,12 @@ export const CLAUSES: Clause[] = [
   { id: 'SLD-5', source: 'specs/main/spec.md §15.1-slider (sliderLimits is a pure constant module)', layer: 'a' },
   { id: 'SLD-6', source: 'specs/main/spec.md §15.1-slider (desktop mockup mirrors SLIDER_LIMITS)', layer: 'a' },
   { id: 'SLD-7', source: 'specs/main/spec.md §15.1-slider (startup-delay 0 = off folds the toggle; migrateStartupToggleToDelay converges saved state)', layer: 'a' },
-  { id: 'SLD-8', source: 'specs/main/spec.md §15.1-slider (networkConcurrency 0 floors to effective 1 at consumers)', layer: 'a' },
+  // SLD-8's guard test greps SyncEngine.ts for raw `settings.networkConcurrency` reads. Since
+  // feature 074 one consumer lives in sync/scan/RemoteListingSource, which receives an already
+  // floored accessor and floors again on its own (its batching loop advances by that value, so a
+  // 0 would not be slow — it would never terminate). That second floor is covered directly by
+  // tests/a-no-nextcloud/sync/scan/remoteListingSource.test.ts, not by the grep.
+  { id: 'SLD-8', source: 'specs/main/spec.md §15.1-slider (networkConcurrency 0 floors to effective 1 at consumers; consumers now span SyncEngine and sync/scan/RemoteListingSource — spec.md §21)', layer: 'a' },
   // Feature 043 (harden frontmatter merge): the frontmatter path is resolved STRUCTURALLY through
   // Obsidian's official getFrontMatterInfo / parseYaml / stringifyYaml / parseFrontMatterStringArray
   // — conflict-marker lines NEVER enter a `---` block, and list fields merge as a base-aware 3-way SET
@@ -440,7 +445,7 @@ export const CLAUSES: Clause[] = [
   // --- MDV: mass-delete breaker skipped-paths visibility (feature 055) + report notes/dir bulk-resolve (feature 056) ---
   { id: 'MDV-2', source: 'specs/main/spec.md §8 (file mass-delete breaker records skippedPaths.all, full/uncapped)', layer: 'a' },
   { id: 'MDV-4', source: 'specs/main/spec.md §8 (ordinary errors unaffected — regression)', layer: 'a' },
-  { id: 'MDV-5', source: 'specs/main/spec.md §8 (breaker report notes excluded from sync — isSystemExcluded)', layer: 'a' },
+  { id: 'MDV-5', source: 'specs/main/spec.md §8 (breaker report notes excluded from sync — isSystemExcluded, now in src/sync/policy per §21)', layer: 'a' },
   { id: 'MDV-6', source: 'specs/056-massdelete-breaker-report-bulk-resolve/spec.md (dir mass-delete breaker records dirBreakerSkipped, full/uncapped/category-split)', layer: 'a' },
   { id: 'MDV-7', source: 'specs/056-massdelete-breaker-report-bulk-resolve/spec.md (report note formatting: full listing, no truncation, per-category counts)', layer: 'a' },
   { id: 'MDV-8', source: 'specs/056-massdelete-breaker-report-bulk-resolve/spec.md (resolveSkippedDir: 4 category×choice branches)', layer: 'a' },
