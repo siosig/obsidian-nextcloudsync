@@ -11,6 +11,12 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.42] - 2026-08-27
+
+### Fixed
+- A WebDAV server that is not Nextcloud was still driven as if it were. The plugin is documented to switch its Nextcloud-only features off and fall back to standard WebDAV in that case, but the fallback only took effect when the connection attempt failed outright — and the probes it uses answer, rather than fail, against an ordinary WebDAV server. Server type is now decided from what the probes answered, so such servers get the standard client, including the folder listing that plain WebDAV servers accept. Connecting to Nextcloud is unchanged.
+- A server in maintenance mode did not say so. The maintenance message was swallowed while deciding the server type, so a temporary state surfaced as a generic `HTTP 503` error instead.
+
 ## [0.7.41] - 2026-08-23
 
 ### Fixed
@@ -380,6 +386,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.42]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.42
 [0.7.41]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.41
 [0.7.40]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.40
 [0.7.39]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.39
