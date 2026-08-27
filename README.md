@@ -31,10 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.42)
+## What's new in this release (0.7.43-beta.1)
 
-- **Fixed: a non-Nextcloud WebDAV server was not treated as one (0.7.42)** — the plugin is meant to switch its Nextcloud-only features off and fall back to standard WebDAV when the server is not Nextcloud, as the README describes. It never did: the check only took effect if the connection attempt failed outright, so an ordinary WebDAV server was still driven as if it were Nextcloud. Such servers now get the standard client, which also lists folders in a way plain WebDAV servers accept. Connecting to Nextcloud is unchanged.
-- **Fixed: a server in maintenance mode did not say so (0.7.42)** — the message was being swallowed, so instead of being told the server was down for maintenance you saw a generic `HTTP 503` error.
+- **Internal restructuring only — nothing should look or behave differently (0.7.43-beta.1)** — the sync engine has been split into focused modules, and the decisions it still makes have been separated from the file and network operations around them. Syncing, conflict resolution, deletion, folder handling and Mirror from remote all work exactly as before. This build exists so that claim can be checked against real vaults: if anything at all behaves differently for you, that is a bug worth reporting.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
