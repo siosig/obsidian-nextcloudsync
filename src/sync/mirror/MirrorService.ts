@@ -11,6 +11,7 @@
 import { TFolder, Vault, App } from 'obsidian';
 import { FileState, RemoteFileInfo } from '../../types';
 import { buildMirrorPlan, MirrorPlan, MirrorResult, LocalFileEntry } from '../mirrorPlan';
+import { planStateConvergence } from './convergence';
 import { LocalAdapter } from '../../data/LocalAdapter';
 import { StateDB } from '../../data/StateDB';
 import { IStatusBar } from '../../ui/StatusBarItem';
@@ -192,13 +193,16 @@ export class MirrorService {
     }
 
     // 4. Reconcile StateDB to the remote so the next sync sees no diff (self-healing, FR-011).
-    const eligibleRemote = plan.remoteFiles.filter((r) => !this.deps.isSystemExcluded(r.path));
-    const downloadSet = new Set(plan.downloads.map((d) => d.path));
+    const { toTrack, toDrop } = planStateConvergence(
+      plan.remoteFiles,
+      new Set(plan.downloads.map((d) => d.path)),
+      this.deps.stateDB.getAllFiles().map((f) => f.path),
+      (p) => this.deps.isSystemExcluded(p),
+    );
     // 4a. Skipped files (content already matched): downloadFile did NOT run for them, so ensure they
     //     are tracked as unchanged (localHash === remoteId) — otherwise an untracked-but-present file
     //     would be misread as a conflict next sync and break convergence.
-    for (const remote of eligibleRemote) {
-      if (downloadSet.has(remote.path)) continue; // already tracked by downloadFile
+    for (const remote of toTrack) {
       const remoteId = remote.checksum ?? remote.etag ?? String(remote.size);
       const idType: FileState['idType'] = remote.checksum ? 'sha256' : (remote.etag ? 'etag' : 'size');
       const existing = this.deps.stateDB.getFile(remote.path);
@@ -211,12 +215,9 @@ export class MirrorService {
     }
     // 4b. Drop any tracked file the remote no longer has (deleteFiles already dropped their entries;
     //     this also clears entries whose local file was absent locally but still tracked).
-    const remoteSet = new Set(eligibleRemote.map((r) => r.path));
-    for (const fs of this.deps.stateDB.getAllFiles()) {
-      if (!this.deps.isSystemExcluded(fs.path) && !remoteSet.has(fs.path)) {
-        this.deps.stateDB.deleteFile(fs.path);
-        this.deps.mergeBase.drop(fs.path);
-      }
+    for (const path of toDrop) {
+      this.deps.stateDB.deleteFile(path);
+      this.deps.mergeBase.drop(path);
     }
     // 4c. Force a real full scan next sync (never short-circuit) so convergence is genuinely verified.
     this.deps.stateDB.setRemoteRootEtag(null);
