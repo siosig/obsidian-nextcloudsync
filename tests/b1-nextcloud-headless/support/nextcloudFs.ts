@@ -2,7 +2,9 @@
 // another tool), then made visible to WebDAV via `occ files:scan`. Only meaningful against the
 // ephemeral instance (nextcloud-testinstance), which exposes SSH + a host bind-mounted data dir + an `occ`
 // wrapper. The cluster runner (scripts/b1-cluster.sh) exports the connection details as env vars:
-//   NEXTCLOUD_SSH_TARGET  e.g. runner@<instance-ip>
+//   NEXTCLOUD_SSH_TARGET  e.g. runner@<instance-ip>  (never hard-code a real address here:
+//                         this file is public and the value is read from the gitignored connection
+//                         info at run time)
 //   NEXTCLOUD_DATA_HOST   e.g. /opt/svc-node/data
 //   NEXTCLOUD_USER        e.g. admin
 // When they are absent (localhost / plain b1), N is unavailable and the 3-actor suites skip cleanly

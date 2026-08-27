@@ -1,5 +1,5 @@
 // Machine-checkable spec coverage meta-test (US1).
-// Statically scans EVERY test file (a / b-1 / b-2) for clause references — either a
+// Statically scans EVERY test file (a / b-1 / b-2 / b-3) for clause references — either a
 // bare clause id embedded in the test name (e.g. "CF-2", "FR-019") or an explicit
 // [SPEC:<id>] tag from specRef.ts — and cross-references the clause catalog.
 //
