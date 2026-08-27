@@ -20,6 +20,10 @@ import { toRemotePath, hrefToRelative, encodeRemoteUrl, encodeServerUrl, ensureR
 import { sha256 } from '../util/hash';
 import { PARSE_YIELD_EVERY } from '../util/limits';
 import { NO_CACHE_HEADERS } from './noCacheHeaders';
+import {
+  parseResponses, readSyncToken, readHref, readProp, readStatusText,
+  readIsCollection, readDavProps, readOwncloudProps,
+} from './dav/propfind';
 import { withRetry } from '../util/retry';
 
 const PROPFIND_BODY = `<?xml version="1.0" encoding="utf-8" ?>
@@ -677,37 +681,20 @@ export class NextcloudClient implements IWebDAVClient {
 
   private async parsePropfindResponse(xml: string): Promise<RemoteFileInfo[]> {
     const results: RemoteFileInfo[] = [];
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(xml, 'text/xml');
-    const responses = doc.getElementsByTagNameNS('DAV:', 'response');
+    const responses = parseResponses(xml);
     for (let i = 0; i < responses.length; i++) {
       // Yield to the event loop periodically so parsing a large Depth:infinity listing does not
       // freeze the UI / trigger an Android ANR (FR-027 / P2-B).
       if (i > 0 && i % PARSE_YIELD_EVERY === 0) await new Promise((r) => window.setTimeout(r, 0));
       const resp = responses[i];
-      const href = resp.getElementsByTagNameNS('DAV:', 'href')[0]?.textContent ?? '';
-      const prop = resp.getElementsByTagNameNS('DAV:', 'prop')[0];
+      const prop = readProp(resp);
       if (!prop) continue;
-      const resourcetype = prop.getElementsByTagNameNS('DAV:', 'resourcetype')[0];
-      const isCollection = resourcetype?.getElementsByTagNameNS('DAV:', 'collection').length > 0;
-      if (isCollection) continue;
+      if (readIsCollection(prop)) continue; // files only; parsePropfindDirectories keeps the inverse
 
-      const etag = prop.getElementsByTagNameNS('DAV:', 'getetag')[0]?.textContent?.replace(/"/g, '') ?? null;
-      const size = parseInt(prop.getElementsByTagNameNS('DAV:', 'getcontentlength')[0]?.textContent ?? '0', 10);
-      const lastModifiedStr = prop.getElementsByTagNameNS('DAV:', 'getlastmodified')[0]?.textContent ?? '';
-      const lastModified = lastModifiedStr ? new Date(lastModifiedStr).getTime() : 0;
-      const checksumRaw = prop.getElementsByTagNameNS('http://owncloud.org/ns', 'checksums')[0]?.textContent ?? null;
-      const fileId = prop.getElementsByTagNameNS('http://owncloud.org/ns', 'fileid')[0]?.textContent ?? null;
-
-      // Extract SHA256 from checksums like "SHA256:abc123 MD5:def456"
-      let checksum: string | null = null;
-      if (checksumRaw) {
-        const m = checksumRaw.match(/SHA256:([0-9a-fA-F]+)/i);
-        checksum = m ? m[1].toLowerCase() : null;
-      }
-
-      const path = hrefToRelative(this.baseUrl, this.remoteBase, href);
+      const path = hrefToRelative(this.baseUrl, this.remoteBase, readHref(resp));
       if (path === null || path === '') continue; // Skip entries outside the base folder or the folder itself
+      const { etag, size, lastModified } = readDavProps(prop);
+      const { checksum, fileId } = readOwncloudProps(prop);
       results.push({ path, fileId, checksum, etag, size, lastModified });
     }
     return results;
@@ -715,26 +702,18 @@ export class NextcloudClient implements IWebDAVClient {
 
   private async parsePropfindDirectories(xml: string): Promise<RemoteDirInfo[]> {
     const results: RemoteDirInfo[] = [];
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(xml, 'text/xml');
-    const responses = doc.getElementsByTagNameNS('DAV:', 'response');
+    const responses = parseResponses(xml);
     for (let i = 0; i < responses.length; i++) {
       if (i > 0 && i % PARSE_YIELD_EVERY === 0) await new Promise((r) => window.setTimeout(r, 0));
       const resp = responses[i];
-      const href = resp.getElementsByTagNameNS('DAV:', 'href')[0]?.textContent ?? '';
-      const prop = resp.getElementsByTagNameNS('DAV:', 'prop')[0];
+      const prop = readProp(resp);
       if (!prop) continue;
-      const resourcetype = prop.getElementsByTagNameNS('DAV:', 'resourcetype')[0];
-      const isCollection = resourcetype?.getElementsByTagNameNS('DAV:', 'collection').length > 0;
-      if (!isCollection) continue; // mirror of parsePropfindResponse: here we KEEP only collections.
+      if (!readIsCollection(prop)) continue; // mirror of parsePropfindResponse: here we KEEP only collections.
 
-      const etag = prop.getElementsByTagNameNS('DAV:', 'getetag')[0]?.textContent?.replace(/"/g, '') ?? null;
-      const lastModifiedStr = prop.getElementsByTagNameNS('DAV:', 'getlastmodified')[0]?.textContent ?? '';
-      const lastModified = lastModifiedStr ? new Date(lastModifiedStr).getTime() : 0;
-      const fileId = prop.getElementsByTagNameNS('http://owncloud.org/ns', 'fileid')[0]?.textContent ?? null;
-
-      const path = hrefToRelative(this.baseUrl, this.remoteBase, href);
+      const path = hrefToRelative(this.baseUrl, this.remoteBase, readHref(resp));
       if (path === null || path === '') continue; // outside the base folder, or the base folder itself
+      const { etag, lastModified } = readDavProps(prop);
+      const { fileId } = readOwncloudProps(prop);
       results.push({ path, fileId, etag, lastModified });
     }
     return results;
@@ -743,37 +722,23 @@ export class NextcloudClient implements IWebDAVClient {
   private async parseSyncChanges(xml: string): Promise<SyncChanges> {
     const modified: RemoteFileInfo[] = [];
     const deleted: string[] = [];
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(xml, 'text/xml');
-    const responses = doc.getElementsByTagNameNS('DAV:', 'response');
-    const newSyncTokenEl = doc.getElementsByTagNameNS('DAV:', 'sync-token')[0];
-    const newSyncToken = newSyncTokenEl?.textContent ?? '';
+    const responses = parseResponses(xml);
+    const newSyncToken = readSyncToken(xml);
 
     for (let i = 0; i < responses.length; i++) {
       // Yield periodically (anti-ANR) — see parsePropfindResponse.
       if (i > 0 && i % PARSE_YIELD_EVERY === 0) await new Promise((r) => window.setTimeout(r, 0));
       const resp = responses[i];
-      const href = resp.getElementsByTagNameNS('DAV:', 'href')[0]?.textContent ?? '';
-      const path = hrefToRelative(this.baseUrl, this.remoteBase, href);
+      const path = hrefToRelative(this.baseUrl, this.remoteBase, readHref(resp));
       if (path === null || path === '') continue; // Skip entries outside the base folder or the folder itself
-      const statusEl = resp.getElementsByTagNameNS('DAV:', 'status')[0];
-      if (statusEl?.textContent?.includes('404')) {
+      if (readStatusText(resp)?.includes('404')) {
         deleted.push(path);
         continue;
       }
-      const prop = resp.getElementsByTagNameNS('DAV:', 'prop')[0];
+      const prop = readProp(resp);
       if (!prop) continue;
-      const etag = prop.getElementsByTagNameNS('DAV:', 'getetag')[0]?.textContent?.replace(/"/g, '') ?? null;
-      const size = parseInt(prop.getElementsByTagNameNS('DAV:', 'getcontentlength')[0]?.textContent ?? '0', 10);
-      const lastModifiedStr = prop.getElementsByTagNameNS('DAV:', 'getlastmodified')[0]?.textContent ?? '';
-      const lastModified = lastModifiedStr ? new Date(lastModifiedStr).getTime() : 0;
-      const checksumRaw = prop.getElementsByTagNameNS('http://owncloud.org/ns', 'checksums')[0]?.textContent ?? null;
-      const fileId = prop.getElementsByTagNameNS('http://owncloud.org/ns', 'fileid')[0]?.textContent ?? null;
-      let checksum: string | null = null;
-      if (checksumRaw) {
-        const m = checksumRaw.match(/SHA256:([0-9a-fA-F]+)/i);
-        checksum = m ? m[1].toLowerCase() : null;
-      }
+      const { etag, size, lastModified } = readDavProps(prop);
+      const { checksum, fileId } = readOwncloudProps(prop);
       modified.push({ path, fileId, checksum, etag, size, lastModified });
     }
     return { modified, deleted, newSyncToken };
