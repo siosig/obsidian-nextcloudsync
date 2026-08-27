@@ -37,6 +37,7 @@ import { DeletionService } from './deletion/DeletionService';
 import { ResolutionService } from './resolution/ResolutionService';
 import { ConflictApplier } from './conflict/ConflictApplier';
 import { DirectoryReconciler } from './directory/DirectoryReconciler';
+import { WatchOperations } from './watch/WatchOperations';
 import { SyncHistoryStore } from '../data/SyncHistoryStore';
 import { IStatusBar } from '../ui/StatusBarItem';
 import { WebDAVFactory } from '../network/WebDAVFactory';
@@ -148,18 +149,11 @@ export class SyncEngine {
 
   /** Directory three-way reconcile and its mass-delete breaker (feature 074). */
   private readonly directories: DirectoryReconciler;
+
+  /** Watch-mode single-path operations (feature 074). Owns its in-flight and deferred sets. */
+  private readonly watch: WatchOperations;
   /** Progress counters updated during a sync run (reset each run). */
   private syncProgress = { processed: 0, total: 0 };
-  /** Feature 046: number of watch-mode single-file/folder ops currently propagating to the remote.
-   *  Drives the status bar so the user can see immediate (watch) propagation happening. */
-  private watchInFlight = 0;
-  /**
-   * Feature 064 (C-5): paths whose watch-mode single-file sync arrived while a full sync was running.
-   * Held in memory only — losing them on a plugin reload is harmless because the next full sync
-   * detects the same local change anyway (self-healing); persisting them would add a second, weaker
-   * source of truth for "what changed locally".
-   */
-  private readonly watchPendingPaths = new Set<string>();
   /**
    * Feature 064 (C-6): monotonic count of handleConflict entries. Only ever read as a DELTA around a
    * single watch-mode operation, to answer "did this touch a conflict at all?". The summary counters
@@ -266,6 +260,25 @@ export class SyncEngine {
       isSystemExcluded: (p) => this.isSystemExcluded(p),
       massDeleteLimit: () => this.opts.settings.massDeleteLimit,
       isCancelled: () => this.cancelled,
+      logger: opts.logger,
+    });
+    this.watch = new WatchOperations({
+      localAdapter: opts.localAdapter,
+      stateDB: opts.stateDB,
+      historyStore: opts.historyStore,
+      statusBar: opts.statusBar,
+      journal: this.journal,
+      mergeBase: this.mergeBase,
+      transfer: this.transfer,
+      deletion: this.deletion,
+      resolution: this.resolution,
+      isSystemExcluded: (p) => this.isSystemExcluded(p),
+      connect: () => this.connection(),
+      renameTracker: () => this.getOrCreateRenameTracker(),
+      isSyncRunning: () => this.running,
+      processFile: (remote, summary) => this.processFileWithRetry(remote, summary),
+      queueRetry: (p) => { this.retryQueue.push(p); },
+      conflictEncounters: () => this.conflictEncounters,
       logger: opts.logger,
     });
     this.remoteListing = new RemoteListingSource({
@@ -443,275 +456,42 @@ export class SyncEngine {
    * single-file/folder op shows "syncing"; when the last one finishes the bar returns to idle. Guarded
    * by `!this.running` so it never fights a concurrent full sync (which owns the status during its run).
    */
-  private beginWatchActivity(): void {
-    this.watchInFlight++;
-    if (!this.running) this.opts.statusBar.setStatus('syncing');
-  }
-  private endWatchActivity(): void {
-    this.watchInFlight = Math.max(0, this.watchInFlight - 1);
-    if (this.watchInFlight === 0 && !this.running) this.opts.statusBar.setStatus('idle');
-  }
+  // Delegators to the watch operations (feature 074). These are the plugin's watcher entry points,
+  // so they stay on the engine's public surface; the connection is resolved inside the module.
 
-  /**
-   * Sync ONE locally-changed file (watch mode). No-ops if the content is unchanged.
-   *
-   * Feature 064 (GitHub issue #23): this used to PUT the local body straight to the server —
-   * no PROPFIND, no base comparison, and (because it passed `etag: null`) no If-Match either. Any
-   * edit made on another device since our last sync was therefore overwritten silently: no conflict,
-   * no merge, no notice. Since "Sync on file change" defaults to ON on desktop, that was the DEFAULT
-   * path to losing data. The fix is not to bolt a precondition onto the blind upload but to give this
-   * path the one thing it lacked — the remote's current state — and then hand it to the SAME
-   * classifier the full sync uses (processRemoteFile). Watch mode and "Sync now" now converge on
-   * identical results (contract C-3); nothing about the decision lives here.
-   */
-  async syncSingleFile(path: string): Promise<void> {
-    if (this.isSystemExcluded(path)) return;
-    // C-5: never run alongside a full sync. The multi-step resolve below (stat → compare → write →
-    // push) must not interleave with the full sync's writes to the same file, so defer the path and
-    // re-evaluate it once the run finishes — deferring rather than dropping keeps the edit from being
-    // missed when the full sync had already passed this file.
-    if (this.running) {
-      this.watchPendingPaths.add(path);
-      void this.opts.logger?.log(`watch: full sync in progress → deferred ${path}`);
-      return;
-    }
-    const stat = await this.opts.localAdapter.stat(path);
-    if (!stat) return; // already deleted before the debounce fired
-    const base = this.opts.stateDB.getFile(path);
-    // FR-006: decide "nothing changed" from LOCAL data only, before touching the network. The stat
-    // signature fast-path (P0-A) answers most saves without even reading the file; a signature miss
-    // falls back to hashing. Only a real content change is worth a round-trip.
-    if (base && this.isLocallyUnchanged(base, stat)) return;
-    const data = await this.opts.localAdapter.readBinary(path);
-    const localHash = await sha256(data);
-    if (base && localHash === base.localHash) return; // content unchanged (e.g. mtime-only touch)
-
-    await this.ensureClient();
-    // A real (not dummy) summary: its counters are what tells us whether to notify the user (C-6),
-    // and processRemoteFile/handleConflict already maintain them exactly as they do in a full sync.
-    const summary = this.initSummary();
-    const conflictsBefore = this.conflictEncounters;
-    this.beginWatchActivity();
-    try {
-      const remote = await this.client!.statFile(path);
-      if (remote) {
-        // The whole classification (upload / download / conflict → merge, If-Match from remote.etag,
-        // size guards, marker re-entrancy, feature-063 untracked handling) is the full sync's code.
-        void this.opts.logger?.log(`watch: remote state fetched → classifying ${path}`);
-        await this.processFileWithRetry(remote, summary);
-      } else {
-        // C-1 row 4: not on the server at all → a plain create. A precondition would be wrong here
-        // (If-Match against a non-existent resource always fails), so keep the synthetic null etag.
-        void this.opts.logger?.log(`watch: not on remote → upload as new ${path}`);
-        await this.uploadFile(
-          path, localHash, base?.remoteId ?? localHash, base?.idType ?? 'sha256',
-          { path, fileId: base?.remoteFileId ?? null, checksum: null, etag: null, size: stat.size, lastModified: stat.mtime },
-          summary,
-        );
-      }
-      // Watch-mode single-file op: coalesce the state write via a trailing debounce so rapid
-      // edits don't each rewrite the whole state file (P0-B). onunload flushes any pending save.
-      this.opts.stateDB.requestSave();
-      await this.opts.historyStore?.save(); // persist the entry recorded by the branch above
-    } catch (err) {
-      // FR-009: never lose the edit. A network failure queues the path so the next sync re-evaluates
-      // it; the local file is untouched either way.
-      console.warn(`[SyncEngine] Single-file sync failed for ${path}:`, err);
-      void this.opts.logger?.log(`watch: FAILED ${path} — ${(err as Error).message}`, 'error');
-      this.recordError(summary, path, err);
-      if (err instanceof NetworkError) this.retryQueue.push(path);
-    } finally {
-      this.endWatchActivity();
-    }
-    this.notifyWatchOutcome(path, summary, conflictsBefore);
+  /** @see WatchOperations.syncSingleFile */
+  syncSingleFile(path: string): Promise<void> {
+    return this.watch.syncSingleFile(path);
   }
 
-  /**
-   * C-6: watch mode runs unattended, so it stays silent for the routine outcomes (upload, download,
-   * nothing to do) and speaks up only when the user has to know — the sync failed, or the two sides
-   * had diverged and something had to be decided about it.
-   *
-   * `conflictsBefore` is the conflictEncounters value captured before the operation: a conflict
-   * settled by a deterministic strategy shows up in NO summary counter (it is recorded as a plain
-   * upload/download), and that is exactly the case where one side's content was dropped. Notifying
-   * only on merged/conflicted would stay silent about the most destructive resolution of all.
-   */
-  private notifyWatchOutcome(path: string, summary: SyncSessionSummary, conflictsBefore: number): void {
-    if (summary.errorCount > 0) {
-      new Notice(`❌ Sync failed: ${path}`, 6000);
-      return;
-    }
-    if (summary.conflictedCount > 0) {
-      new Notice(`⚠️ Conflict in ${path} — the note holds both versions; review and resolve it.`, 8000);
-      return;
-    }
-    if (summary.mergedCount > 0) {
-      new Notice(`🔀 Merged remote changes into ${path}`, 6000);
-      return;
-    }
-    if (this.conflictEncounters > conflictsBefore) {
-      new Notice(`🔀 ${path} changed on both sides — resolved by your conflict settings.`, 6000);
-    }
+  /** @see WatchOperations.drainPending */
+  private drainWatchPending(): Promise<void> {
+    return this.watch.drainPending();
   }
 
-  /**
-   * C-5: re-evaluate every path whose watch-mode sync was deferred by a full sync. Called once the
-   * run has finished (running === false). The set is drained into a local copy first so a path
-   * deferred again mid-drain (it cannot be — running is false — but also so re-entry is impossible)
-   * never loops. Failures are per-path and already handled inside syncSingleFile.
-   */
-  private async drainWatchPending(): Promise<void> {
-    if (this.watchPendingPaths.size === 0) return;
-    const paths = [...this.watchPendingPaths];
-    this.watchPendingPaths.clear();
-    void this.opts.logger?.log(`watch: full sync finished → re-evaluating ${paths.length} deferred path(s)`);
-    for (const p of paths) {
-      await this.syncSingleFile(p);
-    }
+  /** @see WatchOperations.deleteSingleFile */
+  deleteSingleFile(path: string): Promise<void> {
+    return this.watch.deleteSingleFile(path);
   }
 
-  /**
-   * Delete a single file from the remote when it was deleted locally (watch mode).
-   *
-   * Feature 064 (C-2): this used to DELETE unconditionally. `deleteFile(path, expectedRemoteId)`
-   * reads like a guarded delete, but every client ignores that argument (blind DELETE, spec 023), so a
-   * note another device had just edited was removed anyway — the full sync's delete path has guarded
-   * against exactly that since spec 023, and this one did not. It now runs the SAME guard
-   * (applyLocalDeletion): delete only while the server's recomputed checksum still matches our base,
-   * otherwise restore the remote copy locally instead of destroying it.
-   */
-  async deleteSingleFile(path: string): Promise<void> {
-    if (this.isSystemExcluded(path)) return;
-    const base = this.opts.stateDB.getFile(path);
-    if (!base) return; // not tracked — nothing to do on remote
-    // C-2 row 1: during a full sync, do nothing — and do NOT defer either. The running scan detects a
-    // tracked path that is gone locally and propagates the deletion itself, so queuing it here would
-    // only risk a second delete against a path the scan already handled.
-    if (this.running) {
-      void this.opts.logger?.log(`watch: full sync in progress → deletion of ${path} left to the running scan`);
-      return;
-    }
-    await this.ensureClient();
-    const summary = this.initSummary();
-    const conflictsBefore = this.conflictEncounters;
-    this.beginWatchActivity();
-    try {
-      const remote = await this.client!.statFile(path);
-      if (!remote) {
-        // C-2 row 3: already absent on the server — that IS the desired end state. Stop tracking it.
-        void this.opts.logger?.log(`watch: already gone on remote → dropping tracking for ${path}`);
-        this.recordHistory(path, 'deleted');
-        this.opts.stateDB.deleteFile(path);
-        this.dropMergeBase(path); // feature 038: file gone → drop its merge base
-        this.dropCleanSnapshot(path); // feature 044: file gone → drop any captured clean sides
-      } else {
-        const remoteId = remote.checksum ?? remote.etag ?? String(remote.size);
-        const idType: FileState['idType'] = remote.checksum ? 'sha256' : (remote.etag ? 'etag' : 'size');
-        // Shared with the full sync: deletes on a checksum match, restores the remote copy when it
-        // diverged, and does nothing when the server cannot prove the copy is unchanged. It owns the
-        // StateDB cleanup too — including the G1-2 rule of keeping the entry when the DELETE fails,
-        // so a failed delete is retried instead of coming back as a re-download.
-        await this.applyLocalDeletion(remote, base, remoteId, idType, summary);
-        if (!this.opts.stateDB.getFile(path)) this.dropCleanSnapshot(path);
-      }
-      this.opts.stateDB.requestSave(); // coalesced watch-mode save (P0-B)
-      await this.opts.historyStore?.save();
-    } catch (err) {
-      console.warn(`[SyncEngine] Single-file delete failed for ${path}:`, err);
-      void this.opts.logger?.log(`watch: delete FAILED ${path} — ${(err as Error).message}`, 'error');
-      this.recordError(summary, path, err);
-    } finally {
-      this.endWatchActivity();
-    }
-    this.notifyWatchOutcome(path, summary, conflictsBefore);
+  /** @see WatchOperations.renameSingleFile */
+  renameSingleFile(oldPath: string, newPath: string): Promise<void> {
+    return this.watch.renameSingleFile(oldPath, newPath);
   }
 
-  /** MOVE a single file on the remote when it was renamed/moved locally. */
-  async renameSingleFile(oldPath: string, newPath: string): Promise<void> {
-    if (this.isSystemExcluded(oldPath) && this.isSystemExcluded(newPath)) return;
-    await this.ensureClient();
-    const rt = this.getOrCreateRenameTracker();
-    this.beginWatchActivity();
-    try {
-      await rt.applyLocalRename(oldPath, newPath);
-      this.opts.stateDB.requestSave(); // coalesced watch-mode save (P0-B)
-    } catch (err) {
-      console.warn(`[SyncEngine] Single-file rename failed ${oldPath} → ${newPath}:`, err);
-    } finally {
-      this.endWatchActivity();
-    }
+  /** @see WatchOperations.createSingleFolder */
+  createSingleFolder(path: string): Promise<void> {
+    return this.watch.createSingleFolder(path);
   }
 
-  /**
-   * Feature 046 (watch-mode folder propagation): create a single folder on the remote immediately
-   * when it is created locally (MKCOL). Idempotent — a folder that already exists on the server is a
-   * no-op (405 swallowed), which also makes it safe against a stray download-created-folder event.
-   */
-  async createSingleFolder(path: string): Promise<void> {
-    if (this.isSystemExcluded(path)) return;
-    await this.ensureClient();
-    this.beginWatchActivity();
-    try {
-      await this.client!.createDirectory(path); // idempotent: existing folder → harmless
-      this.opts.stateDB.setDir({ path, remoteFileId: null });
-      this.opts.stateDB.requestSave(); // coalesced watch-mode save
-      void this.opts.logger?.log(`watch: folder created → MKCOL ${path}`);
-    } catch (err) {
-      console.warn(`[SyncEngine] Single-folder create failed for ${path}:`, err);
-    } finally {
-      this.endWatchActivity();
-    }
+  /** @see WatchOperations.deleteSingleFolder */
+  deleteSingleFolder(path: string): Promise<void> {
+    return this.watch.deleteSingleFolder(path);
   }
 
-  /**
-   * Feature 046: delete a single folder on the remote immediately when it is deleted locally. Only a
-   * TRACKED folder (present in the StateDB directory set) is propagated — an untracked folder was
-   * never on the server, so deleting it locally is a no-op remotely (mirrors deleteSingleFile). The
-   * remote delete routes through the Nextcloud trashbin (recoverable); a 404 is the desired end state.
-   */
-  async deleteSingleFolder(path: string): Promise<void> {
-    if (this.isSystemExcluded(path)) return;
-    if (!this.opts.stateDB.getDir(path)) return; // untracked → nothing to do on the remote
-    await this.ensureClient();
-    this.beginWatchActivity();
-    let succeeded = false;
-    try {
-      await this.client!.deleteCollection(path); // trashbin; 404 handled inside as success
-      void this.opts.logger?.log(`watch: folder deleted → remote collection removed ${path}`);
-      succeeded = true;
-    } catch (err) {
-      console.warn(`[SyncEngine] Single-folder delete failed for ${path}:`, err);
-    } finally {
-      this.endWatchActivity();
-    }
-    // BUG G1-2 fix: only drop the tracked directory when the remote delete actually succeeded (see
-    // deleteSingleFile for the full rationale) — otherwise the next sync would re-create it locally.
-    if (!succeeded) return;
-    this.opts.stateDB.deleteDir(path);
-    this.opts.stateDB.requestSave();
-  }
-
-  /**
-   * Feature 046: MOVE a single folder on the remote immediately when it is renamed/moved locally.
-   * Collections are moved with the same WebDAV MOVE as files; the server moves the whole subtree.
-   * Any child-file rename events Obsidian fires alongside are handled best-effort by renameSingleFile
-   * (their 404s are harmless because the parent MOVE already relocated them) and converge next sync.
-   */
-  async renameSingleFolder(oldPath: string, newPath: string): Promise<void> {
-    if (this.isSystemExcluded(oldPath) && this.isSystemExcluded(newPath)) return;
-    await this.ensureClient();
-    this.beginWatchActivity();
-    try {
-      await this.client!.moveFile(oldPath, newPath); // MOVE works for collections too
-      this.opts.stateDB.deleteDir(oldPath);
-      this.opts.stateDB.setDir({ path: newPath, remoteFileId: null });
-      this.opts.stateDB.requestSave();
-      void this.opts.logger?.log(`watch: folder renamed → MOVE ${oldPath} → ${newPath}`);
-    } catch (err) {
-      console.warn(`[SyncEngine] Single-folder rename failed ${oldPath} → ${newPath}:`, err);
-    } finally {
-      this.endWatchActivity();
-    }
+  /** @see WatchOperations.renameSingleFolder */
+  renameSingleFolder(oldPath: string, newPath: string): Promise<void> {
+    return this.watch.renameSingleFolder(oldPath, newPath);
   }
 
   startAutoSync(intervalMinutes: number): void {
