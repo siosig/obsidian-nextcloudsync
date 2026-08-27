@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.43-beta.1)
+## What's new in this release (0.7.43)
 
-- **Internal restructuring only — nothing should look or behave differently (0.7.43-beta.1)** — the sync engine has been split into focused modules, and the decisions it still makes have been separated from the file and network operations around them. Syncing, conflict resolution, deletion, folder handling and Mirror from remote all work exactly as before. This build exists so that claim can be checked against real vaults: if anything at all behaves differently for you, that is a bug worth reporting.
+- **Internal restructuring only — nothing looks or behaves differently (0.7.43)** — the sync engine has been split into focused modules, and the decisions it makes have been separated from the file and network operations around them. Syncing, conflict resolution, deletion, folder handling and Mirror from remote all work exactly as before. The change is invisible by design; what it buys is that far more of the plugin can now be tested directly, including server responses that previously could only be exercised against a live Nextcloud.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
