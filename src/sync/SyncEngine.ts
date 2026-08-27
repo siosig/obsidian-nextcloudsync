@@ -19,12 +19,18 @@ import {
   RemoteCompareResult,
   ConflictResolution,
 } from '../types';
-import { isSyncTmpPath, LocalAdapter } from '../data/LocalAdapter';
+import { LocalAdapter } from '../data/LocalAdapter';
 import { StateDB } from '../data/StateDB';
 import type { MergeBaseStore } from '../data/MergeBaseStore';
 import type { CleanSideStore } from '../data/CleanSideStore';
 import type { CleanSideMetrics } from '../ui/compareResolution';
-import { DIR_BREAKER_REPORT_FILENAME, FILE_BREAKER_REPORT_FILENAME } from '../ui/breakerReport';
+import {
+  parentDir as parentDirOf,
+  isDotName as isDotNameOf,
+  isTextEligible,
+  isLocallyUnchanged as isLocallyUnchangedPure,
+  isSystemExcluded as isSystemExcludedPure,
+} from './policy';
 import { isAutoMergeFileType, isMarkdown } from '../util/mergeableExtensions';
 import { SyncHistoryStore } from '../data/SyncHistoryStore';
 import { IStatusBar } from '../ui/StatusBarItem';
@@ -35,10 +41,9 @@ import { ConflictResolver, hasOrphanMarker } from './ConflictResolver';
 import { ConfigSyncResolver } from './ConfigSyncResolver';
 import { sha256 } from '../util/hash';
 import { FIXED, chunkThresholdMB } from '../util/fixedSyncConfig';
-import { isUnderExcludedFolder, HARD_EXCLUDED_FOLDERS } from '../util/excludedFolders';
 import { FileLogger } from '../util/FileLogger';
 import {
-  isCellularBlocked, SIGNATURE_SAFETY_WINDOW_MS, MAX_HASH_SIZE,
+  isCellularBlocked, MAX_HASH_SIZE,
   MAX_INFLIGHT_BYTES_DESKTOP, MAX_INFLIGHT_BYTES_MOBILE, effectiveMassDeleteLimit, FORCE_FULL_SCAN_EVERY,
   isAnomalousRemoteContent, isOverFileSizeLimit,
 } from '../util/limits';
@@ -1252,12 +1257,9 @@ export class SyncEngine {
     await this.opts.historyStore?.save();
   }
 
-  /** True when `path`'s extension is an Auto Merge File type (used for Compare's text-diff eligibility). */
+  /** Binds the configured Auto Merge File types for {@link isTextEligible}. */
   private textEligible(path: string): boolean {
-    const dot = path.lastIndexOf('.');
-    if (dot < 0) return false;
-    const ext = path.slice(dot + 1).toLowerCase();
-    return this.opts.settings.autoMergeFileTypes.includes(ext);
+    return isTextEligible(path, this.opts.settings.autoMergeFileTypes);
   }
 
   /** Fetch a single remote file's metadata via PROPFIND; null when the remote file is absent. */
@@ -1522,30 +1524,16 @@ export class SyncEngine {
   }
 
   /**
-   * Local-unchanged fast-path (P0-A). Decides whether `path` can be skipped WITHOUT reading/hashing
-   * its content, using the stat signature we captured immediately after our own last write
-   * (`localMtime`/`localSize`). This works on mobile, where `setMtime` is a no-op so the on-disk
-   * mtime never equals the remote mtime — the old `mtime <= base.mtime` filter therefore failed for
-   * every previously-synced file and forced a full-vault rehash every sync.
-   *
-   * Returns false (⇒ must hash) when: the signature is absent (migrated/old state), the size or
-   * mtime differs, OR the file's mtime is within SIGNATURE_SAFETY_WINDOW_MS of now / the last sync
-   * completion. The time-window guard prevents missing a same-size in-place edit made within the
-   * filesystem's mtime granularity (1–2 s on some mobile storage).
+   * Local-unchanged fast-path (P0-A). Binds the ambient clock and the last-sync time; the decision
+   * itself — including the safety-window guard around both — lives in `./policy`, where its
+   * boundaries can be exercised without standing up an engine. Both are passed as accessors so the
+   * state DB is still consulted only when the check gets that far (see the policy function).
    */
   private isLocallyUnchanged(base: FileState, stat: { mtime: number; size: number }): boolean {
-    if (base.localMtime == null || base.localSize == null) return false; // no signature → hash once
-    if (stat.size !== base.localSize) return false;
-    if (stat.mtime !== base.localMtime) return false;
-    const now = Date.now();
-    const lastSync = this.opts.stateDB.getLastSyncTime();
-    if (this.withinSafetyWindow(stat.mtime, now)) return false;
-    if (lastSync > 0 && this.withinSafetyWindow(stat.mtime, lastSync)) return false;
-    return true;
-  }
-
-  private withinSafetyWindow(mtime: number, ref: number): boolean {
-    return Math.abs(ref - mtime) < SIGNATURE_SAFETY_WINDOW_MS;
+    return isLocallyUnchangedPure(base, stat, {
+      now: () => Date.now(),
+      lastSyncTime: () => this.opts.stateDB.getLastSyncTime(),
+    });
   }
 
   /**
@@ -1563,12 +1551,6 @@ export class SyncEngine {
     }
     if (remoteMtime != null) fs.remoteMtime = remoteMtime;
     return fs;
-  }
-
-  /** Parent-directory key of a vault-relative path ('' for a root-level file). */
-  private static parentDir(path: string): string {
-    const i = path.lastIndexOf('/');
-    return i < 0 ? '' : path.slice(0, i);
   }
 
   /**
@@ -1615,7 +1597,7 @@ export class SyncEngine {
         await runOne();
         return;
       }
-      const dir = SyncEngine.parentDir(pathOf(it));
+      const dir = parentDirOf(pathOf(it));
       const prev = dirChains.get(dir) ?? Promise.resolve();
       // Chain regardless of the previous task's outcome so one failure doesn't wedge the directory.
       const run = prev.then(runOne, runOne);
@@ -2810,23 +2792,17 @@ export class SyncEngine {
     let root: { files: string[]; folders: string[] };
     try { root = await this.opts.localAdapter.list(''); } catch { return; }
     for (const file of root.files) {
-      if (!SyncEngine.isDotName(file)) continue;
+      if (!isDotNameOf(file)) continue;
       if (this.isSystemExcluded(file)) continue;
       const st = await this.opts.localAdapter.stat(file);
       if (st) out.set(file, { size: st.size, mtime: st.mtime });
     }
     for (const folder of root.folders) {
-      if (!SyncEngine.isDotName(folder)) continue;
+      if (!isDotNameOf(folder)) continue;
       if (this.configSync.isUnderConfigDir(folder)) continue; // .obsidian handled by ConfigSyncResolver
       if (this.isSystemExcluded(folder)) continue; // .git/.trash: skip the whole tree (no recursion into a huge .git)
       await this.collectStatsRecursiveViaAdapter(folder, out);
     }
-  }
-
-  /** True when a vault path's last segment is dot-prefixed. */
-  private static isDotName(path: string): boolean {
-    const i = path.lastIndexOf('/');
-    return (i < 0 ? path : path.slice(i + 1)).startsWith('.');
   }
 
   /** Recursively enumerate a (Vault-untracked) directory's files via the adapter, stats only. */
@@ -2843,35 +2819,18 @@ export class SyncEngine {
     }
   }
 
+  /**
+   * Binds this engine's settings and config resolver for {@link isSystemExcludedPure}. The rules —
+   * and the remote-deletion scope guard they enforce — live in `./policy`, where they can be tested
+   * against a plain context object instead of a whole engine.
+   */
   private isSystemExcluded(path: string): boolean {
-    // The plugin's own atomic-write temp files are never sync content (defense in depth:
-    // the vault watchers already filter them, but a leftover tmp must not be uploaded either).
-    if (isSyncTmpPath(path)) return true;
-    // Mass-delete breaker report notes (feature 056): fixed vault-root filenames, regenerated and
-    // overwritten each time the user opens them. Device-local diagnostic snapshots, not vault
-    // content — syncing them would just churn against the next overwrite.
-    if (path === DIR_BREAKER_REPORT_FILENAME || path === FILE_BREAKER_REPORT_FILENAME) return true;
-    // This device's own per-device log file, while its output toggle is ON: the plugin appends to
-    // it during the sync, so syncing it would race the live append (Obsidian's rename throws
-    // "Destination file already exists!") and churn. Turning the log OFF makes it static and
-    // syncable again. Another device's log (different host) is not written here and stays syncable.
-    if (this.opts.isActiveLogFile?.(path)) return true;
-    // Machine-managed vault-root folders (.git, .trash): permanent hard exclusion, independent of
-    // the user's list. `.git` piecewise sync corrupts the repo (discussion #6); `.trash` is
-    // Obsidian's device-local trash whose sync clutters every device and churns against the
-    // plugin's own trashFile-based deletion. Targeted list — other root dot content still syncs.
-    if (isUnderExcludedFolder(path, HARD_EXCLUDED_FOLDERS)) return true;
-    // User-managed excluded folders (feature 027): folder-prefix match, applied to every
-    // path before the config-folder logic so it covers ordinary vault files too. This is an
-    // additive layer on top of the hard exclusions above — those always take precedence.
-    if (isUnderExcludedFolder(path, this.opts.settings?.excludedFolders ?? [])) return true;
-    // Ordinary vault files (outside the config folder) are never system-excluded.
-    if (!this.configSync.isUnderConfigDir(path)) return false;
-    // Inside the config folder: excluded unless an enabled config-sync category includes it.
-    // Community plugins (plugins/) and the plugin's own state DB are never included (hard
-    // exclusions inside ConfigSyncResolver), so the remote-deletion scope guard — which also
-    // calls this method — keeps protecting them.
-    return !this.configSync.isIncluded(path);
+    return isSystemExcludedPure(path, {
+      excludedFolders: this.opts.settings?.excludedFolders ?? [],
+      isUnderConfigDir: (p) => this.configSync.isUnderConfigDir(p),
+      isConfigPathIncluded: (p) => this.configSync.isIncluded(p),
+      isActiveLogFile: this.opts.isActiveLogFile,
+    });
   }
 }
 
