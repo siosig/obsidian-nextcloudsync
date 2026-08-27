@@ -1,4 +1,4 @@
-import { App, Notice, Platform, TFolder, Vault, normalizePath } from 'obsidian';
+import { App, Notice, Platform, TFolder, Vault } from 'obsidian';
 import {
   DavSyncSettings,
   FileState,
@@ -6,7 +6,6 @@ import {
   NextcloudFeatures,
   RemoteFileInfo,
   RemoteDirInfo,
-  DirState,
   SyncSessionSummary,
   SyncFileOp,
   SyncHistoryDetail,
@@ -37,6 +36,7 @@ import { VersionService } from './versions/VersionService';
 import { DeletionService } from './deletion/DeletionService';
 import { ResolutionService } from './resolution/ResolutionService';
 import { ConflictApplier } from './conflict/ConflictApplier';
+import { DirectoryReconciler } from './directory/DirectoryReconciler';
 import { SyncHistoryStore } from '../data/SyncHistoryStore';
 import { IStatusBar } from '../ui/StatusBarItem';
 import { WebDAVFactory } from '../network/WebDAVFactory';
@@ -145,6 +145,9 @@ export class SyncEngine {
 
   /** Carries out what ConflictResolver decides (feature 074). */
   private readonly conflicts: ConflictApplier;
+
+  /** Directory three-way reconcile and its mass-delete breaker (feature 074). */
+  private readonly directories: DirectoryReconciler;
   /** Progress counters updated during a sync run (reset each run). */
   private syncProgress = { processed: 0, total: 0 };
   /** Feature 046: number of watch-mode single-file/folder ops currently propagating to the remote.
@@ -253,6 +256,16 @@ export class SyncEngine {
       maxFileSizeMB: () => this.opts.settings.maxFileSizeMB,
       queueRetry: (p) => { this.retryQueue.push(p); },
       onConflictEncountered: () => { this.conflictEncounters++; },
+      logger: opts.logger,
+    });
+    this.directories = new DirectoryReconciler({
+      app: opts.app,
+      stateDB: opts.stateDB,
+      journal: this.journal,
+      transfer: this.transfer,
+      isSystemExcluded: (p) => this.isSystemExcluded(p),
+      massDeleteLimit: () => this.opts.settings.massDeleteLimit,
+      isCancelled: () => this.cancelled,
       logger: opts.logger,
     });
     this.remoteListing = new RemoteListingSource({
@@ -802,35 +815,14 @@ export class SyncEngine {
    * full sync's real PROPFIND fills in the real id once both sides exist again). Throws on failure
    * without touching StateDB (the caller, `resolveAllSkippedDirs`, isolates per-path failures).
    */
+  /** @see DirectoryReconciler.resolveSkippedDir */
   async resolveSkippedDir(
     path: string,
     category: 'deleteRemote' | 'trashLocal',
     choice: 'remote' | 'local',
   ): Promise<void> {
-    await this.ensureClient();
-    if (category === 'deleteRemote') {
-      if (choice === 'remote') {
-        // Remote is correct: undo the apparent local deletion by recreating the folder locally.
-        await this.opts.app.vault.adapter.mkdir(normalizePath(path));
-        this.opts.stateDB.setDir({ path, remoteFileId: null });
-      } else {
-        // Local absence is correct: let the deletion proceed on the remote.
-        await this.client!.deleteCollection(path);
-        this.opts.stateDB.deleteDir(path);
-      }
-    } else {
-      if (choice === 'remote') {
-        // Remote absence is correct: let the deletion proceed locally.
-        const folder = this.opts.app.vault.getAbstractFileByPath(path);
-        if (folder instanceof TFolder) await this.opts.app.fileManager.trashFile(folder);
-        this.opts.stateDB.deleteDir(path);
-      } else {
-        // Local is correct: undo the apparent remote deletion by recreating it on the remote.
-        await this.client!.createDirectory(path);
-        this.opts.stateDB.setDir({ path, remoteFileId: null });
-      }
-    }
-    this.opts.stateDB.requestSave();
+    const { client } = await this.ensureClient();
+    return this.directories.resolveSkippedDir(client, path, category, choice);
   }
 
   /**
@@ -845,37 +837,17 @@ export class SyncEngine {
    * directory rows this touches, so racing it is worth refusing outright rather than risking a
    * mkdir-then-immediately-trash flicker on the same path.
    */
+  /**
+   * @see DirectoryReconciler.resolveAllSkippedDirs
+   *
+   * Refuses to run while a full sync is in progress: a concurrent reconcileDirectories reads and
+   * writes the same StateDB directory rows this touches, so racing it is worth refusing outright
+   * rather than risking a mkdir-then-immediately-trash flicker on the same path.
+   */
   async resolveAllSkippedDirs(choice: 'remote' | 'local'): Promise<{ resolved: number; failed: number }> {
     if (this.running) throw new Error('Cannot resolve skipped directories — sync in progress');
-    const errors = this.lastSummary?.errors;
-    const entry = errors?.find((e) => e.path === '(dir mass-delete breaker)' && e.dirBreakerSkipped);
-    if (!entry?.dirBreakerSkipped) return { resolved: 0, failed: 0 };
-
-    const candidates: { path: string; category: 'deleteRemote' | 'trashLocal' }[] = [
-      ...entry.dirBreakerSkipped.deleteRemote.map((path) => ({ path, category: 'deleteRemote' as const })),
-      ...entry.dirBreakerSkipped.trashLocal.map((path) => ({ path, category: 'trashLocal' as const })),
-    ];
-
-    let resolved = 0;
-    const failedDeleteRemote: string[] = [];
-    const failedTrashLocal: string[] = [];
-    for (const { path, category } of candidates) {
-      try {
-        await this.resolveSkippedDir(path, category, choice);
-        resolved++;
-      } catch {
-        (category === 'deleteRemote' ? failedDeleteRemote : failedTrashLocal).push(path);
-      }
-    }
-
-    const failed = failedDeleteRemote.length + failedTrashLocal.length;
-    if (failed === 0) {
-      const idx = errors!.indexOf(entry);
-      if (idx >= 0) errors!.splice(idx, 1);
-    } else {
-      entry.dirBreakerSkipped = { deleteRemote: failedDeleteRemote, trashLocal: failedTrashLocal };
-    }
-    return { resolved, failed };
+    const { client } = await this.ensureClient();
+    return this.directories.resolveAllSkippedDirs(client, this.lastSummary, choice);
   }
 
 
@@ -1807,129 +1779,9 @@ export class SyncEngine {
    * optionally wrapped in a lock when the user enabled `fileLockingEnabled`; every failure is left
    * for the next sync (self-healing).
    */
-  private async reconcileDirectories(summary: SyncSessionSummary, cachedDirs?: RemoteDirInfo[]): Promise<void> {
-    let remoteDirInfos: RemoteDirInfo[];
-    if (cachedDirs) {
-      // Root-ETag short-circuit (spec 023): remote unchanged since the last real scan, so the tracked
-      // directory set IS the remote set — skip the getDirectories('') Depth:infinity PROPFIND.
-      remoteDirInfos = cachedDirs;
-    } else {
-      try {
-        remoteDirInfos = await this.client!.getDirectories('');
-      } catch (err) {
-        void this.opts.logger?.log(`dir-sync: listing failed — skip this session: ${(err as Error).message}`);
-        return; // self-heal next sync
-      }
-    }
-
-    const norm = (p: string): string => p.replace(/\/+$/, '');
-    const remoteDirs = new Map(remoteDirInfos.map(d => [norm(d.path), d]));
-    const vault = this.opts.app.vault as Vault & { getAllFolders?: (includeRoot?: boolean) => TFolder[] };
-    const localDirs = new Set(
-      (vault.getAllFolders?.() ?? []).map(f => f.path).filter(p => p && p !== '/'),
-    );
-    const tracked = new Map(this.opts.stateDB.getAllDirs().map(d => [d.path, d]));
-
-    const all = new Set<string>(
-      [...remoteDirs.keys(), ...localDirs, ...tracked.keys()].filter(p => p !== '' && !this.isSystemExcluded(p)),
-    );
-
-    const mkcolRemote: string[] = []; // L !R !T — created here → push to remote
-    const mkdirLocal: string[] = [];  // !L R !T — created elsewhere → create here
-    const deleteRemote: string[] = []; // !L R T — deleted here → remove on remote
-    const trashLocal: string[] = [];   // L !R T — deleted elsewhere → remove here
-    const ensureTracked: DirState[] = []; // L R — keep tracked
-    const dropTracked: string[] = [];  // !L !R T — gone everywhere → forget
-
-    for (const p of all) {
-      const L = localDirs.has(p), R = remoteDirs.has(p), T = tracked.has(p);
-      if (L && R) ensureTracked.push({ path: p, remoteFileId: remoteDirs.get(p)!.fileId });
-      else if (L && !R) (T ? trashLocal : mkcolRemote).push(p);
-      else if (!L && R) (T ? deleteRemote : mkdirLocal).push(p);
-      else if (T) dropTracked.push(p);
-    }
-
-    // Circuit breaker on the destructive set (a partial listing would make many dirs look deleted).
-    const denom = Math.max(tracked.size, remoteDirs.size, localDirs.size);
-    if (deleteRemote.length + trashLocal.length > this.effectiveMassDeleteLimit(denom)) {
-      void this.opts.logger?.log(`dir-sync: SKIPPED ${deleteRemote.length + trashLocal.length} dir deletions — exceeds safety limit; likely a partial listing`);
-      // Record as an error so the root-ETag short-circuit convergence gate (spec 023 §8a.5) invalidates
-      // the stored etag and the next sync really re-scans instead of short-circuiting on stale State.
-      const skippedDeleteRemote = [...deleteRemote];
-      const skippedTrashLocal = [...trashLocal];
-      this.recordError(
-        summary, '(dir mass-delete breaker)',
-        new Error(`Skipped ${deleteRemote.length + trashLocal.length} dir deletions — exceeds safety limit`),
-        undefined,
-        { deleteRemote: skippedDeleteRemote, trashLocal: skippedTrashLocal },
-      );
-      deleteRemote.length = 0;
-      trashLocal.length = 0;
-    }
-
-    const shallowFirst = (a: string, b: string): number => a.split('/').length - b.split('/').length;
-    const deepFirst = (a: string, b: string): number => b.split('/').length - a.split('/').length;
-
-    // CREATE remote (parents before children).
-    for (const p of mkcolRemote.sort(shallowFirst)) {
-      if (this.cancelled) break;
-      try {
-        await this.client!.createDirectory(p);
-        this.opts.stateDB.setDir({ path: p, remoteFileId: remoteDirs.get(p)?.fileId ?? null });
-        this.recordHistory(p, 'uploaded');
-      } catch (err) {
-        summary.errorCount++;
-        summary.errors.push({ path: p, message: `dir create (remote) failed: ${(err as Error).message}` });
-      }
-    }
-    // CREATE local (parents before children).
-    for (const p of mkdirLocal.sort(shallowFirst)) {
-      if (this.cancelled) break;
-      try {
-        await this.opts.app.vault.adapter.mkdir(normalizePath(p));
-        this.opts.stateDB.setDir({ path: p, remoteFileId: remoteDirs.get(p)?.fileId ?? null });
-        this.recordHistory(p, 'downloaded');
-      } catch (err) {
-        summary.errorCount++;
-        summary.errors.push({ path: p, message: `dir create (local) failed: ${(err as Error).message}` });
-      }
-    }
-    // DELETE remote (children before parents; probe + optional lock).
-    for (const p of deleteRemote.sort(deepFirst)) {
-      if (this.cancelled) break;
-      let token: string | null = null;
-      try {
-        token = await this.acquireLock(p);
-        if (!(await this.client!.isRemoteDirEmpty(p))) {
-          void this.opts.logger?.log(`dir-sync: remote dir not empty yet — keeping → ${p}`);
-          continue; // children pending — self-heal next sync
-        }
-        await this.client!.deleteCollection(p);
-        this.opts.stateDB.deleteDir(p);
-        summary.deletedCount++;
-        this.recordHistory(p, 'deleted');
-      } catch (err) {
-        summary.errorCount++;
-        summary.errors.push({ path: p, message: `dir delete (remote) failed: ${(err as Error).message}` });
-      } finally {
-        await this.releaseLock(p, token);
-      }
-    }
-    // TRASH local (children before parents).
-    for (const p of trashLocal.sort(deepFirst)) {
-      if (this.cancelled) break;
-      const folder = this.opts.app.vault.getAbstractFileByPath(p);
-      try {
-        if (folder instanceof TFolder) await this.opts.app.fileManager.trashFile(folder);
-        this.opts.stateDB.deleteDir(p);
-        this.recordHistory(p, 'deleted');
-      } catch (err) {
-        summary.errorCount++;
-        summary.errors.push({ path: p, message: `dir delete (local) failed: ${(err as Error).message}` });
-      }
-    }
-    for (const d of ensureTracked) this.opts.stateDB.setDir(d);
-    for (const p of dropTracked) this.opts.stateDB.deleteDir(p);
+  /** @see DirectoryReconciler.reconcileDirectories */
+  private reconcileDirectories(summary: SyncSessionSummary, cachedDirs?: RemoteDirInfo[]): Promise<void> {
+    return this.directories.reconcileDirectories(this.client!, summary, cachedDirs);
   }
 
   private async buildInitialPlan(
