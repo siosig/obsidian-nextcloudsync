@@ -35,6 +35,7 @@ import { RemoteListingSource } from './scan/RemoteListingSource';
 import { SyncJournal } from './session/SyncJournal';
 import { MergeBaseRecorder } from './session/MergeBaseRecorder';
 import { withLocalSignature } from '../data/localSignature';
+import { TransferService } from './transfer/TransferService';
 import { isMarkdown } from '../util/mergeableExtensions';
 import { SyncHistoryStore } from '../data/SyncHistoryStore';
 import { IStatusBar } from '../ui/StatusBarItem';
@@ -49,7 +50,7 @@ import { FileLogger } from '../util/FileLogger';
 import {
   isCellularBlocked, MAX_HASH_SIZE,
   MAX_INFLIGHT_BYTES_DESKTOP, MAX_INFLIGHT_BYTES_MOBILE, effectiveMassDeleteLimit,
-  isAnomalousRemoteContent, isOverFileSizeLimit,
+  isAnomalousRemoteContent,
 } from '../util/limits';
 import { createLimiter, ByteSemaphore } from '../util/ConcurrencyLimiter';
 import { isSafeVaultRelativePath } from '../network/remotePath';
@@ -139,7 +140,8 @@ export class SyncEngine {
   /** Merge-base eligibility and save-request pairing (feature 074). */
   private readonly mergeBase: MergeBaseRecorder;
   /** Currently held lock tokens (path → token). */
-  private readonly heldLocks = new Map<string, string>();
+  /** Single-file transfer, locking and size guards (feature 074). Owns the locks it holds. */
+  private readonly transfer: TransferService;
   /** Progress counters updated during a sync run (reset each run). */
   private syncProgress = { processed: 0, total: 0 };
   /** Feature 046: number of watch-mode single-file/folder ops currently propagating to the remote.
@@ -195,6 +197,16 @@ export class SyncEngine {
     this.mergeBase = new MergeBaseRecorder({
       baseStore: opts.baseStore,
       autoMergeFileTypes: () => this.opts.settings.autoMergeFileTypes,
+    });
+    this.transfer = new TransferService({
+      localAdapter: opts.localAdapter,
+      stateDB: opts.stateDB,
+      journal: this.journal,
+      mergeBase: this.mergeBase,
+      maxFileSizeMB: () => this.opts.settings.maxFileSizeMB,
+      hasFilesLocking: () => this.features?.hasFilesLocking === true,
+      queueRetry: (p) => { this.retryQueue.push(p); },
+      logger: opts.logger,
     });
     this.remoteListing = new RemoteListingSource({
       stateDB: opts.stateDB,
@@ -1692,108 +1704,20 @@ export class SyncEngine {
     }
   }
 
-  private async uploadFile(
+  // Delegators to the transfer service (feature 074): the client and upload strategy are resolved
+  // here (they are created lazily and can be replaced) and handed in on every call.
+
+  /** @see TransferService.uploadFile */
+  private uploadFile(
     path: string, localHash: string, remoteId: string,
     idType: FileState['idType'], remote: RemoteFileInfo,
     summary: SyncSessionSummary,
   ): Promise<void> {
-    const stat = await this.opts.localAdapter.stat(path);
-    if (!stat) return;
-
-    const data = await this.opts.localAdapter.readBinary(path);
-
-    // US4: Acquire lock (only when enabled and supported by the server). If locked by someone else, skip and queue for retry.
-    let token: string | null;
-    try {
-      token = await this.acquireLock(path);
-    } catch (err) {
-      if (err instanceof FileLockedError) {
-        this.retryQueue.push(path);
-        return;
-      }
-      throw err;
-    }
-
-    let outcome: 'uploaded' | 'skipped';
-    try {
-      // US3: Delegate to the upload strategy (chunked/single/skip).
-      // P1-B: send If-Match using the known remote etag (when updating an existing remote file) so a
-      // remote that changed since our baseline returns 412 → PreconditionFailedError → conflict. New
-      // local files carry a null etag (synthetic remote) → no precondition.
-      outcome = await this.uploadStrategy!.upload(this.client!, path, data, stat.mtime, { ifMatchEtag: remote.etag });
-    } finally {
-      await this.releaseLock(path, token);
-    }
-
-    if (outcome === 'skipped') return; // Size limit exceeded. Already warned by the strategy (no retry needed).
-    summary.uploadedCount++;
-    // Feature 064 (C-4): record the state the server now holds, not the one it held before the PUT.
-    // Both upload strategies send `OC-Checksum: SHA256:<localHash>` (NextcloudClient.uploadFile /
-    // the chunked assembling MOVE), and Nextcloud persists it and returns it as oc:checksums — so the
-    // remote id of what we just stored IS localHash. Keeping the PRE-upload remoteId here made every
-    // following sync read "remote changed" and download the file we had just uploaded, over and over.
-    // resolveByWrite already records the merged body this way; this brings the plain upload in line.
-    const uploadedRemoteId = localHash;
-    const uploadedIdType: FileState['idType'] = 'sha256';
-    this.recordHistory(path, 'uploaded', undefined, {
-      localHash, remoteId: uploadedRemoteId, remoteIdType: uploadedIdType,
-      localSize: stat.size, remoteSize: remote.size,
-    });
-
-    this.opts.stateDB.setFile(await this.withLocalSignature({
-      path, localHash, remoteId: uploadedRemoteId, idType: uploadedIdType,
-      size: stat.size, mtime: stat.mtime,
-      remoteFileId: remote.fileId, isConflicted: false,
-    }, remote.lastModified));
-    // Feature 038: remote now equals the local body we just uploaded → it is the new merge base.
-    this.recordMergeBase(path, new TextDecoder().decode(data));
+    return this.transfer.uploadFile(
+      this.client!, this.uploadStrategy!, path, localHash, remoteId, idType, remote, summary,
+    );
   }
 
-  // ── US4: Lock acquire/release ──────────────────────────────────────────────
-
-  /**
-   * Acquire a file lock before updating. Returns null if locking is disabled/unsupported.
-   * If locked by someone else (423), retries with backoff and throws FileLockedError if not released.
-   */
-  private async acquireLock(path: string): Promise<string | null> {
-    // Feature 033: file locking is always off — lost-update safety is the always-on If-Match
-    // precondition, without the LOCK/UNLOCK round-trips. The mechanism below is retained but never
-    // engaged from the normal sync path.
-    if (!FIXED.fileLockingEnabled || !this.features?.hasFilesLocking) return null;
-    const maxAttempts = 3;
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      try {
-        const token = await this.client!.lockFile(path);
-        if (token) this.heldLocks.set(path, token);
-        return token;
-      } catch (err) {
-        if (err instanceof FileLockedError) {
-          if (attempt < maxAttempts - 1) {
-            await this.sleep(500 * Math.pow(2, attempt)); // exponential backoff
-            continue;
-          }
-          throw err;
-        }
-        if (err instanceof FeatureUnsupportedError) return null;
-        // NetworkError (e.g. HTTP 500 / 404 when the file does not yet exist on the server)
-        // must not abort the entire sync — proceed without a lock rather than failing.
-        if (err instanceof NetworkError) return null;
-        throw err;
-      }
-    }
-    return null;
-  }
-
-  /** Release the lock after updating (best-effort). */
-  private async releaseLock(path: string, token: string | null): Promise<void> {
-    if (!token) return;
-    await this.client!.unlockFile(path, token);
-    this.heldLocks.delete(path);
-  }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => window.setTimeout(resolve, ms));
-  }
 
   // ── US2: Version history ───────────────────────────────────────────────────
 
@@ -1838,65 +1762,32 @@ export class SyncEngine {
    * `requestUrl` buffers the whole body in memory and Android base64-encodes it, so a large remote file
    * would OOM the app (issue #8). The threshold logic is reused from upload so both directions agree.
    */
+  /** @see TransferService.acquireLock */
+  private acquireLock(path: string): Promise<string | null> {
+    return this.transfer.acquireLock(this.client!, path);
+  }
+
+  /** @see TransferService.releaseLock */
+  private releaseLock(path: string, token: string | null): Promise<void> {
+    return this.transfer.releaseLock(this.client!, path, token);
+  }
+
+  /** @see TransferService.isRemoteOverSizeLimit */
   private isRemoteOverSizeLimit(remote: RemoteFileInfo): boolean {
-    return isOverFileSizeLimit(remote.size, this.opts.settings.maxFileSizeMB);
+    return this.transfer.isRemoteOverSizeLimit(remote);
   }
 
-  /** User-facing notice for a download skipped by the size guard (mirrors the upload "too large" notice). */
+  /** @see TransferService.warnDownloadSkipped */
   private warnDownloadSkipped(path: string, sizeBytes: number): void {
-    const sizeMB = sizeBytes / 1024 / 1024;
-    new Notice(
-      `⚠️ File too large to download: ${path} (${sizeMB.toFixed(1)} MB > ${this.opts.settings.maxFileSizeMB} MB)`,
-    );
+    this.transfer.warnDownloadSkipped(path, sizeBytes);
   }
 
-  private async downloadFile(
+  /** @see TransferService.downloadFile */
+  private downloadFile(
     remote: RemoteFileInfo, remoteId: string,
     idType: FileState['idType'], summary: SyncSessionSummary,
   ): Promise<void> {
-    // Size guard (spec 035): skip oversized remote files BEFORE the GET. Covers the normal
-    // remote→local download AND the local-delete-vs-remote-edit restore path (both route here). Leave
-    // local + Base untouched and do NOT queue a retry: a permanent skip until the cap is raised (then
-    // the next reconcile re-detects remote-changed and downloads it — self-healing). Not an error.
-    if (this.isRemoteOverSizeLimit(remote)) {
-      this.warnDownloadSkipped(remote.path, remote.size);
-      void this.opts.logger?.log(`download: SKIPPED over size limit (${remote.size}B > ${this.opts.settings.maxFileSizeMB}MB) → ${remote.path}`);
-      return;
-    }
-    const data = await this.client!.downloadFile(remote.path);
-    // Server-anomaly guard (spec 025): refuse to overwrite local with content whose byte length does
-    // not match the size the server advertised (0-byte / truncated body on a buggy/inconsistent
-    // server). Leave local + Base untouched and retry next sync; a legitimate empty file (advertised
-    // size 0) is not flagged.
-    if (isAnomalousRemoteContent(remote.size, data.byteLength)) {
-      this.recordError(summary, remote.path, new Error(`Refused remote overwrite: server advertised ${remote.size} bytes but returned ${data.byteLength} (server anomaly)`));
-      this.retryQueue.push(remote.path);
-      const base = this.opts.stateDB.getFile(remote.path);
-      if (base) this.opts.stateDB.setFile({ ...base, isConflicted: true });
-      void this.opts.logger?.log(`download: REFUSED anomalous remote (size ${remote.size}≠${data.byteLength}) → kept local, queued retry → ${remote.path}`);
-      return;
-    }
-    await this.opts.localAdapter.atomicWriteBinary(remote.path, data);
-    summary.downloadedCount++;
-
-    // Preserve remote mtime on the local file so the two stay in sync.
-    if (remote.lastModified) {
-      await this.opts.localAdapter.setMtime(remote.path, remote.lastModified);
-    }
-
-    const localHash = await sha256(data);
-    this.recordHistory(remote.path, 'downloaded', undefined, {
-      localHash, remoteId, remoteIdType: idType,
-      localSize: data.byteLength, remoteSize: remote.size,
-    });
-    const mtime = remote.lastModified || (await this.opts.localAdapter.stat(remote.path))?.mtime || Date.now();
-    this.opts.stateDB.setFile(await this.withLocalSignature({
-      path: remote.path, localHash, remoteId, idType,
-      size: remote.size, mtime,
-      remoteFileId: remote.fileId, isConflicted: false,
-    }, remote.lastModified));
-    // Feature 038: local now equals the remote body → that body is the new merge base.
-    this.recordMergeBase(remote.path, new TextDecoder().decode(data));
+    return this.transfer.downloadFile(this.client!, remote, remoteId, idType, summary);
   }
 
   private async handleConflict(
