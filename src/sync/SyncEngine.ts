@@ -37,6 +37,7 @@ import { withLocalSignature } from '../data/localSignature';
 import { TransferService } from './transfer/TransferService';
 import { VersionService } from './versions/VersionService';
 import { DeletionService } from './deletion/DeletionService';
+import { ResolutionService } from './resolution/ResolutionService';
 import { isMarkdown } from '../util/mergeableExtensions';
 import { SyncHistoryStore } from '../data/SyncHistoryStore';
 import { IStatusBar } from '../ui/StatusBarItem';
@@ -68,12 +69,6 @@ interface InitialSyncPlan {
   /** Files present and identical on both sides (no transfer needed; state is seeded). */
   unchanged: string[];
 }
-
-/** The local-side fields of a compare result, shared by every `compareWithRemote` outcome. */
-type CompareLocalSide = Pick<
-  RemoteCompareResult,
-  'path' | 'localExists' | 'localMtime' | 'localChecksum' | 'localText' | 'localSize'
->;
 
 interface SyncEngineOptions {
   app: App;
@@ -148,6 +143,9 @@ export class SyncEngine {
 
   /** Deletion propagation, both directions (feature 074). */
   private readonly deletion: DeletionService;
+
+  /** Compare, force-resolution and the clean-side snapshots (feature 074). */
+  private readonly resolution: ResolutionService;
   /** Progress counters updated during a sync run (reset each run). */
   private syncProgress = { processed: 0, total: 0 };
   /** Feature 046: number of watch-mode single-file/folder ops currently propagating to the remote.
@@ -222,6 +220,18 @@ export class SyncEngine {
       mergeBase: this.mergeBase,
       transfer: this.transfer,
       isSystemExcluded: (p) => this.isSystemExcluded(p),
+      logger: opts.logger,
+    });
+    this.resolution = new ResolutionService({
+      localAdapter: opts.localAdapter,
+      stateDB: opts.stateDB,
+      historyStore: opts.historyStore,
+      cleanSideStore: opts.cleanSideStore,
+      journal: this.journal,
+      mergeBase: this.mergeBase,
+      transfer: this.transfer,
+      autoMergeFileTypes: () => this.opts.settings.autoMergeFileTypes,
+      maxFileSizeMB: () => this.opts.settings.maxFileSizeMB,
       logger: opts.logger,
     });
     this.remoteListing = new RemoteListingSource({
@@ -724,64 +734,40 @@ export class SyncEngine {
    * write overwrites them. Only called on the marker-write path (clean:false). Metrics are the clean
    * sides' own mtime/size, used later by the Latest/Biggest force-resolution choices.
    */
+  // Delegators to the resolution service (feature 074). The connection is resolved here because the
+  // client and upload strategy are created lazily and can be replaced.
+
+  /** @see ResolutionService.captureCleanSides */
   private captureCleanSides(
     path: string, local: string, remote: string,
     localMtime: number, localSize: number, remoteInfo: RemoteFileInfo,
   ): void {
-    if (!this.opts.cleanSideStore) return;
-    this.opts.cleanSideStore.set(path, {
-      local, remote,
-      localMtime, remoteMtime: remoteInfo.lastModified || 0,
-      localSize, remoteSize: remoteInfo.size,
-    });
-    this.opts.cleanSideStore.requestSave();
+    this.resolution.captureCleanSides(path, local, remote, localMtime, localSize, remoteInfo);
   }
 
-  /** Drop the captured clean sides for `path` (on resolution / convergence / deletion) — no leak (044). */
+  /** @see ResolutionService.dropCleanSnapshot */
   private dropCleanSnapshot(path: string): void {
-    if (!this.opts.cleanSideStore) return;
-    if (this.opts.cleanSideStore.get(path) === undefined) return;
-    this.opts.cleanSideStore.delete(path);
-    this.opts.cleanSideStore.requestSave();
+    this.resolution.dropCleanSnapshot(path);
   }
 
-  /**
-   * Feature 044 self-heal safety net: after a sync, drop the captured clean sides of any path that is
-   * no longer marker-conflicted in StateDB (converged via a prefer-side / clean-merge / hand-resolve /
-   * download). This keeps captures bounded to currently-conflicted files (FR-008/SC-003) regardless of
-   * which convergence path ran, without threading a drop into every call site.
-   */
+  /** @see ResolutionService.sweepResolvedSnapshots */
   private sweepResolvedSnapshots(): void {
-    const store = this.opts.cleanSideStore;
-    if (!store) return;
-    for (const path of store.paths()) {
-      if (!this.opts.stateDB.getFile(path)?.isConflicted) this.dropCleanSnapshot(path);
-    }
+    this.resolution.sweepResolvedSnapshots();
   }
 
-  /**
-   * Feature 044 recovery: the captured clean-side metrics for a marker-conflicted `path`, or null when
-   * no snapshot exists. Force-resolution uses this to decide whether to recover from the snapshot
-   * (present) or fall back to current-content push/pull (absent). Implements CompareEngine (044).
-   */
+  /** @see ResolutionService.cleanSideMetrics */
   cleanSideMetrics(path: string): CleanSideMetrics | null {
-    const snap = this.opts.cleanSideStore?.get(path);
-    if (!snap) return null;
-    return { localMtime: snap.localMtime, remoteMtime: snap.remoteMtime, localSize: snap.localSize, remoteSize: snap.remoteSize };
+    return this.resolution.cleanSideMetrics(path);
   }
 
-  /** Feature 044 recovery: restore the captured clean REMOTE side (or fall back to pull if none). */
+  /** @see ResolutionService.applyCleanRemote */
   async applyCleanRemote(path: string): Promise<void> {
-    const snap = this.opts.cleanSideStore?.get(path);
-    if (!snap) { await this.pullRemoteToLocal(path); return; }
-    await this.applyCleanSide(path, snap.remote, 'remote');
+    return this.resolution.applyCleanRemote(await this.connection(), path);
   }
 
-  /** Feature 044 recovery: restore the captured clean LOCAL side (or fall back to push if none). */
+  /** @see ResolutionService.applyCleanLocal */
   async applyCleanLocal(path: string): Promise<void> {
-    const snap = this.opts.cleanSideStore?.get(path);
-    if (!snap) { await this.pushLocalToRemote(path); return; }
-    await this.applyCleanSide(path, snap.local, 'local');
+    return this.resolution.applyCleanLocal(await this.connection(), path);
   }
 
   /**
@@ -871,47 +857,6 @@ export class SyncEngine {
     return { resolved, failed };
   }
 
-  /**
-   * Write `content` (a captured clean side) to BOTH local and remote so the conflict converges on a
-   * real, marker-free version. Uploads first (if that fails, nothing local changes and the file stays
-   * conflicted — no false "resolved"), then writes local, converges StateDB (isConflicted:false),
-   * records the new merge base, and drops the snapshot. (CSS-2/CSS-4/CSS-6)
-   */
-  private async applyCleanSide(path: string, content: string, side: 'local' | 'remote'): Promise<void> {
-    const { client } = await this.ensureClient();
-    const data = new TextEncoder().encode(content).buffer;
-    const mtime = Date.now();
-    const remote = await this.fetchRemoteInfo(path);
-
-    const lockToken = await this.acquireLock(path);
-    try {
-      const outcome = await this.uploadStrategy!.upload(client, path, data, mtime);
-      if (outcome === 'skipped') throw new Error(`Upload skipped (over the size limit): ${path}`);
-    } finally {
-      await this.releaseLock(path, lockToken);
-    }
-
-    await this.opts.localAdapter.atomicWriteBinary(path, data);
-    await this.opts.localAdapter.setMtime(path, mtime);
-
-    const localHash = await sha256(data);
-    this.recordHistory(path, 'uploaded', undefined, {
-      localHash, remoteId: localHash, remoteIdType: 'sha256',
-      localSize: data.byteLength, remoteSize: remote?.size,
-    });
-    this.opts.stateDB.setFile(await this.withLocalSignature({
-      path, localHash, remoteId: localHash, idType: 'sha256',
-      size: data.byteLength, mtime,
-      remoteFileId: remote?.fileId ?? null, isConflicted: false,
-    }, remote?.lastModified));
-    // Both sides now hold the clean content → it is the new merge base; the snapshot has served its
-    // purpose and is dropped (no leak).
-    this.recordMergeBase(path, content);
-    this.dropCleanSnapshot(path);
-    await this.opts.stateDB.save();
-    await this.opts.historyStore?.save();
-    void this.opts.logger?.log(`conflict: force-resolved from clean ${side} snapshot (both sides converged) → ${path}`);
-  }
 
   /**
    * Two-Phase Termination — phase 1: signal an in-flight sync to stop pulling new work. Idempotent
@@ -1148,168 +1093,27 @@ export class SyncEngine {
     };
   }
 
+  /** @see ResolutionService.getUnresolvedConflictCount */
   getUnresolvedConflictCount(): Promise<number> {
-    return Promise.resolve(this.opts.stateDB.countConflicted());
+    return this.resolution.getUnresolvedConflictCount();
   }
 
-  /**
-   * Read-only comparison of one file against its remote counterpart, for the explorer
-   * "Compare with remote" popup. Fetches remote metadata + content (never mutates) and computes
-   * modification times, byte-level SHA-256 checksums (so the match indicator is valid for binary
-   * files too), and decoded text for the diff (text-eligible files only). Failures are captured in
-   * the returned `state` (`remote-missing` / `error`) rather than thrown.
-   */
+  /** @see ResolutionService.compareWithRemote */
   async compareWithRemote(path: string): Promise<RemoteCompareResult> {
-    await this.ensureClient();
-    const textEligible = this.textEligible(path);
-
-    // Local side
-    const stat = await this.opts.localAdapter.stat(path);
-    const localExists = stat != null;
-    let localChecksum: string | null = null;
-    let localText: string | null = null;
-    if (localExists) {
-      const localBytes = await this.opts.localAdapter.readBinary(path);
-      localChecksum = await sha256(localBytes);
-      if (textEligible) localText = new TextDecoder().decode(localBytes);
-    }
-
-    const local: CompareLocalSide = {
-      path,
-      localExists,
-      localMtime: stat?.mtime ?? null,
-      localChecksum,
-      localText,
-      localSize: stat?.size ?? null,
-    };
-
-    try {
-      const remote = await this.fetchRemoteInfo(path);
-      if (!remote) return this.compareWithoutRemote(local, 'remote-missing');
-
-      // Size guard (spec 035, FR-011): never fetch an oversized remote body just to diff it (the
-      // fetch itself can OOM on Android). Show the metadata comparison (sizes/mtimes) but no line
-      // diff — the same shape as a binary/non-text file (remoteText null, diffAvailable false).
-      if (this.isRemoteOverSizeLimit(remote)) {
-        const sizeMB = remote.size / 1024 / 1024;
-        new Notice(
-          `⚠️ File too large to preview: ${path} (${sizeMB.toFixed(1)} MB > ${this.opts.settings.maxFileSizeMB} MB)`,
-        );
-        return {
-          ...local, state: 'ok', remoteExists: true,
-          remoteMtime: remote.lastModified ?? null,
-          remoteChecksum: remote.checksum ?? null,
-          checksumMatch: local.localChecksum != null && remote.checksum != null && local.localChecksum === remote.checksum,
-          remoteText: null, diffAvailable: false,
-          remoteSize: remote.size ?? null,
-        };
-      }
-
-      const remoteBytes = await this.client!.downloadFile(path);
-      // Hash the actual bytes (not the server-reported checksum) so checksumMatch is guaranteed
-      // consistent with the diff: identical bytes ⇔ match ⇔ empty diff.
-      const remoteChecksum = await sha256(remoteBytes);
-      const remoteText = textEligible ? new TextDecoder().decode(remoteBytes) : null;
-      return {
-        ...local, state: 'ok', remoteExists: true,
-        remoteMtime: remote.lastModified ?? null,
-        remoteChecksum,
-        checksumMatch: localChecksum != null && localChecksum === remoteChecksum,
-        remoteText, diffAvailable: textEligible && localExists,
-        remoteSize: remote.size ?? null,
-      };
-    } catch (err) {
-      return this.compareWithoutRemote(local, 'error', (err as Error)?.message ?? String(err));
-    }
-  }
-
-  /**
-   * Build a compare result for the two cases where no remote content is available — the remote file
-   * is missing, or the fetch failed. Both carry the local side and null remote fields; `error` adds
-   * a message. Centralizes the otherwise-duplicated "no remote" field set.
-   */
-  private compareWithoutRemote(
-    local: CompareLocalSide, state: 'remote-missing' | 'error', errorMessage?: string,
-  ): RemoteCompareResult {
-    return {
-      ...local, state, errorMessage,
-      remoteExists: false, remoteMtime: null, remoteChecksum: null, checksumMatch: false,
-      remoteText: null, diffAvailable: false, remoteSize: null,
-    };
-  }
-
-  /**
-   * Manual resolution (push): overwrite the REMOTE file with the local content. Reuses the upload
-   * strategy + lock handling, records an 'uploaded' history entry, and converges StateDB so the
-   * next sync sees no spurious change. Rejects on failure so the caller can surface it (and records
-   * nothing in that case).
-   */
-  async pushLocalToRemote(path: string): Promise<void> {
     const { client } = await this.ensureClient();
-    const stat = await this.opts.localAdapter.stat(path);
-    if (!stat) throw new Error(`Local file not found: ${path}`);
-    const localData = await this.opts.localAdapter.readBinary(path);
-    const localHash = await sha256(localData);
-    const remote = await this.fetchRemoteInfo(path); // null ⇒ creating the remote from local
-
-    const lockToken = await this.acquireLock(path);
-    try {
-      const outcome = await this.uploadStrategy!.upload(client, path, localData, stat.mtime);
-      if (outcome === 'skipped') throw new Error(`Upload skipped (over the size limit): ${path}`);
-    } finally {
-      await this.releaseLock(path, lockToken);
-    }
-
-    this.recordHistory(path, 'uploaded', undefined, {
-      localHash, remoteId: localHash, remoteIdType: 'sha256',
-      localSize: stat.size, remoteSize: remote?.size,
-    });
-    this.opts.stateDB.setFile(await this.withLocalSignature({
-      path, localHash, remoteId: localHash, idType: 'sha256',
-      size: stat.size, mtime: stat.mtime,
-      remoteFileId: remote?.fileId ?? null, isConflicted: false,
-    }, remote?.lastModified));
-    await this.opts.stateDB.save();
-    await this.opts.historyStore?.save();
+    return this.resolution.compareWithRemote(client, path);
   }
 
-  /**
-   * Manual resolution (pull): overwrite the LOCAL file with the remote content. The write is marked
-   * as the plugin's own (atomicWriteBinary registers an ignore) so the modify watcher does not echo
-   * it back as an upload. Records a 'downloaded' history entry and converges StateDB. Rejects on
-   * failure (local left unchanged when the download fails before any write).
-   */
+
+  /** @see ResolutionService.pushLocalToRemote */
+  async pushLocalToRemote(path: string): Promise<void> {
+    return this.resolution.pushLocalToRemote(await this.connection(), path);
+  }
+
+  /** @see ResolutionService.pullRemoteToLocal */
   async pullRemoteToLocal(path: string): Promise<void> {
     const { client } = await this.ensureClient();
-    const remote = await this.fetchRemoteInfo(path);
-    if (!remote) throw new Error(`Remote file not found: ${path}`);
-
-    // Size guard (spec 035, FR-011): refuse a manual pull of an oversized remote (the download would
-    // risk OOM). Surface a clear error to the caller (symmetric with pushLocalToRemote throwing on an
-    // oversized upload). Local file and StateDB are left untouched.
-    if (this.isRemoteOverSizeLimit(remote)) {
-      const sizeMB = remote.size / 1024 / 1024;
-      throw new Error(`File too large to download (${sizeMB.toFixed(1)} MB > ${this.opts.settings.maxFileSizeMB} MB): ${path}`);
-    }
-
-    const remoteData = await client.downloadFile(path);
-    await this.opts.localAdapter.atomicWriteBinary(path, remoteData);
-    if (remote.lastModified) await this.opts.localAdapter.setMtime(path, remote.lastModified);
-
-    const localHash = await sha256(remoteData);
-    const remoteId = remote.checksum ?? localHash;
-    const mtime = remote.lastModified || (await this.opts.localAdapter.stat(path))?.mtime || Date.now();
-    this.recordHistory(path, 'downloaded', undefined, {
-      localHash, remoteId, remoteIdType: 'sha256',
-      localSize: remoteData.byteLength, remoteSize: remote.size,
-    });
-    this.opts.stateDB.setFile(await this.withLocalSignature({
-      path, localHash, remoteId, idType: 'sha256',
-      size: remote.size, mtime,
-      remoteFileId: remote.fileId, isConflicted: false,
-    }, remote.lastModified));
-    await this.opts.stateDB.save();
-    await this.opts.historyStore?.save();
+    return this.resolution.pullRemoteToLocal(client, path);
   }
 
   /** Binds the configured Auto Merge File types for {@link isTextEligible}. */
@@ -1317,11 +1121,15 @@ export class SyncEngine {
     return isTextEligible(path, this.opts.settings.autoMergeFileTypes);
   }
 
-  /** Fetch a single remote file's metadata via PROPFIND; null when the remote file is absent. */
-  private async fetchRemoteInfo(path: string): Promise<RemoteFileInfo | null> {
-    const infos = await this.client!.getFiles(path);
-    if (infos.length === 0) return null;
-    return infos.find(i => i.path === path) ?? infos[0];
+  /** @see ResolutionService.fetchRemoteInfo */
+  private fetchRemoteInfo(path: string): Promise<RemoteFileInfo | null> {
+    return this.resolution.fetchRemoteInfo(this.client!, path);
+  }
+
+  /** The connected client plus its upload strategy, for services that need both. */
+  private async connection(): Promise<{ client: IWebDAVClient; uploadStrategy: IUploadStrategy }> {
+    const { client } = await this.ensureClient();
+    return { client, uploadStrategy: this.uploadStrategy! };
   }
 
   // ── Private ──────────────────────────────────────────────────────────────
