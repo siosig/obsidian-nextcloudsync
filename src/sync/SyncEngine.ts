@@ -26,11 +26,12 @@ import type { CleanSideStore } from '../data/CleanSideStore';
 import type { CleanSideMetrics } from '../ui/compareResolution';
 import {
   parentDir as parentDirOf,
-  isDotName as isDotNameOf,
   isTextEligible,
   isLocallyUnchanged as isLocallyUnchangedPure,
   isSystemExcluded as isSystemExcludedPure,
 } from './policy';
+import { LocalScanner } from './scan/LocalScanner';
+import { RemoteListingSource } from './scan/RemoteListingSource';
 import { isAutoMergeFileType, isMarkdown } from '../util/mergeableExtensions';
 import { SyncHistoryStore } from '../data/SyncHistoryStore';
 import { IStatusBar } from '../ui/StatusBarItem';
@@ -44,7 +45,7 @@ import { FIXED, chunkThresholdMB } from '../util/fixedSyncConfig';
 import { FileLogger } from '../util/FileLogger';
 import {
   isCellularBlocked, MAX_HASH_SIZE,
-  MAX_INFLIGHT_BYTES_DESKTOP, MAX_INFLIGHT_BYTES_MOBILE, effectiveMassDeleteLimit, FORCE_FULL_SCAN_EVERY,
+  MAX_INFLIGHT_BYTES_DESKTOP, MAX_INFLIGHT_BYTES_MOBILE, effectiveMassDeleteLimit,
   isAnomalousRemoteContent, isOverFileSizeLimit,
 } from '../util/limits';
 import { createLimiter, ByteSemaphore } from '../util/ConcurrencyLimiter';
@@ -161,12 +162,33 @@ export class SyncEngine {
    */
   private readonly configSync: ConfigSyncResolver;
 
+  /** Local enumeration (feature 074). Built here because every dependency it needs is stable. */
+  private readonly localScanner: LocalScanner;
+
+  /**
+   * Remote enumeration (feature 074). `isNextcloud` and `networkConcurrency` are passed as accessors,
+   * not values, because capabilities arrive later (ensureClient) and settings can change under us.
+   */
+  private readonly remoteListing: RemoteListingSource;
+
   constructor(private readonly opts: SyncEngineOptions) {
     this.configSync = new ConfigSyncResolver({
       configDir: opts.configDir,
       settings: opts.settings,
       pluginDir: opts.pluginDir,
       localAdapter: opts.localAdapter,
+    });
+    this.localScanner = new LocalScanner({
+      localAdapter: opts.localAdapter,
+      isSystemExcluded: (p) => this.isSystemExcluded(p),
+      isUnderConfigDir: (p) => this.configSync.isUnderConfigDir(p),
+      enumerateIncludedConfigPaths: () => this.configSync.enumerateIncludedPaths(),
+    });
+    this.remoteListing = new RemoteListingSource({
+      stateDB: opts.stateDB,
+      isNextcloud: () => this.features?.isNextcloud === true,
+      networkConcurrency: () => Math.max(1, this.opts.settings.networkConcurrency),
+      logger: opts.logger,
     });
   }
 
@@ -934,7 +956,7 @@ export class SyncEngine {
     //     would be re-downloaded even when byte-identical. Best-effort: unsupported servers leave the
     //     checksum null and those files fall back to download (still correct, just not skipped).
     onPhase?.('Checking server checksums…');
-    await this.resolveRemoteChecksums(remoteFiles, localStats);
+    await this.remoteListing.resolveRemoteChecksums(client, remoteFiles, localStats);
 
     onPhase?.('Checking local files…');
     // Only hash a local file when its remote counterpart now carries a checksum we can compare against
@@ -1311,7 +1333,7 @@ export class SyncEngine {
 
     // Populate missing server-side checksums (computed by the server, no download) so that
     // files already identical on both sides are recognised as unchanged instead of conflicts.
-    await this.resolveRemoteChecksums(remoteFiles, localFiles);
+    await this.remoteListing.resolveRemoteChecksums(client, remoteFiles, localFiles);
 
     const plan = await this.buildInitialPlan(localFiles, remoteFiles);
     // No recorded state yet, so every local file the server lacks is planned as an UPLOAD —
@@ -1432,77 +1454,6 @@ export class SyncEngine {
     if (summary.conflictedCount > 0 || summary.errorCount > 0 || this.retryQueue.length > 0) {
       this.opts.stateDB.setRemoteRootEtag(null);
     }
-  }
-
-  /**
-   * Root-ETag short-circuit (spec 023). Obtain the COMPLETE remote file listing for a full scan,
-   * either by a real Depth:infinity PROPFIND (`getFiles('')`) or — when this is Nextcloud and the
-   * vault root ETag is unchanged since the last REAL scan — by rebuilding it from State, skipping the
-   * heavy listing. Returns the rebuilt directory list too (non-null only when short-circuited) so
-   * reconcileDirectories can likewise skip getDirectories('').
-   *
-   * Safety: the rebuilt listing is COMPLETE (every tracked file/dir), so it flows through the normal
-   * full-scan path unchanged — absence-based remote-deletion, the mass-delete breaker, conflict
-   * resolution and uploads are all untouched. The stored root ETag is updated ONLY on a real scan, so
-   * a local upload/delete/rename (which changes the remote root ETag) forces a real scan next time.
-   */
-  private async obtainFullScanListing(
-    client: IWebDAVClient,
-  ): Promise<{ remoteFiles: RemoteFileInfo[]; cachedDirs: RemoteDirInfo[] | null }> {
-    const db = this.opts.stateDB;
-    const isNextcloud = this.features?.isNextcloud === true;
-    const stored = db.getRemoteRootEtag();
-    const skipCount = db.getFullScanSkipCount();
-    const forced = skipCount >= FORCE_FULL_SCAN_EVERY;
-
-    // Capture the current root ETag BEFORE listing so a real scan never stores a value NEWER than its
-    // listing: any remote change interleaving here yields a mismatch next sync (an extra real scan,
-    // never a missed change). Nextcloud only — getRootEtag() is null elsewhere (no short-circuit).
-    const cur = isNextcloud ? await client.getRootEtag() : null;
-
-    if (cur != null && stored != null && cur === stored && !forced) {
-      const remoteFiles = this.rebuildRemoteFilesFromState();
-      const cachedDirs = this.rebuildRemoteDirsFromState();
-      db.setFullScanSkipCount(skipCount + 1);
-      void this.opts.logger?.log(
-        `sync: root-ETag MATCH (${cur}) → SHORT-CIRCUIT full scan; rebuilt ${remoteFiles.length} files / ${cachedDirs.length} dirs from State (skip ${skipCount + 1}/${FORCE_FULL_SCAN_EVERY})`,
-      );
-      return { remoteFiles, cachedDirs };
-    }
-
-    // Real full scan. Persist the captured root ETag (may be null on non-Nextcloud / fetch failure →
-    // next sync simply real-scans again) and reset the skip budget.
-    const remoteFiles = await client.getFiles('');
-    db.setRemoteRootEtag(cur);
-    db.setFullScanSkipCount(0);
-    void this.opts.logger?.log(
-      `sync: REAL full scan (remote=${remoteFiles.length}); rootEtag=${cur ?? 'null'}${forced ? ' (forced: skip budget reached)' : ''}`,
-    );
-    return { remoteFiles, cachedDirs: null };
-  }
-
-  /** Rebuild the remote file listing from State (root-ETag short-circuit). Every entry must read as
-   *  "remote unchanged" against its own base: effective id = checksum ?? etag ?? size = remoteId. */
-  private rebuildRemoteFilesFromState(): RemoteFileInfo[] {
-    return this.opts.stateDB.getAllFiles().map((fs) => ({
-      path: fs.path,
-      fileId: fs.remoteFileId,
-      checksum: fs.idType === 'sha256' ? fs.remoteId : null,
-      etag: fs.idType === 'etag' ? fs.remoteId : null,
-      size: fs.size,
-      lastModified: fs.remoteMtime ?? fs.mtime,
-    }));
-  }
-
-  /** Rebuild the remote directory listing from State (root-ETag short-circuit). reconcileDirectories
-   *  only needs path/fileId; etag/lastModified are unused there. */
-  private rebuildRemoteDirsFromState(): RemoteDirInfo[] {
-    return this.opts.stateDB.getAllDirs().map((d) => ({
-      path: d.path,
-      fileId: d.remoteFileId,
-      etag: null,
-      lastModified: 0,
-    }));
   }
 
   private async processFileWithRetry(remote: RemoteFileInfo, summary: SyncSessionSummary): Promise<void> {
@@ -2725,98 +2676,36 @@ export class SyncEngine {
     }
   }
 
-  /**
-   * For files that exist on both sides but whose server-side checksum is not yet stored,
-   * ask the server to compute SHA-256 on demand (no download; Nextcloud ChecksumUpdatePlugin).
-   * Best-effort and bounded-parallel: clients/servers without support leave the checksum null,
-   * which makes buildInitialPlan fall back to content-based conflict resolution.
-   */
-  private async resolveRemoteChecksums(
-    remoteFiles: RemoteFileInfo[],
-    localFiles: Map<string, { size: number; mtime: number }>,
-  ): Promise<void> {
-    const targets = remoteFiles.filter(rf => !rf.checksum && localFiles.has(rf.path));
-    const concurrency = Math.max(1, this.opts.settings.networkConcurrency);
-    for (let i = 0; i < targets.length; i += concurrency) {
-      const batch = targets.slice(i, i + concurrency);
-      await Promise.all(batch.map(async (rf) => {
-        try {
-          const sum = await this.client!.recalcChecksum(rf.path);
-          if (sum) rf.checksum = sum;
-        } catch { /* leave null; falls back to conflict resolution */ }
-      }));
-    }
+  // Delegators to the scan modules (feature 074). They bind nothing and decide nothing; they exist
+  // because the enumeration is reached from several places in this class and, more importantly,
+  // because the existing suites drive it through the engine — which is exactly what proves the
+  // engine is still wired to the modules rather than merely compiling against them.
+
+  /** @see LocalScanner.scanLocalFiles */
+  private scanLocalFiles(): Promise<Map<string, { size: number; mtime: number }>> {
+    return this.localScanner.scanLocalFiles();
   }
 
-  private async scanLocalFiles(): Promise<Map<string, { size: number; mtime: number }>> {
-    const results = new Map<string, { size: number; mtime: number }>();
-    // Enumerate Vault-tracked files from the in-memory index (no native FS round-trips on mobile).
-    // Task 3 (P1): hashing is deferred entirely to buildInitialPlan, which only hashes files that
-    // need a checksum comparison to be classified as unchanged (remote exists + sizes match + server
-    // checksum present). This eliminates all readBinary calls during the initial scan on mobile.
-    for (const e of this.opts.localAdapter.listVaultFiles()) {
-      if (this.isSystemExcluded(e.path)) continue;
-      results.set(e.path, { size: e.size, mtime: e.mtime });
-    }
-    // The config folder is not Vault-tracked; inject the enabled config-sync category paths explicitly.
-    for (const p of await this.configSync.enumerateIncludedPaths()) {
-      const stat = await this.opts.localAdapter.stat(p);
-      if (stat) results.set(p, { size: stat.size, mtime: stat.mtime });
-    }
-    // Task 7 (C1 fix): Vault.getFiles() omits ALL dot-prefixed paths, but the previous
-    // adapter.list() scan synced non-.obsidian dot files/folders. Re-enumerate them here.
-    await this.collectDotPaths(results);
-    return results;
+  /** @see LocalScanner.collectLocalStats — `_dir` has been unused since the Vault-cache switch. */
+  private collectLocalStats(_dir: string, out: Map<string, { size: number; mtime: number }>): Promise<void> {
+    return this.localScanner.collectLocalStats(out);
   }
 
-  /** Collect path→stat for local files in sync scope without computing hashes (Vault-cache based). */
-  private async collectLocalStats(_dir: string, out: Map<string, { size: number; mtime: number }>): Promise<void> {
-    for (const e of this.opts.localAdapter.listVaultFiles()) {
-      if (this.isSystemExcluded(e.path)) continue;
-      out.set(e.path, { size: e.size, mtime: e.mtime });
-    }
-    // The config folder is not Vault-tracked; the caller injects enabled config-sync paths separately.
-    // Task 7 (C1 fix): supplement with non-config dot paths that Vault.getFiles() omits.
-    await this.collectDotPaths(out);
+  /** @see RemoteListingSource.obtainFullScanListing */
+  private obtainFullScanListing(
+    client: IWebDAVClient,
+  ): Promise<{ remoteFiles: RemoteFileInfo[]; cachedDirs: RemoteDirInfo[] | null }> {
+    return this.remoteListing.obtainFullScanListing(client);
   }
 
-  /**
-   * Re-enumerate non-config dot paths that Vault.getFiles() omits. Vault excludes ALL dot-prefixed
-   * paths, but the previous adapter.list scan synced non-.obsidian dotfiles/folders (e.g. .archive/),
-   * so the Vault switch would silently stop syncing them. The config folder is handled separately by
-   * ConfigSyncResolver and is skipped here. NOTE: dot files nested inside NON-dot folders
-   * (e.g. notes/.foo.md) are intentionally out of scope — Obsidian does not index them and a full
-   * recursion would defeat the Vault-cache round-trip savings.
-   */
-  private async collectDotPaths(out: Map<string, { size: number; mtime: number }>): Promise<void> {
-    let root: { files: string[]; folders: string[] };
-    try { root = await this.opts.localAdapter.list(''); } catch { return; }
-    for (const file of root.files) {
-      if (!isDotNameOf(file)) continue;
-      if (this.isSystemExcluded(file)) continue;
-      const st = await this.opts.localAdapter.stat(file);
-      if (st) out.set(file, { size: st.size, mtime: st.mtime });
-    }
-    for (const folder of root.folders) {
-      if (!isDotNameOf(folder)) continue;
-      if (this.configSync.isUnderConfigDir(folder)) continue; // .obsidian handled by ConfigSyncResolver
-      if (this.isSystemExcluded(folder)) continue; // .git/.trash: skip the whole tree (no recursion into a huge .git)
-      await this.collectStatsRecursiveViaAdapter(folder, out);
-    }
+  /** @see RemoteListingSource.rebuildRemoteFilesFromState */
+  private rebuildRemoteFilesFromState(): RemoteFileInfo[] {
+    return this.remoteListing.rebuildRemoteFilesFromState();
   }
 
-  /** Recursively enumerate a (Vault-untracked) directory's files via the adapter, stats only. */
-  private async collectStatsRecursiveViaAdapter(dir: string, out: Map<string, { size: number; mtime: number }>): Promise<void> {
-    let listing: { files: string[]; folders: string[] };
-    try { listing = await this.opts.localAdapter.list(dir); } catch { return; }
-    for (const file of listing.files) {
-      if (this.isSystemExcluded(file)) continue;
-      const st = await this.opts.localAdapter.stat(file);
-      if (st) out.set(file, { size: st.size, mtime: st.mtime });
-    }
-    for (const folder of listing.folders) {
-      await this.collectStatsRecursiveViaAdapter(folder, out);
-    }
+  /** @see RemoteListingSource.rebuildRemoteDirsFromState */
+  private rebuildRemoteDirsFromState(): RemoteDirInfo[] {
+    return this.remoteListing.rebuildRemoteDirsFromState();
   }
 
   /**
