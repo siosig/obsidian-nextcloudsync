@@ -32,7 +32,10 @@ import {
 } from './policy';
 import { LocalScanner } from './scan/LocalScanner';
 import { RemoteListingSource } from './scan/RemoteListingSource';
-import { isAutoMergeFileType, isMarkdown } from '../util/mergeableExtensions';
+import { SyncJournal } from './session/SyncJournal';
+import { MergeBaseRecorder } from './session/MergeBaseRecorder';
+import { withLocalSignature } from '../data/localSignature';
+import { isMarkdown } from '../util/mergeableExtensions';
 import { SyncHistoryStore } from '../data/SyncHistoryStore';
 import { IStatusBar } from '../ui/StatusBarItem';
 import { WebDAVFactory } from '../network/WebDAVFactory';
@@ -130,7 +133,11 @@ export class SyncEngine {
    */
   private currentRun: Promise<void> | null = null;
   /** Start time of the in-progress full sync (= summary.startedAt); null outside a full sync run. */
-  private currentRunStartedAt: number | null = null;
+  /** Session-scoped recording (feature 074). Owns the run start time that groups history entries. */
+  private readonly journal: SyncJournal;
+
+  /** Merge-base eligibility and save-request pairing (feature 074). */
+  private readonly mergeBase: MergeBaseRecorder;
   /** Currently held lock tokens (path → token). */
   private readonly heldLocks = new Map<string, string>();
   /** Progress counters updated during a sync run (reset each run). */
@@ -183,6 +190,11 @@ export class SyncEngine {
       isSystemExcluded: (p) => this.isSystemExcluded(p),
       isUnderConfigDir: (p) => this.configSync.isUnderConfigDir(p),
       enumerateIncludedConfigPaths: () => this.configSync.enumerateIncludedPaths(),
+    });
+    this.journal = new SyncJournal({ historyStore: opts.historyStore, logger: opts.logger });
+    this.mergeBase = new MergeBaseRecorder({
+      baseStore: opts.baseStore,
+      autoMergeFileTypes: () => this.opts.settings.autoMergeFileTypes,
     });
     this.remoteListing = new RemoteListingSource({
       stateDB: opts.stateDB,
@@ -272,7 +284,7 @@ export class SyncEngine {
     // Build the summary and tag this run BEFORE the try so the catch/finally can reference them even
     // when the very first step fails.
     const summary = this.initSummary();
-    this.currentRunStartedAt = summary.startedAt; // tag this run's history entries for grouping
+    this.journal.beginRun(summary.startedAt); // tag this run's history entries for grouping
 
     const cancelled = false;
     try {
@@ -304,7 +316,7 @@ export class SyncEngine {
       // the end, such a throw would leave the engine permanently "running" and block every subsequent
       // sync. Resetting up front guarantees the next sync can always start.
       this.running = false;
-      this.currentRunStartedAt = null;
+      this.journal.endRun();
 
       void this.opts.logger?.log(
         `sync: done up=${summary.uploadedCount} down=${summary.downloadedCount} ` +
@@ -346,10 +358,9 @@ export class SyncEngine {
    * path and message go in, never the server response body, because these logs get pasted into
    * public issues (NetworkError keeps the body off `message` for the same reason).
    */
+  /** @see SyncJournal.logSessionErrors */
   private logSessionErrors(summary: SyncSessionSummary): void {
-    for (const e of summary.errors) {
-      void this.opts.logger?.log(`sync: error ${e.path} — ${e.message}`);
-    }
+    this.journal.logSessionErrors(summary);
   }
 
   // ── Single-file lightweight operations (used by watch mode) ─────────────────
@@ -670,20 +681,14 @@ export class SyncEngine {
     return effectiveMassDeleteLimit(this.opts.settings.massDeleteLimit, tracked);
   }
 
+  /** @see MergeBaseRecorder.record */
   private recordMergeBase(path: string, content: string): void {
-    if (!this.opts.baseStore) return;
-    // Feature 047 (FR-015): record a base for every Auto Merge File (body 3-way) AND every markdown
-    // file (frontmatter set-merge needs a base to detect deletions even when `md` is an Other File).
-    if (!isAutoMergeFileType(path, this.opts.settings.autoMergeFileTypes) && !isMarkdown(path)) return;
-    this.opts.baseStore.set(path, content);
-    this.opts.baseStore.requestSave();
+    this.mergeBase.record(path, content);
   }
 
-  /** Drop the merge base for `path` on deletion so it does not leak (feature 038, FR-004). */
+  /** @see MergeBaseRecorder.drop */
   private dropMergeBase(path: string): void {
-    if (!this.opts.baseStore) return;
-    this.opts.baseStore.delete(path);
-    this.opts.baseStore.requestSave();
+    this.mergeBase.drop(path);
   }
 
   /**
@@ -1293,16 +1298,15 @@ export class SyncEngine {
 
   // ── Private ──────────────────────────────────────────────────────────────
 
+  // Delegators to the session modules (feature 074). They neither bind nor decide; they keep the
+  // ~70 existing call sites — and the suites that drive them through the engine — unchanged.
+
+  /** @see SyncJournal.newSummary */
   private initSummary(): SyncSessionSummary {
-    return {
-      startedAt: Date.now(), completedAt: null,
-      uploadedCount: 0, downloadedCount: 0, deletedCount: 0,
-      mergedCount: 0, conflictedCount: 0,
-      errorCount: 0, retriedFiles: [], errors: [],
-    };
+    return this.journal.newSummary();
   }
 
-  /** Count an error and keep its detail for the sync-status dialog. Empty path = session-level. */
+  /** @see SyncJournal.recordError */
   private recordError(
     summary: SyncSessionSummary,
     path: string,
@@ -1310,19 +1314,12 @@ export class SyncEngine {
     skippedPaths?: { all: string[] },
     dirBreakerSkipped?: { deleteRemote: string[]; trashLocal: string[] },
   ): void {
-    summary.errorCount++;
-    const message = err instanceof Error ? err.message : String(err);
-    summary.errors.push({ path, message, skippedPaths, dirBreakerSkipped });
-    if (path) this.recordHistory(path, 'error', message); // session-level errors aren't file history
+    this.journal.recordError(summary, path, err, skippedPaths, dirBreakerSkipped);
   }
 
-  /** Append one per-file outcome to the persisted 24h history (no-op when no store is injected). */
+  /** @see SyncJournal.recordHistory */
   private recordHistory(path: string, op: SyncFileOp, message?: string, detail?: SyncHistoryDetail): void {
-    const now = Date.now();
-    // Group key for the Sync Status dialog: the active full-sync run's start time, or — for watch-mode
-    // single-file ops (no session) — this op's own time, so each forms its own group.
-    const runStartedAt = this.currentRunStartedAt ?? now;
-    this.opts.historyStore?.record(path, op, now, message, detail, runStartedAt);
+    this.journal.recordHistory(path, op, message, detail);
   }
 
   /** First-ever sync: full scan → build plan → execute. */
@@ -1487,21 +1484,9 @@ export class SyncEngine {
     });
   }
 
-  /**
-   * Stamp the post-write local stat signature (and optional remoteMtime) onto a FileState by
-   * re-stat-ing the on-disk file. This captures what the OS actually wrote — the only reliable
-   * change-detection key on mobile (no utimes). Call at every content-write / converge site so the
-   * next sync's fast-path recognises the file as unchanged. Best-effort: if stat fails, the fields
-   * stay undefined and the file is simply hashed next time (correct, just not fast).
-   */
-  private async withLocalSignature(fs: FileState, remoteMtime?: number | null): Promise<FileState> {
-    const st = await this.opts.localAdapter.stat(fs.path);
-    if (st) {
-      fs.localMtime = st.mtime;
-      fs.localSize = st.size;
-    }
-    if (remoteMtime != null) fs.remoteMtime = remoteMtime;
-    return fs;
+  /** @see withLocalSignature (src/data/localSignature.ts) */
+  private withLocalSignature(fs: FileState, remoteMtime?: number | null): Promise<FileState> {
+    return withLocalSignature(this.opts.localAdapter, fs, remoteMtime);
   }
 
   /**
