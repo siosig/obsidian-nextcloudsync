@@ -16,6 +16,7 @@ import {
 import { IWebDAVClient } from './IWebDAVClient';
 import { DavSyncSettings } from '../types';
 import { toRemotePath, hrefToRelative, encodeRemoteUrl, encodeServerUrl, ensureRemoteDir } from './remotePath';
+import { parseResponses, readHref, readProp, readIsCollection, readDavProps } from './dav/propfind';
 import { NO_CACHE_HEADERS } from './noCacheHeaders';
 
 export class StandardWebDAVClient implements IWebDAVClient {
@@ -290,26 +291,18 @@ export class StandardWebDAVClient implements IWebDAVClient {
   private parseListing(xml: string, requestRel: string): { files: RemoteFileInfo[]; folders: string[] } {
     const files: RemoteFileInfo[] = [];
     const folders: string[] = [];
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(xml, 'text/xml');
-    const responses = doc.getElementsByTagNameNS('DAV:', 'response');
-    for (let i = 0; i < responses.length; i++) {
-      const resp = responses[i];
-      const href = resp.getElementsByTagNameNS('DAV:', 'href')[0]?.textContent ?? '';
-      const prop = resp.getElementsByTagNameNS('DAV:', 'prop')[0];
+    for (const resp of parseResponses(xml)) {
+      const prop = readProp(resp);
       if (!prop) continue;
-      const rel = this.hrefToRel(href);
+      const rel = this.hrefToRel(readHref(resp));
       if (rel === null || rel === '' || rel === requestRel) continue; // Skip entries outside the base or the collection itself
-      const resourcetype = prop.getElementsByTagNameNS('DAV:', 'resourcetype')[0];
-      const isCollection = (resourcetype?.getElementsByTagNameNS('DAV:', 'collection').length ?? 0) > 0;
-      if (isCollection) {
+      if (readIsCollection(prop)) {
         folders.push(rel);
         continue;
       }
-      const etag = prop.getElementsByTagNameNS('DAV:', 'getetag')[0]?.textContent?.replace(/"/g, '') ?? null;
-      const size = parseInt(prop.getElementsByTagNameNS('DAV:', 'getcontentlength')[0]?.textContent ?? '0', 10);
-      const lastModifiedStr = prop.getElementsByTagNameNS('DAV:', 'getlastmodified')[0]?.textContent ?? '';
-      const lastModified = lastModifiedStr ? new Date(lastModifiedStr).getTime() : 0;
+      const { etag, size, lastModified } = readDavProps(prop);
+      // A plain WebDAV server offers neither a checksum nor a file id: readOwncloudProps is not
+      // called at all, rather than called and discarded.
       files.push({ path: rel, fileId: null, checksum: null, etag, size, lastModified });
     }
     return { files, folders };
