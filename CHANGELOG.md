@@ -11,6 +11,12 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.43] - 2026-08-27
+
+### Changed
+- Internal restructuring of the sync engine, with no user-visible change. The engine was split into focused modules — policy, scanning, session recording, transfer, conflict application, deletion, resolution, directories, watch-mode operations and mirroring — and the decisions it still makes were separated from the file and network operations around them. Syncing, conflict resolution, deletion, folder handling and Mirror from remote behave exactly as before.
+- What the restructuring buys is testability. The plugin's test suite grew from 992 to 1,325 cases, and abnormal server responses — a truncated listing, a missing property, an unexpected checksum format — can now be exercised directly instead of only against a live Nextcloud. Every extracted piece was verified by deliberately breaking it and confirming a test caught it.
+
 ## [0.7.42] - 2026-08-27
 
 ### Fixed
@@ -386,6 +392,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.43]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.43
 [0.7.42]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.42
 [0.7.41]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.41
 [0.7.40]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.40
