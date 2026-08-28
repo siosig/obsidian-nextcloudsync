@@ -10,7 +10,7 @@ import { applyForceResolution, applyBulkForceResolution, FORCE_CHOICES, ForceCho
 import { confirmModal } from './ui/ConfirmModal';
 import { openMirrorFromRemoteModal } from './ui/MirrorFromRemoteModal';
 import { registerSyncRibbon } from './ui/syncRibbon';
-import { registerStatusRibbon, registerStatusCommands } from './ui/statusEntryPoints';
+import { registerStatusCommands } from './ui/statusEntryPoints';
 import { FileLogger } from './util/FileLogger';
 import { isSyncTmpPath, LocalAdapter } from './data/LocalAdapter';
 import type { MergeBaseStore } from './data/MergeBaseStore';
@@ -101,17 +101,18 @@ export default class ObsidianNextcloudsync extends Plugin {
       },
     });
 
-    // Ribbon entry point for the same manual sync (feature 060 / issue #19). On mobile, Obsidian
-    // shows ribbon icons inside the hamburger menu, so this gives a one-tap sync without opening the
-    // command palette. Shares runSyncNow with the command above — no new setting, no platform branch.
+    // Ribbon entry point for the same manual sync (feature 060 / issue #19). DESKTOP ONLY in effect:
+    // Obsidian mobile hides the whole ribbon (`.side-dock-ribbon` is display:none), so this icon has
+    // never been visible there, contrary to what issue #19 asked for. Kept because one-click sync is
+    // still worth having on desktop. Shares runSyncNow with the command above — no new setting, no
+    // platform branch.
     registerSyncRibbon(this);
 
-    // Feature 076: a second ribbon icon, plus command-palette entries, for the Sync Status dialog.
-    // That dialog holds both "Sync now" and "Mirror from remote", and on mobile it was previously
-    // reachable only from the settings tab — six taps deep for a mirror, since there is no status
-    // bar to click. The sync ribbon above keeps its one-tap sync (issue #19) rather than being
-    // retargeted here.
-    registerStatusRibbon(this);
+    // Feature 076: command entries for the Sync Status dialog and for Mirror from remote. That
+    // dialog holds both actions, and on mobile it was reachable only from the settings tab — six
+    // taps deep for a mirror, since there is no status bar to click. Pinned to the mobile toolbar
+    // these are one tap; through the command palette, two. A ribbon icon was tried first and does
+    // not work on mobile at all (see the note on registerSyncRibbon above).
     registerStatusCommands(this);
 
     this.addCommand({
