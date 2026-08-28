@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.44-beta.1)
+## What's new in this release (0.7.44-beta.2)
 
-- **Sync status and Mirror from remote are now two taps on mobile (0.7.44-beta.1)** — the Sync status dialog holds both **Sync now** and **Mirror from remote**, but on mobile there is no status bar to open it from, so it was reachable only from deep inside the settings tab. A second ribbon icon now opens it directly, and both destinations also have command-palette entries you can pin to the mobile toolbar or bind to a hotkey. The existing sync ribbon still starts a sync in one tap, unchanged, and Mirror from remote still goes through its usual confirmation before anything is overwritten.
+- **Sync status and Mirror from remote now have commands you can pin (0.7.44-beta.2)** — the Sync status dialog holds both **Sync now** and **Mirror from remote**, but on mobile there is no status bar to open it from, so it was reachable only from deep inside the settings tab. Both now have commands: pin them under **Settings → Toolbar** for a single tap, or run them from the command palette. beta.1 tried a ribbon icon for this; measuring a real Android device showed Obsidian hides the ribbon entirely on mobile — its own icons included — so the icon is gone and the commands are the route. Mirror from remote still goes through its usual confirmation before anything is overwritten.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
