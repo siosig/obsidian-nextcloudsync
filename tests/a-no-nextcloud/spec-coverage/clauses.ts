@@ -484,6 +484,20 @@ export const CLAUSES: Clause[] = [
   { id: 'RIB-1', source: 'specs/main/spec.md §13 / specs/060-mobile-sync-ribbon/spec.md (FR-001/006: onload registers exactly one ribbon icon; icon refresh-cw, label "Sync with Nextcloud")', layer: 'a' },
   { id: 'RIB-2', source: 'specs/main/spec.md §13 / specs/060-mobile-sync-ribbon/spec.md (FR-002: ribbon callback invokes the same runSyncNow() as the "Sync now" command — shared entry point, no separate path)', layer: 'a' },
   { id: 'RIB-3', source: 'specs/main/spec.md §13 / specs/060-mobile-sync-ribbon/spec.md (FR-004: on mobile the ribbon icon appears inside the hamburger menu — Obsidian-controlled placement)', layer: 'b-2', waiver: 'Obsidian-controlled ribbon placement on mobile; verified via quickstart manual check (specs/060-mobile-sync-ribbon/quickstart.md). The registration itself (single addRibbonIcon call, no platform branch) is covered at layer a by RIB-1/RIB-2.' },
+  // --- SEP: reaching the Sync Status dialog (feature 076) ---
+  // The dialog is the only place holding both "Sync now" and "Mirror from remote". Desktop opens it
+  // from the status bar; mobile has none (addStatusBarItem is documented "Not available on mobile"),
+  // which left Mirror six taps deep in the settings tab. A second ribbon icon plus two commands make
+  // it two. Feature 060's sync ribbon is deliberately untouched — retargeting it would have undone
+  // the one-tap sync issue #19 asked for. Wiring is extracted into registerStatusRibbon /
+  // registerStatusCommands against a minimal StatusEntryPointHost, so it IS exercised for real at
+  // layer a with a plain fake (no `document`). SEP-5 is Obsidian's own ribbon placement, so like
+  // RIB-3 it stays a manual check.
+  { id: 'SEP-1', source: 'specs/main/spec.md §13 / specs/076-mobile-sync-entry-points/spec.md (FR-001/002: exactly one additional ribbon icon; icon activity, label "Nextcloud sync status", both required to differ from feature 060 sync ribbon)', layer: 'a' },
+  { id: 'SEP-2', source: 'specs/main/spec.md §13 / specs/076-mobile-sync-entry-points/spec.md (FR-001: the ribbon callback opens the Sync Status dialog via openSyncStatus() and does not start a sync)', layer: 'a' },
+  { id: 'SEP-3', source: 'specs/main/spec.md §13 / specs/076-mobile-sync-entry-points/spec.md (FR-004/005: exactly two commands registered — open-sync-status and mirror-from-remote — each carrying Command.icon so it can be pinned to the mobile toolbar)', layer: 'a' },
+  { id: 'SEP-4', source: 'specs/main/spec.md §13 / specs/076-mobile-sync-entry-points/spec.md (FR-006: the mirror command routes through runRemoteMirror(), keeping the plan -> confirm -> apply dialog; it never calls applyRemoteMirror directly)', layer: 'a' },
+  { id: 'SEP-5', source: 'specs/main/spec.md §13 / specs/076-mobile-sync-entry-points/spec.md (SC-006: on mobile both ribbon icons appear in the hamburger menu and the activity glyph renders — Obsidian-controlled placement and icon set)', layer: 'b-2', waiver: 'Obsidian-controlled ribbon placement and icon availability on mobile; verified by installing the beta on a real device (SC-006), as for RIB-3. The registration itself (one addRibbonIcon call, two addCommand calls, no platform branch) is covered at layer a by SEP-1..4.' },
   // --- URE: one URL-encoding path for every platform (feature 065, GitHub issue #25) ---
   // Feature 061 made encodeRemoteUrl leave the whole path raw on iOS, betting that the native
   // request layer re-encodes every character exactly once. Issue #25 disproved that: a raw space
