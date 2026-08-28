@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.43)
+## What's new in this release (0.7.44-beta.1)
 
-- **Internal restructuring only — nothing looks or behaves differently (0.7.43)** — the sync engine has been split into focused modules, and the decisions it makes have been separated from the file and network operations around them. Syncing, conflict resolution, deletion, folder handling and Mirror from remote all work exactly as before. The change is invisible by design; what it buys is that far more of the plugin can now be tested directly, including server responses that previously could only be exercised against a live Nextcloud.
+- **Sync status and Mirror from remote are now two taps on mobile (0.7.44-beta.1)** — the Sync status dialog holds both **Sync now** and **Mirror from remote**, but on mobile there is no status bar to open it from, so it was reachable only from deep inside the settings tab. A second ribbon icon now opens it directly, and both destinations also have command-palette entries you can pin to the mobile toolbar or bind to a hotkey. The existing sync ribbon still starts a sync in one tap, unchanged, and Mirror from remote still goes through its usual confirmation before anything is overwritten.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
