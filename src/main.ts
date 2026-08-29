@@ -10,7 +10,7 @@ import { applyForceResolution, applyBulkForceResolution, FORCE_CHOICES, ForceCho
 import { confirmModal } from './ui/ConfirmModal';
 import { openMirrorFromRemoteModal } from './ui/MirrorFromRemoteModal';
 import { registerSyncRibbon } from './ui/syncRibbon';
-import { registerStatusCommands } from './ui/statusEntryPoints';
+import { registerMirrorRibbon, registerStatusCommands } from './ui/statusEntryPoints';
 import { FileLogger } from './util/FileLogger';
 import { isSyncTmpPath, LocalAdapter } from './data/LocalAdapter';
 import type { MergeBaseStore } from './data/MergeBaseStore';
@@ -101,18 +101,18 @@ export default class ObsidianNextcloudsync extends Plugin {
       },
     });
 
-    // Ribbon entry point for the same manual sync (feature 060 / issue #19). DESKTOP ONLY in effect:
-    // Obsidian mobile hides the whole ribbon (`.side-dock-ribbon` is display:none), so this icon has
-    // never been visible there, contrary to what issue #19 asked for. Kept because one-click sync is
-    // still worth having on desktop. Shares runSyncNow with the command above — no new setting, no
-    // platform branch.
+    // Ribbon entry point for the same manual sync (feature 060 / issue #19). One click on desktop,
+    // two taps on mobile: the ribbon BAR is hidden there, but Obsidian republishes ribbon actions in
+    // the navigation bar's "Open menu". Shares runSyncNow with the command above — no new setting,
+    // no platform branch.
     registerSyncRibbon(this);
 
-    // Feature 076: command entries for the Sync Status dialog and for Mirror from remote. That
-    // dialog holds both actions, and on mobile it was reachable only from the settings tab — six
-    // taps deep for a mirror, since there is no status bar to click. Pinned to the mobile toolbar
-    // these are one tap; through the command palette, two. A ribbon icon was tried first and does
-    // not work on mobile at all (see the note on registerSyncRibbon above).
+    // Feature 076: the mirror gets the same treatment, so both of the plugin's manual actions are
+    // two taps on mobile instead of a six-tap trip through the settings tab (there is no status bar
+    // to click). The commands cover the Sync Status dialog and give either action a toolbar pin or a
+    // hotkey. See src/ui/statusEntryPoints.ts for why the mirror gets its own icon rather than one
+    // that opens the dialog.
+    registerMirrorRibbon(this);
     registerStatusCommands(this);
 
     this.addCommand({

@@ -2,16 +2,21 @@ import type { IconName } from 'obsidian';
 
 // Feature 060 (GitHub issue #19): a ribbon button that starts a sync in one click.
 //
-// It was added for MOBILE users, on the belief that "Obsidian renders ribbon icons inside the
-// left-sidebar hamburger menu on mobile". That belief is wrong, and feature 076 disproved it by
-// measuring a real Android runtime: Obsidian mobile sets `display: none` on `.side-dock-ribbon`, so
-// no ribbon action renders there — not this one, and not Obsidian's own. Clause RIB-3 had waived the
-// claim to a manual check that was never performed, which is how it survived. See
-// tests/b3-android-ui/scenarios/ribbonVisibility.b3.test.ts.
+// It was added for MOBILE users, and it works there — but not through the ribbon bar. Obsidian
+// mobile sets `display: none` on `.side-dock-ribbon`, so no ribbon action is ever drawn in place;
+// instead the app republishes every registered ribbon action in the navigation bar's "Open menu"
+// (the last item on the bar). Obsidian documents this: "The mobile app has no Ribbon. Instead, the
+// ribbon actions will be available when you tap Open menu."
 //
-// The button stays: one-click sync is worth having on desktop, where the ribbon does render. The
-// mobile route is the "Sync now" command, pinned to the mobile toolbar or run from the palette.
-// Still a single addRibbonIcon call with no platform branching — Obsidian does the hiding.
+// Both halves of that were measured, and getting only the first half is what caused a wrong turn:
+// feature 076 probed `.side-dock-ribbon`, found it hidden, and concluded the ribbon was dead on
+// mobile — a container measurement generalized into a reachability claim. The menu builds its
+// entries on tap, so nothing about it is visible to a probe taken while the menu is closed.
+// tests/b3-android-ui/scenarios/ribbonVisibility.b3.test.ts now opens the menu and asserts what is
+// inside it, which is the assertion that was missing.
+//
+// So this button is a two-tap mobile sync (Open menu -> "Sync with Nextcloud") and a one-click
+// desktop sync, from a single addRibbonIcon call with no platform branching.
 
 /** Lucide icon for the sync ribbon button (Obsidian bundles the Lucide set; IconName === string). */
 export const SYNC_RIBBON_ICON: IconName = 'refresh-cw';
