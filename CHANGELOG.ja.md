@@ -11,6 +11,15 @@
 
 > 英語版（原文）は [`CHANGELOG.md`](CHANGELOG.md) を参照してください。
 
+## [0.7.44] - 2026-08-29
+
+### 追加
+- モバイルで手動操作の両方に 2 タップで届くようになりました。Obsidian のモバイル版はリボンバーを描画しませんが、登録されたリボンアクションはナビゲーションバー最後の **メニューを開く（Open menu）** にすべて並びます。ここに **Mirror from remote** のアイコンを追加したので、**Sync with Nextcloud** と並んで 2 タップで実行できます。設定は不要です。従来 Mirror は設定タブの奥（約 6 タップ）にしかありませんでした。モバイルには Sync Status ダイアログを開くステータスバーが無いためです。
+- **Open sync status** と **Mirror from remote** のコマンドを追加しました。モバイルツールバーにピン留めすれば 1 タップ（設定 → モバイル → ツールバーオプションの管理 → グローバルコマンドを追加）、ホットキー割り当ても可能です。
+
+### 変更
+- Mirror from remote の挙動は変わりません。リボン・コマンド・Sync Status ダイアログ・設定タブのいずれの経路も、ダウンロード・削除の件数を示す同一の確認ダイアログを必ず通ります。
+
 ## [0.7.43] - 2026-08-27
 
 ### 変更
@@ -392,6 +401,7 @@ Nextcloud 特化同期エンジンの初回公開リリース（0.2.0 〜 0.2.1�
 - **Dry-run でのコンフリクト結果の明確化** — 初回同期プレビューがコンフリクト解決の結果を説明し、各コンフリクトファイルをクリックするとマージ後の内容（変更前後）をプレビューできます。
 - **汎用 WebDAV より高速な同期** — 内容ハッシュと Nextcloud の `sync-token` を突き合わせ、毎回リモートツリー全体を再帰的に走査するのではなく、実際に変更された分だけを転送します。更新日時ベースの WebDAV プラグインより同期が明確に速くなります。
 
+[0.7.44]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.44
 [0.7.43]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.43
 [0.7.42]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.42
 [0.7.41]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.41

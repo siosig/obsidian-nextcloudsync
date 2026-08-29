@@ -11,6 +11,15 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [0.7.44] - 2026-08-29
+
+### Added
+- Mobile reaches both manual actions in two taps. Obsidian mobile does not draw a ribbon bar, but it lists every registered ribbon action under **Open menu**, the last item on the navigation bar. **Mirror from remote** now has an icon there, beside **Sync with Nextcloud**, so either action is two taps with nothing to configure — previously the mirror was about six taps deep in the settings tab, because mobile has no status bar to open the Sync Status dialog from.
+- Commands for **Open sync status** and **Mirror from remote**, so either can be pinned to the mobile toolbar for a single tap (Settings → Mobile → Manage toolbar options → Add global command) or bound to a hotkey.
+
+### Changed
+- Mirror from remote is unchanged in behaviour: every entry point — ribbon, command, Sync Status dialog and settings tab — goes through the same confirmation showing the download and delete counts before anything is written.
+
 ## [0.7.43] - 2026-08-27
 
 ### Changed
@@ -392,6 +401,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[0.7.44]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.44
 [0.7.43]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.43
 [0.7.42]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.42
 [0.7.41]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.41
