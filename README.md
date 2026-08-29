@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.43)
+## What's new in this release (0.7.44-beta.3)
 
-- **Internal restructuring only — nothing looks or behaves differently (0.7.43)** — the sync engine has been split into focused modules, and the decisions it makes have been separated from the file and network operations around them. Syncing, conflict resolution, deletion, folder handling and Mirror from remote all work exactly as before. The change is invisible by design; what it buys is that far more of the plugin can now be tested directly, including server responses that previously could only be exercised against a live Nextcloud.
+- **Mirror from remote is two taps on mobile (0.7.44-beta.3)** — Obsidian mobile does not draw a ribbon bar, but it does list every ribbon action under **Open menu**, the last item on the navigation bar. **Mirror from remote** now has an icon there, next to **Sync with Nextcloud**, so either action is two taps with nothing to configure. beta.2 removed that icon on the strength of a measurement that only looked at the hidden ribbon bar and never opened the menu; this release puts it back and adds a test that opens the menu on a real Android device. Mirror from remote still shows its confirmation, with the file counts, before anything is downloaded or deleted. If you would rather have one tap, pin a command under **Settings → Mobile → Manage toolbar options → Add global command** — the path beta.2's notes gave for this was wrong.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
@@ -101,6 +101,7 @@ Mobile is supported, with a few platform-aware differences (desktop behaviour is
 - **Network concurrency** is configurable; its first-run default is derived from the device's available memory — uniformly on desktop and mobile, with no platform-specific branch: **16** with 8 GB of RAM or more, **8** at 4 GB or more, **4** below that, and **3** when the device doesn't report its memory (common on mobile). Transfers run with bounded parallelism — capped both by this count and by a total in-flight-bytes budget (smaller on mobile) so large files can't exhaust memory — and uploads to the same folder are serialized to avoid server lock contention.
 - **Sync on Wi-Fi only** skips on cellular (Android/desktop). **Not available on iOS** (no network-type API), where the toggle is disabled.
 - **Sync now shows a result notice on mobile** (uploads / downloads / conflicts, or "already up to date") since there's no status bar. Tapping it while not signed in stays disabled, and the settings screen shows a clear "not signed in yet" banner.
+- **Sync and Mirror from remote are two taps.** Obsidian mobile draws no ribbon bar, so a plugin icon never appears in place — but the app republishes every ribbon action under **Open menu** (the last item on the navigation bar), where you'll find **Sync with Nextcloud** and **Mirror from remote**. For one tap instead of two, pin a command to the mobile toolbar: **Settings → Mobile → Manage toolbar options**, scroll to **Add global command**, and add **Sync now**, **Open sync status** or **Mirror from remote**. **Open sync status** opens the dialog holding both actions plus the last session's activity. Mirror from remote always shows its confirmation, with the file counts, before anything is downloaded or deleted.
 - Debug mode (diagnostic log) is available on mobile and does not change syncing.
 
 ## Requirements
