@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.44-beta.2)
+## What's new in this release (0.7.44-beta.3)
 
-- **Sync status and Mirror from remote now have commands you can pin (0.7.44-beta.2)** — the Sync status dialog holds both **Sync now** and **Mirror from remote**, but on mobile there is no status bar to open it from, so it was reachable only from deep inside the settings tab. Both now have commands: pin them under **Settings → Toolbar** for a single tap, or run them from the command palette. beta.1 tried a ribbon icon for this; measuring a real Android device showed Obsidian hides the ribbon entirely on mobile — its own icons included — so the icon is gone and the commands are the route. Mirror from remote still goes through its usual confirmation before anything is overwritten.
+- **Mirror from remote is two taps on mobile (0.7.44-beta.3)** — Obsidian mobile does not draw a ribbon bar, but it does list every ribbon action under **Open menu**, the last item on the navigation bar. **Mirror from remote** now has an icon there, next to **Sync with Nextcloud**, so either action is two taps with nothing to configure. beta.2 removed that icon on the strength of a measurement that only looked at the hidden ribbon bar and never opened the menu; this release puts it back and adds a test that opens the menu on a real Android device. Mirror from remote still shows its confirmation, with the file counts, before anything is downloaded or deleted. If you would rather have one tap, pin a command under **Settings → Mobile → Manage toolbar options → Add global command** — the path beta.2's notes gave for this was wrong.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
