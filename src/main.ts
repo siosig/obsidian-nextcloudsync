@@ -20,7 +20,7 @@ import { migrateConfigSyncCategories, migrateBookmarksToConfigSync, migrateStart
 import { debugLogPath, isActiveOwnLog } from './util/logPaths';
 import { autoNetworkConcurrency } from './util/platformDefaults';
 
-const MIN_OBSIDIAN_VERSION = '1.11.4';
+const MIN_OBSIDIAN_VERSION = '1.13.0';
 
 export default class ObsidianNextcloudsync extends Plugin {
   settings!: DavSyncSettings;
