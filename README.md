@@ -31,10 +31,10 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (1.0.0-beta.1)
+## What's new in this release (1.0.0)
 
-- **Plugin settings are now findable in Obsidian's settings search (1.0.0-beta.1)** — typing "conflict", "Wi-Fi" or "exclude" into Obsidian's own settings search now finds the matching row and jumps straight to it. Previously none of this plugin's settings appeared there at all, because Obsidian builds that index only from the declarative settings API this release adopts. **This raises the requirement to Obsidian `1.13.0`**, which is why the version jumps to 1.0.0; Obsidian will keep offering `0.7.44` to older installs.
-- **Row help is visible on every platform now (1.0.0-beta.1)** — 23 settings carried supplementary help (defaults, ranges, units, common mistakes) that only appeared on hover, so on mobile nobody ever saw it. That wording is now part of each row's description. Descriptions are longer as a result; nothing was dropped.
+- **Plugin settings are now findable in Obsidian's settings search (1.0.0)** — typing "conflict", "Wi-Fi" or "exclude" into Obsidian's own settings search now finds the matching row and jumps straight to it. Previously none of this plugin's settings appeared there at all, because Obsidian builds that index only from the declarative settings API this release adopts. **This raises the requirement to Obsidian `1.13.0`**, which is why the version reaches 1.0.0; Obsidian keeps offering `0.7.44` to installs below that.
+- **Row help is visible on every platform now (1.0.0)** — 23 settings carried supplementary help (defaults, ranges, units, common mistakes) that only appeared on hover, so on mobile nobody ever saw it. That wording is now part of each row's description. Descriptions are longer as a result; nothing was dropped.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
