@@ -31,9 +31,10 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (0.7.44)
+## What's new in this release (1.0.0-beta.1)
 
-- **Sync and Mirror from remote are two taps on mobile (0.7.44)** — Obsidian mobile draws no ribbon bar, so a plugin icon never appears in place. What it does instead is list every ribbon action under **Open menu**, the last item on the navigation bar. **Mirror from remote** now has an icon there, beside **Sync with Nextcloud**, so either action is two taps with nothing to set up. Both also have commands — **Open sync status** and **Mirror from remote** — which you can pin to the mobile toolbar for one tap (**Settings → Mobile → Manage toolbar options → Add global command**) or bind to a hotkey. Mirror from remote still shows its confirmation, with the download and delete counts, before anything changes.
+- **Plugin settings are now findable in Obsidian's settings search (1.0.0-beta.1)** — typing "conflict", "Wi-Fi" or "exclude" into Obsidian's own settings search now finds the matching row and jumps straight to it. Previously none of this plugin's settings appeared there at all, because Obsidian builds that index only from the declarative settings API this release adopts. **This raises the requirement to Obsidian `1.13.0`**, which is why the version jumps to 1.0.0; Obsidian will keep offering `0.7.44` to older installs.
+- **Row help is visible on every platform now (1.0.0-beta.1)** — 23 settings carried supplementary help (defaults, ranges, units, common mistakes) that only appeared on hover, so on mobile nobody ever saw it. That wording is now part of each row's description. Descriptions are longer as a result; nothing was dropped.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
@@ -106,7 +107,7 @@ Mobile is supported, with a few platform-aware differences (desktop behaviour is
 
 ## Requirements
 
-- **Obsidian** `1.11.4` or later (the plugin uses the secret-storage API introduced in `1.11.4`). Desktop (Electron) and mobile (iOS / Android) are supported.
+- **Obsidian** `1.13.0` or later. Desktop (Electron) and mobile (iOS / Android) are supported. **This is a change in 1.0.0** — earlier releases required `1.11.4`. The settings tab now uses Obsidian's declarative settings API, which is what makes the plugin's settings findable in Obsidian's own settings search; that API arrived in `1.13.0`, and below it the settings screen would come up empty. Obsidian will not offer 1.0.0 to older installs, so they stay on `0.7.44` until they update Obsidian.
 - **Nextcloud** Hub 26 "Winter" (server `33`) or later is **recommended** for the Nextcloud-specific features. Older Nextcloud servers are no longer blocked — they still connect and sync, but the settings screen shows a recommendation banner and some features may degrade. Plain WebDAV servers fall back to core sync.
 - A Nextcloud account. You can authenticate with **Login Flow v2** (recommended) or a manually issued **app password** (never your main password).
 

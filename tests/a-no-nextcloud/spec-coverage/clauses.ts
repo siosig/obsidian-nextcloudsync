@@ -352,7 +352,7 @@ export const CLAUSES: Clause[] = [
   { id: 'SC-005', source: 'specs/028-settings-simplification', layer: 'a' },
   // Feature 032 (debug settings reduction): the Debug section is a single toggle; device name is
   // auto-derived and logs go to the vault root (both fixed); existing custom values reset on load.
-  { id: 'DBG-1', source: 'specs/032-debug-settings-reduction (single Debug toggle)', layer: 'a' },
+  { id: 'DBG-1', source: 'specs/032-debug-settings-reduction (single Debug toggle) — re-covered by settingDefinitions.test.ts after feature 077 deleted the tooltip catalog it used to be asserted against', layer: 'a' },
   { id: 'DBG-2', source: 'specs/032-debug-settings-reduction (auto device name + vault-root logs)', layer: 'a' },
   { id: 'DBG-3', source: 'specs/032-debug-settings-reduction (custom values reset to the fixed path)', layer: 'a' },
   // Feature 034 (slider range/step): the numeric settings sliders get new min/max/step, sourced from
@@ -474,6 +474,25 @@ export const CLAUSES: Clause[] = [
   // same constraint as BRC_DOM/MDV_DOM — so it is DOM-waived to quickstart manual check / the b-2 layer.
   { id: 'SMB-1', source: 'specs/059-sync-status-mirror-button/spec.md (FR-001/003/005 + contracts/sync-status-modal.md: Mirror button on the Sync now row, mod-warning, re-render after settle)', layer: 'a', waiver: 'DOM rendering verified via quickstart manual check (specs/059-sync-status-mirror-button/quickstart.md); the mirror logic it invokes is covered by MIR-1..3 (layer a)' },
   { id: 'SMB-2', source: 'specs/059-sync-status-mirror-button/spec.md (FR-002/004: button delegates to the same runRemoteMirror() as the Settings-tab button — single source of truth, Settings-tab button unchanged)', layer: 'a', waiver: 'host wiring verified via quickstart manual check; single-source-of-truth reuse of runRemoteMirror (covered by MIR-1..3, layer a) — no logic duplicated' },
+  // --- DSD: declarative settings definitions (feature 077) ---
+  // Obsidian 1.13.0 builds the settings search index only from getSettingDefinitions(), so an
+  // imperative display() renders a screen that search cannot see — before this feature none of the
+  // plugin's settings could be found by name. The tab is now an adapter over a definition array.
+  //
+  // The coverage is deliberately asymmetric. `control` rows carry a `key` bound to storage, so a
+  // typo (a row that renders, accepts input, and persists nothing) IS detectable; `render` rows
+  // carry no key, so it is not. Those rows exist where going declarative would COST something:
+  // the numeric input beside each slider (spec 036 touch-reachability), the SecretComponent for the
+  // app password, and the two settings stored as arrays. DSD-3 states that limit rather than
+  // implying the check covers every row.
+  { id: 'DSD-1', source: 'specs/main/spec.md §15 / specs/077-declarative-settings/spec.md (FR-001/007: getSettingDefinitions() returns a non-empty array whose sections, rows and order match the pre-migration baseline; the config-folder heading is derived from Vault#configDir)', layer: 'a' },
+  { id: 'DSD-2', source: 'specs/main/spec.md §15 / specs/077-declarative-settings/spec.md + baseline.md (the row set is dynamic: 27 static rows + one per excluded folder + two config-category rows while the master toggle is on — never a constant)', layer: 'a' },
+  { id: 'DSD-3', source: 'specs/main/spec.md §15 / specs/077-declarative-settings/spec.md (FR-011: every control key exists in DEFAULT_SETTINGS, is unique, and matches the stored value type; every setting reaches the UI unless listed in UI_LESS_SETTING_KEYS or RENDER_ONLY_ROWS, and those lists carry no stale entries)', layer: 'a' },
+  { id: 'DSD-4', source: 'specs/main/spec.md §15 / specs/077-declarative-settings/spec.md (FR-010a/010b/019: decorations are excluded from search and real settings are not; aliases attach only to real settings; every non-heading row carries a desc — the coverage guarantee inherited from the deleted tooltip catalog)', layer: 'a' },
+  { id: 'DSD-6', source: 'specs/main/spec.md §15 / specs/077-declarative-settings/spec.md (FR-015 / SC-006: the real Obsidian renders rows from the definitions — a non-empty tab with both a first and last row present — and the not-signed-in banner follows sign-in state; display() is deleted, so an empty array would render a blank tab that no layer-a assertion can see)', layer: 'b-2' },
+  { id: 'DSD-7', source: 'specs/main/spec.md §15 / specs/077-declarative-settings/spec.md (FR-001: dynamic rows are rebuilt on each render — excluding a folder adds exactly one row and removing it takes the row away; a renderer caching the first array would show a constant count)', layer: 'b-2' },
+  { id: 'DSD-8', source: 'specs/main/spec.md §15 / specs/077-declarative-settings/spec.md (FR-003 / SC-004: setControlValue/getControlValue resolve the key path against real storage and survive a plugin reload, dotted keys included — the hazard layer a can only approximate with a fake)', layer: 'b-2' },
+  { id: 'DSD-5', source: 'specs/main/spec.md §15 / specs/077-declarative-settings/spec.md (FR-008: disabled/visible predicates reflect isMobile, isIosApp and sign-in state — evaluated for both sides of each, which reading Platform directly would not allow)', layer: 'a' },
   // --- RIB: sync ribbon button (feature 060, GitHub issue #19) ---
   // A ribbon entry point for manual sync, added for mobile users. Unlike the SyncStatusModal DOM
   // clauses above, the wiring is extracted into registerSyncRibbon(host) against a minimal

@@ -29,9 +29,23 @@ describe('spec 001 — core requirements', () => {
     expect(DEFAULT_SETTINGS).not.toHaveProperty('appPassword');
   });
 
-  it('FR-020 (finalized): minimum Obsidian version is 1.11.4 (secret-storage API)', () => {
+  it('FR-020: minimum Obsidian version is 1.13.0 (declarative settings API)', () => {
+    // Raised from 1.11.4 (which the secret-storage API required) by feature 077. The settings tab
+    // now returns definitions instead of implementing display(), and Obsidian only renders from
+    // those on 1.13.0+ — below it the tab would come up EMPTY, so the floor has to move with it.
+    // Pinned rather than deleted: this value decides who receives the plugin at all, and a silent
+    // drift either strands users on a blank settings screen or needlessly excludes them.
     const manifest = JSON.parse(readFileSync(resolve(process.cwd(), 'manifest.json'), 'utf-8')) as { minAppVersion: string };
-    expect(manifest.minAppVersion).toBe('1.11.4');
+    expect(manifest.minAppVersion).toBe('1.13.0');
+  });
+
+  it('FR-020: the runtime version guard agrees with the manifest floor', () => {
+    // Two independent copies of the same number: manifest.json gates DELIVERY (Obsidian withholds
+    // the update), main.ts gates EXECUTION (the notice on load). If they disagree the plugin either
+    // refuses to run for users Obsidian happily shipped it to, or runs where it cannot render.
+    const manifest = JSON.parse(readFileSync(resolve(process.cwd(), 'manifest.json'), 'utf-8')) as { minAppVersion: string };
+    const mainTs = readFileSync(resolve(process.cwd(), 'src/main.ts'), 'utf-8');
+    expect(mainTs).toContain(`const MIN_OBSIDIAN_VERSION = '${manifest.minAppVersion}';`);
   });
 
   it('FR-008: a conflict preserves BOTH sides (feature 040: frontmatter merged semantically, body preserved)', () => {
