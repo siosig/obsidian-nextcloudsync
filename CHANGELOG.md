@@ -11,6 +11,14 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [1.0.0] - 2026-08-31
+
+### Changed
+- **Plugin settings are now findable in Obsidian's settings search.** Typing "conflict", "Wi-Fi" or "exclude" into Obsidian's own settings search finds the matching row and jumps to it. None of this plugin's settings appeared there before, because Obsidian builds that index only from the declarative settings API this release adopts.
+- **Requires Obsidian `1.13.0` or later** (was `1.11.4`). That API arrived in 1.13.0, and below it the settings screen would come up empty — hence the major version. Obsidian keeps offering `0.7.44` to installs below 1.13.0, so nobody is stranded.
+- **Row help is visible on every platform.** 23 settings carried supplementary help — defaults, ranges, units, common mistakes — that only appeared on hover, so on mobile nobody ever saw it. That wording is now part of each row's description. Descriptions are longer; nothing was dropped.
+- No settings were added, removed or renamed, and `data.json` is unchanged: existing configurations are read as-is.
+
 ## [0.7.44] - 2026-08-29
 
 ### Added
@@ -401,6 +409,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[1.0.0]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.0
 [0.7.44]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.44
 [0.7.43]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.43
 [0.7.42]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.42
