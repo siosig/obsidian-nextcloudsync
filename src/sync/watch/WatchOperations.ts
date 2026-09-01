@@ -37,6 +37,7 @@ import { ResolutionService } from '../resolution/ResolutionService';
 import { isLocallyUnchanged } from '../policy';
 import { FileLogger } from '../../util/FileLogger';
 import { sha256 } from '../../util/hash';
+import { AsyncMutex } from '../../util/AsyncMutex';
 
 /** The connected server, resolved by the caller before each operation. */
 export interface Connection {
@@ -87,6 +88,27 @@ export class WatchOperations {
   private inFlight = 0;
 
   /**
+   * One mutex per path, so two watch cycles for the SAME file never interleave.
+   *
+   * A cycle is stat -> PROPFIND -> classify -> upload -> record baseline, and until this existed
+   * nothing stopped a second cycle from starting inside the first. `inFlight` above is a status-bar
+   * counter, not exclusion, and the caller does not await either (`void syncSingleFile(path)` in
+   * main.ts). The damage is specific: a cycle that PROPFINDs after its predecessor's upload but
+   * before its predecessor's baseline write sees a remote that moved against a baseline that did
+   * not, calls that "the remote changed", and — with the user still typing — resolves a conflict
+   * that never existed by writing a merged body over the file being edited (GitHub issue #42).
+   *
+   * Keyed by path rather than global on purpose: syncing a vault is mostly waiting on the network,
+   * and one shared lock would serialize every file behind every other. The tests pin both halves —
+   * same path must queue, different paths must not.
+   *
+   * Entries are not evicted. The map is bounded by the number of paths the vault has touched this
+   * session, and AsyncMutex holds only a promise; a wrong eviction predicate would silently drop
+   * exclusion, which is worse than the memory.
+   */
+  private readonly pathLocks = new Map<string, AsyncMutex>();
+
+  /**
    * Feature 064 (C-5): paths whose watch-mode single-file sync arrived while a full sync was running.
    * Drained once the run finishes — deferring rather than dropping keeps the edit from being missed
    * when the full sync had already passed that file.
@@ -114,6 +136,25 @@ export class WatchOperations {
     if (this.inFlight === 0 && !this.deps.isSyncRunning()) this.deps.statusBar.setStatus('idle');
   }
 
+  /** Run `fn` with exclusive access to `path`, queueing FIFO behind any cycle already holding it. */
+  private withPathLock<T>(path: string, fn: () => Promise<T>): Promise<T> {
+    let lock = this.pathLocks.get(path);
+    if (!lock) { lock = new AsyncMutex(); this.pathLocks.set(path, lock); }
+    return lock.run(fn);
+  }
+
+  /**
+   * Run `fn` holding BOTH paths, taken in lexicographic order.
+   *
+   * The order is what prevents a deadlock: two renames crossing in opposite directions (a→b and
+   * b→a) would each hold what the other waits for if each simply locked its own first argument.
+   */
+  private withTwoPathLocks<T>(a: string, b: string, fn: () => Promise<T>): Promise<T> {
+    if (a === b) return this.withPathLock(a, fn);
+    const [first, second] = a < b ? [a, b] : [b, a];
+    return this.withPathLock(first, () => this.withPathLock(second, fn));
+  }
+
   /**
    * Sync ONE locally-changed file (watch mode). No-ops if the content is unchanged.
    *
@@ -128,6 +169,12 @@ export class WatchOperations {
    */
   async syncSingleFile(path: string): Promise<void> {
     if (this.deps.isSystemExcluded(path)) return;
+    // The two early exits below stay OUTSIDE the lock: neither touches shared state, and taking a
+    // lock to decide not to act would queue a no-op behind real work.
+    return this.withPathLock(path, () => this.syncSingleFileLocked(path));
+  }
+
+  private async syncSingleFileLocked(path: string): Promise<void> {
     // C-5: never run alongside a full sync. The multi-step resolve below (stat → compare → write →
     // push) must not interleave with the full sync's writes to the same file, so defer the path and
     // re-evaluate it once the run finishes — deferring rather than dropping keeps the edit from being
@@ -201,6 +248,12 @@ export class WatchOperations {
    */
   async deleteSingleFile(path: string): Promise<void> {
     if (this.deps.isSystemExcluded(path)) return;
+    // Same lock as syncSingleFile: an upload and a delete crossing on one path decide between "the
+    // file comes back" and "the file is gone" by timing alone.
+    return this.withPathLock(path, () => this.deleteSingleFileLocked(path));
+  }
+
+  private async deleteSingleFileLocked(path: string): Promise<void> {
     const base = this.deps.stateDB.getFile(path);
     if (!base) return; // not tracked — nothing to do on remote
     // C-2 row 1: during a full sync, do nothing — and do NOT defer either. The running scan detects a
@@ -248,6 +301,12 @@ export class WatchOperations {
   /** MOVE a single file on the remote when it was renamed/moved locally. */
   async renameSingleFile(oldPath: string, newPath: string): Promise<void> {
     if (this.deps.isSystemExcluded(oldPath) && this.deps.isSystemExcluded(newPath)) return;
+    // Both ends are locked: a rename moves state between two paths, so holding only one leaves the
+    // other open to a concurrent cycle acting on a half-applied move.
+    return this.withTwoPathLocks(oldPath, newPath, () => this.renameSingleFileLocked(oldPath, newPath));
+  }
+
+  private async renameSingleFileLocked(oldPath: string, newPath: string): Promise<void> {
     await this.deps.connect();
     const rt = this.deps.renameTracker();
     this.begin();

@@ -94,6 +94,19 @@ interface SyncEngineOptions {
    * (see `isActiveOwnLog`) to keep SyncEngine decoupled from log-path resolution.
    */
   isActiveLogFile?: (path: string) => boolean;
+  /**
+   * Returns true while `path` is being actively edited — the user has typed into it within the
+   * watch debounce window and the editor may still be ahead of what is on disk.
+   *
+   * Consulted before any REMOTE -> LOCAL write (download, conflict resolution). Writing under the
+   * cursor is how a resolution turns into the user watching their sentence disappear (GitHub issue
+   * #42), and no merge is good enough to make that acceptable. Uploads are unaffected: they read
+   * the file and leave it alone.
+   *
+   * Optional (absent in some tests); when omitted nothing is deferred. The host owns the definition
+   * because only it sees the vault's modify events.
+   */
+  isBeingEdited?: (path: string) => boolean;
   /** Diagnostic logger (writes nextcloud-sync-debug.md while Debug mode is on). Optional. */
   logger?: FileLogger;
   /**
@@ -1138,11 +1151,34 @@ export class SyncEngine {
         }
       }
     } else if (!localChanged && remoteChanged) {
+      if (this.deferIfBeingEdited(remote.path, 'download')) return;
       await this.downloadFile(remote, remoteId, idType, summary);
     } else {
       // Both changed: Conflicted
+      if (this.deferIfBeingEdited(remote.path, 'conflict')) return;
       await this.handleConflict(remote.path, base, remote, remoteId, idType, summary);
     }
+  }
+
+  /**
+   * Hold back a REMOTE -> LOCAL write while the user is typing into that file, and queue the path
+   * so the next sync decides again.
+   *
+   * The whole decision is deferred, not just the write. Writing is the last step of a sequence that
+   * also records a new baseline, and skipping only the write would leave the state DB claiming a
+   * body the file does not hold — the failure feature 063 already paid for once. Deferring costs a
+   * few seconds: the debounce window closes shortly after typing stops, and the queued path is
+   * re-evaluated with fresh state.
+   *
+   * Uploads are deliberately NOT deferred. They read the file and leave it alone, so there is
+   * nothing to collide with, and holding them back would make "Sync on file change" stop doing the
+   * one thing it exists for.
+   */
+  private deferIfBeingEdited(path: string, what: 'download' | 'conflict'): boolean {
+    if (!this.opts.isBeingEdited?.(path)) return false;
+    void this.opts.logger?.log(`${what}: deferred — "${path}" is being edited right now`);
+    this.retryQueue.push(path);
+    return true;
   }
 
   /**
