@@ -279,10 +279,12 @@ These tests exist specifically to prevent sync-inconsistency states — **data l
 
 ## Contributing & feedback
 
-Issues and pull requests are welcome on [GitHub](https://github.com/siosig/obsidian-nextcloudsync). The plugin is still maturing, so feedback of any kind is especially valuable:
+Bug reports and ideas are genuinely welcome. The plugin is still maturing, and most of what has been fixed so far came from someone taking the time to describe what they saw.
 
 - 🐛 **Report a bug** → [GitHub Issues](https://github.com/siosig/obsidian-nextcloudsync/issues)
 - 🙋‍♂️ **Request a feature / share your impressions** → [GitHub Discussions](https://github.com/siosig/obsidian-nextcloudsync/discussions)
+
+**Please open an issue or a discussion rather than sending a pull request.** A PR that arrives unannounced is read as input and valued as such, but it is unlikely to be merged as it stands. This is a single-maintainer project with a deliberate design policy — user-facing options are kept deliberately few, and behaviour is pinned by a specification that the test suite checks against — so whether a change fits depends on decisions that are not visible from the code alone, and on what is already in flight. Judging that after the code is written is harder than agreeing on the approach beforehand, and it wastes your effort whenever the answer turns out to be no. Describe what you want to change and why; if it fits, the approach can be settled before you write anything.
 
 ---
 
