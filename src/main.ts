@@ -22,6 +22,15 @@ import { autoNetworkConcurrency } from './util/platformDefaults';
 
 const MIN_OBSIDIAN_VERSION = '1.13.0';
 
+/**
+ * How long after a keystroke a file still counts as "being edited".
+ *
+ * Shared by the upload debounce and the write-deferral guard, and it must stay one number: the
+ * guard exists to hold remote->local writes back until the debounce has fired and the edit has
+ * left, so a shorter guard would open exactly the window it was added to close.
+ */
+const EDIT_WINDOW_MS = 2000;
+
 export default class ObsidianNextcloudsync extends Plugin {
   settings!: DavSyncSettings;
   syncEngine?: SyncEngine;
@@ -51,6 +60,14 @@ export default class ObsidianNextcloudsync extends Plugin {
    * change, so it now survives an Obsidian restart too.
    */
   private readonly statusFilterState: StatusFilterState = makeDefaultFilterState();
+  /**
+   * Last time the user changed each path, used to keep sync from writing under the cursor.
+   *
+   * Deliberately NOT the debounce's own pending set: that set is cleared the moment the debounce
+   * fires, which is precisely when the sync it triggers begins — so asking it "is this being
+   * edited?" always answers no, exactly when the answer matters. Timestamps outlive the flush.
+   */
+  private readonly lastLocalEdit = new Map<string, number>();
 
   async onload(): Promise<void> {
     // Obsidian version check
@@ -188,10 +205,11 @@ export default class ObsidianNextcloudsync extends Plugin {
         for (const path of paths) {
           void this.syncEngine?.syncSingleFile(path);
         }
-      }, 2000, true);
+      }, EDIT_WINDOW_MS, true);
 
       this.registerEvent(this.app.vault.on('modify', (file: TAbstractFile) => {
         if (!guard(file) || isOwnSyncEvent(file.path)) return;
+        this.lastLocalEdit.set(file.path, Date.now());
         pendingUploads.add(file.path);
         debouncedUpload();
       }));
@@ -255,6 +273,21 @@ export default class ObsidianNextcloudsync extends Plugin {
     } else {
       this.syncEngine.stopAutoSync();
     }
+  }
+
+  /**
+   * True while the user has typed into `path` within the edit window — the editor may still be
+   * ahead of what is on disk, so a remote->local write would land under the cursor.
+   *
+   * Prunes as it reads: a path that has gone quiet drops out, so the map stays the size of what is
+   * actually being edited rather than everything ever touched.
+   */
+  isBeingEdited(path: string): boolean {
+    const at = this.lastLocalEdit.get(path);
+    if (at === undefined) return false;
+    if (Date.now() - at < EDIT_WINDOW_MS) return true;
+    this.lastLocalEdit.delete(path);
+    return false;
   }
 
   /**
@@ -603,6 +636,7 @@ export default class ObsidianNextcloudsync extends Plugin {
       // Keep this device's own log file out of sync while logging is on (it is being appended to
       // during the sync). Evaluated live, from the same settings + host token the logger uses, so
       // it follows the logging toggle.
+      isBeingEdited: (path) => this.isBeingEdited(path),
       isActiveLogFile: (path) => isActiveOwnLog(path, {
         logsFolder: this.settings.logsFolder,
         host: this.hostToken(),
