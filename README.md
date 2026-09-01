@@ -31,10 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (1.0.0)
+## What's new in this release (1.0.1-beta.1)
 
-- **Plugin settings are now findable in Obsidian's settings search (1.0.0)** — typing "conflict", "Wi-Fi" or "exclude" into Obsidian's own settings search now finds the matching row and jumps straight to it. Previously none of this plugin's settings appeared there at all, because Obsidian builds that index only from the declarative settings API this release adopts. **This raises the requirement to Obsidian `1.13.0`**, which is why the version reaches 1.0.0; Obsidian keeps offering `0.7.44` to installs below that.
-- **Row help is visible on every platform now (1.0.0)** — 23 settings carried supplementary help (defaults, ranges, units, common mistakes) that only appeared on hover, so on mobile nobody ever saw it. That wording is now part of each row's description. Descriptions are longer as a result; nothing was dropped.
+- **Fixed: typing could corrupt the note you were editing (1.0.1-beta.1)** — with **Sync on file change** on, text could vanish, reformat, or fill with conflict-marker blocks while you typed, even on a single device with nothing else touching the server. The plugin was competing with itself: a sync cycle could read the server between a previous cycle's upload and the moment that upload was recorded, conclude the remote had changed, and "resolve" a conflict that never existed by writing a merged body over the file under your cursor. Cycles for one file are now serialized, and — separately — remote changes are no longer written to a file while you are typing in it; they land a moment after you stop. Uploads are unaffected, so Sync on file change still propagates your edits as you make them.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
