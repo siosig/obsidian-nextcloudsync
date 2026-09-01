@@ -570,6 +570,23 @@ export const CLAUSES: Clause[] = [
   // If-Match — so another device's edit was overwritten with no conflict, no merge and no notice.
   // Feature 063 fixed the FULL SYNC classification only; this path was never routed through it. The
   // tests drive the REAL syncSingleFile/deleteSingleFile and must not reimplement the classification.
+  // --- WOV: overlapping watch cycles on one path (feature 078, GitHub issue #42) ---
+  // Typing corrupts the open note: text vanishes, reformats, or fills with conflict markers, on a
+  // single device with nothing else touching the server. syncSingleFile runs stat -> PROPFIND ->
+  // classify -> upload -> record base, has no per-path exclusion (inFlight is a status-bar counter),
+  // and is invoked as `void syncEngine.syncSingleFile(path)`. A second cycle can therefore PROPFIND
+  // in the window between the first cycle's upload landing and its baseline being written: it reads
+  // its predecessor's own write as "the remote changed", the user is still typing so local changed
+  // too, and both-changed means conflict — whose resolution writes the merged body over the file
+  // being edited.
+  //
+  // The catalog records a refuted theory alongside the real one, because acting on the wrong one
+  // would have shipped a regression. "The server returns no checksums, so the recorded remoteId can
+  // never match" fit the reporter's capabilities exactly, but the same official Docker image returns
+  // oc:checksums from PROPFIND regardless of the capability, and the implied fix would have broken
+  // every user of that image. Capability absence is not output absence
+  // (specs/078-watch-typing-corruption/findings.md).
+  { id: 'WOV-1', source: 'specs/main/spec.md §5.7 / specs/078-watch-typing-corruption/spec.md (watch cycles on one path are serialized: a second cycle neither reads the first cycle\'s own upload as a remote change nor PROPFINDs before the first has recorded its baseline)', layer: 'a' },
   { id: 'WSF-1', source: 'specs/064-watch-single-file-conflict/contracts/watch-single-file-sync.md (C-0: statFile is a Depth:0 PROPFIND — file → RemoteFileInfo, 404/collection → null, other non-207 → NetworkError, never a silent "absent")', layer: 'a' },
   { id: 'WSF-2', source: 'specs/064-watch-single-file-conflict/contracts/watch-single-file-sync.md (C-1 rows 2-5: no local file / unchanged content does not even PROPFIND, absent remote uploads as new, local-only change uploads with the remote etag as precondition)', layer: 'a' },
   { id: 'WSF-3', source: 'specs/064-watch-single-file-conflict/contracts/watch-single-file-sync.md (C-1 rows 6-8: remote-only change downloads, both-sides change resolves as a conflict — .md merges and keeps both edits — and a 412 during the push switches to conflict resolution instead of overwriting)', layer: 'a' },

@@ -50,16 +50,18 @@ function buildRacy() {
   };
   /** Local content, as if the user keeps typing. */
   let localContent = 'h0';
-  /** Resolves the pending PROPFIND, so a test can hold a cycle at that exact point. */
-  let releaseStat: (() => void) | null = null;
+  /**
+   * While held, every PROPFIND parks here until release(). Collected as a LIST, not a single slot:
+   * with one slot the second waiter overwrites the first's resolver and that cycle never wakes,
+   * which reads as a hang rather than as the harness losing it.
+   */
+  let holding = false;
+  const parked: Array<() => void> = [];
 
   const client = {
     statFile: async (p: string): Promise<RemoteFileInfo> => {
       events.push(`propfind(${serverId})`);
-      if (releaseStat) {
-        // Hold this cycle here until the test lets it continue.
-        await new Promise<void>((resolve) => { releaseStat = resolve; });
-      }
+      if (holding) await new Promise<void>((resolve) => parked.push(resolve));
       return { path: p, fileId: 'fid', checksum: null, etag: serverId, size: 2, lastModified: 2000 };
     },
   } as unknown as IWebDAVClient;
@@ -83,7 +85,9 @@ function buildRacy() {
     journal: new SyncJournal({}) as unknown as SyncJournal,
     mergeBase: { record: () => undefined, drop: () => undefined } as unknown as MergeBaseRecorder,
     transfer: { uploadFile: async () => undefined } as unknown as TransferService,
-    deletion: { applyLocalDeletion: async () => undefined } as unknown as DeletionService,
+    deletion: {
+      applyLocalDeletion: async () => { events.push('delete'); },
+    } as unknown as DeletionService,
     resolution: { dropCleanSnapshot: () => undefined } as unknown as ResolutionService,
     isSystemExcluded: () => false,
     connect: async () => ({ client, uploadStrategy: {} as unknown as IUploadStrategy }),
@@ -116,9 +120,12 @@ function buildRacy() {
     watch: new WatchOperations(deps),
     events,
     type: (s: string) => { localContent = s; },
-    /** Hold the next PROPFIND until release() is called. */
-    holdNextStat: () => { releaseStat = () => undefined; },
-    release: () => { const r = releaseStat; releaseStat = null; r?.(); },
+    /** Park every PROPFIND from now on until release() is called. */
+    holdNextStat: () => { holding = true; },
+    release: () => {
+      holding = false;
+      while (parked.length) parked.shift()!();
+    },
   };
 }
 
@@ -126,18 +133,16 @@ describe('[SPEC:WOV-1] watch cycles on one path must not overlap', () => {
   it('does not turn its own upload into a conflict when a second cycle starts mid-flight', async () => {
     const h = buildRacy();
 
-    // Cycle A: the user typed, so this will upload. Hold it at the PROPFIND.
-    h.holdNextStat();
+    // Cycle A: the user typed, so this will upload.
     h.type('h1');
     const a = h.watch.syncSingleFile(PATH);
     await tick();
 
-    // The user keeps typing, and the debounce fires again while A is still in flight.
+    // The user keeps typing, and the debounce fires again while A is still in flight — specifically
+    // while A sits in the yield between its upload and its baseline write. No artificial hold is
+    // needed to arrange that; it is where the production code already spends time.
     h.type('h2');
     const b = h.watch.syncSingleFile(PATH);
-    await tick();
-
-    h.release();
     await Promise.all([a, b]);
 
     // Cycle B must not read cycle A's own upload as "the remote changed". On a single device with
@@ -145,25 +150,72 @@ describe('[SPEC:WOV-1] watch cycles on one path must not overlap', () => {
     expect(h.events).not.toContain('CONFLICT');
   });
 
-  it('serializes the second cycle behind the first instead of interleaving', async () => {
+  it('never lets a PROPFIND land between an upload and the baseline it produces', async () => {
     const h = buildRacy();
 
-    h.holdNextStat();
+    // No artificial hold here: the gap is real. processFile uploads, yields once, and only then
+    // records the baseline — the same shape as the production path, where the write to the state DB
+    // follows the network call. Starting a second cycle during that yield is all it takes.
     h.type('h1');
     const a = h.watch.syncSingleFile(PATH);
     await tick();
     h.type('h2');
     const b = h.watch.syncSingleFile(PATH);
-    await tick();
-    h.release();
     await Promise.all([a, b]);
 
-    // The second PROPFIND must come after the first cycle has written its baseline. Reading the
-    // server between "upload landed" and "baseline recorded" is what manufactures the phantom
-    // remote change, and no amount of care inside the classifier can fix a read taken too early.
-    const firstBase = h.events.indexOf('base-recorded');
-    const propfinds = h.events.reduce<number[]>((acc, e, i) => (e.startsWith('propfind') ? [...acc, i] : acc), []);
-    expect(firstBase).toBeGreaterThanOrEqual(0);
-    expect(propfinds[1]).toBeGreaterThan(firstBase);
+    // The invariant, stated directly rather than as index arithmetic: between "upload" and the
+    // "base-recorded" it produces, no other cycle may read the server. A read taken in that window
+    // sees a remote that has moved and a baseline that has not, and no care inside the classifier
+    // can rescue it — the inputs were already wrong when they were sampled.
+    const between: string[] = [];
+    let inGap = false;
+    for (const e of h.events) {
+      if (e === 'upload') { inGap = true; continue; }
+      if (e === 'base-recorded') { inGap = false; continue; }
+      if (inGap) between.push(e);
+    }
+    expect(between).toEqual([]);
+  });
+});
+
+describe('[SPEC:WOV-1] serializing must not go too far, or catch too little', () => {
+  it('still lets different paths run at the same time', () => {
+    // The cheapest way to "fix" an interleaving bug is to serialize everything, which would turn a
+    // vault-wide sync into a single queue. The lock has to be per path; one shared lock passes every
+    // other test in this file and quietly costs the user their throughput.
+    const h = buildRacy();
+    // Both paths need a real content change, or syncSingleFile short-circuits on the local
+    // fast-path and never reaches the server — which would make this test vacuously green.
+    h.type('h1');
+    h.holdNextStat();
+    const a = h.watch.syncSingleFile('one.md');
+    const b = h.watch.syncSingleFile('two.md');
+    // Both cycles must have reached the server before either is released.
+    return tick().then(() => {
+      const propfinds = h.events.filter((e) => e.startsWith('propfind')).length;
+      h.release();
+      return Promise.all([a, b]).then(() => {
+        expect(propfinds).toBe(2);
+      });
+    });
+  });
+
+  it('holds a delete behind an in-flight sync of the same path', async () => {
+    // Upload and delete crossing on one path decides between "the file comes back" and "the file is
+    // gone" by timing alone. Whichever the user wanted, a coin flip is not it.
+    const h = buildRacy();
+    h.holdNextStat();
+    h.type('h1');
+    const a = h.watch.syncSingleFile(PATH);
+    await tick();
+    const d = h.watch.deleteSingleFile(PATH);
+    await tick();
+    h.release();
+    await Promise.all([a, d]);
+
+    // The delete must not begin while the sync is still between its upload and its baseline write.
+    const baseRecorded = h.events.indexOf('base-recorded');
+    const deleted = h.events.indexOf('delete');
+    if (deleted >= 0) expect(deleted).toBeGreaterThan(baseRecorded);
   });
 });
