@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (1.0.1-beta.1)
+## What's new in this release (1.0.1)
 
-- **Fixed: typing could corrupt the note you were editing (1.0.1-beta.1)** — with **Sync on file change** on, text could vanish, reformat, or fill with conflict-marker blocks while you typed, even on a single device with nothing else touching the server. The plugin was competing with itself: a sync cycle could read the server between a previous cycle's upload and the moment that upload was recorded, conclude the remote had changed, and "resolve" a conflict that never existed by writing a merged body over the file under your cursor. Cycles for one file are now serialized, and — separately — remote changes are no longer written to a file while you are typing in it; they land a moment after you stop. Uploads are unaffected, so Sync on file change still propagates your edits as you make them.
+- **Fixed: typing could corrupt the note you were editing (1.0.1)** — with **Sync on file change** on, text could vanish, reformat, or fill with conflict-marker blocks while you typed, even on a single device with nothing else touching the server. The plugin was competing with itself: a sync cycle could read the server between a previous cycle's upload and the moment that upload was recorded, conclude the remote had changed, and "resolve" a conflict that never existed by writing a merged body over the file under your cursor. Cycles for one file are now serialized, and — separately — remote changes are no longer written to a file while you are typing in it; they land a moment after you stop. Uploads are unaffected, so Sync on file change still propagates your edits as you make them.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
