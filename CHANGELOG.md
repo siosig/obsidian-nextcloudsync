@@ -11,6 +11,12 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [1.0.1] - 2026-09-01
+
+### Fixed
+- **Typing could corrupt the note you were editing.** With **Sync on file change** on, text could vanish, reformat, or fill with conflict-marker blocks while you typed — on a single device, with nothing else touching the server. The plugin was competing with itself: a sync cycle could read the server between a previous cycle's upload and the moment that upload was recorded, conclude the remote had changed, and "resolve" a conflict that never existed by writing a merged body over the file under your cursor. Cycles for one file are now serialized; different files still sync in parallel.
+- **Remote changes are no longer written to a file while you are typing in it.** Even a genuine conflict should not rewrite the paragraph under your cursor. Those writes now wait until typing stops, then land. Uploads are unaffected, so **Sync on file change** still propagates your edits as you make them.
+
 ## [1.0.0] - 2026-08-31
 
 ### Changed
@@ -409,6 +415,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[1.0.1]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.1
 [1.0.0]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.0
 [0.7.44]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.44
 [0.7.43]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/0.7.43
