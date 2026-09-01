@@ -36,6 +36,17 @@ const PATH = 'note.md';
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 /**
+ * Wait until `predicate` holds, or give up after a bounded number of turns.
+ *
+ * A fixed number of ticks is not enough here and made this file flaky: reaching the network costs
+ * several awaits (stat, hash, connect, then the PROPFIND), and how many turns that takes is not
+ * fixed. Waiting on the condition instead of on a guessed delay removes the guess.
+ */
+async function waitFor(predicate: () => boolean, turns = 50): Promise<void> {
+  for (let i = 0; i < turns && !predicate(); i++) await tick();
+}
+
+/**
  * A harness that models the one thing that matters here: the server and the state DB are shared
  * mutable state, and a cycle reads them at one moment and writes them at a later one.
  */
@@ -179,7 +190,7 @@ describe('[SPEC:WOV-1] watch cycles on one path must not overlap', () => {
 });
 
 describe('[SPEC:WOV-1] serializing must not go too far, or catch too little', () => {
-  it('still lets different paths run at the same time', () => {
+  it('still lets different paths run at the same time', async () => {
     // The cheapest way to "fix" an interleaving bug is to serialize everything, which would turn a
     // vault-wide sync into a single queue. The lock has to be per path; one shared lock passes every
     // other test in this file and quietly costs the user their throughput.
@@ -190,14 +201,16 @@ describe('[SPEC:WOV-1] serializing must not go too far, or catch too little', ()
     h.holdNextStat();
     const a = h.watch.syncSingleFile('one.md');
     const b = h.watch.syncSingleFile('two.md');
-    // Both cycles must have reached the server before either is released.
-    return tick().then(() => {
-      const propfinds = h.events.filter((e) => e.startsWith('propfind')).length;
-      h.release();
-      return Promise.all([a, b]).then(() => {
-        expect(propfinds).toBe(2);
-      });
-    });
+
+    // Both cycles must be parked at the server at the SAME time. With one lock per path that is
+    // what happens; with a single shared lock the second never arrives, and waitFor times out
+    // holding one — which is exactly the distinction being drawn.
+    const propfinds = () => h.events.filter((e) => e.startsWith('propfind')).length;
+    await waitFor(() => propfinds() === 2);
+    const reachedTogether = propfinds();
+    h.release();
+    await Promise.all([a, b]);
+    expect(reachedTogether).toBe(2);
   });
 
   it('holds a delete behind an in-flight sync of the same path', async () => {
