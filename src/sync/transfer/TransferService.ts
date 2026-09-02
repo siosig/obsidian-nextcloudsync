@@ -26,6 +26,7 @@ import { FileLogger } from '../../util/FileLogger';
 import { FIXED } from '../../util/fixedSyncConfig';
 import { isAnomalousRemoteContent, isOverFileSizeLimit } from '../../util/limits';
 import { sha256 } from '../../util/hash';
+import { remoteIdOf } from '../remoteIdentity';
 
 export interface TransferDeps {
   localAdapter: Pick<LocalAdapter, 'stat' | 'readBinary' | 'atomicWriteBinary' | 'setMtime'>;
@@ -36,6 +37,19 @@ export interface TransferDeps {
   maxFileSizeMB(): number;
   /** Whether the server advertises the files-locking capability (arrives on connect). */
   hasFilesLocking(): boolean;
+  /**
+   * Whether the connected client ever reports a checksum for a file (feature 080).
+   *
+   * This asks which client is running, not what a server said about itself. `NextcloudClient` reads
+   * `oc:checksums` from PROPFIND; `StandardWebDAVClient` hardcodes `checksum: null`, so against a
+   * plain WebDAV server classification always falls through to the ETag. Recording a SHA-256 there
+   * guarantees a permanent mismatch with what the next sync reads back.
+   *
+   * Deliberately NOT the server's `hasChecksums` capability. Feature 078 measured that flag to be
+   * false on the official Docker image while PROPFIND returned checksums anyway; a fix that trusted
+   * it would have given every user of that image the exact bug it was meant to remove.
+   */
+  clientReportsChecksums(): boolean;
   /**
    * Ask for `path` to be retried later in this session. An outbound port, not a call back into the
    * sync loop: transfer says a file needs another attempt and takes no view on when.
@@ -97,8 +111,24 @@ export class TransferService {
     // remote id of what we just stored IS localHash. Keeping the PRE-upload remoteId here made every
     // following sync read "remote changed" and download the file we had just uploaded, over and over.
     // resolveByWrite already records the merged body this way; this brings the plain upload in line.
-    const uploadedRemoteId = localHash;
-    const uploadedIdType: FileState['idType'] = 'sha256';
+    // Feature 080: only true where the client can actually read a checksum back. Against a plain
+    // WebDAV server the next PROPFIND yields an ETag, so ask the server what it now holds and record
+    // that instead — the same value, by the same rule, that classification will use next time.
+    let uploadedRemoteId = localHash;
+    let uploadedIdType: FileState['idType'] = 'sha256';
+    if (!this.deps.clientReportsChecksums()) {
+      // A failed or empty stat leaves the pre-080 values in place on purpose. Recording nothing would
+      // strand the baseline at its pre-upload state, and the next sync would then see BOTH sides
+      // changed and resolve a conflict over the user's file — worse than the bug being fixed. Leaving
+      // the old behaviour costs one redundant download, after which the download path records the
+      // real remote id and the file converges.
+      try {
+        const fresh = await client.statFile(path);
+        if (fresh) ({ remoteId: uploadedRemoteId, idType: uploadedIdType } = remoteIdOf(fresh));
+      } catch (err) {
+        void this.deps.logger?.log(`upload: could not re-read ${path} after upload — ${(err as Error).message}`);
+      }
+    }
     this.deps.journal.recordHistory(path, 'uploaded', undefined, {
       localHash, remoteId: uploadedRemoteId, remoteIdType: uploadedIdType,
       localSize: stat.size, remoteSize: remote.size,

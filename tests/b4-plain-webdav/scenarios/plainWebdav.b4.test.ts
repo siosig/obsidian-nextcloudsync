@@ -111,4 +111,36 @@ describePlainDav('[SPEC:SD-3] b-4 — plugin against a real plain WebDAV server'
       await expect(client.remoteExists('note.md')).resolves.toBe(false);
     });
   });
+
+  describe('[SPEC:PWR-1] B4-6: the premise the remote-identity fix rests on', () => {
+    // Feature 080's a-layer tests model a plain server as "never a checksum, always an ETag, and the
+    // ETag moves when the body does". That model is the whole argument for re-reading the file after
+    // an upload instead of recording the hash we sent. Asserting it here is what keeps the a-layer
+    // tests from being a well-tested description of a server that does not exist.
+    it('reports no checksum, and an ETag that changes when the body does', async () => {
+      const { client } = await connectInOwnFolder(getEnv());
+      await client.createDirectory('');
+
+      await client.uploadFile('note.md', bytes('first body'));
+      const first = await client.statFile('note.md');
+      expect(first).not.toBeNull();
+
+      // The null is not a server setting that could be turned on: StandardWebDAVClient has no way to
+      // ask for a checksum, so classification always falls through to the ETag on this kind of server.
+      expect(first!.checksum).toBeNull();
+      expect(first!.etag).toBeTruthy();
+
+      // Stable while nothing changes — otherwise every sync would see a change whatever we recorded.
+      const again = await client.statFile('note.md');
+      expect(again!.etag).toBe(first!.etag);
+
+      // And it moves when the body does, which is what makes it usable as an identity at all.
+      await client.uploadFile('note.md', bytes('second body, longer than the first'));
+      const after = await client.statFile('note.md');
+      expect(after!.etag).not.toBe(first!.etag);
+      expect(after!.checksum).toBeNull();
+
+      await client.deleteFile('note.md', '');
+    });
+  });
 });
