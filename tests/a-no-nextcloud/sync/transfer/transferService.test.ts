@@ -102,6 +102,9 @@ function build(o: Opts = {}, over: Partial<TransferDeps> = {}) {
     } as unknown as MergeBaseRecorder,
     maxFileSizeMB: () => (o.oversize ? 0.000001 : 100),
     hasFilesLocking: () => o.hasLocking === true,
+    // Feature 080: this suite models a Nextcloud server (checksums come back from PROPFIND), which is
+    // the branch that keeps recording the local hash and makes no extra request after an upload.
+    clientReportsChecksums: () => true,
     queueRetry: (p: string) => { calls.retries.push(p); },
     notify: (m: string) => { calls.notices.push(m); },
     ...over,

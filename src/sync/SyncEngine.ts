@@ -33,6 +33,7 @@ import { MergeBaseRecorder } from './session/MergeBaseRecorder';
 import { withLocalSignature } from '../data/localSignature';
 import { TransferService } from './transfer/TransferService';
 import { VersionService } from './versions/VersionService';
+import { remoteIdOf } from './remoteIdentity';
 import { DeletionService } from './deletion/DeletionService';
 import { ResolutionService } from './resolution/ResolutionService';
 import { ConflictApplier } from './conflict/ConflictApplier';
@@ -222,6 +223,9 @@ export class SyncEngine {
       mergeBase: this.mergeBase,
       maxFileSizeMB: () => this.opts.settings.maxFileSizeMB,
       hasFilesLocking: () => this.features?.hasFilesLocking === true,
+      // Feature 080: which client is connected, not what the server said about itself. Only
+      // NextcloudClient ever fills in `checksum`; StandardWebDAVClient returns null for every file.
+      clientReportsChecksums: () => this.features?.isNextcloud === true,
       queueRetry: (p) => { this.retryQueue.push(p); },
       logger: opts.logger,
     });
@@ -1067,8 +1071,7 @@ export class SyncEngine {
   private async processRemoteFile(remote: RemoteFileInfo, summary: SyncSessionSummary): Promise<void> {
     const base = this.opts.stateDB.getFile(remote.path);
     const localStat = await this.opts.localAdapter.stat(remote.path);
-    const remoteId = remote.checksum ?? remote.etag ?? String(remote.size);
-    const idType = remote.checksum ? 'sha256' : (remote.etag ? 'etag' : 'size');
+    const { remoteId, idType } = remoteIdOf(remote);
 
     const remoteChanged = !base || base.remoteId !== remoteId;
     let localChanged = false;
@@ -1572,7 +1575,8 @@ export class SyncEngine {
       async (path) => {
         try {
           const remote = remoteMap.get(path)!;
-          await this.downloadFile(remote, remote.checksum ?? remote.etag ?? String(remote.size), remote.checksum ? 'sha256' : 'etag', summary);
+          const { remoteId, idType } = remoteIdOf(remote);
+          await this.downloadFile(remote, remoteId, idType, summary);
         } catch (err) { this.recordError(summary, path, err); this.retryQueue.push(path); }
         this.tickProgress();
       },
@@ -1601,8 +1605,7 @@ export class SyncEngine {
     for (const path of plan.conflicts) {
       try {
         const remote = remoteMap.get(path)!;
-        const remoteId = remote.checksum ?? remote.etag ?? String(remote.size);
-        const idType: FileState['idType'] = remote.checksum ? 'sha256' : (remote.etag ? 'etag' : 'size');
+        const { remoteId, idType } = remoteIdOf(remote);
         await this.handleConflict(path, undefined, remote, remoteId, idType, summary);
       } catch (err) { this.recordError(summary, path, err); this.retryQueue.push(path); }
       this.tickProgress();
