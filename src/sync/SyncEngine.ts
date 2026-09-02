@@ -738,6 +738,17 @@ export class SyncEngine {
   }
 
   /**
+   * When the last sync finished, as a persisted wall-clock timestamp (0 if none ever has).
+   *
+   * Unlike {@link getLastSessionSummary}, which only knows about this process, this survives restarts
+   * and is stamped by every sync whatever started it. Feature 079's resume trigger uses it as its
+   * cooldown baseline, which is also what stops it from firing on top of the startup sync.
+   */
+  getLastSyncTime(): number {
+    return this.opts.stateDB.getLastSyncTime();
+  }
+
+  /**
    * Snapshot for the status-bar dialog: last session summary plus the current lists of
    * conflicted files and files queued for retry (the two things the status bar counts).
    */
