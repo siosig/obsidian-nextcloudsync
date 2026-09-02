@@ -31,9 +31,10 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (1.0.2-beta.1)
+## What's new in this release (1.0.2-beta.2)
 
 - **Sync now runs when you come back to the app (1.0.2-beta.1)** — leaving Obsidian in the background on a phone meant nothing synced at all until you opened it again or synced by hand: periodic sync and *Sync on file change* are both off on mobile, because the OS suspends background timers. Returning to the app now triggers one incremental sync. It applies on desktop too, where a machine waking from sleep has the same gap. Repeated app switching costs nothing — a sync only runs if the last one finished more than five minutes ago.
+- **Fixed: on a plain WebDAV server, the plugin read its own uploads back as someone else's changes (1.0.2-beta.2)** — after uploading, it recorded a content hash as the file's remote identity, which is right for Nextcloud (the server stores the checksum and hands it back) but never matches on a plain WebDAV server, where only an ETag comes back. Every uploaded file then looked remotely changed: a redundant download at best, and — if you had edited the file again since — a conflict resolved against your own upload, writing a merged body over your text. The plugin now reads back what the server actually holds on those servers. Nextcloud is unaffected and makes no extra requests.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 

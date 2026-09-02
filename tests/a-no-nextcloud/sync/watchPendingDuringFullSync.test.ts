@@ -145,7 +145,11 @@ describe('[SPEC:WSF-7] C-5 — full sync exclusivity for watch-mode single-file 
     releaseFullSync();
     await fullSyncDone;
 
-    expect(client.statFile).toHaveBeenCalledTimes(1);
+    // Two reads, not one, and the split matters: one re-evaluation of the deferred path, plus the
+    // post-upload re-read feature 080 added. This harness reports `isNextcloud: false`, so the upload
+    // has to ask the server what identity it now holds rather than assuming the checksum it sent came
+    // back. Three defers that failed to coalesce would show as six.
+    expect(client.statFile).toHaveBeenCalledTimes(2);
     expect(client.statFile).toHaveBeenCalledWith('note.md');
     await stateDB.flush();
   });
