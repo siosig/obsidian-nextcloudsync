@@ -31,9 +31,10 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (1.0.1)
+## What's new in this release (1.0.2-beta.2)
 
-- **Fixed: typing could corrupt the note you were editing (1.0.1)** — with **Sync on file change** on, text could vanish, reformat, or fill with conflict-marker blocks while you typed, even on a single device with nothing else touching the server. The plugin was competing with itself: a sync cycle could read the server between a previous cycle's upload and the moment that upload was recorded, conclude the remote had changed, and "resolve" a conflict that never existed by writing a merged body over the file under your cursor. Cycles for one file are now serialized, and — separately — remote changes are no longer written to a file while you are typing in it; they land a moment after you stop. Uploads are unaffected, so Sync on file change still propagates your edits as you make them.
+- **Sync now runs when you come back to the app (1.0.2-beta.1)** — leaving Obsidian in the background on a phone meant nothing synced at all until you opened it again or synced by hand: periodic sync and *Sync on file change* are both off on mobile, because the OS suspends background timers. Returning to the app now triggers one incremental sync. It applies on desktop too, where a machine waking from sleep has the same gap. Repeated app switching costs nothing — a sync only runs if the last one finished more than five minutes ago.
+- **Fixed: on a plain WebDAV server, the plugin read its own uploads back as someone else's changes (1.0.2-beta.2)** — after uploading, it recorded a content hash as the file's remote identity, which is right for Nextcloud (the server stores the checksum and hands it back) but never matches on a plain WebDAV server, where only an ETag comes back. Every uploaded file then looked remotely changed: a redundant download at best, and — if you had edited the file again since — a conflict resolved against your own upload, writing a merged body over your text. The plugin now reads back what the server actually holds on those servers. Nextcloud is unaffected and makes no extra requests.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
@@ -95,7 +96,7 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 
 Mobile is supported, with a few platform-aware differences (desktop behaviour is unchanged):
 
-- **Automatic sync is off by default on mobile.** The OS suspends background timers, so periodic auto-sync and "sync on file change" are disabled (greyed out). Use **Sync now**, or rely on **Sync on startup**, which is on by default on every platform (since 0.7.11) and syncs once a few seconds after the app opens.
+- **Automatic sync is off by default on mobile.** The OS suspends background timers, so periodic auto-sync and "sync on file change" are disabled (greyed out). What runs instead: **Sync on startup**, on by default on every platform (since 0.7.11), which syncs a few seconds after the app opens; **sync on returning to the app** (since 1.0.2), which covers the case where Obsidian was left running in the background rather than restarted, and runs at most once every five minutes; and **Sync now** whenever you want it.
 - **Large files are skipped on mobile** in **both directions (upload and download)** above the "Maximum file size" limit (set `0` for unlimited) to avoid out-of-memory crashes; skips are reported.
 - **No progress UI on mobile** — only error notices are shown.
 - **Network concurrency** is configurable; its first-run default is derived from the device's available memory — uniformly on desktop and mobile, with no platform-specific branch: **16** with 8 GB of RAM or more, **8** at 4 GB or more, **4** below that, and **3** when the device doesn't report its memory (common on mobile). Transfers run with bounded parallelism — capped both by this count and by a total in-flight-bytes budget (smaller on mobile) so large files can't exhaust memory — and uploads to the same folder are serialized to avoid server lock contention.

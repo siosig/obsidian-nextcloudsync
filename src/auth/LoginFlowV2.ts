@@ -1,5 +1,6 @@
 import { requestUrl } from 'obsidian';
 import { LoginFlowInit, LoginFlowResult, LoginFlowError } from '../types';
+import { onAppResume } from '../util/appResume';
 
 /**
  * Nextcloud Login Flow v2 client.
@@ -14,18 +15,12 @@ import { LoginFlowInit, LoginFlowResult, LoginFlowError } from '../types';
 /**
  * Default "the app came back to the foreground" signal (issue #34). Mobile suspends the webview's
  * timers while the browser holds the foreground, so the poll loop needs a second way to be woken.
- * Guarded because the a-layer tests run under jest's `node` environment, where neither global exists.
+ *
+ * The implementation moved to `util/appResume` in feature 079, where the same signal now also drives
+ * a sync on resume. Behaviour is unchanged — same two events, same environment guard — so the
+ * real-device coverage this path already has (`loginFlowResume.b3.test.ts`) still applies.
  */
-function defaultOnResume(cb: () => void): () => void {
-  if (typeof document === 'undefined' || typeof window === 'undefined') return () => undefined;
-  const onVisibility = (): void => { if (document.visibilityState === 'visible') cb(); };
-  document.addEventListener('visibilitychange', onVisibility);
-  window.addEventListener('focus', cb);
-  return () => {
-    document.removeEventListener('visibilitychange', onVisibility);
-    window.removeEventListener('focus', cb);
-  };
-}
+const defaultOnResume = onAppResume;
 
 /** Injection seams for {@link LoginFlowV2.poll}; all default to the real clock / DOM. */
 export interface PollDeps {

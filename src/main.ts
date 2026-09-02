@@ -12,6 +12,7 @@ import { openMirrorFromRemoteModal } from './ui/MirrorFromRemoteModal';
 import { registerSyncRibbon } from './ui/syncRibbon';
 import { registerMirrorRibbon, registerStatusCommands } from './ui/statusEntryPoints';
 import { FileLogger } from './util/FileLogger';
+import { onAppResume, makeResumeSyncHandler } from './util/appResume';
 import { isSyncTmpPath, LocalAdapter } from './data/LocalAdapter';
 import type { MergeBaseStore } from './data/MergeBaseStore';
 import { v4 as uuidv4 } from './util/uuid';
@@ -239,6 +240,20 @@ export default class ObsidianNextcloudsync extends Plugin {
         if (file instanceof TFolder) { void this.syncEngine?.renameSingleFolder(oldPath, file.path); return; }
         void this.syncEngine?.renameSingleFile(oldPath, file.path);
       }));
+
+      // Feature 079 (discussion #44): sync when the app comes back to the foreground.
+      //
+      // On mobile this is the only trigger that fires at all once the app has been left running —
+      // periodic sync and watch mode are both off there because the OS suspends background timers.
+      // Registered on every platform rather than only on mobile: a desktop that slept has the same
+      // hole, since its interval timer did not tick while it was asleep, and not branching is
+      // simpler than branching. The cooldown inside the handler is what keeps a burst of app
+      // switches from turning into a burst of syncs.
+      this.register(onAppResume(makeResumeSyncHandler({
+        getEngine: () => this.syncEngine,
+        getLastSyncTime: () => this.syncEngine?.getLastSyncTime() ?? 0,
+        log: (message) => { void this.logger.log(message); },
+      })));
     });
   }
 
