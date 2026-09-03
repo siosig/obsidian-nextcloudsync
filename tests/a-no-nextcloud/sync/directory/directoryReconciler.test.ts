@@ -57,6 +57,10 @@ function build(world: Partial<World> = {}, over: Partial<DirectoryDeps> = {}) {
     createDirectory: async (p: string) => { calls.createDirectory.push(p); },
     deleteCollection: async (p: string) => { calls.deleteCollection.push(p); },
     isRemoteDirEmpty: async () => dirsEmpty,
+    // Feature 081: the L !R T branch now asks the server before trashing. This harness models a
+    // listing that is RIGHT about absence, so the probe agrees; verifyBeforeTrash.test.ts covers the
+    // case where it does not.
+    remoteExists: async () => false,
   } as unknown as IWebDAVClient;
 
   const journal = new SyncJournal({});
