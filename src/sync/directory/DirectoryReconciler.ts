@@ -137,6 +137,18 @@ export class DirectoryReconciler {
     // TRASH local (children before parents).
     for (const p of trashLocal.sort(deepFirst)) {
       if (this.deps.isCancelled()) break;
+      // Feature 081 (issue #46): a folder absent from the listing is a reason to look, not a reason to
+      // delete. Files already refuse to delete without proof (applyLocalDeletion needs a checksum
+      // match); folders had no such guard, and one missing folder is one deletion — below anything
+      // the mass-delete breaker would notice. Ask the server directly. remoteExists resolves every
+      // answer but a definitive 404 to "present", and a rejecting client is treated the same way:
+      // no proof, no deletion. The folder stays tracked so the next real listing can settle it.
+      let confirmedGone = false;
+      try { confirmedGone = !(await client.remoteExists(p)); } catch { confirmedGone = false; }
+      if (!confirmedGone) {
+        void this.deps.logger?.log(`dir-sync: listing omitted ${p} but the server still has it — keeping it (not trashed)`);
+        continue;
+      }
       const folder = this.deps.app.vault.getAbstractFileByPath(p);
       try {
         if (folder instanceof TFolder) await this.deps.app.fileManager.trashFile(folder);
