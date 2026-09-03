@@ -11,6 +11,19 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [1.0.3] - 2026-09-03
+
+### Fixed
+- **A folder you had just created could be moved to `.trash`, contents and all.** Reported in [#46](https://github.com/siosig/obsidian-nextcloudsync/issues/46). When the plugin creates a folder on the server it immediately records it as synced; if the next full sync's listing then failed to mention that folder, the plugin read it as "deleted on the server" and trashed the local copy. One folder is one deletion, so the mass-delete safety limit never noticed. Files have long refused to delete anything without proof (the server checksum has to match); folders now do the same: before a local folder is trashed, the server is asked directly whether it is really gone, and only a definitive "not found" proceeds. A folder the listing merely omitted is kept and stays tracked. Why the listing omitted it in the reported case is still under investigation; this closes the step that turned that into data loss, whatever the cause.
+- **Turning off startup sync no longer stops the sync that runs when you return to the app.** Reported in [#49](https://github.com/siosig/obsidian-nextcloudsync/issues/49) — a regression from 1.0.2. Before that release, setting **Startup sync delay** to `0`, together with the periodic interval and watch mode, gave you a fully manual plugin. The resume-on-return sync added in 1.0.2 ignored that choice. Startup sync and resume sync ask the same question — "the app just became available, should it sync?" — at two different moments, so turning the first off now turns the second off too. No new setting; this restores a state 1.0.1 already had.
+- **On a plain WebDAV server, the plugin read its own uploads back as someone else's changes.** After uploading, it recorded a content hash as the file's remote identity. That is right for Nextcloud, which stores the checksum and hands it back, but never matches on a plain WebDAV server, where only an ETag comes back. Every uploaded file then looked remotely changed: a redundant download at best, and — if the file had been edited again since — a conflict resolved against the plugin's own upload, writing a merged body over the user's text. The plugin now reads back what the server actually holds on those servers. Nextcloud is unaffected and makes no extra requests.
+
+### Added
+- **Sync now runs when you come back to the app.** Leaving Obsidian in the background on a phone meant nothing synced at all until you opened it again or synced by hand: periodic sync and *Sync on file change* are both off on mobile, because the OS suspends background timers. Returning to the app now triggers one incremental sync. It applies on desktop too, where a machine waking from sleep has the same gap. Repeated app switching costs nothing — a sync only runs if the last one finished more than five minutes ago, and there is no setting to configure.
+
+### Security
+- Three transitive development-only dependencies were pinned past their advisories (`fast-uri`, `@xmldom/xmldom`, `browserslist`). None of them ships in the plugin.
+
 ## [1.0.2] - 2026-09-02
 
 ### Added
@@ -423,6 +436,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[1.0.3]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.3
 [1.0.2]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.2
 [1.0.1]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.1
 [1.0.0]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.0
