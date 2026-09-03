@@ -31,6 +31,7 @@ interface MockClient {
   createDirectory: jest.Mock;
   deleteCollection: jest.Mock;
   isRemoteDirEmpty: jest.Mock;
+  remoteExists: jest.Mock;
   lockFile: jest.Mock;
   unlockFile: jest.Mock;
 }
@@ -47,6 +48,10 @@ function makeClient(over: {
     createDirectory: jest.fn(async () => undefined),
     deleteCollection: jest.fn(async (p: string) => { if (over.deleteImpl) await over.deleteImpl(p); }),
     isRemoteDirEmpty: jest.fn(async (p: string) => (over.emptyOf ? over.emptyOf(p) : true)),
+    // Feature 081: trashLocal now confirms absence with a Depth 0 probe first. This harness models
+    // a listing that is right about absence, so the probe agrees; verifyBeforeTrash.test.ts covers
+    // the case where the listing is wrong.
+    remoteExists: jest.fn(async () => false),
     lockFile: jest.fn(async () => 'files_lock/tok'),
     unlockFile: jest.fn(async () => undefined),
   };
