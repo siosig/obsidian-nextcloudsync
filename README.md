@@ -31,9 +31,10 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (1.0.3-beta.1)
+## What's new in this release (1.0.3-beta.2)
 
 - **Fixed: a folder you had just created could be moved to `.trash`, contents and all (1.0.3-beta.1)** — reported in [#46](https://github.com/siosig/obsidian-nextcloudsync/issues/46). When the plugin creates a folder on the server it immediately records it as synced; if the next full sync's listing then failed to mention that folder, the plugin read it as "deleted on the server" and trashed the local copy. One folder is one deletion, so the mass-delete safety limit never noticed. Files have long refused to delete anything without proof (the server checksum has to match); folders now do the same: before a local folder is trashed, the server is asked directly whether it is really gone, and only a definitive "not found" proceeds. A folder the listing merely omitted is kept and stays tracked. Why the listing omitted it in the reported case is still being investigated; this closes the step that turned that into data loss, whatever the cause.
+- **Fixed: turning off startup sync no longer stops the sync that runs when you return to the app (1.0.3-beta.2)** — reported in [#49](https://github.com/siosig/obsidian-nextcloudsync/issues/49). Before 1.0.2, setting **Startup sync delay** to `0` together with the periodic interval and watch mode gave you a fully manual plugin: nothing synced until you pressed Sync now. The resume-on-return sync added in 1.0.2 ignored that choice and synced anyway. Startup sync and resume sync ask the same question — "the app just became available, should it sync?" — at two different moments, so turning the first off now turns the second off too. No new setting; this restores a state 1.0.1 already had.
 - **Dependency hygiene (1.0.3-beta.1)** — three transitive development-only dependencies were pinned past their advisories (`fast-uri`, `@xmldom/xmldom`, `browserslist`). None of them ships in the plugin.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.

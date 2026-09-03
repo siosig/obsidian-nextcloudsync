@@ -75,6 +75,20 @@ export interface ResumeSyncDeps {
   now?: () => number;
   log: (message: string) => void;
   cooldownMs?: number;
+  /**
+   * Whether resuming should be allowed to sync at all (feature 082, issue #49).
+   *
+   * Reads `startupSyncDelaySeconds > 0`: startup sync and resume sync are the same question — "the
+   * app just became available, should it sync?" — asked at two different moments, so turning the
+   * first off is read as the same answer for the second. Before this, someone who set that delay to
+   * 0 specifically to sync only by hand had no way to stop this trigger from firing anyway.
+   *
+   * A function, not a boolean, so a setting flipped mid-session takes effect on the very next resume
+   * with no reload — the same "read at call time" shape as {@link ResumeSyncDeps.getLastSyncTime}.
+   * Optional and defaulting to allowed, so call sites that predate feature 082 (there are none in
+   * this codebase, but the type stays honest about what is required) are not forced to supply it.
+   */
+  startupSyncEnabled?: () => boolean;
 }
 
 /**
@@ -94,6 +108,10 @@ export function makeResumeSyncHandler(deps: ResumeSyncDeps): () => void {
   return () => {
     const engine = deps.getEngine();
     if (!engine) return;
+    if (deps.startupSyncEnabled && !deps.startupSyncEnabled()) {
+      deps.log('resume: skipped — startup sync is off, so app-appearance syncs are off too');
+      return;
+    }
     if (!shouldSyncOnResume(now(), deps.getLastSyncTime(), cooldownMs)) {
       deps.log('resume: skipped — synced within the cooldown');
       return;
