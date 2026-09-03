@@ -253,6 +253,9 @@ export default class ObsidianNextcloudsync extends Plugin {
         getEngine: () => this.syncEngine,
         getLastSyncTime: () => this.syncEngine?.getLastSyncTime() ?? 0,
         log: (message) => { void this.logger.log(message); },
+        // Feature 082 (issue #49): startup sync off means "no automatic sync at all", not just "not
+        // at launch". Read at call time, so toggling the slider takes effect on the very next resume.
+        startupSyncEnabled: () => this.settings.startupSyncDelaySeconds > 0,
       })));
     });
   }
