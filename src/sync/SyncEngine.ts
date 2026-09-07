@@ -14,6 +14,7 @@ import {
   NetworkError,
   PreconditionFailedError,
   RemoteCompareResult,
+  RemoteRootMissingError,
 } from '../types';
 import { LocalAdapter } from '../data/LocalAdapter';
 import { StateDB } from '../data/StateDB';
@@ -847,10 +848,55 @@ export class SyncEngine {
     this.journal.recordHistory(path, op, message, detail);
   }
 
+  /**
+   * The vault folder is gone from the server: put it back and re-seed it from this device
+   * (feature 083, FR-007..013). Never deletes anything locally.
+   *
+   * A whole missing folder proves nothing about any individual file — a renamed or half-migrated
+   * remote, a permission change and a genuine "the user deleted the vault" all look identical from
+   * here — and the folder's remote path is derived from the vault name by the plugin, so the user
+   * cannot be told to recreate it. Treating this as "every file was deleted" would therefore trade a
+   * server-side accident for local data loss. Local wins instead; a user who really wants the remote
+   * to win has "Mirror from remote".
+   *
+   * The MKCOL is the proof. 201 means the folder truly was not there, so resetting tracking and
+   * re-uploading is a restoration. 405 means it IS there and the 404 listing was wrong — in which
+   * case nothing may be reset or deleted, because the next real scan is the only thing that can tell
+   * us what the server actually holds. Any other MKCOL failure lands in the same place.
+   */
+  private async reseedFromLocal(summary: SyncSessionSummary): Promise<void> {
+    const outcome = await this.client!.createVaultRoot();
+    if (outcome === 'exists') {
+      void this.opts.logger?.log(
+        'sync: vault folder listing said 404 but MKCOL says it exists — treating the listing as failed; nothing changed',
+        'error',
+      );
+      throw new Error('Vault folder listing failed (server reported it missing, but it exists). Nothing was changed; will retry on the next sync.');
+    }
+    void this.opts.logger?.log('sync: vault folder missing on the server → created it; re-seeding from local (tracking reset, no local deletions)');
+    new Notice('The vault folder was missing on the server. It has been re-created and this vault is being re-uploaded from this device.', 8000);
+    // Reset rather than force-upload: the first-run path already uploads every local file and MKCOLs
+    // every local folder (empty ones included) against an empty remote, and it is covered by tests.
+    // Reproducing that with a "force" flag would duplicate it — and quietly drift from it.
+    await this.opts.stateDB.reset();
+    await this.initialSync(summary);
+  }
+
   /** First-ever sync: full scan → build plan → execute. */
   private async initialSync(summary: SyncSessionSummary): Promise<void> {
     const client = this.client!;
-    const remoteFiles = await client.getFiles('');
+    // With nothing tracked yet there is no deletion to get wrong, so a missing vault folder is simply
+    // "the server has nothing" — the pre-083 reading, preserved here so a first run against a fresh
+    // server behaves exactly as it always has (INIT-1/2/3): the first upload creates the hierarchy.
+    // This also covers the re-seed path, which calls in right after creating the folder.
+    let remoteFiles: RemoteFileInfo[];
+    try {
+      remoteFiles = await client.getFiles('');
+    } catch (err) {
+      if (!(err instanceof RemoteRootMissingError)) throw err;
+      void this.opts.logger?.log('sync: INITIAL — no vault folder on the server yet; the first upload will create it');
+      remoteFiles = [];
+    }
     const localFiles = await this.scanLocalFiles();
 
     // Populate missing server-side checksums (computed by the server, no download) so that
@@ -890,49 +936,59 @@ export class SyncEngine {
     let fullScanCachedDirs: RemoteDirInfo[] | null = null;
 
     const existingToken = this.opts.stateDB.getSyncToken();
-    if (existingToken) {
-      try {
-        const changes = await client.getChanges(existingToken);
-        this.opts.stateDB.setSyncToken(changes.newSyncToken);
-        remoteFiles = changes.modified;
-        void this.opts.logger?.log(`sync: incremental via token (modified=${changes.modified.length}, remote-deleted=${changes.deleted.length})`);
+    // A missing vault folder surfaces from whichever listing call is made below — including the
+    // token-expired fallback, which is why the guard wraps both branches rather than one. The token
+    // REPORT itself is not a concern: Nextcloud answers 415 (§18 F1) so that branch is unreachable
+    // there, and a server that does support it reports changes, never the root's absence.
+    try {
+      if (existingToken) {
+        try {
+          const changes = await client.getChanges(existingToken);
+          this.opts.stateDB.setSyncToken(changes.newSyncToken);
+          remoteFiles = changes.modified;
+          void this.opts.logger?.log(`sync: incremental via token (modified=${changes.modified.length}, remote-deleted=${changes.deleted.length})`);
 
-        // Detect and apply remote renames (fileId-based) before processing deletions,
-        // so a rename is not misidentified as delete + new-upload.
-        const rt = this.getOrCreateRenameTracker();
-        const remoteRenames = rt.detectRemoteRenames(remoteFiles);
-        for (const [oldPath, newPath] of remoteRenames) {
-          await rt.applyRemoteRename(oldPath, newPath);
-        }
+          // Detect and apply remote renames (fileId-based) before processing deletions,
+          // so a rename is not misidentified as delete + new-upload.
+          const rt = this.getOrCreateRenameTracker();
+          const remoteRenames = rt.detectRemoteRenames(remoteFiles);
+          for (const [oldPath, newPath] of remoteRenames) {
+            await rt.applyRemoteRename(oldPath, newPath);
+          }
 
-        // Handle deletions
-        for (const deletedPath of changes.deleted) {
-          await this.processRemoteDeletion(deletedPath, summary);
+          // Handle deletions
+          for (const deletedPath of changes.deleted) {
+            await this.processRemoteDeletion(deletedPath, summary);
+          }
+        } catch (err) {
+          if (err instanceof SyncTokenExpiredError) {
+            // Fallback to full scan (root-ETag short-circuit may rebuild the listing from State — spec 023).
+            const listing = await this.obtainFullScanListing(client);
+            remoteFiles = listing.remoteFiles;
+            fullScanCachedDirs = listing.cachedDirs;
+            isFullScan = true;
+            const token = await client.getSyncToken();
+            this.opts.stateDB.setSyncToken(token);
+            void this.opts.logger?.log(`sync: sync-token expired → FULL SCAN (remote=${remoteFiles.length}, shortCircuit=${listing.cachedDirs != null}, nextToken=${token ? 'obtained' : 'NULL'}). Remote deletions detected by absence (full-scan reconciliation)`);
+          } else {
+            throw err;
+          }
         }
-      } catch (err) {
-        if (err instanceof SyncTokenExpiredError) {
-          // Fallback to full scan (root-ETag short-circuit may rebuild the listing from State — spec 023).
-          const listing = await this.obtainFullScanListing(client);
-          remoteFiles = listing.remoteFiles;
-          fullScanCachedDirs = listing.cachedDirs;
-          isFullScan = true;
-          const token = await client.getSyncToken();
-          this.opts.stateDB.setSyncToken(token);
-          void this.opts.logger?.log(`sync: sync-token expired → FULL SCAN (remote=${remoteFiles.length}, shortCircuit=${listing.cachedDirs != null}, nextToken=${token ? 'obtained' : 'NULL'}). Remote deletions detected by absence (full-scan reconciliation)`);
-        } else {
-          throw err;
-        }
+      } else {
+        // No prior token (the common Nextcloud case: sync-collection REPORT is unsupported, spec §18 F1,
+        // so every sync lands here). Root-ETag short-circuit may rebuild the listing from State (spec 023).
+        const listing = await this.obtainFullScanListing(client);
+        remoteFiles = listing.remoteFiles;
+        fullScanCachedDirs = listing.cachedDirs;
+        isFullScan = true;
+        const token = await client.getSyncToken();
+        this.opts.stateDB.setSyncToken(token);
+        void this.opts.logger?.log(`sync: FULL SCAN, no prior token (remote=${remoteFiles.length}, shortCircuit=${listing.cachedDirs != null}, nextToken=${token ? 'obtained' : 'NULL'}). Remote deletions detected by absence (full-scan reconciliation)`);
       }
-    } else {
-      // No prior token (the common Nextcloud case: sync-collection REPORT is unsupported, spec §18 F1,
-      // so every sync lands here). Root-ETag short-circuit may rebuild the listing from State (spec 023).
-      const listing = await this.obtainFullScanListing(client);
-      remoteFiles = listing.remoteFiles;
-      fullScanCachedDirs = listing.cachedDirs;
-      isFullScan = true;
-      const token = await client.getSyncToken();
-      this.opts.stateDB.setSyncToken(token);
-      void this.opts.logger?.log(`sync: FULL SCAN, no prior token (remote=${remoteFiles.length}, shortCircuit=${listing.cachedDirs != null}, nextToken=${token ? 'obtained' : 'NULL'}). Remote deletions detected by absence (full-scan reconciliation)`);
+    } catch (err) {
+      if (!(err instanceof RemoteRootMissingError)) throw err;
+      await this.reseedFromLocal(summary);
+      return;
     }
 
     // Retry queue files
@@ -1423,7 +1479,19 @@ export class SyncEngine {
     // locally but missing from the COMPLETE remote listing was deleted on the server → remove it
     // locally (via the user's "Deleted files" setting; recoverable). This path is defended against
     // bad inputs (a truncated/partial listing) because acting on it would silently destroy data.
-    if (isFullScan && remotePathSet.size > 0) {
+    //
+    // The listing's SIZE is deliberately not part of that defence (feature 083 / issue #50). An older
+    // `remotePathSet.size > 0` guard skipped this whole block for an empty listing, back when it was
+    // the only protection; the breaker and the per-candidate 404 re-check below arrived one release
+    // later and subsume it entirely. What it kept doing was refusing to delete anything in the one
+    // case where the server is unambiguous — a vault whose every tracked file really was removed
+    // elsewhere. That left the files on disk AND in State, so the next sync's root-ETag short-circuit
+    // rebuilt them from State as "still on the server" and the vault never converged.
+    //
+    // An empty listing is safe to act on because it cannot be a failure in disguise: a non-207 throws,
+    // and a 404 on the vault folder itself throws RemoteRootMissingError (handled far above, by
+    // re-seeding — not by deleting). What remains is the server saying the folder is there and empty.
+    if (isFullScan) {
       // 1) Build candidates, comparing real content (NOT mtime) so a local edit that did not bump
       //    mtime is never silently lost — same content-vs-base check the upload loop uses.
       const candidates: string[] = [];

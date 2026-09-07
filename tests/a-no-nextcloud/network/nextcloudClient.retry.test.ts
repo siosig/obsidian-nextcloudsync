@@ -1,6 +1,6 @@
 import { requestUrl } from 'obsidian';
 import { NextcloudClient } from '../../../src/network/NextcloudClient';
-import { DEFAULT_SETTINGS, DavSyncSettings } from '../../../src/types';
+import { DEFAULT_SETTINGS, DavSyncSettings, RemoteRootMissingError } from '../../../src/types';
 
 const mockRequestUrl = requestUrl as unknown as jest.Mock;
 
@@ -52,12 +52,16 @@ describe('NextcloudClient — read-only retry on transient req() rejection (feat
     expect(mockRequestUrl).toHaveBeenCalledTimes(2);
   });
 
-  it('getFiles (PROPFIND) retries once after a transient rejection and returns success', async () => {
+  it('getFiles (PROPFIND) retries once after a transient rejection, then surfaces the root 404 as RemoteRootMissingError', async () => {
+    // The retry itself is unchanged: a rejection is transient, so the second attempt happens. What
+    // changed (feature 083) is the verdict on the retry's ANSWER — a 404 on the vault root is no
+    // longer flattened into an empty listing, because "the folder is gone" and "the folder is empty"
+    // drive opposite engine behaviour (see vaultRootListing.test.ts).
     let calls = 0;
     mockRequestUrl.mockImplementation(() => {
       calls += 1;
       if (calls === 1) return Promise.reject(new Error('timeout'));
-      return res(404); // resolved -> getFiles treats 404 (missing base folder) as an empty listing
+      return res(404); // resolved -> the retry reached the server, which says the base folder is missing
     });
 
     const promise = client().getFiles('');
@@ -65,7 +69,7 @@ describe('NextcloudClient — read-only retry on transient req() rejection (feat
 
     await jest.advanceTimersByTimeAsync(1000);
 
-    await expect(promise).resolves.toEqual([]);
+    await expect(promise).rejects.toThrow(RemoteRootMissingError);
     expect(mockRequestUrl).toHaveBeenCalledTimes(2);
   });
 
