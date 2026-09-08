@@ -85,3 +85,32 @@ fixed in 0.7.1 (993de3c) and is no longer a waiver; CF-12 is now verified at lay
 3. If the clause is permanently out of step with intended behaviour → add a
    `waiver` in `clauses.ts` and open a follow-up to update the spec / fix `src`.
    (`src/` is not changed by the test-reorg work itself.)
+
+## b-3 が session 作成で全滅したときの読み方
+
+`Activity name '.md.obsidian.MainActivity' used to start the app doesn't exist or cannot be launched!`
+というエラーは、**設定した activity 名が間違っているという意味ではない**。`appium-adb` の
+`build/lib/tools/app-commands.js:544-551` に「`am start` が `Error: Activity class ... does not exist`
+を返したら activity 名の先頭に `.` を付けて 1 回だけ再試行する」経路があり、例外メッセージに載るのは
+**再試行後**の名前である。`wdio.android.conf.mts` も `wdio-obsidian-service` も `appActivity` を渡して
+いないので、そこを探しても何も見つからない。
+
+真因は「その時点でアプリが端末に存在しない」こと。まず診断バンドルの次の 2 つを見る。
+
+- `.b3-diagnostics/host-diagnostics.txt` の `--- guest: installed packages ---` — `md.obsidian` の在否
+- `.b3-diagnostics/appium-server.log` — session 作成中の `installApp` / `removeApp` / `am start` の順序
+
+`afterTest` の診断コレクタ（`tests/b3-android-ui/support/diagnostics.ts`）は `browser` セッション経由で
+動くため、**session 作成そのものが失敗すると 1 バイトも採れない**。上の 2 つはその穴を埋めるために
+ホスト側（`scripts/b3-android.sh` と appium サーバー）で採っている。
+
+否定済みの仮説（2026-09-08、実機で検証。同じ道を再走しないこと）:
+
+| 仮説 | 結果 |
+|---|---|
+| AVD の RAM 不足 | 否定。8 GB 割当・4.7 GB 空き |
+| appium / uiautomator2 の版 | 否定。3.6.0 / 8.5.0 に戻しても同一エラー |
+| Obsidian APK の破損・SDK 非互換 | 否定。`aapt` v1・`aapt2` とも解析でき、手動 `adb install` も成功 |
+
+**手動で `adb install` して端末の状態を作らないこと。** `wdio-obsidian-service` は `dumpsys` で版を見て
+`removeApp` → `installApp` する。手で入れた版が食い違うと、この判定と噛み合わずに失敗しうる。
