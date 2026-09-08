@@ -194,7 +194,10 @@ export class StandardWebDAVClient implements IWebDAVClient {
     if (!this.remoteBase) return 'exists';
     const ctx = { baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs };
     await ensureRemoteDir(ctx, this.remoteBase, this.createdDirs);
-    return await mkcolStrict(ctx, this.remoteBase);
+    const outcome = await mkcolStrict(ctx, this.remoteBase);
+    // See NextcloudClient.createVaultRoot: a 201 invalidates every cached "already created" entry.
+    if (outcome === 'created') this.createdDirs.clear();
+    return outcome;
   }
 
   async deleteCollection(path: string): Promise<void> {

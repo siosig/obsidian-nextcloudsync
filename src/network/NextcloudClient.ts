@@ -350,7 +350,15 @@ export class NextcloudClient implements IWebDAVClient {
     // being asked. Only the vault folder itself is judged strictly, because its 201-vs-405 is the
     // proof that decides whether the caller may reset tracking and re-seed (contract C-2).
     await ensureRemoteDir(ctx, this.remoteBase, this.createdDirs);
-    return await mkcolStrict(ctx, this.remoteBase);
+    const outcome = await mkcolStrict(ctx, this.remoteBase);
+    // A 201 means the vault folder was genuinely absent, which makes every "already created" entry
+    // under it a lie: those directories went away with it. Without this, a folder this client created
+    // earlier in the session is silently skipped when the re-seed tries to put it back — files
+    // survive (a PUT into a missing parent 404s and re-drives MKCOL) but an EMPTY directory has no
+    // write to fail, so it just never reappears. Caught by INV-14 against a live server; no mock can
+    // see it, because the cache is inside the client.
+    if (outcome === 'created') this.createdDirs.clear();
+    return outcome;
   }
 
   async deleteCollection(path: string): Promise<void> {
