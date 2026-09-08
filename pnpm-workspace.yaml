@@ -4,6 +4,10 @@ allowBuilds:
   # devDependency instead, which appium discovers on its own (`appium driver list --installed` reports
   # `uiautomator2 [installed (npm)]` with this denied), so the script buys nothing and would add
   # network activity to every install.
+  # jest-haste-map's optional native file watcher, used only by `jest --watch`. Every run here is
+  # one-shot (`pnpm test`, CI), and jest falls back to its own crawler when this is absent, so the
+  # native build buys nothing and would add a compiler to every install.
+  '@parcel/watcher': false
   appium: false
   classic-level: false
   edgedriver: false
@@ -17,7 +21,16 @@ allowBuilds:
 # brace-expansion=minimatch glob matching in eslint/jest/wdio/mocha, fast-uri/fast-xml-parser/tar=ajv
 # schema validation and the wdio driver downloader).
 # Range-scoped where only some versions are vulnerable; unconditional where the whole line is safe to pin.
-# (pnpm v11 reads overrides here, not in package.json.)
+# (pnpm reads overrides here, not in package.json.)
+#
+# Re-verified 2026-09-08 (spec 084) by deleting every entry below and re-resolving: three of them still
+# change the answer — serialize-javascript (6.0.2 comes back), js-yaml (3.15.2 and 4.3.2 come back) and
+# @puppeteer/browsers (falls back to 2.13.2). The rest currently resolve at or above their floor on
+# their own and are kept as a ratchet, not because they are doing work today: dropping them would let a
+# later dependency update walk back under an advisory silently, and Dependabot only re-evaluates on
+# main. Two entries were dropped because they had become unappliable rather than merely quiet — `diff`
+# (mocha 12 declares ^9.0.0, so nothing lands in the old >=6 <8.0.3 window) and `ip-address` (gone from
+# the tree entirely).
 overrides:
   serialize-javascript@<7.0.5: '>=7.0.5' # GHSA RCE/DoS (<=7.0.2 high, <7.0.5 moderate), via mocha
   # Unconditional (not range-scoped): every transitive dependent already tolerates 4.x/5.x, so pin the
@@ -54,22 +67,12 @@ overrides:
   # GHSA-w8wr-v893-vjvp: process crash via PAX numeric path type confusion; via wdio-obsidian-service
   # (unpacks the downloaded Obsidian build for b-2).
   tar: '>=7.5.18 <8.0.0' # wdio-obsidian-service declares ^7.5.3
-  # GHSA leading-zero octet confusion (<=10.3.0, SSRF/trust-boundary bypass), CIDR-suffix suppression
-  # of special-use classification (<=10.2.1) and IPv4-mapped/NAT64 misclassification (<=10.2.0);
-  # via socks -> socks-proxy-agent, i.e. the wdio driver downloader's proxy support.
-  ip-address: '>=10.3.1 <11.0.0' # socks declares ^10.1.1
   # Two undici major lines coexist and are independently vulnerable, so neither an unbounded floor nor
   # a single selector works; each is pinned inside its own major. Advisories closed: cookie attribute
   # injection, CRLF injection via blob-like body 'type', retry-interceptor response desynchronization
   # (both lines), plus Cache-Control whitespace and degenerate private-cache-directive disclosure (7.x).
   'undici@>=6.0.0 <6.28.0': '>=6.28.0 <7.0.0' # via webdriver (^6.21.3) — b-2 wdio only
   'undici@>=7.0.0 <7.29.0': '>=7.29.0 <8.0.0' # via @electron/get (^7.24.4) and cheerio (^7.12.0)
-  # GHSA-73rr-hh4g-fpgx: jsdiff DoS in parsePatch/applyPatch. The ONLY override here that crosses a
-  # major: mocha declares diff@^7.0.0 and the fix ships in 8.0.3+, with no mocha release (checked up to
-  # 11.8.0) that moves to ^8. Verified by running mocha against jsdiff 8.0.4 with both failure diff
-  # paths it uses — diffWordsWithSpace (string) and createPatch (object) — and both render correctly;
-  # jsdiff 8 still ships CJS. Scoped so mocha 10.x (@wdio/mocha-framework, diff@5.2.2) is untouched.
-  'diff@>=6.0.0 <8.0.3': '>=8.0.3 <9.0.0' # via our direct mocha 11.x devDependency
   # GHSA-jmr9-qjv8-65gv / CVE-2026-56876 (CVSS 8.1): extract-zip does not validate symlink targets.
   # extract-zip itself CANNOT be overridden — 2.0.1 is the newest release (2023) and is the vulnerable
   # one, so no patched floor exists. It reaches us only as @puppeteer/browsers -> @wdio/utils -> wdio,
