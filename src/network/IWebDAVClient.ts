@@ -1,7 +1,22 @@
-import { NextcloudFeatures, RemoteFileInfo, RemoteDirInfo, SyncChanges, FileVersion } from '../types';
+import { NextcloudFeatures, RemoteFileInfo, RemoteDirInfo, SyncChanges, FileVersion, VaultRootOutcome } from '../types';
 
 export interface IWebDAVClient {
   connect(): Promise<NextcloudFeatures>;
+  /**
+   * The COMPLETE listing beneath `path` (the vault root when `path` is '').
+   *
+   * Contract (specs/083-empty-listing-absence-delete/contracts/vault-root.md, C-1):
+   * - 207 with no children   → [] — the folder exists and is empty. This is the server's truth about
+   *                            its contents, so the full scan reads it as such and absence-based
+   *                            deletion runs (guarded by the mass-delete breaker and a per-candidate
+   *                            404 re-check), exactly as it would for a listing of any other size.
+   * - 404 on the ROOT ('')   → throws RemoteRootMissingError — the vault folder itself is gone, which
+   *                            says nothing about individual files and must never read as "everything
+   *                            was deleted". The engine creates the folder and re-seeds from local.
+   * - 404 on a subpath       → [] (unchanged); for the recursive standard-WebDAV walk, a subfolder
+   *                            that vanishes mid-walk is an empty subtree, not a failed listing.
+   * - any other non-207      → throws NetworkError (an ambiguous failure must not read as "empty").
+   */
   getFiles(path: string): Promise<RemoteFileInfo[]>;
   /**
    * Remote state of ONE file (PROPFIND Depth:0), or null when the path holds no file.
@@ -45,6 +60,20 @@ export interface IWebDAVClient {
    * first-class entity (not derived from whether it holds files). Existing collections are fine.
    */
   createDirectory(path: string): Promise<void>;
+  /**
+   * Create the vault folder (the sync root) and REPORT whether it had to be created (feature 083).
+   *
+   * Contract (specs/083-empty-listing-absence-delete/contracts/vault-root.md, C-2):
+   * - 'created' (MKCOL 201) → the folder genuinely was not there; the caller may re-seed from local
+   * - 'exists'  (MKCOL 405) → it is there after all, so the 404 listing that led here was WRONG; the
+   *                           caller must change nothing and retry on the next sync
+   * - anything else          → throws NetworkError (MKCOL), likewise changing nothing
+   *
+   * Missing ancestors of the vault folder are created best-effort first (as the first upload does);
+   * only the vault folder itself is judged strictly, because only it is the proof. A client whose
+   * remote base is the WebDAV root has nothing to create and answers 'exists'.
+   */
+  createVaultRoot(): Promise<VaultRootOutcome>;
   /**
    * DELETE a directory (collection). WebDAV DELETE on a collection is recursive, so callers
    * MUST confirm emptiness via {@link isRemoteDirEmpty} first. A 404 is treated as success.

@@ -5,6 +5,7 @@ import { describeLive } from '../support/env';
 import { makeClient } from '../support/clientFactory';
 import { makeIsolatedWorkspace, cleanupWorkspace, IsolatedWorkspace } from '../support/isolation';
 import { textBuf, decodeBuf } from '../support/helpers';
+import { RemoteRootMissingError } from '../../../src/types';
 
 describeLive('Layer A — initial state (no vault folder on server yet)', (getEnv) => {
   let ws: IsolatedWorkspace;
@@ -27,9 +28,12 @@ describeLive('Layer A — initial state (no vault folder on server yet)', (getEn
     expect(features.isNextcloud).toBe(true);
   });
 
-  it('INIT-2 getFiles on a non-existent vault folder returns [] (404 → empty)', async () => {
-    const files = await client.getFiles('');
-    expect(files).toEqual([]);
+  it('INIT-2 getFiles on a non-existent vault folder reports it as missing, not as empty', async () => {
+    // Feature 083 (issue #50) split these two facts apart. A 404 on the vault root used to be
+    // flattened into an empty listing, which the full scan then read as "the server has no files" —
+    // i.e. as every tracked file having been deleted. The client now says which one it is, and the
+    // engine answers a missing folder by re-creating it, never by deleting.
+    await expect(client.getFiles('')).rejects.toThrow(RemoteRootMissingError);
   });
 
   it('INIT-3 first upload into a fresh vault creates the folder and the file', async () => {

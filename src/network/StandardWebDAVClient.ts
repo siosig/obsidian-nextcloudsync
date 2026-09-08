@@ -12,10 +12,12 @@ import {
   ConflictError,
   FeatureUnsupportedError,
   PreconditionFailedError,
+  RemoteRootMissingError,
+  VaultRootOutcome,
 } from '../types';
 import { IWebDAVClient } from './IWebDAVClient';
 import { DavSyncSettings } from '../types';
-import { toRemotePath, hrefToRelative, encodeRemoteUrl, encodeServerUrl, ensureRemoteDir } from './remotePath';
+import { toRemotePath, hrefToRelative, encodeRemoteUrl, encodeServerUrl, ensureRemoteDir, mkcolStrict } from './remotePath';
 import { parseResponses, readHref, readProp, readIsCollection, readDavProps } from './dav/propfind';
 import { NO_CACHE_HEADERS } from './noCacheHeaders';
 
@@ -124,8 +126,14 @@ export class StandardWebDAVClient implements IWebDAVClient {
       body: `<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:getetag/><d:getcontentlength/><d:getlastmodified/><d:resourcetype/></d:prop></d:propfind>`,
       throw: false,
     });
-    // A missing folder (e.g. before the first sync) returns 404. Treat it as empty.
-    if (res.status === 404) return;
+    // Only the ROOT of the walk turns a 404 into an error (feature 083): that means the vault folder
+    // itself is gone, which must never reach the engine as "the server has no files". Deeper in the
+    // walk a 404 is a subfolder that vanished between its parent's listing and its own — a normal
+    // race whose correct reading is an empty subtree, not a failed listing of the whole vault.
+    if (res.status === 404) {
+      if (rel === '') throw new RemoteRootMissingError();
+      return;
+    }
     if (res.status !== 207) throw new NetworkError(res.status, res.text, 'PROPFIND');
     const { files, folders } = this.parseListing(res.text, rel);
     out.push(...files);
@@ -179,6 +187,17 @@ export class StandardWebDAVClient implements IWebDAVClient {
       toRemotePath(this.remoteBase, `${path}/_`),
       this.createdDirs,
     );
+  }
+
+  /** @see IWebDAVClient.createVaultRoot — identical contract to the Nextcloud client (MKCOL is plain WebDAV). */
+  async createVaultRoot(): Promise<VaultRootOutcome> {
+    if (!this.remoteBase) return 'exists';
+    const ctx = { baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs };
+    await ensureRemoteDir(ctx, this.remoteBase, this.createdDirs);
+    const outcome = await mkcolStrict(ctx, this.remoteBase);
+    // See NextcloudClient.createVaultRoot: a 201 invalidates every cached "already created" entry.
+    if (outcome === 'created') this.createdDirs.clear();
+    return outcome;
   }
 
   async deleteCollection(path: string): Promise<void> {

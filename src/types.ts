@@ -557,6 +557,31 @@ export class NetworkError extends Error {
     this.name = 'NetworkError';
   }
 }
+/**
+ * The vault folder itself is absent from the server: a Depth:infinity PROPFIND of the sync root came
+ * back 404 (feature 083, GitHub issue #50).
+ *
+ * This is deliberately NOT the same signal as "the vault folder is there and holds no files". An
+ * empty listing is the server's truth about its contents and drives absence-based deletion; a
+ * missing folder says nothing about any individual file, and the plugin — not the user — chose that
+ * folder's remote path from the vault name, so the user cannot be expected to recreate it. The
+ * engine answers this by creating the folder and re-seeding it from local, never by deleting.
+ *
+ * Extends NetworkError (status 404) so every existing `instanceof NetworkError` branch — the retry
+ * queue, error reporting — keeps classifying it exactly as it did before.
+ */
+export class RemoteRootMissingError extends NetworkError {
+  constructor() {
+    super(404, '', 'PROPFIND');
+    this.name = 'RemoteRootMissingError';
+  }
+}
+/**
+ * Result of {@link IWebDAVClient.createVaultRoot}: whether the MKCOL actually created the vault
+ * folder (201) or found it already present (405). The distinction is the PROOF that decides whether
+ * a re-seed may proceed — see specs/083-empty-listing-absence-delete/contracts/vault-root.md.
+ */
+export type VaultRootOutcome = 'created' | 'exists';
 export class MaintenanceModeError extends Error {
   constructor() { super('Nextcloud is in maintenance mode'); this.name = 'MaintenanceModeError'; }
 }

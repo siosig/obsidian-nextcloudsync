@@ -25,8 +25,9 @@ describeLive('Layer B — empty-dir pruning end-to-end (engine)', (getEnv) => {
     const env = getEnv();
 
     // Device A creates a folder of notes (plus an unrelated note that survives the whole test, so
-    // the remote listing is never empty — mirroring a real vault and keeping the absence-deletion
-    // safety guard, which refuses to act on a wholly-empty listing, from suppressing the deletions).
+    // the remote listing is never empty — mirroring a real vault. Feature 083 removed the guard that
+    // used to skip absence-deletion on a wholly-empty listing, so this now reads as realism, not a
+    // workaround; INV-13 covers the empty-listing case directly.
     const a = makeDevice(env, ws.remoteBase, 'deviceA-ed1');
     a.vault.seedLocal('keep.md', 'survivor');
     a.vault.seedLocal('2011/a.md', 'alpha');

@@ -13,10 +13,12 @@ import {
   FileLockedError,
   MaintenanceModeError,
   PreconditionFailedError,
+  RemoteRootMissingError,
+  VaultRootOutcome,
 } from '../types';
 import { IWebDAVClient } from './IWebDAVClient';
 import { DavSyncSettings } from '../types';
-import { toRemotePath, hrefToRelative, encodeRemoteUrl, encodeServerUrl, ensureRemoteDir } from './remotePath';
+import { toRemotePath, hrefToRelative, encodeRemoteUrl, encodeServerUrl, ensureRemoteDir, mkcolStrict } from './remotePath';
 import { sha256 } from '../util/hash';
 import { PARSE_YIELD_EVERY } from '../util/limits';
 import { NO_CACHE_HEADERS } from './noCacheHeaders';
@@ -222,8 +224,15 @@ export class NextcloudClient implements IWebDAVClient {
       body: PROPFIND_BODY,
       throw: false,
     });
-    // A missing base folder (before the first sync) returns 404. Treat it as an empty list and proceed to the initial upload.
-    if (res.status === 404) return [];
+    // A 404 on the vault folder itself is NOT an empty listing (feature 083 / issue #50). Collapsing
+    // the two hid a whole missing vault behind "the server has no files", which the full scan then
+    // read as "everything was deleted remotely". They are different facts and the engine acts on them
+    // differently: an empty listing drives absence-based deletion, a missing folder drives a re-seed.
+    // Subpaths keep the old meaning — nothing depends on telling an absent subfolder from an empty one.
+    if (res.status === 404) {
+      if (path === '') throw new RemoteRootMissingError();
+      return [];
+    }
     if (res.status !== 207) throw new NetworkError(res.status, res.text, 'PROPFIND');
     return await this.parsePropfindResponse(res.text);
   }
@@ -330,6 +339,26 @@ export class NextcloudClient implements IWebDAVClient {
       toRemotePath(this.remoteBase, `${path}/_`),
       this.createdDirs,
     );
+  }
+
+  async createVaultRoot(): Promise<VaultRootOutcome> {
+    // A client whose remote base IS the files root has no vault folder to create; answering 'exists'
+    // keeps the caller on its no-destructive-action path rather than inventing a re-seed.
+    if (!this.remoteBase) return 'exists';
+    const ctx = { baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs };
+    // Ancestors are best-effort, exactly as the first upload creates them: they are not the question
+    // being asked. Only the vault folder itself is judged strictly, because its 201-vs-405 is the
+    // proof that decides whether the caller may reset tracking and re-seed (contract C-2).
+    await ensureRemoteDir(ctx, this.remoteBase, this.createdDirs);
+    const outcome = await mkcolStrict(ctx, this.remoteBase);
+    // A 201 means the vault folder was genuinely absent, which makes every "already created" entry
+    // under it a lie: those directories went away with it. Without this, a folder this client created
+    // earlier in the session is silently skipped when the re-seed tries to put it back — files
+    // survive (a PUT into a missing parent 404s and re-drives MKCOL) but an EMPTY directory has no
+    // write to fail, so it just never reappears. Caught by INV-14 against a live server; no mock can
+    // see it, because the cache is inside the client.
+    if (outcome === 'created') this.createdDirs.clear();
+    return outcome;
   }
 
   async deleteCollection(path: string): Promise<void> {
