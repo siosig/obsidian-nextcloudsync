@@ -3,7 +3,9 @@
 // mirror was invoked before any sync had populated this.client; this locks in the connect-on-demand fix.
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { sha256 } from '../../../src/util/hash';
-import { DavSyncSettings, NextcloudFeatures, RemoteFileInfo } from '../../../src/types';
+import {
+  DavSyncSettings, NextcloudFeatures, RemoteFileInfo, RemoteRootMissingError,
+} from '../../../src/types';
 
 const remote = (path: string, checksum: string | null): RemoteFileInfo => ({
   path, fileId: null, checksum, etag: null, size: 1, lastModified: 0,
@@ -98,5 +100,27 @@ describe('[SPEC:MIR-1] SyncEngine.planRemoteMirror — connects on demand', () =
     expect(plan.ok).toBe(false);
     expect(plan.reason).toContain('Failed to list the remote');
     expect(plan.deleteFiles).toHaveLength(0);
+  });
+
+  it('[SPEC:VRR-6] plans zero deletions when the vault folder itself is missing from the server', async () => {
+    // Feature 083 side effect, locked in here. Mirror-from-remote makes the remote authoritative and
+    // deletes whatever the vault holds that the listing does not — so a root 404 read as "[]" would
+    // plan the deletion of EVERY local file and folder. Turning that 404 into a typed throw routes it
+    // through the abort gate above instead, and the gate is what keeps the plan empty. This is a
+    // regression test for the gate, not for the mirror: it must stay `ok:false`, never "mirror an
+    // empty server". The engine's own repair (create the folder, re-seed from local) is the sync
+    // path's business (VRR-1); the mirror simply declines to act.
+    const getFiles = jest.fn(async (): Promise<RemoteFileInfo[]> => { throw new RemoteRootMissingError(); });
+    const { engine } = makeEngine({
+      getFiles,
+      localFiles: [{ path: 'keepme.md', content: new TextEncoder().encode('local only') }],
+    });
+    const plan = await engine.planRemoteMirror();
+
+    expect(plan.ok).toBe(false);
+    expect(plan.reason).toContain('Failed to list the remote');
+    expect(plan.deleteFiles).toHaveLength(0);
+    expect(plan.deleteDirs).toHaveLength(0);
+    expect(plan.downloads).toHaveLength(0);
   });
 });

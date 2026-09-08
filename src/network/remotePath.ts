@@ -1,5 +1,6 @@
 import { NO_CACHE_HEADERS } from './noCacheHeaders';
 import { requestUrlWithTimeout } from './requestWithTimeout';
+import { NetworkError, VaultRootOutcome } from '../types';
 
 /**
  * Helpers for converting between the remote base folder (the Vault name) and paths.
@@ -162,4 +163,32 @@ export async function ensureRemoteDir(
     // 201=created / 405=already exists are both fine; continue best-effort on other codes too.
     createdCache.add(acc);
   }
+}
+
+/**
+ * MKCOL a single collection and REPORT what the server said, instead of the best-effort
+ * "any code is fine" of {@link ensureRemoteDir} (feature 083).
+ *
+ * This exists to answer one question: was the vault folder really missing? A 404 from the listing
+ * PROPFIND alone cannot be trusted to mean that — a broken listing looks identical — and re-seeding
+ * on a lie would reset the tracking index for nothing. MKCOL settles it with a side effect that only
+ * succeeds when the folder genuinely was not there: 201 proves absence, 405 proves the listing was
+ * wrong. Anything else is an error the caller must not paper over.
+ *
+ * Deliberately does NOT consult (or populate) the createdDirs cache: the point is to ask the server
+ * every time, and a cached "already created" would answer from memory.
+ */
+export async function mkcolStrict(
+  ctx: { baseUrl: string; authHeader: string; timeoutMs?: number },
+  remotePath: string,
+): Promise<VaultRootOutcome> {
+  const res = await requestUrlWithTimeout({
+    url: encodeRemoteUrl(ctx.baseUrl, remotePath),
+    method: 'MKCOL',
+    headers: { Authorization: ctx.authHeader, ...NO_CACHE_HEADERS },
+    throw: false,
+  }, ctx.timeoutMs ?? 0);
+  if (res.status === 201) return 'created';
+  if (res.status === 405) return 'exists';
+  throw new NetworkError(res.status, res.text, 'MKCOL');
 }
