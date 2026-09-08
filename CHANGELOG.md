@@ -11,6 +11,16 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [1.0.4] - 2026-09-08
+
+### Fixed
+- **Deleting the last note in a Vault never reached your other devices.** Reported in [#50](https://github.com/siosig/obsidian-nextcloudsync/issues/50). When a full sync found the server listing empty, the plugin skipped its "these files are gone from the server, remove them here too" step entirely. If every file it was tracking had been deleted elsewhere — easiest to hit in a small Vault — the notes stayed on disk, and because they also stayed in the plugin's index, the next sync rebuilt the listing from that index and concluded they were still on the server, so it never recovered on its own. The guard dated from before the two protections that actually matter existed, and they subsume it: a limit that refuses a suspiciously large batch of deletions, and a direct check with the server for every single candidate before anything is removed. An empty listing can no longer be a failure in disguise either — a listing that fails now raises an error instead of quietly looking empty.
+- **A Vault folder deleted on the server is now put back, not obeyed.** The same investigation found that a missing Vault folder left the Vault in limbo: files were neither uploaded nor removed. A missing folder says nothing about any individual file — a rename, a permissions change or a half-finished migration all look the same — and the folder's remote path is derived from the Vault name by the plugin rather than chosen by the user. The plugin now re-creates the folder and re-uploads the Vault from that device, deleting nothing locally, and only once the server has confirmed the folder really was absent. If it turns out to be present after all, nothing is reset, uploaded or deleted and the next sync tries again.
+- **An empty folder was not put back when the Vault folder had to be re-created.** The plugin keeps a note of which folders it has already created on the server, and that note outlived the folder it described, so the MKCOL that would have restored an empty one was skipped as redundant. Files were unaffected because a write into a missing parent fails and that failure already forces a retry; an empty folder has no failing write to trigger it.
+
+### Changed
+- **Development toolchain refreshed.** Every dependency that tests, lints or bundles the plugin moved to its current release, along with pnpm, Node and the CI actions. The packaged output is byte-for-byte identical, and nothing in the plugin's own behaviour changed.
+
 ## [1.0.3] - 2026-09-03
 
 ### Fixed
@@ -436,6 +446,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[1.0.4]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.4
 [1.0.3]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.3
 [1.0.2]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.2
 [1.0.1]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.1
