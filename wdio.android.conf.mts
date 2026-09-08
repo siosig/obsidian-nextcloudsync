@@ -68,7 +68,18 @@ export const config: WebdriverIO.Config = {
     // chromedriver_autodownload: the WebView driver must match whatever Chrome
     // version the emulator image ships. adb_shell: needed to pull system logs
     // for the failure diagnostics bundle.
-    ['appium', { args: { allowInsecure: '*:chromedriver_autodownload,*:adb_shell' } }],
+    ['appium', {
+      args: {
+        allowInsecure: '*:chromedriver_autodownload,*:adb_shell',
+        // When session creation itself fails, the afterTest collector gets nothing: it works through
+        // the `browser` object, and there is no browser. The server's own log is then the only record
+        // of what happened — which install/uninstall ran, in what order, and what `am start` said.
+        // Written under the diagnostics directory so the runner's existing rsync brings it back.
+        log: path.resolve('.b3-diagnostics/appium-server.log'),
+        logLevel: 'debug',
+        logTimestamp: true,
+      },
+    }],
   ],
   reporters: ['obsidian'], // shows the Obsidian version instead of Chromium's
   // Separate from b-2's `.obsidian-cache`: the Android app downloads are a

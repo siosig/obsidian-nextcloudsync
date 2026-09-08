@@ -25,6 +25,12 @@ describe('[SPEC:RSY-1] b-3 — returning to the app runs a sync', function () {
     // Narrower than the AND-1 probe next door: that one checks the platform emits the event at all,
     // this one checks the plugin's own subscription survived to receive it. A listener registered in
     // onLayoutReady and then torn down by something would fail here and nowhere else.
+    //
+    // Subscribe to BOTH events, because that is what onAppResume does (src/util/appResume.ts) and
+    // the point of this probe is that the plugin's subscription still receives a resume — not that
+    // one particular event carries it. Watching only visibilitychange made this fail on 2026-09-08
+    // while the two behavioural tests below passed, which is the signature of a resume arriving as
+    // `focus` instead: the plugin syncs, and a probe that has picked one event sees nothing.
     await browser.executeObsidian(() => {
       (window as unknown as Record<string, unknown>).__b3ResumeSync = 0;
       const bump = (): void => {
@@ -34,6 +40,7 @@ describe('[SPEC:RSY-1] b-3 — returning to the app runs a sync', function () {
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') bump();
       });
+      window.addEventListener('focus', bump);
     });
 
     await suspend();
