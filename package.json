@@ -3,7 +3,7 @@
   "version": "1.0.4-beta.1",
   "description": "Bidirectional sync between Obsidian and Nextcloud",
   "main": "main.js",
-  "packageManager": "pnpm@11.4.0",
+  "packageManager": "pnpm@12.3.4",
   "scripts": {
     "prepare": "git config core.hooksPath .githooks || true",
     "dev": "node esbuild.config.mjs",
