@@ -60,6 +60,7 @@ describeLive('Layer B — empty listing and a missing vault folder', (getEnv) =>
     d.vault.seedFolder('empty');                               // empty folders are first-class (DP)
     await d.sync();
     expect(await remoteExists('sub/b.md')).toBe(true);
+    expect(await remoteExists('empty')).toBe(true);   // baseline: the empty dir does reach the server
 
     // Someone removes the whole vault folder on the server. deleteFile('', '') targets the workspace
     // itself because the client is constructed with it as its remoteBase.
