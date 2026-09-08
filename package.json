@@ -44,7 +44,7 @@
     "@xmldom/xmldom": "^0.9.10",
     "appium": "^3.6.0",
     "appium-uiautomator2-driver": "^8.5.0",
-    "esbuild": "0.28.1",
+    "esbuild": "^0.28.1",
     "eslint": "^10.5.0",
     "eslint-plugin-obsidianmd": "^0.4.1",
     "jest": "^30.4.2",

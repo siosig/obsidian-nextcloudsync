@@ -76,7 +76,7 @@ importers:
         specifier: ^8.5.0
         version: 8.5.0(@appium/logger@2.0.10)(@types/node@26.0.0)(appium@3.6.0(@types/node@26.0.0))
       esbuild:
-        specifier: 0.28.1
+        specifier: ^0.28.1
         version: 0.28.1
       eslint:
         specifier: ^10.5.0
