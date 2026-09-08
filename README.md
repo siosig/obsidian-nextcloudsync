@@ -31,9 +31,10 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (1.0.4-beta.2)
+## What's new in this release (1.0.4-beta.3)
 
-- **Same fixes as 1.0.4-beta.1, on a refreshed toolchain (1.0.4-beta.2)** — this build carries no plugin changes at all. Everything that runs the tests, the linter and the bundler was moved to its current release, and the packaged `main.js` came out byte-for-byte identical to the previous beta, so if you are testing [#50](https://github.com/siosig/obsidian-nextcloudsync/issues/50) you are testing exactly the same code. Two dependency pins were dropped because they had nothing left to act on, and the rest were re-checked by removing them and watching what the resolver did, rather than assumed to be needed. TypeScript stays on 6 deliberately: version 7 is a rewrite that no longer ships the compiler API this project's test and lint tooling calls.
+- **Fixed: an empty folder was not put back when the vault folder had to be re-created (1.0.4-beta.3)** — 1.0.4-beta.1 taught the plugin to re-create the vault folder and re-upload from your device when the folder goes missing on the server. That restored your notes, but a folder you had deliberately left empty stayed missing. The plugin keeps a note of which folders it has already created on the server, and that note outlived the folder it described, so the request to put the empty one back was skipped as redundant. Files were unaffected because uploading into a missing folder fails and that failure already forced a retry — an empty folder has no upload to fail. This was found by running the deletion tests against a real server; it cannot be reproduced against a stand-in, because the stale note lives inside the plugin's own connection.
+- **Everything else is unchanged from 1.0.4-beta.1 and beta.2** — the [#50](https://github.com/siosig/obsidian-nextcloudsync/issues/50) fixes and the dependency refresh are the same.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
