@@ -23,7 +23,7 @@ import { sha256 } from '../util/hash';
 import { PARSE_YIELD_EVERY } from '../util/limits';
 import { NO_CACHE_HEADERS } from './noCacheHeaders';
 import {
-  parseResponses, readSyncToken, readHref, readProp, readStatusText,
+  readMultistatus, readSyncToken, readHref, readProp, readStatusText,
   readIsCollection, readDavProps, readOwncloudProps,
 } from './dav/propfind';
 import { withRetry } from '../util/retry';
@@ -234,7 +234,7 @@ export class NextcloudClient implements IWebDAVClient {
       return [];
     }
     if (res.status !== 207) throw new NetworkError(res.status, res.text, 'PROPFIND');
-    return await this.parsePropfindResponse(res.text);
+    return await this.parsePropfindResponse(res.text, { op: 'getFiles', path, status: res.status, method: 'PROPFIND' });
   }
 
   /**
@@ -261,7 +261,7 @@ export class NextcloudClient implements IWebDAVClient {
     });
     if (res.status === 404) return null; // no such file (or its parent folder does not exist)
     if (res.status !== 207) throw new NetworkError(res.status, res.text, 'PROPFIND');
-    const entries = await this.parsePropfindResponse(res.text);
+    const entries = await this.parsePropfindResponse(res.text, { op: 'statFile', path: remotePath, status: res.status, method: 'PROPFIND' });
     return entries[0] ?? null;
   }
 
@@ -269,7 +269,10 @@ export class NextcloudClient implements IWebDAVClient {
     // Root-ETag short-circuit (spec 023): a single Depth:0 PROPFIND on the vault root. Nextcloud
     // propagates any descendant change up to the root collection's ETag, so a matching value means
     // the remote tree is unchanged since the last full scan. Never throws — any non-207 (incl. 404
-    // before the folder exists) or error yields null so the caller falls back to a real full scan.
+    // before the folder exists), unreadable body, or other error yields null so the caller falls
+    // back to a real full scan (feature 087: the fall-back was always correct here, this just makes
+    // an unreadable body go through the same validated reader as every other call instead of its own
+    // unchecked DOMParser).
     try {
       const res = await this.reqReadonly({
         url: this.remoteUrl(''),
@@ -279,9 +282,9 @@ export class NextcloudClient implements IWebDAVClient {
         throw: false,
       });
       if (res.status !== 207) return null;
-      const doc = new DOMParser().parseFromString(res.text, 'text/xml');
-      const resp = doc.getElementsByTagNameNS('DAV:', 'response')[0];
-      const etag = resp?.getElementsByTagNameNS('DAV:', 'getetag')[0]?.textContent?.replace(/"/g, '') ?? null;
+      const responses = readMultistatus(res.text, { op: 'getRootEtag', path: '', status: res.status, method: 'PROPFIND' });
+      const etag = readProp(responses[0])
+        ?.getElementsByTagNameNS('DAV:', 'getetag')[0]?.textContent?.replace(/"/g, '') ?? null;
       return etag && etag.length > 0 ? etag : null;
     } catch {
       return null;
@@ -303,14 +306,15 @@ export class NextcloudClient implements IWebDAVClient {
     });
     if (res.status === 404) return [];
     if (res.status !== 207) throw new NetworkError(res.status, res.text, 'PROPFIND');
-    return await this.parsePropfindDirectories(res.text);
+    return await this.parsePropfindDirectories(res.text, { op: 'getDirectories', path, status: res.status, method: 'PROPFIND' });
   }
 
   async isRemoteDirEmpty(path: string): Promise<boolean> {
     // Depth:1 lists the collection itself plus its immediate children. "Empty" (rmdir
     // semantics) ⇔ the only response is the collection itself. Conservative on any
     // ambiguity: never report "empty" unless the server clearly says so, so a recursive
-    // DELETE is never issued against a directory that might still hold data.
+    // DELETE is never issued against a directory that might still hold data. An unreadable body is
+    // exactly that kind of ambiguity (feature 087) — caught below, same as any other failure here.
     const res = await this.reqReadonly({
       url: this.remoteUrl(path),
       method: 'PROPFIND',
@@ -319,11 +323,15 @@ export class NextcloudClient implements IWebDAVClient {
       throw: false,
     });
     if (res.status !== 207) return false;
-    const doc = new DOMParser().parseFromString(res.text, 'text/xml');
-    const responses = doc.getElementsByTagNameNS('DAV:', 'response');
+    let responses: Element[];
+    try {
+      responses = readMultistatus(res.text, { op: 'isRemoteDirEmpty', path, status: res.status, method: 'PROPFIND' });
+    } catch {
+      return false;
+    }
     let children = 0;
-    for (let i = 0; i < responses.length; i++) {
-      const href = responses[i].getElementsByTagNameNS('DAV:', 'href')[0]?.textContent ?? '';
+    for (const resp of responses) {
+      const href = readHref(resp);
       const rel = hrefToRelative(this.baseUrl, this.remoteBase, href);
       // rel === '' is the collection itself (or the base); any other entry is a child.
       if (rel !== null && rel !== '' && rel !== path) children++;
@@ -384,7 +392,7 @@ export class NextcloudClient implements IWebDAVClient {
     });
     if (res.status === 410) throw new SyncTokenExpiredError();
     if (res.status !== 207) throw new NetworkError(res.status, res.text, 'REPORT');
-    return await this.parseSyncChanges(res.text);
+    return await this.parseSyncChanges(res.text, { op: 'getChanges', path: '', status: res.status, method: 'REPORT' });
   }
 
   async downloadFile(remotePath: string): Promise<ArrayBuffer> {
@@ -708,9 +716,11 @@ export class NextcloudClient implements IWebDAVClient {
     }
   }
 
-  private async parsePropfindResponse(xml: string): Promise<RemoteFileInfo[]> {
+  private async parsePropfindResponse(
+    xml: string, ctx: { op: string; path: string; status: number; method: 'PROPFIND' | 'REPORT' },
+  ): Promise<RemoteFileInfo[]> {
     const results: RemoteFileInfo[] = [];
-    const responses = parseResponses(xml);
+    const responses = readMultistatus(xml, ctx);
     for (let i = 0; i < responses.length; i++) {
       // Yield to the event loop periodically so parsing a large Depth:infinity listing does not
       // freeze the UI / trigger an Android ANR (FR-027 / P2-B).
@@ -729,9 +739,11 @@ export class NextcloudClient implements IWebDAVClient {
     return results;
   }
 
-  private async parsePropfindDirectories(xml: string): Promise<RemoteDirInfo[]> {
+  private async parsePropfindDirectories(
+    xml: string, ctx: { op: string; path: string; status: number; method: 'PROPFIND' | 'REPORT' },
+  ): Promise<RemoteDirInfo[]> {
     const results: RemoteDirInfo[] = [];
-    const responses = parseResponses(xml);
+    const responses = readMultistatus(xml, ctx);
     for (let i = 0; i < responses.length; i++) {
       if (i > 0 && i % PARSE_YIELD_EVERY === 0) await new Promise((r) => window.setTimeout(r, 0));
       const resp = responses[i];
@@ -748,10 +760,14 @@ export class NextcloudClient implements IWebDAVClient {
     return results;
   }
 
-  private async parseSyncChanges(xml: string): Promise<SyncChanges> {
+  private async parseSyncChanges(
+    xml: string, ctx: { op: string; path: string; status: number; method: 'PROPFIND' | 'REPORT' },
+  ): Promise<SyncChanges> {
     const modified: RemoteFileInfo[] = [];
     const deleted: string[] = [];
-    const responses = parseResponses(xml);
+    // Validate FIRST: an unreadable body must never resolve to "no changes, empty token" — that
+    // reads as "in sync" and stalls the vault exactly like an unreadable getFiles would (feature 087).
+    const responses = readMultistatus(xml, ctx);
     const newSyncToken = readSyncToken(xml);
 
     for (let i = 0; i < responses.length; i++) {
