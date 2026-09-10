@@ -18,7 +18,7 @@ import {
 import { IWebDAVClient } from './IWebDAVClient';
 import { DavSyncSettings } from '../types';
 import { toRemotePath, hrefToRelative, encodeRemoteUrl, encodeServerUrl, ensureRemoteDir, mkcolStrict } from './remotePath';
-import { parseResponses, readHref, readProp, readIsCollection, readDavProps } from './dav/propfind';
+import { readMultistatus, readHref, readProp, readIsCollection, readDavProps } from './dav/propfind';
 import { NO_CACHE_HEADERS } from './noCacheHeaders';
 
 export class StandardWebDAVClient implements IWebDAVClient {
@@ -104,7 +104,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
     });
     if (res.status === 404) return null;
     if (res.status !== 207) throw new NetworkError(res.status, res.text, 'PROPFIND');
-    const { files } = this.parseListing(res.text, '');
+    const { files } = this.parseListing(res.text, '', { op: 'statFile', path: remotePath, status: res.status });
     return files[0] ?? null;
   }
 
@@ -135,7 +135,10 @@ export class StandardWebDAVClient implements IWebDAVClient {
       return;
     }
     if (res.status !== 207) throw new NetworkError(res.status, res.text, 'PROPFIND');
-    const { files, folders } = this.parseListing(res.text, rel);
+    // op stays 'getFiles' at every recursion depth: a subfolder's body failing to parse must abort
+    // the whole call, not be silently dropped as an empty subtree (feature 087, INV-A) — an unreadable
+    // response says nothing about what that subfolder actually holds.
+    const { files, folders } = this.parseListing(res.text, rel, { op: 'getFiles', path: rel, status: res.status });
     out.push(...files);
     for (const folder of folders) {
       await this.propfindRecursive(folder, out, visited);
@@ -161,7 +164,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
     });
     if (res.status === 404) return;
     if (res.status !== 207) throw new NetworkError(res.status, res.text, 'PROPFIND');
-    const { folders } = this.parseListing(res.text, rel);
+    const { folders } = this.parseListing(res.text, rel, { op: 'getDirectories', path: rel, status: res.status });
     for (const folder of folders) {
       out.push({ path: folder, fileId: null, etag: null, lastModified: 0 });
       await this.dirsRecursive(folder, out, visited);
@@ -177,8 +180,12 @@ export class StandardWebDAVClient implements IWebDAVClient {
       throw: false,
     });
     if (res.status !== 207) return false; // conservative: never report empty unless the server is clear.
-    const { files, folders } = this.parseListing(res.text, path);
-    return files.length === 0 && folders.length === 0;
+    try {
+      const { files, folders } = this.parseListing(res.text, path, { op: 'isRemoteDirEmpty', path, status: res.status });
+      return files.length === 0 && folders.length === 0;
+    } catch {
+      return false; // an unreadable body is exactly the ambiguity this method must never trash on.
+    }
   }
 
   async createDirectory(path: string): Promise<void> {
@@ -307,10 +314,12 @@ export class StandardWebDAVClient implements IWebDAVClient {
    * Excludes the requested collection itself and any entries outside the base folder.
    * @param requestRel The Vault-relative path this PROPFIND was issued for (used to exclude the self entry)
    */
-  private parseListing(xml: string, requestRel: string): { files: RemoteFileInfo[]; folders: string[] } {
+  private parseListing(
+    xml: string, requestRel: string, ctx: { op: string; path: string; status: number },
+  ): { files: RemoteFileInfo[]; folders: string[] } {
     const files: RemoteFileInfo[] = [];
     const folders: string[] = [];
-    for (const resp of parseResponses(xml)) {
+    for (const resp of readMultistatus(xml, { ...ctx, method: 'PROPFIND' })) {
       const prop = readProp(resp);
       if (!prop) continue;
       const rel = this.hrefToRel(readHref(resp));

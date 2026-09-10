@@ -577,6 +577,47 @@ export class RemoteRootMissingError extends NetworkError {
   }
 }
 /**
+ * The server answered a listing request with 207, but the body is not something a listing can be
+ * read from (feature 087, GitHub issue #51): empty, truncated, an HTML error page passed through a
+ * proxy, or well-formed XML that is not a DAV:multistatus at all.
+ *
+ * This is deliberately NOT an empty listing. An empty listing is the server's statement that the
+ * folder holds nothing, and the full scan acts on that statement by treating every tracked file as
+ * deleted remotely. A body that could not be read says nothing about any file, and the only safe
+ * reading of it is "this sync learned nothing" — which is what a thrown NetworkError produces.
+ *
+ * The message is the whole diagnostic: the clients have no logger, and every caller that catches a
+ * failed listing already logs `err.message` and records it in the session summary. So it names the
+ * call, the path, the status, the body length and the reason, plus the first characters of the body
+ * — enough to tell a truncated multistatus from a proxy's HTML page, never the body itself.
+ */
+export class RemoteListingUnreadableError extends NetworkError {
+  readonly op: string;
+  readonly path: string;
+  readonly bodyLength: number;
+  readonly reason: string;
+  readonly fragment: string;
+  constructor(
+    ctx: { op: string; path: string; status: number; method: 'PROPFIND' | 'REPORT' },
+    xml: string,
+    reason: string,
+  ) {
+    // `body` stays empty on purpose: NetworkError.body carries the raw response for other errors,
+    // but this one can reach the Sync status dialog and a user's debug log, and a multi-megabyte
+    // listing — or a proxy page — has no business there.
+    super(ctx.status, '', ctx.method);
+    this.name = 'RemoteListingUnreadableError';
+    this.op = ctx.op;
+    this.path = ctx.path;
+    this.reason = reason;
+    this.bodyLength = new TextEncoder().encode(xml).length;
+    this.fragment = xml.slice(0, 256).replace(/\s+/g, ' ').trim();
+    this.message =
+      `Remote listing unreadable: ${ctx.method} ${ctx.op} '${ctx.path}' → HTTP ${ctx.status}, ` +
+      `${this.bodyLength} bytes, ${reason}; body starts: ${this.fragment}`;
+  }
+}
+/**
  * Result of {@link IWebDAVClient.createVaultRoot}: whether the MKCOL actually created the vault
  * folder (201) or found it already present (405). The distinction is the PROOF that decides whether
  * a re-seed may proceed — see specs/083-empty-listing-absence-delete/contracts/vault-root.md.
