@@ -19,7 +19,13 @@ function makeEngine(opts?: { resolved?: unknown; exists?: boolean; trashRejects?
     vault: { adapter: { exists, remove }, getAbstractFileByPath, trash },
     fileManager: { trashFile },
   };
-  const engine = new SyncEngine({ app, stateDB: { deleteFile } } as never);
+  const engine = new SyncEngine({
+    app,
+    // Feature 086: a trashed folder takes its contents with it, so the deletion sink now enumerates
+    // the tracked subtree to forget it too.
+    stateDB: { deleteFile, getAllFiles: () => [], getAllDirs: () => [], deleteDir: jest.fn() },
+    localAdapter: { ignore: jest.fn() },
+  } as never);
   const summary = { downloadedCount: 0 } as { downloadedCount: number };
 
   const run = (path: string) =>

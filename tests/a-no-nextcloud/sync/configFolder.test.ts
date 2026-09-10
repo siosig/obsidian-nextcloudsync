@@ -111,7 +111,12 @@ describe('SyncEngine remote-deletion scope guard (config folder hard exclusions)
       fileManager: { trashFile },
     };
     const engine = new SyncEngine({
-      app, settings: s, stateDB: { deleteFile }, configDir: CONFIG_DIR,
+      app,
+      settings: s,
+      // getAllFiles/getAllDirs/deleteDir: feature 086 — the deletion sink forgets a trashed folder's
+      // whole subtree, so it enumerates tracking even for a plain file path.
+      stateDB: { deleteFile, getAllFiles: () => [], getAllDirs: () => [], deleteDir: jest.fn() },
+      configDir: CONFIG_DIR,
       localAdapter: {}, statusBar: {}, webdavFactory: {}, pluginDir: PLUGIN_DIR,
     } as never);
     const invoke = (path: string) =>

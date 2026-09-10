@@ -57,6 +57,7 @@ function build(o: Opts = {}, over: Partial<WatchDeps> = {}) {
     deleteDir: [] as string[],
     droppedBase: [] as string[],
     droppedSnap: [] as string[],
+    stats: [] as string[],
     history: [] as string[],
     retries: [] as string[],
     status: [] as string[],
@@ -71,7 +72,10 @@ function build(o: Opts = {}, over: Partial<WatchDeps> = {}) {
   };
 
   const client = {
-    statFile: async (p: string) => (o.onServer === undefined ? remote({ path: p }) : o.onServer),
+    statFile: async (p: string) => {
+      calls.stats.push(p);
+      return o.onServer === undefined ? remote({ path: p }) : o.onServer;
+    },
     createDirectory: async (p: string) => { calls.createDirectory.push(p); },
     deleteCollection: async (p: string) => {
       if (o.failFolderDelete) throw new Error('boom');
@@ -113,7 +117,13 @@ function build(o: Opts = {}, over: Partial<WatchDeps> = {}) {
       uploadFile: async (_c: unknown, _u: unknown, p: string) => { calls.uploaded.push(p); },
     } as unknown as TransferService,
     deletion: {
-      applyLocalDeletion: async (_c: unknown, r: RemoteFileInfo) => { calls.deleted.push(r.path); },
+      // Feature 086: watch and the full scan share one guarded deletion. What it does with the path
+      // (probe, prove, forget) is DeletionService's business and is tested there; what matters here
+      // is that watch hands the path over instead of deciding for itself.
+      deleteLocallyMissing: async (_c: unknown, p: string) => {
+        calls.deleted.push(p);
+        return 'deleted' as const;
+      },
     } as unknown as DeletionService,
     resolution: {
       dropCleanSnapshot: (p: string) => { calls.droppedSnap.push(p); },
@@ -255,13 +265,15 @@ describe('WatchOperations.deleteSingleFile', () => {
     expect(calls.deleted).toEqual(['note.md']); // not a blind DELETE
   });
 
-  it('stops tracking a file that is already gone on the server', async () => {
+  // Feature 086 moved the "already gone on the server" cleanup into DeletionService, where the full
+  // scan reaches it too (GDP-15). Watch keeps only its own concerns — the path lock, the full-sync
+  // exclusion, and the coalesced save — so that is what is left to check here.
+  it('hands the path to the shared deletion instead of probing the server itself', async () => {
     const { watch, calls } = build({ base: tracked(), onServer: null });
     await watch.deleteSingleFile('note.md');
-    expect(calls.history).toEqual(['deleted:note.md']);
-    expect(calls.deleteFile).toEqual(['note.md']);
-    expect(calls.droppedBase).toEqual(['note.md']);
-    expect(calls.droppedSnap).toEqual(['note.md']);
+    expect(calls.deleted).toEqual(['note.md']);
+    expect(calls.stats).toEqual([]); // watch no longer probes; the shared deletion does
+    expect(calls.deleteFile).toEqual([]); // the state row is DeletionService's to drop
   });
 });
 

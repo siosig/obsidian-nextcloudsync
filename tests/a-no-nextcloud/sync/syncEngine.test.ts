@@ -312,7 +312,9 @@ describe('SyncEngine.processRemoteDeletion — out-of-scope safety', () => {
       vault: { adapter: { exists, remove }, getAbstractFileByPath },
       fileManager: { trashFile },
     };
-    const stateDB = { deleteFile };
+    // getAllFiles/getAllDirs/deleteDir: feature 086 — the deletion sink forgets a trashed folder's
+    // whole subtree, so it enumerates tracking even for a plain file path (where it finds nothing).
+    const stateDB = { deleteFile, getAllFiles: () => [], getAllDirs: () => [], deleteDir: jest.fn() };
     const bookmarks = opts.bookmarks ?? false;
     const settings = {
       configDir: '.obsidian',
