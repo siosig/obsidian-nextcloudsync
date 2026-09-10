@@ -206,6 +206,13 @@ describe('[SPEC:WSF-7] C-5 — full sync exclusivity for watch-mode single-file 
     expect(client.deleteFile).not.toHaveBeenCalled();
     expect(stateDB.getFile('tracked.md')).toEqual(before); // neither dropped nor re-queued
 
+    // Feature 086: the scan no longer deletes a path just because the listing lacks it — it asks the
+    // server first. So the world has to say what the server holds. Here: still there, and still
+    // byte-identical to our base, which is what makes the deletion provably the user's.
+    client.statFile.mockResolvedValue({
+      path: 'tracked.md', fileId: 'f1', checksum: 'h', etag: null, size: 11, lastModified: 0,
+    });
+
     releaseFullSync();
     await fullSyncDone;
 

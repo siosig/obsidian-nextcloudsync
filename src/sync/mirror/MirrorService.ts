@@ -180,11 +180,11 @@ export class MirrorService {
       tick();
     }
 
-    // 3. Delete local-only folders child→parent (trashFile handles TFolder), then drop dir tracking.
+    // 3. Delete local-only folders child→parent (trashFile handles TFolder). Dir tracking is dropped
+    //    inside processRemoteDeletion, together with the whole subtree's (feature 086).
     for (const path of plan.deleteDirs) {
       try {
         await this.deps.deletion.processRemoteDeletion(path, summary);
-        this.deps.stateDB.deleteDir(path);
         result.deleted++;
       } catch (err) {
         result.errors.push({ path, message: (err as Error).message });

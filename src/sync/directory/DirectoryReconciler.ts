@@ -14,18 +14,31 @@ import { SyncSessionSummary, RemoteDirInfo } from '../../types';
 import { StateDB } from '../../data/StateDB';
 import { IWebDAVClient } from '../../network/IWebDAVClient';
 import { SyncJournal } from '../session/SyncJournal';
+import { MergeBaseRecorder } from '../session/MergeBaseRecorder';
 import { TransferService } from '../transfer/TransferService';
 import {
   classifyDirectories, shouldTripMassDeleteBreaker, breakerDenominator,
 } from './classify';
+import { collectSubtreePaths, dropSubtreeTracking } from '../deletion/subtreeTracking';
 import { FileLogger } from '../../util/FileLogger';
 
 export interface DirectoryDeps {
   app: App;
-  stateDB: Pick<StateDB, 'getAllDirs' | 'setDir' | 'deleteDir' | 'requestSave'>;
+  stateDB: Pick<StateDB,
+    'getAllDirs' | 'setDir' | 'deleteDir' | 'requestSave' | 'getAllFiles' | 'deleteFile'>;
   journal: SyncJournal;
   /** Used only for the lock taken around a remote collection delete. */
   transfer: TransferService;
+  /** Dropped alongside the file state when a trashed folder's subtree stops being tracked. */
+  mergeBase: Pick<MergeBaseRecorder, 'drop'>;
+  /** Drop the feature 044 clean-side snapshot for a path that is no longer tracked. */
+  dropCleanSnapshot(path: string): void;
+  /**
+   * Register a path so the vault event this plugin is about to cause is not fed back to the watcher
+   * (the existing LocalAdapter ignore list behind `isOwnSyncEvent`). Required, not optional: a
+   * silently-unwired no-op here turns a plugin trash back into a server DELETE.
+   */
+  markOwnEvent(path: string): void;
   /** The system-exclusion rules, already bound to the caller's settings. */
   isSystemExcluded(path: string): boolean;
   /** The configured mass-delete threshold, read at call time. */
@@ -151,8 +164,11 @@ export class DirectoryReconciler {
       }
       const folder = this.deps.app.vault.getAbstractFileByPath(p);
       try {
-        if (folder instanceof TFolder) await this.deps.app.fileManager.trashFile(folder);
-        this.deps.stateDB.deleteDir(p);
+        if (folder instanceof TFolder) await this.trashFolder(folder);
+        // Feature 086: the plugin moving a folder to `.trash` is NOT the user deleting its contents.
+        // Leaving the child rows tracked made the next sync read them as local deletions and push
+        // them to the server, turning a local-only disappearance into a real remote one.
+        this.forgetSubtree(p);
         this.deps.journal.recordHistory(p, 'deleted');
       } catch (err) {
         summary.errorCount++;
@@ -161,6 +177,32 @@ export class DirectoryReconciler {
     }
     for (const d of ensureTracked) this.deps.stateDB.setDir(d);
     for (const p of dropTracked) this.deps.stateDB.deleteDir(p);
+  }
+
+  /**
+   * Feature 086: trashing a folder makes Obsidian fire a vault `delete` event for the folder AND for
+   * every file under it. Watch mode reads those as user deletions and pushes them to the server, so
+   * the paths are registered as the plugin's own doing FIRST — the events can land at any point after
+   * this, and the tracking drop below is only the second line of defence.
+   */
+  private async trashFolder(folder: TFolder): Promise<void> {
+    const stale = collectSubtreePaths(this.deps.stateDB, folder.path);
+    // The folder itself is in `stale.dirs` when it is tracked, and it always needs registering, so
+    // the set is what keeps it from being registered twice.
+    for (const path of new Set([folder.path, ...stale.files, ...stale.dirs])) {
+      this.deps.markOwnEvent(path);
+    }
+    await this.deps.app.fileManager.trashFile(folder);
+  }
+
+  /** Stop tracking a trashed folder's whole subtree (feature 086). Only ever called after a success. */
+  private forgetSubtree(path: string): void {
+    const dropped = dropSubtreeTracking(this.deps, path);
+    if (dropped.files + dropped.dirs > 0) {
+      void this.deps.logger?.log(
+        `dir-sync: plugin trash — dropped tracking for ${dropped.files} files / ${dropped.dirs} dirs under ${path} (not a local deletion)`,
+      );
+    }
   }
 
   /**
@@ -194,8 +236,9 @@ export class DirectoryReconciler {
       if (choice === 'remote') {
         // Remote absence is correct: let the deletion proceed locally.
         const folder = this.deps.app.vault.getAbstractFileByPath(path);
-        if (folder instanceof TFolder) await this.deps.app.fileManager.trashFile(folder);
-        this.deps.stateDB.deleteDir(path);
+        if (folder instanceof TFolder) await this.trashFolder(folder);
+        this.forgetSubtree(path); // feature 086: same amplifier as the reconcile path
+
       } else {
         // Local is correct: undo the apparent remote deletion by recreating it on the remote.
         await client.createDirectory(path);
