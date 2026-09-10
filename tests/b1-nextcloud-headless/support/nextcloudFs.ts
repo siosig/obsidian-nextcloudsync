@@ -7,6 +7,8 @@
 //                         info at run time)
 //   NEXTCLOUD_DATA_HOST   e.g. /opt/svc-node/data
 //   NEXTCLOUD_USER        e.g. admin
+//   NEXTCLOUD_SSH_KEY     the instance's access key (optional; see ssh() for why it is passed
+//                         explicitly rather than left to an ssh-agent)
 // When they are absent (localhost / plain b1), N is unavailable and the 3-actor suites skip cleanly
 // via describeCluster() (see support/env.ts) — the default `pnpm test:b1` never exercises this module.
 import { execFileSync } from 'child_process';
@@ -19,6 +21,17 @@ function req(key: string): string {
 
 /** Run one command on the cluster VM over SSH (batch mode, no host-key checks). */
 function ssh(command: string): string {
+  // NEXTCLOUD_SSH_KEY names the instance's own access key, which the runner reads from the same
+  // connection info as the address. Naming it matters: the key is called `<prefix>-access_ed25519`,
+  // which ssh's default identity search (id_rsa, id_ed25519, ...) never looks at, so without `-i`
+  // the only way it is ever found is an ssh-agent that happens to be holding it. On 2026-09-10 that
+  // agent had died mid-session and the three-actor suites — and only those — failed with
+  // "Permission denied (publickey)", which reads as a test failure rather than as a missing key.
+  // IdentitiesOnly keeps a loaded agent from offering its own keys first and exhausting MaxAuthTries.
+  // The variable is absent against a plain localhost b1 (and older connection info), where the
+  // agent-based behaviour this replaces is still correct.
+  const key = process.env.NEXTCLOUD_SSH_KEY;
+  const identity = key ? ['-i', key, '-o', 'IdentitiesOnly=yes'] : [];
   // Ephemeral cluster VMs reuse external IPs, so a cached (now-stale) host key would otherwise make
   // ssh refuse with "offending key". Disable host-key checking entirely (throwaway test VM).
   return execFileSync(
@@ -26,6 +39,7 @@ function ssh(command: string): string {
     [
       '-o', 'StrictHostKeyChecking=no', '-o', 'UserKnownHostsFile=/dev/null',
       '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15',
+      ...identity,
       req('NEXTCLOUD_SSH_TARGET'), command,
     ],
     { encoding: 'utf8', timeout: 60_000 },
