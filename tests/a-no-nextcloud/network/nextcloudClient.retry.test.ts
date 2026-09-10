@@ -118,12 +118,15 @@ describe('NextcloudClient — read-only retry on transient req() rejection (feat
   });
 
   it('moveFile (MOVE) does NOT retry on a transient rejection — fails after exactly 1 call', async () => {
-    // moveFile first calls ensureRemoteDir (MKCOL/PROPFIND helper) before the MOVE itself; make
-    // every call reject so the very first request already fails without retrying.
+    // moveFile MKCOLs the destination's ancestors before the MOVE itself; make every call reject.
+    // That ancestor step is advisory (feature 088, contract C-4): a failure there does not abort the
+    // MOVE, because the destination folder may well exist while MKCOL of it fails. What this test
+    // pins down is the MOVE: it is attempted exactly ONCE and the transient rejection is not retried.
     mockRequestUrl.mockImplementation(() => Promise.reject(new Error('timeout')));
 
     await expect(client().moveFile('a.md', 'b.md')).rejects.toThrow('timeout');
-    expect(mockRequestUrl).toHaveBeenCalledTimes(1);
+    const moves = mockRequestUrl.mock.calls.filter((c) => (c[0] as { method?: string }).method === 'MOVE');
+    expect(moves).toHaveLength(1);
   });
 
   it('statFile (PROPFIND) does NOT retry on a resolved non-transient 404 status', async () => {
