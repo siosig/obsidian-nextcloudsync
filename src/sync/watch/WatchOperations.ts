@@ -268,24 +268,12 @@ export class WatchOperations {
     const conflictsBefore = this.deps.conflictEncounters();
     this.begin();
     try {
-      const remote = await conn.client.statFile(path);
-      if (!remote) {
-        // C-2 row 3: already absent on the server — that IS the desired end state. Stop tracking it.
-        void this.deps.logger?.log(`watch: already gone on remote → dropping tracking for ${path}`);
-        this.deps.journal.recordHistory(path, 'deleted');
-        this.deps.stateDB.deleteFile(path);
-        this.deps.mergeBase.drop(path); // feature 038: file gone → drop its merge base
-        this.deps.resolution.dropCleanSnapshot(path); // feature 044: file gone → drop any captured clean sides
-      } else {
-        const remoteId = remote.checksum ?? remote.etag ?? String(remote.size);
-        const idType: FileState['idType'] = remote.checksum ? 'sha256' : (remote.etag ? 'etag' : 'size');
-        // Shared with the full sync: deletes on a checksum match, restores the remote copy when it
-        // diverged, and does nothing when the server cannot prove the copy is unchanged. It owns the
-        // StateDB cleanup too — including the G1-2 rule of keeping the entry when the DELETE fails,
-        // so a failed delete is retried instead of coming back as a re-download.
-        await this.deps.deletion.applyLocalDeletion(conn.client, remote, base, remoteId, idType, summary);
-        if (!this.deps.stateDB.getFile(path)) this.deps.resolution.dropCleanSnapshot(path);
-      }
+      // Feature 086: this decision — ask the server, forget it on a 404, otherwise demand a checksum
+      // match before deleting — is the same one the full scan makes for a path missing from its
+      // listing, so both now call the one method. It owns the StateDB cleanup too, including the
+      // G1-2 rule of keeping the entry when the DELETE fails, so a failed delete is retried instead
+      // of coming back as a re-download.
+      await this.deps.deletion.deleteLocallyMissing(conn.client, path, base, summary);
       this.deps.stateDB.requestSave(); // coalesced watch-mode save (P0-B)
       await this.deps.historyStore?.save();
     } catch (err) {
@@ -350,6 +338,14 @@ export class WatchOperations {
   async deleteSingleFolder(path: string): Promise<void> {
     if (this.deps.isSystemExcluded(path)) return;
     if (!this.deps.stateDB.getDir(path)) return; // untracked → nothing to do on the remote
+    // Feature 086: same rule as deleteSingleFile (C-2 row 1). This one had no such guard, and it is
+    // the loudest sink there is — a recursive collection DELETE. A running scan trashes folders
+    // itself (a listing said the server no longer has them), and those trashes fire delete events;
+    // acting on them here would send an unproven DELETE for a folder the scan is already settling.
+    if (this.deps.isSyncRunning()) {
+      void this.deps.logger?.log(`watch: full sync in progress → folder deletion of ${path} left to the running scan`);
+      return;
+    }
     const conn = await this.deps.connect();
     this.begin();
     let succeeded = false;
