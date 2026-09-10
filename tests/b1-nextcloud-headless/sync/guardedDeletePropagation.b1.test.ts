@@ -37,15 +37,17 @@ describeLive('Layer B — guarded delete propagation (feature 086 / issue #46)',
     // An unrelated note keeps the listing non-empty, so this exercises the ordinary shape of the bug
     // rather than the wholly-empty-listing case (that one is EAD-*/feature 083).
     a.vault.seedLocal('gdp30-keep.md', 'survivor');
+    // Both levels of the new folder in ONE session. This used to be split across two syncs because
+    // the two uploads raced for the same missing parent `GDP30` — uploads are serialized per parent
+    // directory, so `GDP30/a.md` and `GDP30/sub/b.md` run in parallel and both MKCOL the ancestor
+    // they share. Nextcloud answered the loser with 423 Locked, and the failed MKCOL was cached as a
+    // success, so the retried PUTs 404'd and the session ended with two errors roughly a quarter of
+    // the time. Feature 088 made that MKCOL single-flight; seeding both at once is the live proof.
     a.vault.seedLocal('GDP30/a.md', 'alpha');
-    await a.sync();
-    // One new folder level per session, on purpose. Seeding `GDP30/a.md` and `GDP30/sub/b.md` at once
-    // makes two uploads race for the same missing parent, and the reactive MKCOL recovery loses that
-    // race often enough to see — both PUTs come back 404 and land as session errors. That is a known,
-    // separate defect (INV-12, the nested-upload 404 recovery), and this test is about deletion, so it
-    // sidesteps the race instead of inheriting its flakiness.
     a.vault.seedLocal('GDP30/sub/b.md', 'beta');
     await a.sync();
+    // Both files landing on the server IS the proof: a lost MKCOL race left the PUT 404ing, so the
+    // file simply was not there.
     expect((await baseClient.getFiles('')).map((f) => f.path))
       .toEqual(expect.arrayContaining(['GDP30/a.md', 'GDP30/sub/b.md']));
 
