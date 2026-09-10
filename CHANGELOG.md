@@ -11,6 +11,13 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [1.0.5] - 2026-09-10
+
+### Fixed
+- **Notes vanished from the server after the plugin moved a folder to the trash.** A follow-up to [#46](https://github.com/siosig/obsidian-nextcloudsync/issues/46), where notes turned up in both the local trash and Nextcloud's own deleted files. Moving a folder to the trash takes its contents with it, but the plugin only forgot the folder itself and kept a record of every note inside. On the next sync that record read as "this note was synced and you have since deleted it here", so the deletion was passed on to the server for real — whatever made the folder go missing could only ever have affected one device, and the plugin turned it into a permanent loss on the server. A trashed folder now forgets everything inside it at the same moment, which means that if the folder should never have been trashed, the next sync simply downloads the notes back.
+- **A note the server still had could be deleted without ever being asked about.** The same investigation found a second path with no such check: when a note was gone from a device and also missing from the listing the server sent back, the plugin deleted it outright, on the assumption that a note absent from the listing cannot be on the server either. That report is exactly what showed the assumption to be wrong. The plugin now asks the server about that one note directly before deciding — genuinely gone means there is nothing to delete, present and unchanged means the deletion is passed on as before, and edited on another device in the meantime means the newer version is brought back rather than destroyed. On a healthy connection this costs no extra time, because it replaces the delete request that used to be sent.
+- **A listing the server could not answer properly was read as "there is nothing here".** Reported in [#51](https://github.com/siosig/obsidian-nextcloudsync/issues/51), where a fresh sync warned that 588 files appeared deleted on the remote while every one of them was still present and viewable. The plugin only ever checked whether the response arrived with the right status code, never whether the response itself could be read: a reply that arrived cut short, or came back as an error page instead of a listing, parsed to the same thing as a server genuinely reporting an empty folder. Nothing was deleted — the safety limit and the per-file checks caught it, as designed — but the sync could not complete and the warning was alarming and wrong. A response that cannot be made sense of is now treated as a failed attempt to reach the server rather than as the server's answer, and the sync tries again next time.
+
 ## [1.0.4] - 2026-09-08
 
 ### Fixed
@@ -446,6 +453,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[1.0.5]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.5
 [1.0.4]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.4
 [1.0.3]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.3
 [1.0.2]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.2
