@@ -3,6 +3,7 @@
 // hand back the client + workspace. Pair with cleanupWorkspace in afterAll.
 import { NextcloudClient } from '../../../src/network/NextcloudClient';
 import { ensureRemoteDir } from '../../../src/network/remotePath';
+import { RemoteDirCache } from '../../../src/network/RemoteDirCache';
 import { DavSyncSettings } from '../../../src/types';
 import { LiveEnv } from './env';
 import { makeClient, baseUrlOf, authHeaderOf } from './clientFactory';
@@ -28,7 +29,7 @@ export async function setupWorkspace(
   await ensureRemoteDir(
     { baseUrl: baseUrlOf(env), authHeader: authHeaderOf(env) },
     `${ws.remoteBase}/_init.md`,
-    new Set(),
+    new RemoteDirCache(),
   );
   return { ws, client };
 }
@@ -46,6 +47,6 @@ export async function ensureParentDirs(
   await ensureRemoteDir(
     { baseUrl: baseUrlOf(env), authHeader: authHeaderOf(env) },
     `${ws.remoteBase}/${relPath}`,
-    new Set(),
+    new RemoteDirCache(),
   );
 }

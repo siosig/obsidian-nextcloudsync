@@ -13,17 +13,19 @@ import {
   FeatureUnsupportedError,
   PreconditionFailedError,
   RemoteRootMissingError,
+  RemoteDirCreateError,
   VaultRootOutcome,
 } from '../types';
 import { IWebDAVClient } from './IWebDAVClient';
 import { DavSyncSettings } from '../types';
-import { toRemotePath, hrefToRelative, encodeRemoteUrl, encodeServerUrl, ensureRemoteDir, mkcolStrict } from './remotePath';
+import { toRemotePath, hrefToRelative, encodeRemoteUrl, encodeServerUrl, ensureRemoteDir, mkcolStrict, prepareMissingParentRetry, isTransportFailure } from './remotePath';
+import { RemoteDirCache } from './RemoteDirCache';
 import { readMultistatus, readHref, readProp, readIsCollection, readDavProps } from './dav/propfind';
 import { NO_CACHE_HEADERS } from './noCacheHeaders';
 
 export class StandardWebDAVClient implements IWebDAVClient {
   /** Remote directories already created via MKCOL (in-session cache). */
-  private readonly createdDirs = new Set<string>();
+  private readonly createdDirs = new RemoteDirCache();
 
   constructor(
     private readonly settings: DavSyncSettings,
@@ -188,6 +190,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
     }
   }
 
+  /** @see NextcloudClient.createDirectory — a level that could not be created fails the call (feature 088). */
   async createDirectory(path: string): Promise<void> {
     await ensureRemoteDir(
       { baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs },
@@ -200,7 +203,8 @@ export class StandardWebDAVClient implements IWebDAVClient {
   async createVaultRoot(): Promise<VaultRootOutcome> {
     if (!this.remoteBase) return 'exists';
     const ctx = { baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs };
-    await ensureRemoteDir(ctx, this.remoteBase, this.createdDirs);
+    // @see NextcloudClient.createVaultRoot: ancestors are best-effort, mkcolStrict is the judge.
+    await ensureRemoteDir(ctx, this.remoteBase, this.createdDirs).catch(() => undefined);
     const outcome = await mkcolStrict(ctx, this.remoteBase);
     // See NextcloudClient.createVaultRoot: a 201 invalidates every cached "already created" entry.
     if (outcome === 'created') this.createdDirs.clear();
@@ -240,19 +244,39 @@ export class StandardWebDAVClient implements IWebDAVClient {
     // Reactive directory creation (P1-B): PUT first; MKCOL ancestors on a missing-parent, retry once.
     // Standard WebDAV returns 409; Nextcloud's files DAV returns 404 for a missing parent — handle both.
     let res = await this.req({ url: this.remoteUrl(remotePath), method: 'PUT', headers, body: data, throw: false });
+    let dirError: RemoteDirCreateError | null = null;
     if (res.status === 409 || res.status === 404) {
-      await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
+      // Forgetting the stale ancestors first is what this client used to be missing: spec 024 fixed
+      // it for the Nextcloud client only, so here a folder another device deleted stayed cached as
+      // "already created", the MKCOL was skipped, and the retried PUT 404'd for good (feature 088).
+      dirError = await prepareMissingParentRetry({ baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
+      if (isTransportFailure(dirError)) throw dirError;
       res = await this.req({ url: this.remoteUrl(remotePath), method: 'PUT', headers, body: data, throw: false });
     }
     if (res.status === 412) throw new PreconditionFailedError(remotePath);
-    if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text, 'PUT');
+    if (res.status < 200 || res.status >= 300) throw dirError ?? new NetworkError(res.status, res.text, 'PUT');
   }
 
   async moveFile(oldPath: string, newPath: string): Promise<void> {
-    await ensureRemoteDir({ baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs }, toRemotePath(this.remoteBase, newPath), this.createdDirs);
-    const res = await this.req({ url: this.remoteUrl(oldPath), method: 'MOVE', headers: { Authorization: this.authHeader, Destination: this.remoteUrl(newPath), Overwrite: 'F', ...NO_CACHE_HEADERS }, throw: false });
+    // @see NextcloudClient.moveFile — identical missing-parent recovery (feature 088, contract C-4).
+    const ctx = { baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs };
+    const target = toRemotePath(this.remoteBase, newPath);
+    // A failure here is DISCARDED on purpose. This call is speculative — it runs before the MOVE has
+    // said anything — so it cannot explain a MOVE that fails for some entirely unrelated reason. Only
+    // the recovery below, which the server's own "missing parent" answer triggers, may do that.
+    await ensureRemoteDir(ctx, target, this.createdDirs).catch((err) => {
+      if (!(err instanceof RemoteDirCreateError)) throw err;
+    });
+    const move = () => this.req({ url: this.remoteUrl(oldPath), method: 'MOVE', headers: { Authorization: this.authHeader, Destination: this.remoteUrl(newPath), Overwrite: 'F', ...NO_CACHE_HEADERS }, throw: false });
+    let res = await move();
+    let dirError: RemoteDirCreateError | null = null;
+    if (res.status === 409 || res.status === 404) {
+      dirError = await prepareMissingParentRetry(ctx, target, this.createdDirs);
+      if (isTransportFailure(dirError)) throw dirError;
+      res = await move();
+    }
     if (res.status === 412) throw new ConflictError(newPath);
-    if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text, 'MOVE');
+    if (res.status < 200 || res.status >= 300) throw dirError ?? new NetworkError(res.status, res.text, 'MOVE');
   }
 
   async deleteFile(path: string, _expectedRemoteId: string): Promise<void> {

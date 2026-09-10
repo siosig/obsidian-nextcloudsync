@@ -1,6 +1,7 @@
 import { NO_CACHE_HEADERS } from './noCacheHeaders';
 import { requestUrlWithTimeout } from './requestWithTimeout';
-import { NetworkError, VaultRootOutcome } from '../types';
+import { NetworkError, RemoteDirCreateError, VaultRootOutcome } from '../types';
+import { RemoteDirCache, ancestorsOf } from './RemoteDirCache';
 
 /**
  * Helpers for converting between the remote base folder (the Vault name) and paths.
@@ -140,28 +141,73 @@ export function encodeServerUrl(url: string): string {
 
 /**
  * Idempotently create the parent collections (directories) of a remote file path via MKCOL.
- * Existing collections (405) are ignored, and createdCache suppresses duplicate requests.
  * Required before upload because WebDAV PUT does not auto-create parent directories.
+ *
+ * Each level goes through the cache, which guarantees two things this loop used to get wrong
+ * (feature 088). Only one MKCOL per collection is ever in flight, so two uploads into different
+ * subfolders of the same new tree no longer race each other into Nextcloud's 423 Locked. And a level
+ * only counts as created when the server said so (201 or 405) — a failed MKCOL is not remembered as
+ * a success, which is what used to make the caller's retry skip the very MKCOL it needed.
+ *
+ * Throws {@link RemoteDirCreateError} at the FIRST level that could not be created, without
+ * attempting the levels below it: a child of a collection that does not exist can only fail too.
+ * Callers that can still make progress without the ancestor (a PUT into a folder that exists but
+ * refuses MKCOL) are expected to catch this and let their own request decide — see
+ * specs/088-mkcol-single-flight/contracts/internal-api.md C-4.
  */
 export async function ensureRemoteDir(
   ctx: { baseUrl: string; authHeader: string; timeoutMs?: number },
   remoteFilePath: string,
-  createdCache: Set<string>,
+  createdCache: RemoteDirCache,
 ): Promise<void> {
-  const segments = remoteFilePath.split('/').slice(0, -1); // drop the trailing file name
-  let acc = '';
-  for (const seg of segments) {
-    if (!seg) continue;
-    acc = acc ? `${acc}/${seg}` : seg;
-    if (createdCache.has(acc)) continue;
-    await requestUrlWithTimeout({
-      url: encodeRemoteUrl(ctx.baseUrl, acc),
-      method: 'MKCOL',
-      headers: { Authorization: ctx.authHeader, ...NO_CACHE_HEADERS },
-      throw: false,
-    }, ctx.timeoutMs ?? 0);
-    // 201=created / 405=already exists are both fine; continue best-effort on other codes too.
-    createdCache.add(acc);
+  for (const dir of ancestorsOf(remoteFilePath)) {
+    await createdCache.ensure(dir, async (path) => {
+      const res = await requestUrlWithTimeout({
+        url: encodeRemoteUrl(ctx.baseUrl, path),
+        method: 'MKCOL',
+        headers: { Authorization: ctx.authHeader, ...NO_CACHE_HEADERS },
+        throw: false,
+      }, ctx.timeoutMs ?? 0);
+      return res.status;
+    });
+  }
+}
+
+/**
+ * Prepare a retry of a write whose parent collection the server says is missing (PUT/MOVE answered
+ * 404 or 409), and REPORT rather than throw if the ancestors could not be created (feature 088).
+ *
+ * Both clients recover from a missing parent the same way, so the sequence lives here once: forget
+ * any "already created" entry for the ancestors, since the server just proved one of them is gone
+ * (spec 024 — another device deleted a folder this client had created), then re-issue the MKCOLs.
+ *
+ * The failure is returned instead of thrown because the caller has one more thing to try, and it is
+ * a better judge than this function is: a folder can exist while MKCOL of it is refused (403 on a
+ * share the user can write into but not create in), and there the retried PUT simply succeeds. Only
+ * when the retry ALSO fails does the ancestor error become the honest explanation — the one that
+ * names the folder and the status, instead of the bare `HTTP 404 (PUT)` this used to surface as.
+ *
+ * A `status` of 0 is the exception: the MKCOL never reached an answer at all (a timeout, a dropped
+ * connection). The parent is therefore certainly still missing, so the retry would spend a second
+ * full network timeout to be told the same 404 — {@link isTransportFailure} marks that case so the
+ * caller can skip it. Every failure that DID carry a status leaves the retry worth making.
+ */
+export function isTransportFailure(dirError: RemoteDirCreateError | null): dirError is RemoteDirCreateError {
+  return dirError !== null && dirError.status === 0;
+}
+
+export async function prepareMissingParentRetry(
+  ctx: { baseUrl: string; authHeader: string; timeoutMs?: number },
+  remoteFilePath: string,
+  createdCache: RemoteDirCache,
+): Promise<RemoteDirCreateError | null> {
+  createdCache.forgetAncestorsOf(remoteFilePath);
+  try {
+    await ensureRemoteDir(ctx, remoteFilePath, createdCache);
+    return null;
+  } catch (err) {
+    if (err instanceof RemoteDirCreateError) return err;
+    throw err;
   }
 }
 

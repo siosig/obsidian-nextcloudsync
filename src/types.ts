@@ -618,6 +618,35 @@ export class RemoteListingUnreadableError extends NetworkError {
   }
 }
 /**
+ * A parent collection could not be created, so the write that needed it has nowhere to land
+ * (feature 088).
+ *
+ * WebDAV's PUT does not create parent collections, so an upload into a folder the server has never
+ * seen MKCOLs the ancestors first. Until now a MKCOL that failed was indistinguishable from one that
+ * succeeded: the loop ignored the status entirely, and the only thing the user ever saw was the
+ * retried PUT coming back as `HTTP 404 (PUT)` — a message that names neither the folder that could
+ * not be created nor the reason. This error carries both.
+ *
+ * `dirPath` is the ANCESTOR that failed, not the file being written: with `F/sub/note.md` the
+ * interesting fact is that `F` could not be created, and `F/sub` was never even attempted.
+ *
+ * Extends NetworkError so the existing "a network failure fails this one file and is retried on the
+ * next sync" handling applies unchanged — the same reasoning as RemoteListingUnreadableError.
+ */
+export class RemoteDirCreateError extends NetworkError {
+  readonly dirPath: string;
+  constructor(dirPath: string, status: number, detail?: string) {
+    // `body` stays empty: this message can reach the Sync status dialog, and a server's error page
+    // has no business there. `status` 0 means the request threw rather than answering.
+    super(status, '', 'MKCOL');
+    this.name = 'RemoteDirCreateError';
+    this.dirPath = dirPath;
+    this.message =
+      `Could not create the remote folder '${dirPath}': MKCOL ${status === 0 ? 'failed' : `→ HTTP ${status}`}` +
+      (detail ? ` (${detail})` : '');
+  }
+}
+/**
  * Result of {@link IWebDAVClient.createVaultRoot}: whether the MKCOL actually created the vault
  * folder (201) or found it already present (405). The distinction is the PROOF that decides whether
  * a re-seed may proceed — see specs/083-empty-listing-absence-delete/contracts/vault-root.md.
