@@ -238,6 +238,8 @@ export class SyncEngine {
       mergeBase: this.mergeBase,
       transfer: this.transfer,
       isSystemExcluded: (p) => this.isSystemExcluded(p),
+      dropCleanSnapshot: (p) => this.resolution.dropCleanSnapshot(p),
+      markOwnEvent: (p) => this.opts.localAdapter.ignore(p),
       logger: opts.logger,
     });
     this.resolution = new ResolutionService({
@@ -279,6 +281,9 @@ export class SyncEngine {
       stateDB: opts.stateDB,
       journal: this.journal,
       transfer: this.transfer,
+      mergeBase: this.mergeBase,
+      dropCleanSnapshot: (p) => this.resolution.dropCleanSnapshot(p),
+      markOwnEvent: (p) => this.opts.localAdapter.ignore(p),
       isSystemExcluded: (p) => this.isSystemExcluded(p),
       massDeleteLimit: () => this.opts.settings.massDeleteLimit,
       isCancelled: () => this.cancelled,
@@ -1261,7 +1266,7 @@ export class SyncEngine {
   private applyLocalDeletion(
     remote: RemoteFileInfo, base: FileState, remoteId: string, idType: FileState['idType'],
     summary: SyncSessionSummary,
-  ): Promise<void> {
+  ): Promise<'deleted' | 'restored' | 'kept'> {
     return this.deletion.applyLocalDeletion(this.client!, remote, base, remoteId, idType, summary);
   }
 
@@ -1450,29 +1455,29 @@ export class SyncEngine {
     }
 
     // Remaining missing paths (not renames) are genuine local deletions → delete from remote.
+    //
+    // Feature 086 (issue #46): this used to fire a bare DELETE, reasoning that a path missing from
+    // the listing could not be on the server either, so a 404 was the expected — harmless — answer.
+    // That holds only while the listing is complete, and this issue showed it is not always: a file
+    // the server still had could be destroyed on the strength of a listing that had simply lost it.
+    // deleteLocallyMissing asks about the path directly and hands anything still present to the same
+    // proof path every other deletion goes through. Watch mode shares this method, so a delete
+    // decides identically whether it comes from a scan or from a single vault event.
     for (const path of missingPaths) {
       if (localRenames.has(path)) continue; // handled as rename above
       const fileState = this.opts.stateDB.getFile(path);
       if (!fileState) continue;
       void this.opts.logger?.log(`delete-remote: locally deleted, propagating to server → ${path}`);
       try {
-        await this.client!.deleteFile(path, fileState.remoteId);
-        summary.deletedCount++;
-        this.recordHistory(path, 'deleted');
+        await this.deletion.deleteLocallyMissing(this.client!, path, fileState, summary);
       } catch (err) {
-        if (err instanceof NetworkError && err.status === 404) {
-          // Already gone from remote — StateDB cleanup is sufficient.
-        } else {
-          console.warn(`[SyncEngine] Failed to delete ${path} from remote:`, err);
-          this.recordError(summary, path, err);
-          // BUG G1-2 fix: on a real failure, keep the StateDB tracking entry so the next sync retries
-          // the delete — dropping it here would make the next sync see the still-present remote file
-          // as "new" and re-download it, silently reverting the user's local deletion.
-          continue;
-        }
+        // G1-2: an unanswerable probe or a genuinely failed DELETE keeps the tracking entry, so the
+        // next sync retries. Dropping it would make that sync see the still-present remote file as
+        // "new" and re-download it, silently reverting the user's local deletion.
+        console.warn(`[SyncEngine] Failed to delete ${path} from remote:`, err);
+        void this.opts.logger?.log(`delete-remote: probe FAILED, keeping tracking for retry → ${path} — ${(err as Error).message}`);
+        this.recordError(summary, path, err);
       }
-      this.opts.stateDB.deleteFile(path);
-      this.dropMergeBase(path); // feature 038: local deletion propagated to remote → drop merge base
     }
 
     // Full-scan only: detect REMOTE deletions by absence. A previously-synced file still present
