@@ -11,6 +11,12 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [1.0.6] - 2026-09-10
+
+### Fixed
+- **Notes in a brand-new folder could fail to upload, all of them at once.** Creating a folder with a subfolder and syncing could end with an error on every note inside it, and none of them reaching the server. WebDAV does not create folders on its own, so the plugin makes them as it goes; when several notes needed the same folder at the same moment, they each asked for it to be created at the same moment, and Nextcloud — which locks a folder while it is being made — turned all but one of those requests away. Worse, the plugin took a refused request as proof the folder was there, so for the rest of that sync it never tried again and the uploads kept failing. It now asks for a folder once and lets everyone waiting share the answer, and only counts a folder as created when the server actually says so. Nothing was ever lost: the notes stayed on your device and the next sync picked them up. If a folder genuinely cannot be created, the error now names it instead of reporting a bare failure on the note.
+- **Renaming a note into a folder another device had deleted never recovered** — and for anyone syncing to a plain WebDAV server rather than Nextcloud, the same was true of uploading into one. The plugin remembered having created the folder earlier, so it skipped recreating it and the write failed every time. Both now notice that the server disagrees and put the folder back.
+
 ## [1.0.5] - 2026-09-10
 
 ### Fixed
@@ -453,6 +459,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[1.0.6]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.6
 [1.0.5]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.5
 [1.0.4]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.4
 [1.0.3]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.3
