@@ -71,6 +71,9 @@ function makeEngine(opts: {
     stat: jest.fn(async () => null),
     exists: jest.fn(async () => false),
     mkdir,
+    // Feature 086: the engine registers a trashed subtree here so watch mode does not read the
+    // plugin's own vault delete events as user deletions.
+    ignore: jest.fn(),
   };
   const localPaths = opts.localDirs ?? [];
   const trashFile = jest.fn(async () => undefined);
@@ -85,7 +88,7 @@ function makeEngine(opts: {
   const setDir = jest.fn();
   const deleteDir = jest.fn();
   const stateDB = {
-    getAllFiles: () => [], getFile: () => undefined,
+    getAllFiles: () => [], getFile: () => undefined, deleteFile: jest.fn(),
     getAllDirs: () => opts.tracked ?? [], setDir, deleteDir, requestSave: jest.fn(),
   };
   const engine = new SyncEngine({
@@ -276,7 +279,12 @@ describe('SyncEngine.resolveSkippedDir — per-path force resolution for a mass-
 
   it('[SPEC:MDV-8] trashLocal + choice=remote → confirm the deletion locally (trash it)', async () => {
     const client = makeClient({ remoteDirs: [] });
-    const { engine, trashFile, deleteDir } = makeEngine({ client, localDirs: ['stillhere'] });
+    // Tracked, because that is the only way a path reaches the breaker's trashLocal list: the
+    // classification that produced it needs local-present + remote-absent + TRACKED. Feature 086
+    // drops the row by enumerating the tracked subtree, so the world has to say it is tracked.
+    const { engine, trashFile, deleteDir } = makeEngine({
+      client, localDirs: ['stillhere'], tracked: [dirState('stillhere')],
+    });
     await engine.resolveSkippedDir('stillhere', 'trashLocal', 'remote');
     expect(trashFile).toHaveBeenCalled();
     expect(deleteDir).toHaveBeenCalledWith('stillhere');

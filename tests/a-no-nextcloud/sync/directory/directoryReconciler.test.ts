@@ -32,10 +32,12 @@ interface World {
   local: string[];
   /** Folders the state DB tracks. */
   tracked: DirState[];
+  /** File paths the state DB tracks (feature 086: a trashed folder drops its subtree's tracking). */
+  trackedFiles: string[];
 }
 
 function build(world: Partial<World> = {}, over: Partial<DirectoryDeps> = {}) {
-  const w: World = { remote: [], local: [], tracked: [], ...world };
+  const w: World = { remote: [], local: [], tracked: [], trackedFiles: [], ...world };
 
   const calls = {
     createDirectory: [] as string[],
@@ -45,6 +47,13 @@ function build(world: Partial<World> = {}, over: Partial<DirectoryDeps> = {}) {
     setDir: [] as string[],
     deleteDir: [] as string[],
     lock: [] as string[],
+    deleteFile: [] as string[],
+    dropMergeBase: [] as string[],
+    dropCleanSnapshot: [] as string[],
+    markOwnEvent: [] as string[],
+    /** Ordered log, so "ignore registered BEFORE trashFile" is checkable (feature 086, FR-005). */
+    order: [] as string[],
+    logs: [] as string[],
   };
   let dirsEmpty = true;
   let listingFails = false;
@@ -72,19 +81,39 @@ function build(world: Partial<World> = {}, over: Partial<DirectoryDeps> = {}) {
         getAllFolders: () => w.local.map((p) => new TFolder(p)),
         getAbstractFileByPath: (p: string) => (w.local.includes(p) ? new TFolder(p) : null),
       },
-      fileManager: { trashFile: async (f: TFolder) => { calls.trash.push(f.path); } },
+      fileManager: {
+        trashFile: async (f: TFolder) => {
+          calls.trash.push(f.path);
+          calls.order.push(`trash:${f.path}`);
+        },
+      },
     } as unknown as DirectoryDeps['app'],
     stateDB: {
       getAllDirs: () => w.tracked,
       setDir: (d: DirState) => { calls.setDir.push(d.path); },
-      deleteDir: (p: string) => { calls.deleteDir.push(p); },
+      deleteDir: (p: string) => {
+        calls.deleteDir.push(p);
+        w.tracked = w.tracked.filter((d) => d.path !== p);
+      },
       requestSave: () => { /* noop */ },
+      getAllFiles: () => w.trackedFiles.map((path) => ({ path })),
+      deleteFile: (p: string) => {
+        calls.deleteFile.push(p);
+        w.trackedFiles = w.trackedFiles.filter((f) => f !== p);
+      },
     } as unknown as DirectoryDeps['stateDB'],
     journal,
     transfer: {
       acquireLock: async (_c: IWebDAVClient, p: string) => { calls.lock.push(p); return null; },
       releaseLock: async () => { /* noop */ },
     } as unknown as TransferService,
+    mergeBase: { drop: (p: string) => { calls.dropMergeBase.push(p); } },
+    dropCleanSnapshot: (p: string) => { calls.dropCleanSnapshot.push(p); },
+    markOwnEvent: (p: string) => {
+      calls.markOwnEvent.push(p);
+      calls.order.push(`ignore:${p}`);
+    },
+    logger: { log: async (m: string) => { calls.logs.push(m); } } as unknown as DirectoryDeps['logger'],
     isSystemExcluded: () => false,
     massDeleteLimit: () => -1, // automatic: max(20, tracked * 0.2)
     isCancelled: () => false,
@@ -318,7 +347,9 @@ describe('DirectoryReconciler.resolveSkippedDir — settling what the breaker re
   });
 
   it('trashLocal + remote: lets the local deletion proceed', async () => {
-    const { reconciler, client, calls } = build({ local: ['D'] });
+    // Tracked, because a breaker candidate is by definition tracked (local-present, remote-absent,
+    // tracked). Feature 086 drops the row by enumerating the tracked subtree, not by path alone.
+    const { reconciler, client, calls } = build({ local: ['D'], tracked: [{ path: 'D', remoteFileId: null }] });
     await reconciler.resolveSkippedDir(client, 'D', 'trashLocal', 'remote');
     expect(calls.trash).toEqual(['D']);
     expect(calls.deleteDir).toEqual(['D']);
@@ -362,5 +393,114 @@ describe('DirectoryReconciler.resolveAllSkippedDirs', () => {
     const s = breakerSummary(['a', 'b'], []);
     expect(await reconciler.resolveAllSkippedDirs(client, s, 'local')).toEqual({ resolved: 1, failed: 1 });
     expect(s.errors[0].dirBreakerSkipped).toEqual({ deleteRemote: ['b'], trashLocal: [] });
+  });
+});
+
+// Feature 086 (issue #46). The reporter lost files from BOTH sides: the folder went to their local
+// `.trash`, and its contents turned up in Nextcloud's trashbin too. The second half is this code's
+// doing. Trashing a folder took its children with it but left their StateDB rows behind, and a row
+// that says "synced, now absent locally" is indistinguishable from a user deletion — so the next
+// sync propagated it to the server. Feature 081 stopped one WAY of getting here (asking the server
+// before trashing); this is the amplifier itself.
+describe('[SPEC:DTV-3] DirectoryReconciler.reconcileDirectories — a plugin trash is not a user deletion', () => {
+  it('GDP-4 forgets the whole subtree, not just the folder row', async () => {
+    const { reconciler, client, calls } = build({
+      local: ['F'],
+      tracked: [{ path: 'F', remoteFileId: null }],
+      trackedFiles: ['F/a.md', 'F/sub/b.md'],
+    });
+
+    await reconciler.reconcileDirectories(client, summary());
+
+    expect(calls.trash).toEqual(['F']);
+    expect(calls.deleteFile.sort()).toEqual(['F/a.md', 'F/sub/b.md']);
+    expect(calls.dropMergeBase.sort()).toEqual(['F/a.md', 'F/sub/b.md']);
+    expect(calls.dropCleanSnapshot.sort()).toEqual(['F/a.md', 'F/sub/b.md']);
+    expect(calls.deleteDir).toEqual(['F']);
+
+    // The log line is the only thing a maintainer reading a user's debug log will have to tell this
+    // apart from a user deletion — which is the exact confusion that made issue #46 hard to diagnose.
+    expect(calls.logs).toContainEqual(
+      'dir-sync: plugin trash — dropped tracking for 2 files / 1 dirs under F (not a local deletion)',
+    );
+  });
+
+  it('GDP-4 leaves siblings that merely share a name prefix tracked', async () => {
+    const { reconciler, client, calls } = build({
+      local: ['F'],
+      tracked: [{ path: 'F', remoteFileId: null }],
+      trackedFiles: ['F/a.md', 'F2/note.md', 'F.md', 'FF/note.md'],
+    });
+
+    await reconciler.reconcileDirectories(client, summary());
+
+    expect(calls.deleteFile).toEqual(['F/a.md']);
+  });
+
+  // G1-2: a failed operation keeps its tracking so the next sync retries. Dropping the rows here
+  // would strand files that are still sitting on disk, and the sync after would re-upload them as
+  // brand-new — the user's folder would silently come back.
+  it('GDP-5 drops nothing when the trash itself fails', async () => {
+    const { reconciler, client, calls } = build({
+      local: ['F'],
+      tracked: [{ path: 'F', remoteFileId: null }],
+      trackedFiles: ['F/a.md'],
+    }, {
+      app: {
+        vault: {
+          adapter: { mkdir: async () => undefined },
+          getAllFolders: () => [new TFolder('F')],
+          getAbstractFileByPath: () => new TFolder('F'),
+        },
+        fileManager: { trashFile: async () => { throw new Error('EACCES'); } },
+      } as unknown as DirectoryDeps['app'],
+    });
+
+    const s = summary();
+    await reconciler.reconcileDirectories(client, s);
+
+    expect(calls.deleteFile).toEqual([]);
+    expect(calls.deleteDir).toEqual([]);
+    expect(calls.dropMergeBase).toEqual([]);
+    expect(s.errorCount).toBe(1);
+  });
+
+  // The tracking drop is only the SECOND line of defence. Obsidian fires a vault `delete` event for
+  // the folder and every file under it, and nothing says those arrive after this method finishes —
+  // watch mode could act on them first. So the paths are registered as the plugin's own doing
+  // BEFORE the trash, which is the same mechanism downloads already use to avoid an upload loop.
+  it('GDP-6 registers the subtree as its own vault event before trashing, not after', async () => {
+    const { reconciler, client, calls } = build({
+      local: ['F'],
+      tracked: [{ path: 'F', remoteFileId: null }],
+      trackedFiles: ['F/a.md', 'F/sub/b.md'],
+    });
+
+    await reconciler.reconcileDirectories(client, summary());
+
+    expect(calls.markOwnEvent.sort()).toEqual(['F', 'F/a.md', 'F/sub/b.md']);
+    expect(calls.order.indexOf('trash:F')).toBe(calls.order.length - 1);
+    expect(calls.order.slice(0, -1)).toEqual(
+      expect.arrayContaining(['ignore:F', 'ignore:F/a.md', 'ignore:F/sub/b.md']),
+    );
+  });
+
+  // Feature 081 is the gate in front of all of this and must stay shut: absence from the listing is
+  // a reason to ask the server, not a reason to delete.
+  it('GDP-7 neither trashes nor forgets anything when the server still has the folder', async () => {
+    const { reconciler, client, calls } = build({
+      local: ['F'],
+      tracked: [{ path: 'F', remoteFileId: null }],
+      trackedFiles: ['F/a.md'],
+    }, {} );
+    (client as unknown as { remoteExists: (p: string) => Promise<boolean> }).remoteExists =
+      async () => true;
+
+    await reconciler.reconcileDirectories(client, summary());
+
+    expect(calls.trash).toEqual([]);
+    expect(calls.deleteFile).toEqual([]);
+    expect(calls.deleteDir).toEqual([]);
+    expect(calls.markOwnEvent).toEqual([]);
   });
 });

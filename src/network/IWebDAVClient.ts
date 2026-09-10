@@ -16,6 +16,9 @@ export interface IWebDAVClient {
    * - 404 on a subpath       → [] (unchanged); for the recursive standard-WebDAV walk, a subfolder
    *                            that vanishes mid-walk is an empty subtree, not a failed listing.
    * - any other non-207      → throws NetworkError (an ambiguous failure must not read as "empty").
+   * - 207 with a body that is not a well-formed DAV:multistatus → throws RemoteListingUnreadableError
+   *   (a NetworkError subclass, feature 087). A truncated or non-XML body is NOT the same fact as an
+   *   empty listing — it says nothing about the server's contents — and must never be read as one.
    */
   getFiles(path: string): Promise<RemoteFileInfo[]>;
   /**
@@ -32,6 +35,8 @@ export interface IWebDAVClient {
    * - the path is a collection→ null (a folder is not a file; never treated as one)
    * - any other non-207       → throws NetworkError (an ambiguous failure must NOT read as "absent",
    *                             which would turn into a blind create/overwrite)
+   * - 207 with an unreadable body → throws RemoteListingUnreadableError (feature 087), never null —
+   *   the same reasoning as the non-207 case, since a body that cannot be read proves nothing absent.
    */
   statFile(remotePath: string): Promise<RemoteFileInfo | null>;
   /**
@@ -40,18 +45,24 @@ export interface IWebDAVClient {
    * propagates child changes up to the root, so a matching root ETag means the remote tree is
    * unchanged since the last full scan. Standard WebDAV returns null (propagation not guaranteed) so
    * it never short-circuits. Implementations must not throw: any failure ⇒ null (caller full-scans).
+   * An unreadable body (feature 087) is one such failure — it still resolves to null, unchanged.
    */
   getRootEtag(): Promise<string | null>;
   /**
    * List the directories (WebDAV collections) beneath `path` (recursive). Surfaced
    * separately from {@link getFiles} so directories are first-class entities the engine
    * can prune when they become empty. The base folder itself is excluded.
+   *
+   * Same unreadable-body contract as {@link getFiles} (feature 087): a 207 whose body cannot be
+   * parsed as a listing throws RemoteListingUnreadableError rather than resolving to [].
    */
   getDirectories(path: string): Promise<RemoteDirInfo[]>;
   /**
    * True iff the collection at `path` has no children (rmdir semantics — a single
    * Depth:1 probe of the live server). Used immediately before {@link deleteCollection}
    * as the data-loss guard: a recursive collection DELETE must only target an empty dir.
+   * An unreadable body (feature 087) resolves to false, the same conservative answer as any other
+   * ambiguous failure here.
    */
   isRemoteDirEmpty(path: string): Promise<boolean>;
   /**
@@ -79,6 +90,12 @@ export interface IWebDAVClient {
    * MUST confirm emptiness via {@link isRemoteDirEmpty} first. A 404 is treated as success.
    */
   deleteCollection(path: string): Promise<void>;
+  /**
+   * Same unreadable-body contract as {@link getFiles} (feature 087): a 207 whose body cannot be
+   * parsed throws RemoteListingUnreadableError rather than resolving to an empty change set — an
+   * empty change set reads as "nothing changed" and would stall the vault exactly like a lost
+   * getFiles listing would.
+   */
   getChanges(syncToken: string): Promise<SyncChanges>;
   /**
    * Download a remote file and RETURN its bytes. Returning the buffer (rather than stashing it in a

@@ -8,14 +8,18 @@
 // costs one table row.
 //
 // DOMParser comes from @xmldom/xmldom, already a devDependency for the b-1 and b-4 layers. It is
-// polyfilled here rather than in the shared a-layer setup so nothing else changes behaviour.
-import { DOMParser } from '@xmldom/xmldom';
+// installed here rather than in the shared a-layer setup so nothing else changes behaviour — wrapped
+// (feature 087) so a test can also ask for the Blink/WebKit shape of a parse failure, which is a
+// <parsererror> document rather than a throw. See support/browserLikeDOMParser.ts for why that
+// difference matters.
 import {
   parseResponses, readSyncToken, readHref, readProp, readStatusText,
-  readIsCollection, readDavProps, readOwncloudProps,
+  readIsCollection, readDavProps, readOwncloudProps, MultistatusUnreadableError,
 } from '../../../../src/network/dav/propfind';
+import { installBrowserLikeDOMParser, PARSERERROR_NS } from '../../support/browserLikeDOMParser';
 
-(globalThis as unknown as { DOMParser: unknown }).DOMParser = DOMParser;
+const dom = installBrowserLikeDOMParser();
+afterAll(() => dom.restore());
 
 /** Wrap response fragments in a multistatus envelope with both namespaces declared. */
 function multistatus(...responses: string[]): string {
@@ -58,19 +62,102 @@ describe('parseResponses', () => {
     expect(parseResponses(multistatus())).toEqual([]);
   });
 
-  it('rejects a truncated document instead of returning half of it', () => {
-    // NOTE — the two DOMParser implementations differ here, and the test pins the polyfill's:
-    // @xmldom (used by this layer, b-1 and b-4) THROWS on malformed XML, while the browser
-    // DOMParser Obsidian actually runs returns a document containing <parsererror>, which yields
-    // zero DAV:response elements. The property that matters is the same either way — a truncated
-    // body never produces partial entries — but a caller must be prepared for a throw in the test
-    // layers and for an empty list in production.
-    expect(() => parseResponses('<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:respo')).toThrow();
+  // Feature 087 (issue #51). Everything below this line is about ONE distinction: "the server said
+  // there is nothing here" versus "we could not read what the server said". The old code collapsed
+  // both into an empty list, and an empty list is what the full scan reads as "every tracked file was
+  // deleted on the server". A multi-megabyte listing that arrived truncated became, in one step, a
+  // request to delete the whole vault — held back only by the mass-delete breaker (large vaults) or
+  // the per-file 404 re-check (small ones). This is the upstream fix: an unreadable body is an error.
+
+  it('ULG-1 rejects an empty body — that is not a listing of nothing, it is no listing', () => {
+    for (const body of ['', '\n  ', '   ']) {
+      expect(() => parseResponses(body)).toThrow(MultistatusUnreadableError);
+      expect(() => parseResponses(body)).toThrow(/empty body/);
+    }
   });
 
-  it('returns an empty list for a body that is not XML at all', () => {
-    // An HTML error page served with the wrong content type is a real failure mode.
-    expect(parseResponses('<html><body>502 Bad Gateway</body></html>')).toEqual([]);
+  it('ULG-2 turns a throwing parser (xmldom) into the same typed error', () => {
+    // @xmldom throws on malformed XML. The type has to be ours so callers can catch one thing.
+    const truncated = '<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:respo';
+    expect(() => parseResponses(truncated)).toThrow(MultistatusUnreadableError);
+    expect(() => parseResponses(truncated)).toThrow(/^parser threw: /);
+  });
+
+  it('ULG-3 rejects a Blink-shaped parsererror document whether it is the root or a child', () => {
+    // Obsidian's DOMParser never throws; it hands back a document with the error inside it. In the
+    // "root" shape nothing else parsed. In the "nested" shape a REAL response survived next to the
+    // error element — the shape that used to yield a partial listing, the worst possible output.
+    const rootShape = '<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:respo';
+    const nestedShape = '<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:response><d:href>/a</d:href></d:response><d:resp';
+    dom.simulateParserError(rootShape, 'root');
+    dom.simulateParserError(nestedShape, 'nested');
+
+    expect(() => parseResponses(rootShape)).toThrow(MultistatusUnreadableError);
+    expect(() => parseResponses(rootShape)).toThrow(/^parser error: /);
+    expect(() => parseResponses(nestedShape)).toThrow(MultistatusUnreadableError);
+    expect(() => parseResponses(nestedShape)).toThrow(/^parser error: /);
+  });
+
+  it('ULG-3 keeps the parser message short enough for a single log line', () => {
+    const input = '<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:respo';
+    dom.simulateParserError(input, 'root');
+    let reason = '';
+    try { parseResponses(input); } catch (e) { reason = (e as MultistatusUnreadableError).reason; }
+    expect(reason.length).toBeLessThanOrEqual('parser error: '.length + 120);
+    expect(reason).not.toContain('\n');
+  });
+
+  it.each([
+    ['an HTML error page', '<html><body>502 Bad Gateway</body></html>', /root is html, not DAV:multistatus/],
+    ['an unrelated XML root', '<?xml version="1.0"?><foo/>', /root is foo, not DAV:multistatus/],
+    ['a multistatus in the wrong namespace', '<multistatus xmlns="urn:not-dav"/>', /root is multistatus, not DAV:multistatus/],
+  ])('ULG-4 rejects %s — well-formed is not the same as being an answer', (_label, body, reason) => {
+    expect(() => parseResponses(body)).toThrow(MultistatusUnreadableError);
+    expect(() => parseResponses(body)).toThrow(reason);
+  });
+
+  it('ULG-4 also rejects an XML declaration with no root element (not well-formed at all)', () => {
+    // Distinct from the table above: this document has no root element, so it is malformed rather
+    // than "well-formed but wrong root" — real parsers reject it the same way they reject a
+    // truncated body (ULG-2/ULG-3), not via the root-name check.
+    expect(() => parseResponses('<?xml version="1.0"?>')).toThrow(MultistatusUnreadableError);
+  });
+
+  it('ULG-5 still returns an empty list for a genuine multistatus with no responses', () => {
+    // Feature 083 depends on this: a vault the server says is empty must read as empty, not as an
+    // error, or absence-based deletion never converges on a small vault.
+    expect(parseResponses(multistatus())).toEqual([]);
+    expect(parseResponses('<d:multistatus xmlns:d="DAV:"/>')).toEqual([]);
+  });
+
+  describe('ULG-6 accepts every legitimate shape a real server sends', () => {
+    it.each([
+      ['a default namespace instead of a prefix', `<?xml version="1.0"?><multistatus xmlns="DAV:"><response><href>/a</href><propstat><prop><getetag>"e"</getetag></prop></propstat></response></multistatus>`],
+      ['an upper-case D: prefix', `<?xml version="1.0"?><D:multistatus xmlns:D="DAV:"><D:response><D:href>/a</D:href><D:propstat><D:prop><D:getetag>"e"</D:getetag></D:prop></D:propstat></D:response></D:multistatus>`],
+      ['a UTF-8 BOM', `\uFEFF<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:response><d:href>/a</d:href></d:response></d:multistatus>`],
+      ['leading whitespace and no XML declaration', `\n\n  <d:multistatus xmlns:d="DAV:"><d:response><d:href>/a</d:href></d:response></d:multistatus>`],
+      ['extra namespaces on the root', `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns" xmlns:oc="http://owncloud.org/ns" xmlns:nc="http://nextcloud.org/ns"><d:response><d:href>/a</d:href></d:response></d:multistatus>`],
+    ])('parses a listing with %s', (_label, body) => {
+      expect(parseResponses(body).map(readHref)).toEqual(['/a']);
+    });
+
+    it('does not mistake a FILE called parsererror for a parse error', () => {
+      // The check is for the parser's own element in its own namespace. A user's file name only ever
+      // appears as text inside <d:href> / <d:displayname>, never as an element.
+      const xml = multistatus(
+        response('/remote.php/dav/files/alice/Vault/parsererror.md', `${FILE_PROPS}<d:displayname>parsererror</d:displayname>`),
+        response('/remote.php/dav/files/alice/Vault/notes/parsererror/', FOLDER_PROPS),
+      );
+      expect(parseResponses(xml)).toHaveLength(2);
+    });
+
+    it('does not mistake a user element merely NAMED parsererror in another namespace', () => {
+      // Belt and braces: even an element with that local name is only an error in the Mozilla
+      // namespace (or as the document element). Anything else is server-defined property data.
+      const xml = multistatus(response('/a', `${FILE_PROPS}<oc:parsererror>custom prop</oc:parsererror>`));
+      expect(parseResponses(xml)).toHaveLength(1);
+      expect(PARSERERROR_NS).not.toBe('http://owncloud.org/ns');
+    });
   });
 });
 
@@ -221,8 +308,9 @@ describe('readSyncToken', () => {
   });
 
   it('rejects an unparseable body rather than reporting an empty token', () => {
-    // Same DOMParser divergence as parseResponses — see the note there. An empty token would be
-    // worse than a throw: it reads as "start from scratch" and triggers a full re-scan.
+    // xmldom throws here. In production readSyncToken is only reached after parseResponses has
+    // already validated the same body (feature 087), so the Blink parsererror shape never gets this
+    // far; the throw is pinned so a future reordering cannot make it silently return ''.
     expect(() => readSyncToken('not xml')).toThrow();
   });
 });
