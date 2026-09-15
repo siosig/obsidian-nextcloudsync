@@ -339,3 +339,37 @@ describe('[SPEC:DSD-5] predicates reflect platform and sign-in state', () => {
     expect(visible(makeHost({ isSignedIn: true }))).toBe(false);
   });
 });
+
+describe('Server compatibility notice (VSN-2)', () => {
+  // GitHub issue #54: the banner's `visible` never consulted isSupportedNextcloudVersion(), so it
+  // showed for every detected server, including ones at or above MIN_NEXTCLOUD_VERSION.
+  const serverCompatibilityVisible = (host: SettingDefinitionsHost): boolean => {
+    const row = rowsOf(buildSettingDefinitions(host)).find((r) => r.name === 'Server compatibility');
+    if (!row) return false;
+    return typeof row.visible === 'function' ? !!row.visible() : row.visible !== false;
+  };
+
+  it.each(['34.0.3', '33', '40.1.0'])(
+    '[VSN-2] hides the banner for a server at or above MIN_NEXTCLOUD_VERSION (%s)',
+    (version) => {
+      const host = makeHost({ settings: { ...DEFAULT_SETTINGS, lastKnownServerVersion: version } });
+      expect(serverCompatibilityVisible(host)).toBe(false);
+    },
+  );
+
+  it.each(['32.0.5', '25'])(
+    '[VSN-1] shows the banner, with the detected version in the text, below MIN_NEXTCLOUD_VERSION (%s)',
+    (version) => {
+      const host = makeHost({ settings: { ...DEFAULT_SETTINGS, lastKnownServerVersion: version } });
+      expect(serverCompatibilityVisible(host)).toBe(true);
+      const row = rowsOf(buildSettingDefinitions(host)).find((r) => r.name === 'Server compatibility')!;
+      expect(row.desc).toContain(version);
+    },
+  );
+
+  it('[VSN-3] never builds a "Server compatibility" row when no server version has been detected yet', () => {
+    const host = makeHost({ settings: { ...DEFAULT_SETTINGS, lastKnownServerVersion: '' } });
+    const row = rowsOf(buildSettingDefinitions(host)).find((r) => r.name === 'Server compatibility');
+    expect(row).toBeUndefined();
+  });
+});
