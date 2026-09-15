@@ -3,6 +3,7 @@ import type { DavSyncSettings } from '../types';
 import { CONFIG_SYNC_CATEGORIES } from '../sync/ConfigSyncResolver';
 import { SLIDER_LIMITS } from './sliderLimits';
 import { SERVER_URL_DESC, SIGN_IN_HELP, SIGN_IN_MANUAL_DIVIDER } from './settingsCopy';
+import { isSupportedNextcloudVersion } from '../util/version';
 
 // Feature 077: the settings tab, as data.
 //
@@ -218,10 +219,13 @@ function topGroup(host: SettingDefinitionsHost): SettingDefinitionGroup {
     },
   ];
   if (s.lastKnownServerVersion) {
+    // Narrowed to a local so the `visible` closure below keeps the non-undefined type: TS does not
+    // carry the `if` narrowing of `s.lastKnownServerVersion` into a function literal.
+    const lastKnownServerVersion = s.lastKnownServerVersion;
     // Kept as a decoration: it reports an observation, not a preference.
-    items.splice(1, 0, notice(host, 'Server compatibility', serverVersionNotice(s.lastKnownServerVersion), {
+    items.splice(1, 0, notice(host, 'Server compatibility', serverVersionNotice(lastKnownServerVersion), {
       cls: 'ncs-setting-warning',
-      visible: () => true,
+      visible: () => !isSupportedNextcloudVersion(lastKnownServerVersion),
     }));
   }
   items.splice(items.length - 1, 0, notice(
