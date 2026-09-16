@@ -60,3 +60,11 @@ CLAUDE.md
 
 # b-3 (Android) diagnostic bundles pulled from the emulator on failure
 .b3-diagnostics/
+/.serena/
+
+# local agent / editor / spec working state — never published
+/.claude/
+/.specify/
+/.vscode/
+/specs/
+/CLAUDE.md

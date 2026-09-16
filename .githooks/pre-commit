@@ -36,3 +36,53 @@ echo "pre-commit: secretlint scanning staged files (config: $RC)…"
 git diff --cached --name-only --diff-filter=ACM -z \
   | xargs -0 pnpm exec secretlint --no-glob --secretlintrc "$RC"
 echo "pre-commit: no secrets detected."
+
+# >>> secret-scan (secretlint) >>>
+# Block commits that introduce credentials/secrets (preset) or private denylist terms.
+# Scans only staged files. Bypass in an emergency with: git commit --no-verify
+(
+  _ss_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+  [ -z "$_ss_root" ] && exit 0
+  cd "$_ss_root" || exit 0
+  [ -z "$(git diff --cached --name-only --diff-filter=ACM)" ] && exit 0
+  _ss_rc=".secretlintrc.json"
+  [ -e ".secretlintrc.local.json" ] && _ss_rc=".secretlintrc.local.json"
+  if [ -x node_modules/.bin/secretlint ] && [ -d "node_modules/@secretlint/secretlint-rule-pattern" ]; then
+    set -- node_modules/.bin/secretlint
+  else
+    set -- npx -y -p secretlint@13 -p @secretlint/secretlint-rule-preset-recommend -p @secretlint/secretlint-rule-pattern secretlint
+  fi
+  echo "pre-commit: secretlint scanning staged files (config: $_ss_rc)…"
+  git diff --cached --name-only --diff-filter=ACM -z | xargs -0 "$@" --no-glob --secretlintrc "$_ss_rc"
+) || exit 1
+# <<< secret-scan (secretlint) <<<
+
+# >>> public-author-gate >>>
+# Block commits authored under anything but the public identity (bypass: git commit --no-verify)
+(
+  _pa_email="$(git var GIT_AUTHOR_IDENT 2>/dev/null | grep -oP '<\K[^>]+')"
+  if [ "$_pa_email" != "siosig@gmail.com" ]; then
+    echo "pre-commit: commit author must be Daisuke ITO <siosig@gmail.com> (got: ${_pa_email:-unknown}) (bypass: git commit --no-verify)." >&2
+    exit 1
+  fi
+) || exit 1
+# <<< public-author-gate <<<
+
+# >>> english-only-content >>>
+# Block staged Japanese/CJK content outside *.ja* files (bypass: git commit --no-verify)
+# POSIX sh only below (hook runs under /bin/sh): no process substitution, no 'read -d'.
+(
+  _ec_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+  [ -z "$_ec_root" ] && exit 0
+  cd "$_ec_root" || exit 0
+  git diff --cached --name-only --diff-filter=ACM | while IFS= read -r _ec_file; do
+    case "$_ec_file" in *.ja*) continue ;; esac
+    _ec_bin="$(git diff --cached --numstat -- "$_ec_file" | cut -f1)"
+    [ "$_ec_bin" = "-" ] && continue
+    if git show ":$_ec_file" 2>/dev/null | grep -qP '[\x{3000}-\x{303f}\x{3040}-\x{30ff}\x{3400}-\x{4dbf}\x{4e00}-\x{9fff}\x{f900}-\x{faff}\x{ff00}-\x{ffef}]'; then
+      echo "pre-commit: Japanese/CJK found in $_ec_file — published files must be English, except *.ja* (bypass: git commit --no-verify)." >&2
+      exit 1
+    fi
+  done
+) || exit 1
+# <<< english-only-content <<<
