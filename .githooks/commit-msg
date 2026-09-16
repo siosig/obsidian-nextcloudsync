@@ -25,3 +25,17 @@ if printf '%s' "$CONTENT" | grep -qP '[\x{3000}-\x{303f}\x{3040}-\x{30ff}\x{3400
   exit 1
 fi
 exit 0
+
+# >>> english-commit-msg >>>
+# Block commit messages containing Japanese / CJK characters. Checks the message text only;
+# functional non-ASCII data in files is intentionally allowed. Bypass: git commit --no-verify
+(
+  _ecm_file="$1"
+  [ -n "$_ecm_file" ] && [ -f "$_ecm_file" ] || exit 0
+  _ecm_body="$(sed -e '/^#.*>8/,$d' "$_ecm_file" | sed -e '/^#/d')"
+  if printf '%s' "$_ecm_body" | grep -qP '[\x{3000}-\x{303f}\x{3040}-\x{30ff}\x{3400}-\x{4dbf}\x{4e00}-\x{9fff}\x{f900}-\x{faff}\x{ff00}-\x{ffef}]'; then
+    echo "commit-msg: Japanese/CJK detected — commit messages must be in English (bypass: git commit --no-verify)." >&2
+    exit 1
+  fi
+) || exit 1
+# <<< english-commit-msg <<<

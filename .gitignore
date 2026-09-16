@@ -57,3 +57,8 @@ scripts/
 
 # b-3 (Android) diagnostic bundles pulled from the emulator on failure
 .b3-diagnostics/
+
+# local agent / editor / spec working state — never published
+/.specify/
+/.vscode/
+/specs/
