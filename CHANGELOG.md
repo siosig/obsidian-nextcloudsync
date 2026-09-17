@@ -11,6 +11,11 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [1.0.7] - 2026-09-18
+
+### Fixed
+- **The settings screen recommended upgrading Nextcloud even on servers that already met the recommended version.** As soon as the plugin detected any server version at all, it showed a "a newer server is recommended" banner, regardless of what that version actually was. The plugin already had the logic to check a server against the recommended minimum (Nextcloud Hub 26 / server 33), but the settings screen never called it — it just always showed the banner. Now the banner only appears when the connected server is genuinely below that recommended minimum.
+
 ## [1.0.6] - 2026-09-10
 
 ### Fixed
@@ -459,6 +464,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[1.0.7]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.7
 [1.0.6]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.6
 [1.0.5]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.5
 [1.0.4]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.4
