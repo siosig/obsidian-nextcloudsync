@@ -701,4 +701,8 @@ export const CLAUSES: Clause[] = [
   { id: 'MSF-16', source: 'specs/088-mkcol-single-flight/spec.md FR MSF-009 (a parent that genuinely cannot be created fails that one file and lets the session carry on, so the next sync retries it)', layer: 'a' },
 
   { id: 'WSF-11', source: 'specs/064-watch-single-file-conflict/spec.md (FR-011: watch-path decisions are logged with a `watch:` prefix so the two entry points are distinguishable in the debug log)', layer: 'a', waiver: 'log text is a diagnostic surface, not a behavioural contract: asserting exact strings would freeze wording without protecting any user-visible outcome. Verified by reading the debug log in quickstart.md' },
+  // --- VSN: server-version compatibility banner visibility (feature 089, GitHub issue #54) ---
+  { id: 'VSN-1', source: 'specs/089-fix-server-version-notice/spec.md FR-003 (a server below MIN_NEXTCLOUD_VERSION still shows the "Server compatibility" banner, with the detected version in the text) — GitHub issue #54', layer: 'a' },
+  { id: 'VSN-2', source: 'specs/089-fix-server-version-notice/spec.md FR-002 (a server at or above MIN_NEXTCLOUD_VERSION no longer shows the banner — the bug reported in issue #54, where the banner appeared unconditionally regardless of isSupportedNextcloudVersion())', layer: 'a' },
+  { id: 'VSN-3', source: 'specs/089-fix-server-version-notice/spec.md FR-001/FR-002 (no server version detected yet -> the "Server compatibility" row is not built at all, preserving the existing outer guard)', layer: 'a' },
 ];
