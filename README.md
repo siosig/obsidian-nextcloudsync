@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (1.0.7-beta.1)
+## What's new in this release (1.0.7)
 
-- **Fixed: the settings screen recommended upgrading Nextcloud even on servers that already met the recommended version (1.0.7-beta.1)** — as soon as the plugin detected any server version at all, it showed a "a newer server is recommended" banner, regardless of what that version actually was. The plugin already had the logic to check a server against the recommended minimum (Nextcloud Hub 26 / server 33), but the settings screen never called it — it just always showed the banner. Now the banner only appears when the connected server is genuinely below that recommended minimum.
+- **Fixed: the settings screen recommended upgrading Nextcloud even on servers that already met the recommended version (1.0.7)** — as soon as the plugin detected any server version at all, it showed a "a newer server is recommended" banner, regardless of what that version actually was. The plugin already had the logic to check a server against the recommended minimum (Nextcloud Hub 26 / server 33), but the settings screen never called it — it just always showed the banner. Now the banner only appears when the connected server is genuinely below that recommended minimum.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
