@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (1.0.7-beta.1)
+## What's new in this release (1.0.7)
 
-- **Fixed: the settings screen recommended upgrading Nextcloud even on servers that already met the recommended version (1.0.7-beta.1)** — as soon as the plugin detected any server version at all, it showed a "a newer server is recommended" banner, regardless of what that version actually was. The plugin already had the logic to check a server against the recommended minimum (Nextcloud Hub 26 / server 33), but the settings screen never called it — it just always showed the banner. Now the banner only appears when the connected server is genuinely below that recommended minimum.
+- **Fixed: the settings screen recommended upgrading Nextcloud even on servers that already met the recommended version (1.0.7)** — as soon as the plugin detected any server version at all, it showed a "a newer server is recommended" banner, regardless of what that version actually was. The plugin already had the logic to check a server against the recommended minimum (Nextcloud Hub 26 / server 33), but the settings screen never called it — it just always showed the banner. Now the banner only appears when the connected server is genuinely below that recommended minimum.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
@@ -140,6 +140,20 @@ Mobile is supported, with a few platform-aware differences (desktop behaviour is
 5. Run the **Sync now** command (or wait for the periodic sync). The first run performs a full scan of your Vault and the remote, then transfers what's needed; subsequent syncs are incremental.
 
 Your Vault is synced into a folder named after the Vault on the Nextcloud side, keeping multiple Vaults cleanly separated.
+
+### Adding a second device
+
+The plugin syncs a Vault that is already open in Obsidian — it does not open a Nextcloud folder as a Vault. So a second device does not browse to the remote; it starts with its own Vault that happens to carry the same name:
+
+1. On the second device, **create a new, empty Vault** and give it **exactly the same name** as the first one. That name *is* the remote folder, matched character for character including case — `My Notes` and `my notes` are two separate folders on the server.
+2. Install and enable Nextcloud Sync in that Vault, enter the **same Server URL**, and authenticate.
+3. Run **Sync now**. The first run downloads the existing Vault into the new one.
+
+To confirm both devices agree, compare the read-only **Sync target (WebDAV)** row in **Settings → Nextcloud Sync**: it shows the effective remote path (Server URL plus Vault folder). If that line reads identically on both devices, they point at the same place.
+
+On Obsidian mobile, this means **Create new vault** — not *Set up Obsidian Sync*, which is Obsidian's own paid service, and not *Open folder as vault*, which only opens a folder already present in the phone's storage.
+
+If the Vault on the second device is **not** empty, back it up first. The first sync reconciles both sides, so notes already there are uploaded as well as downloaded.
 
 ---
 
