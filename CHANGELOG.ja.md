@@ -11,6 +11,11 @@
 
 > 英語版（原文）は [`CHANGELOG.md`](CHANGELOG.md) を参照してください。
 
+## [1.0.8] - 2026-09-23
+
+### 修正
+- **強制解決や通常の同期で `HTTP 423` が出ても原因が分かりませんでした。** Nextcloud サーバー側でファイルがロックされている場合（典型的には Nextcloud Text エディタが残したロック）、PUT/DELETE が失敗すると素の `HTTP 423 (PUT)` だけが表示され、理由が分かりませんでした。サーバーがロック所有者の情報を返せる場合、通知や Sync Status の結果一覧にその所有者名が表示されるようになり、誰・何がロックしているかを把握して対処できます。ロックの発生源は確定できないため、アプリ内に強制解除の操作は用意していません（強制解除は他者の進行中の編集を上書きするリスクがあるため）。詳細は README の新しい FAQ 項目を参照してください。
+
 ## [1.0.7] - 2026-09-18
 
 ### 修正
@@ -464,6 +469,7 @@ Nextcloud 特化同期エンジンの初回公開リリース（0.2.0 〜 0.2.1�
 - **Dry-run でのコンフリクト結果の明確化** — 初回同期プレビューがコンフリクト解決の結果を説明し、各コンフリクトファイルをクリックするとマージ後の内容（変更前後）をプレビューできます。
 - **汎用 WebDAV より高速な同期** — 内容ハッシュと Nextcloud の `sync-token` を突き合わせ、毎回リモートツリー全体を再帰的に走査するのではなく、実際に変更された分だけを転送します。更新日時ベースの WebDAV プラグインより同期が明確に速くなります。
 
+[1.0.8]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.8
 [1.0.7]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.7
 [1.0.6]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.6
 [1.0.5]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.5

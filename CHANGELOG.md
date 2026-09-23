@@ -11,6 +11,11 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [1.0.8] - 2026-09-23
+
+### Fixed
+- **`HTTP 423` after a force-resolve or a normal sync gave no indication of why.** When a file was locked on the Nextcloud server side (most commonly a lock left behind by the Nextcloud Text web editor), every failed PUT/DELETE just showed a bare `HTTP 423 (PUT)` with no explanation. The plugin now looks up the lock owner when the server reports one and includes it in the notice and the Sync Status result listing, so you know who or what is holding the file and can act accordingly. No in-app "unlock" action is provided, since the lock's origin can't be confirmed and force-releasing it risks overwriting another session's in-progress edit — see the new README FAQ entry.
+
 ## [1.0.7] - 2026-09-18
 
 ### Fixed
@@ -464,6 +469,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[1.0.8]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.8
 [1.0.7]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.7
 [1.0.6]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.6
 [1.0.5]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.5
