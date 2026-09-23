@@ -14,7 +14,7 @@
 // difference matters.
 import {
   parseResponses, readSyncToken, readHref, readProp, readStatusText,
-  readIsCollection, readDavProps, readOwncloudProps, MultistatusUnreadableError,
+  readIsCollection, readDavProps, readOwncloudProps, readLockDiscoveryOwner, MultistatusUnreadableError,
 } from '../../../../src/network/dav/propfind';
 import { installBrowserLikeDOMParser, PARSERERROR_NS } from '../../support/browserLikeDOMParser';
 
@@ -293,6 +293,49 @@ describe('readOwncloudProps — the Nextcloud extensions', () => {
   it('reads nothing from a plain WebDAV response that has no oc: namespace at all', () => {
     const plain = `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:">${response('/a.md', '<d:getetag>"e"</d:getetag>')}</d:multistatus>`;
     expect(readOwncloudProps(firstProp(plain))).toEqual({ checksum: null, fileId: null });
+  });
+});
+
+describe('readLockDiscoveryOwner (feature 090)', () => {
+  // The response an Nextcloud/RFC-4918 server sends for a Depth:0 <D:lockdiscovery/> PROPFIND
+  // issued right after a PUT/DELETE came back 423 Locked (see
+  // specs/090-server-lock-force-resolve/contracts/lockdiscovery-propfind.md).
+  function lockMultistatus(...responses: string[]): string {
+    return `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" xmlns:nc="http://nextcloud.org/ns">${responses.join('')}</d:multistatus>`;
+  }
+
+  const OWNER_AND_NC_OWNER = '<d:lockdiscovery><d:activelock><d:lockscope><d:exclusive/></d:lockscope><d:locktype><d:write/></d:locktype><d:owner>alice</d:owner><nc:lock-owner>alice@nextcloud</nc:lock-owner><d:timeout>Infinite</d:timeout></d:activelock></d:lockdiscovery>';
+  const NC_OWNER_ONLY = '<d:lockdiscovery><d:activelock><nc:lock-owner>bob@nextcloud</nc:lock-owner></d:activelock></d:lockdiscovery>';
+  const NO_OWNER_AT_ALL = '<d:lockdiscovery><d:activelock><d:lockscope><d:exclusive/></d:lockscope></d:activelock></d:lockdiscovery>';
+  const EMPTY_OWNER = '<d:lockdiscovery><d:activelock><d:owner></d:owner></d:activelock></d:lockdiscovery>';
+
+  it('LDO-1 reads D:owner, the RFC 4918 standard element, with highest priority', () => {
+    const xml = lockMultistatus(response('/a.md', OWNER_AND_NC_OWNER, 'HTTP/1.1 200 OK'));
+    expect(readLockDiscoveryOwner(xml)).toBe('alice');
+  });
+
+  it('LDO-2 falls back to nc:lock-owner when D:owner is absent', () => {
+    const xml = lockMultistatus(response('/a.md', NC_OWNER_ONLY, 'HTTP/1.1 200 OK'));
+    expect(readLockDiscoveryOwner(xml)).toBe('bob@nextcloud');
+  });
+
+  it.each([
+    ['neither D:owner nor nc:lock-owner is present', NO_OWNER_AT_ALL],
+    ['D:owner is present but empty, and nc:lock-owner is absent', EMPTY_OWNER],
+    ['lockdiscovery itself is absent (server holds no lock, plain WebDAV props only)', FILE_PROPS],
+  ])('LDO-3 returns null when %s', (_label, propBody) => {
+    const xml = lockMultistatus(response('/a.md', propBody, 'HTTP/1.1 200 OK'));
+    expect(readLockDiscoveryOwner(xml)).toBeNull();
+  });
+
+  it.each([
+    ['an empty body', ''],
+    ['an HTML error page', '<html><body>502 Bad Gateway</body></html>'],
+    ['truncated XML', '<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:respo'],
+    ['a well-formed but unrelated XML root', '<?xml version="1.0"?><foo/>'],
+  ])('LDO-4 returns null, and never throws, for %s', (_label, body) => {
+    expect(() => readLockDiscoveryOwner(body)).not.toThrow();
+    expect(readLockDiscoveryOwner(body)).toBeNull();
   });
 });
 

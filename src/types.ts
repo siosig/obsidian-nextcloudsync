@@ -647,6 +647,35 @@ export class RemoteDirCreateError extends NetworkError {
   }
 }
 /**
+ * A PUT or DELETE came back 423 because another WebDAV client (or the server itself) holds a lock on
+ * the remote path (feature 090).
+ *
+ * This is deliberately NOT the same signal as `FileLockedError`, which is this plugin's own
+ * cooperative lock (`LOCK` method, `TransferService.acquireLock`). A `ServerLockedError` names a lock
+ * this plugin did not take and cannot release, so the only safe response is to skip the file for this
+ * cycle and retry it on the next one — never to force through it.
+ *
+ * `lockOwner` comes from a best-effort PROPFIND lockdiscovery read: when that read succeeds it names
+ * who holds the lock, and when it fails or cannot be parsed the caller throws a plain `NetworkError`
+ * instead of this class (see specs/090-server-lock-force-resolve/data-model.md).
+ *
+ * Extends NetworkError (status 423) so every existing `instanceof NetworkError` branch — the retry
+ * queue, error recording, Notice generation — keeps classifying it exactly as it did before.
+ */
+export class ServerLockedError extends NetworkError {
+  constructor(
+    public readonly path: string,
+    method: 'PUT' | 'DELETE',
+    public readonly lockOwner: string | null,
+  ) {
+    super(423, '', method);
+    this.name = 'ServerLockedError';
+    this.message = this.lockOwner
+      ? `HTTP 423 (${method}) — locked on the server by "${this.lockOwner}"`
+      : `HTTP 423 (${method}) — locked on the server (owner unknown)`;
+  }
+}
+/**
  * Result of {@link IWebDAVClient.createVaultRoot}: whether the MKCOL actually created the vault
  * folder (201) or found it already present (405). The distinction is the PROOF that decides whether
  * a re-seed may proceed — see specs/083-empty-listing-absence-delete/contracts/vault-root.md.

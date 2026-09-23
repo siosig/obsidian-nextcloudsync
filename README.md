@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (1.0.7)
+## What's new in this release (1.0.8-beta.1)
 
-- **Fixed: the settings screen recommended upgrading Nextcloud even on servers that already met the recommended version (1.0.7)** — as soon as the plugin detected any server version at all, it showed a "a newer server is recommended" banner, regardless of what that version actually was. The plugin already had the logic to check a server against the recommended minimum (Nextcloud Hub 26 / server 33), but the settings screen never called it — it just always showed the banner. Now the banner only appears when the connected server is genuinely below that recommended minimum.
+- **Fixed: `HTTP 423` after a force-resolve or a normal sync gave no indication of why (1.0.8-beta.1)** — when a file was locked on the Nextcloud server side (most commonly a lock left behind by the Nextcloud Text web editor), every failed PUT/DELETE just showed a bare `HTTP 423 (PUT)` with no explanation. The plugin now looks up the lock owner when the server reports one and includes it in the notice and the Sync Status result listing, so you know who or what is holding the file and can act accordingly (see the new FAQ entry for what to do next).
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
@@ -170,6 +170,16 @@ Yes. If you'd rather not hand the plugin an app password with full account acces
 One point of confusion here: when you click **Link…** to store the app password, you're asked for an **ID** and a **value**. The **ID is a local storage key inside Obsidian's encrypted Secret Storage — it is never sent to the server**, so it can be anything (e.g. `default`); it's restricted to lowercase letters/digits/dashes because that's an Obsidian platform constraint, not something this plugin controls. The actual share password goes in the **value**, which accepts any characters. Put the share token in the **Username** field, not in the ID field.
 
 Note: version history / restore and chunked upload are optional convenience features layered on top of core sync; they haven't been verified against Public Link Share endpoints and may not work there. Basic upload/download sync is unaffected.
+
+---
+
+**I got `HTTP 423 (PUT)` or `HTTP 423 (DELETE)` — what does that mean?**
+
+A 423 means the file is locked on the Nextcloud **server** side, not by this plugin. It can happen either from one of the four force-resolve choices in Sync Status (Use remote / Use local / Latest modified / Biggest size) or during a normal background sync. A common cause is a lock left behind by the Nextcloud Text web editor: opening a file there takes out a lock with no timeout, and if the browser tab or session ends uncleanly the lock can leak and stay in place indefinitely. It can also be a genuine lock held by someone actively editing the same file elsewhere.
+
+When the server reports a lock owner, the plugin's notice and Sync Status result listing now show that owner instead of the previous bare "HTTP 423 (PUT)" message with no explanation.
+
+This plugin does not resolve the lock automatically and has no in-app "unlock" action — releasing a lock without knowing its origin risks overwriting someone else's in-progress edit. To resolve it, close the session or tab holding the lock (e.g. the Nextcloud Text editor tab), or ask a server administrator to clear it if it's genuinely leaked or stuck.
 
 ---
 
