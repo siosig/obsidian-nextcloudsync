@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (1.0.7)
+## What's new in this release (1.0.8-beta.1)
 
-- **Fixed: the settings screen recommended upgrading Nextcloud even on servers that already met the recommended version (1.0.7)** — as soon as the plugin detected any server version at all, it showed a "a newer server is recommended" banner, regardless of what that version actually was. The plugin already had the logic to check a server against the recommended minimum (Nextcloud Hub 26 / server 33), but the settings screen never called it — it just always showed the banner. Now the banner only appears when the connected server is genuinely below that recommended minimum.
+- **Fixed: `HTTP 423` after a force-resolve or a normal sync gave no indication of why (1.0.8-beta.1)** — when a file was locked on the Nextcloud server side (most commonly a lock left behind by the Nextcloud Text web editor), every failed PUT/DELETE just showed a bare `HTTP 423 (PUT)` with no explanation. The plugin now looks up the lock owner when the server reports one and includes it in the notice and the Sync Status result listing, so you know who or what is holding the file and can act accordingly (see the new FAQ entry for what to do next).
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
