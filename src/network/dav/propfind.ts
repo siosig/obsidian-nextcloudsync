@@ -26,6 +26,7 @@ import { RemoteListingUnreadableError } from '../../types';
 
 const DAV_NS = 'DAV:';
 const OC_NS = 'http://owncloud.org/ns';
+const NC_NS = 'http://nextcloud.org/ns';
 
 /**
  * The namespace browsers put on the element they insert in place of a parse failure. Blink and
@@ -136,6 +137,39 @@ export function readStatusText(resp: Element): string | null {
 export function readIsCollection(prop: Element): boolean {
   const resourcetype = prop.getElementsByTagNameNS(DAV_NS, 'resourcetype')[0];
   return (resourcetype?.getElementsByTagNameNS(DAV_NS, 'collection').length ?? 0) > 0;
+}
+
+/**
+ * The lock owner from a `<D:lockdiscovery>` PROPFIND response (feature 090, issue #58), or null.
+ *
+ * Reads `D:lockdiscovery > D:activelock > D:owner` (RFC 4918, every WebDAV server) first, falling
+ * back to Nextcloud's `nc:lock-owner` (`files_lock` app; same namespace {@link lockFile} already
+ * reads `nc:lock-token` from). Never throws: an unreadable or unrelated body — the same four ways
+ * {@link parseResponses} already rejects, plus a response with no owner at all — is just an owner
+ * this function could not find, not a reason to interrupt the 423 the caller is already handling.
+ */
+export function readLockDiscoveryOwner(xml: string): string | null {
+  let responses: Element[];
+  try {
+    responses = parseResponses(xml);
+  } catch {
+    return null;
+  }
+
+  for (const resp of responses) {
+    const prop = readProp(resp);
+    if (!prop) continue;
+    const activelock = prop.getElementsByTagNameNS(DAV_NS, 'lockdiscovery')[0]
+      ?.getElementsByTagNameNS(DAV_NS, 'activelock')[0];
+    if (!activelock) continue;
+
+    const owner = activelock.getElementsByTagNameNS(DAV_NS, 'owner')[0]?.textContent?.trim();
+    if (owner) return owner;
+
+    const ncOwner = activelock.getElementsByTagNameNS(NC_NS, 'lock-owner')[0]?.textContent?.trim();
+    if (ncOwner) return ncOwner;
+  }
+  return null;
 }
 
 /** The RFC 4918 properties every WebDAV server answers with. */

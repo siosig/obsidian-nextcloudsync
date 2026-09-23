@@ -173,6 +173,16 @@ Note: version history / restore and chunked upload are optional convenience feat
 
 ---
 
+**I got `HTTP 423 (PUT)` or `HTTP 423 (DELETE)` — what does that mean?**
+
+A 423 means the file is locked on the Nextcloud **server** side, not by this plugin. It can happen either from one of the four force-resolve choices in Sync Status (Use remote / Use local / Latest modified / Biggest size) or during a normal background sync. A common cause is a lock left behind by the Nextcloud Text web editor: opening a file there takes out a lock with no timeout, and if the browser tab or session ends uncleanly the lock can leak and stay in place indefinitely. It can also be a genuine lock held by someone actively editing the same file elsewhere.
+
+When the server reports a lock owner, the plugin's notice and Sync Status result listing now show that owner instead of the previous bare "HTTP 423 (PUT)" message with no explanation.
+
+This plugin does not resolve the lock automatically and has no in-app "unlock" action — releasing a lock without knowing its origin risks overwriting someone else's in-progress edit. To resolve it, close the session or tab holding the lock (e.g. the Nextcloud Text editor tab), or ask a server administrator to clear it if it's genuinely leaked or stuck.
+
+---
+
 ## Enabling Nextcloud server-side features
 
 One power feature depends on a server-side Nextcloud app. It only needs to be enabled **once by a Nextcloud administrator**. The plugin detects it through the capabilities API — if the app is missing, the feature simply stays inactive (no error).

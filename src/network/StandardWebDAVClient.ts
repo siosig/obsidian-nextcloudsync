@@ -14,13 +14,14 @@ import {
   PreconditionFailedError,
   RemoteRootMissingError,
   RemoteDirCreateError,
+  ServerLockedError,
   VaultRootOutcome,
 } from '../types';
 import { IWebDAVClient } from './IWebDAVClient';
 import { DavSyncSettings } from '../types';
 import { toRemotePath, hrefToRelative, encodeRemoteUrl, encodeServerUrl, ensureRemoteDir, mkcolStrict, prepareMissingParentRetry, isTransportFailure } from './remotePath';
 import { RemoteDirCache } from './RemoteDirCache';
-import { readMultistatus, readHref, readProp, readIsCollection, readDavProps } from './dav/propfind';
+import { readMultistatus, readHref, readProp, readIsCollection, readDavProps, readLockDiscoveryOwner } from './dav/propfind';
 import { NO_CACHE_HEADERS } from './noCacheHeaders';
 
 export class StandardWebDAVClient implements IWebDAVClient {
@@ -234,6 +235,29 @@ export class StandardWebDAVClient implements IWebDAVClient {
     return null;
   }
 
+  /**
+   * Best-effort lock owner lookup for a 423 response (feature 090, contracts/lockdiscovery-propfind.md).
+   * Issues ONE extra Depth:0 lockdiscovery PROPFIND and reads the owner from it. Never throws and never
+   * replaces the caller's 423: a failure anywhere in this step (a non-207 answer, an unreadable body, a
+   * rejected request) is indistinguishable from "owner unknown" — both fall back to null, and the caller
+   * throws the plain NetworkError it already would have.
+   */
+  private async readLockOwnerOn423(remotePath: string): Promise<string | null> {
+    try {
+      const res = await this.reqReadonly({
+        url: this.remoteUrl(remotePath),
+        method: 'PROPFIND',
+        headers: { Authorization: this.authHeader, Depth: '0', 'Content-Type': 'application/xml', ...NO_CACHE_HEADERS },
+        body: `<?xml version="1.0"?><D:propfind xmlns:D="DAV:"><D:prop><D:lockdiscovery/></D:prop></D:propfind>`,
+        throw: false,
+      });
+      if (res.status !== 207) return null;
+      return readLockDiscoveryOwner(res.text);
+    } catch {
+      return null;
+    }
+  }
+
   async uploadFile(
     remotePath: string, data: ArrayBuffer, mtime?: number,
     opts?: { precomputedSha256?: string; ifMatchEtag?: string | null },
@@ -254,7 +278,13 @@ export class StandardWebDAVClient implements IWebDAVClient {
       res = await this.req({ url: this.remoteUrl(remotePath), method: 'PUT', headers, body: data, throw: false });
     }
     if (res.status === 412) throw new PreconditionFailedError(remotePath);
-    if (res.status < 200 || res.status >= 300) throw dirError ?? new NetworkError(res.status, res.text, 'PUT');
+    if (res.status < 200 || res.status >= 300) {
+      if (res.status === 423) {
+        const owner = await this.readLockOwnerOn423(remotePath);
+        if (owner) throw new ServerLockedError(remotePath, 'PUT', owner);
+      }
+      throw dirError ?? new NetworkError(res.status, res.text, 'PUT');
+    }
   }
 
   async moveFile(oldPath: string, newPath: string): Promise<void> {
@@ -282,7 +312,13 @@ export class StandardWebDAVClient implements IWebDAVClient {
   async deleteFile(path: string, _expectedRemoteId: string): Promise<void> {
     const res = await this.req({ url: this.remoteUrl(path), method: 'DELETE', headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS }, throw: false });
     if (res.status === 404) return; // blind delete (P1-B): already gone = success
-    if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text, 'DELETE');
+    if (res.status < 200 || res.status >= 300) {
+      if (res.status === 423) {
+        const owner = await this.readLockOwnerOn423(path);
+        if (owner) throw new ServerLockedError(path, 'DELETE', owner);
+      }
+      throw new NetworkError(res.status, res.text, 'DELETE');
+    }
   }
 
   async getSyncToken(): Promise<string | null> {

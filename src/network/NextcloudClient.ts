@@ -16,6 +16,7 @@ import {
   RemoteRootMissingError,
   RemoteDirCreateError,
   VaultRootOutcome,
+  ServerLockedError,
 } from '../types';
 import { IWebDAVClient } from './IWebDAVClient';
 import { DavSyncSettings } from '../types';
@@ -26,7 +27,7 @@ import { PARSE_YIELD_EVERY } from '../util/limits';
 import { NO_CACHE_HEADERS } from './noCacheHeaders';
 import {
   readMultistatus, readSyncToken, readHref, readProp, readStatusText,
-  readIsCollection, readDavProps, readOwncloudProps,
+  readIsCollection, readDavProps, readOwncloudProps, readLockDiscoveryOwner,
 } from './dav/propfind';
 import { withRetry } from '../util/retry';
 
@@ -42,6 +43,9 @@ const PROPFIND_BODY = `<?xml version="1.0" encoding="utf-8" ?>
     <oc:fileid/>
   </d:prop>
 </d:propfind>`;
+
+/** Depth:0 PROPFIND for `D:lockdiscovery` only, sent once after a 423 (feature 090, contracts/lockdiscovery-propfind.md). */
+const LOCKDISCOVERY_BODY = `<?xml version="1.0"?><D:propfind xmlns:D="DAV:"><D:prop><D:lockdiscovery/></D:prop></D:propfind>`;
 
 const REPORT_BODY = (syncToken: string) => `<?xml version="1.0" encoding="utf-8" ?>
 <d:sync-collection xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">
@@ -399,6 +403,38 @@ export class NextcloudClient implements IWebDAVClient {
     return res.arrayBuffer;
   }
 
+  /**
+   * A PUT or DELETE just came back 423. Always throws — never resolves — either a
+   * {@link ServerLockedError} naming the lock owner, or the same plain {@link NetworkError} the
+   * caller would have thrown before this feature existed.
+   *
+   * One extra Depth:0 PROPFIND asks the server who holds the lock (feature 090, contract
+   * lockdiscovery-propfind.md). That lookup is best-effort only: any failure of it — a non-207
+   * status, an unreadable body, no owner in it — falls back to the plain NetworkError exactly as
+   * before, because the lookup exists to add information to the original 423, never to replace or
+   * hide it (FR-004).
+   */
+  private async errorFor423(path: string, method: 'PUT' | 'DELETE', originalText: string): Promise<never> {
+    try {
+      const res = await this.reqReadonly({
+        url: this.remoteUrl(path),
+        method: 'PROPFIND',
+        headers: { Authorization: this.authHeader, Depth: '0', 'Content-Type': 'application/xml; charset=utf-8', ...NO_CACHE_HEADERS },
+        body: LOCKDISCOVERY_BODY,
+        throw: false,
+      });
+      if (res.status === 207) {
+        const owner = readLockDiscoveryOwner(res.text);
+        if (owner) throw new ServerLockedError(path, method, owner);
+      }
+    } catch (err) {
+      if (err instanceof ServerLockedError) throw err;
+      // The lookup itself failed (transport error, unreadable body) — fall through to the plain
+      // NetworkError below rather than let this failure mask the original 423.
+    }
+    throw new NetworkError(423, originalText, method);
+  }
+
   async uploadFile(
     remotePath: string, data: ArrayBuffer, mtime?: number,
     opts?: { precomputedSha256?: string; ifMatchEtag?: string | null },
@@ -428,6 +464,11 @@ export class NextcloudClient implements IWebDAVClient {
       res = await this.req({ url: this.remoteUrl(remotePath), method: 'PUT', headers, body: data, throw: false });
     }
     if (res.status === 412) throw new PreconditionFailedError(remotePath); // remote changed (If-Match)
+    if (res.status === 423) {
+      // A server-side lock explains the failure on its own; dirError (from a MISSING-parent retry,
+      // an unrelated cause) never applies here. errorFor423 always throws (feature 090).
+      await this.errorFor423(remotePath, 'PUT', res.text);
+    }
     // A parent we could not create explains the failure far better than the PUT's own status does,
     // so it wins — but only once the retry has had its chance (feature 088, contract C-4).
     if (res.status < 200 || res.status >= 300) throw dirError ?? new NetworkError(res.status, res.text, 'PUT');
@@ -487,6 +528,8 @@ export class NextcloudClient implements IWebDAVClient {
     // Blind delete (P1-B): a 404 means the file is already gone — exactly the desired end state, so
     // treat it as success rather than an error (no pre-deletion existence probe is needed).
     if (res.status === 404) return;
+    // A server-side lock explains the failure on its own — errorFor423 always throws (feature 090).
+    if (res.status === 423) await this.errorFor423(path, 'DELETE', res.text);
     if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text, 'DELETE');
   }
 
