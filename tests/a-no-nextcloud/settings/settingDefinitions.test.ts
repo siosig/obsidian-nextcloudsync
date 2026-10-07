@@ -357,6 +357,18 @@ describe('[SPEC:DSD-5] predicates reflect platform and sign-in state', () => {
   });
 });
 
+describe('[SPEC:FR-007] Server URL row always shows the full-endpoint guidance', () => {
+  // A host-only URL fails with HTTP 405. The desc is always visible (unlike the tooltips removed in
+  // feature 077), so it is the one place a mobile user can read the expected shape before typing.
+  it('names the full WebDAV endpoint, the optional subfolder and the 405 on a host-only URL', () => {
+    const row = rowsOf(buildSettingDefinitions(makeHost())).find((r) => r.name === 'Server URL');
+    const desc = String(row?.desc);
+    expect(desc).toContain('/remote.php/dav/files/<user>/');
+    expect(desc).toContain('HTTP 405');
+    expect(desc).toContain('subfolder');
+  });
+});
+
 describe('Server compatibility notice (VSN-2)', () => {
   // GitHub issue #54: the banner's `visible` never consulted isSupportedNextcloudVersion(), so it
   // showed for every detected server, including ones at or above MIN_NEXTCLOUD_VERSION.

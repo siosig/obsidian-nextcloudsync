@@ -222,8 +222,9 @@ export const CLAUSES: Clause[] = [
   { id: 'FR-003', source: 'spec 019 (deviation visibility)', layer: 'a' },
   { id: 'FR-025', source: 'spec 019 (b-2 UI)', layer: 'b-2' },
   // --- spec 020 (settings tooltips + sign-in clarity); FR-001/005/010 shared above ---
-  { id: 'FR-006', source: 'spec 020 (exhaustive tooltip catalog)', layer: 'a' },
-  { id: 'FR-007', source: 'spec 020 (Server URL desc / 405)', layer: 'a' },
+  // spec 020 FR-006 (exhaustive tooltip catalog) was retired by feature 077: tooltips were removed and
+  // their text merged into each row's desc, which DSD-1..DSD-5 cover.
+  { id: 'FR-007', source: 'spec 020 (Server URL desc / 405; always-visible desc since feature 077)', layer: 'a' },
   { id: 'FR-014', source: 'spec 020 (no new settings)', layer: 'a' },
   // --- DP: directory propagation (spec 021, specs/main/spec.md §8a) ---
   // DP-1..15 are all covered at layer a (dirSync.test.ts); DP-e2e / DP-e2e-empty at b-1.
