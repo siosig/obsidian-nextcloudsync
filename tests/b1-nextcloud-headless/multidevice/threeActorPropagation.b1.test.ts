@@ -3,7 +3,7 @@
 // all three converge. Strategy-independent (no conflict), so this runs once with defaults.
 // Cluster-only: N needs SSH + occ. describeCluster() SKIPS the whole suite (visible in the report,
 // never a silent pass) when the cluster env is absent, so the default `pnpm test:b1` stays green.
-// Run the matrix via `pnpm test:b1:cluster` (which exports the N-actor env).
+// Run the matrix via `bash tests/docker/run.sh b1` (which exports the N-actor env).
 import { describeCluster } from '../support/env';
 import { setupWorkspace } from '../support/workspace';
 import { cleanupWorkspace, IsolatedWorkspace } from '../support/isolation';

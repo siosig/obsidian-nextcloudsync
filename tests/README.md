@@ -5,31 +5,86 @@ goal: when a test fails, its spec tag tells you *which clause* to adjudicate —
 spec is the source of truth; a deviation is fixed in code, or the clause is
 updated (waiver) if the implementation is intentionally the canonical one.
 
-| Folder | Class | Needs Nextcloud | Needs UI | Command | Default `pnpm test` / CI |
+| Folder | Class | Needs Nextcloud | Needs UI | Command | CI |
 |---|---|:--:|:--:|---|:--:|
-| `a-no-nextcloud/` | a | ✗ | ✗ | `pnpm test` | ✓ |
-| `b1-nextcloud-headless/` | b-1 | ✓ | ✗ | `pnpm test:b1` | ✗ |
-| `b2-nextcloud-ui/` | b-2 | ✓ | ✓ (wdio, desktop Electron) | `pnpm test:b2` | ✗ |
-| `b3-android-ui/` | b-3 | ✓ | ✓ (wdio + Appium, real Android) | `pnpm test:b3:instance` | ✗ |
-| `b4-plain-webdav/` | b-4 | **✗ (deliberately NOT Nextcloud)** | ✗ | `pnpm test:b4` | ✗ |
+| `a-no-nextcloud/` | a | ✗ | ✗ | `bash tests/docker/run.sh a` (or `pnpm test` on a machine with Node) | ✓ |
+| `b1-nextcloud-headless/` | b-1 | ✓ | ✗ | `bash tests/docker/run.sh b1` | ✗ |
+| `b2-nextcloud-ui/` | b-2 | ✓ | ✓ (wdio, desktop Electron) | `bash tests/docker/run.sh b2` | ✗ |
+| `b3-android-ui/` | b-3 | ✓ | ✓ (wdio + Appium, Android) | `bash tests/docker/run.sh b3` | ✗ |
+| `b4-plain-webdav/` | b-4 | **✗ (deliberately NOT Nextcloud)** | ✗ | `bash tests/docker/run.sh b4` | ✗ |
 | `fixtures/` | shared | — | — | — | — |
 
-- **a** — pure logic + the spec-coverage meta-test. No network, no UI. Runs everywhere.
-- **b-1** — live Nextcloud (localhost Docker) via `.env` `NEXTCLOUD_*`. `--runInBand`. Skips when env absent.
-- **b-2** — real Obsidian UI via `wdio-obsidian-service` (downloads & launches Obsidian itself; needs only `NEXTCLOUD_*`). Smoke + main wiring only. Skips when creds/deps absent. Linux/CI: run under `xvfb-run`.
-- **b-3** — real Obsidian **on a real Android runtime** (Capacitor, not Electron) via `wdio-obsidian-service` + Appium, on an ephemeral AVD host instance. Covers only what the Capacitor runtime changes: app background/foreground transitions, real-filesystem limits, and the mobile `requestUrl` implementation. **Cannot run on the dev VM** (no hardware virtualisation) — see `~/workspace/siosig/android-testinstance/README.md`. Emulator is pinned to **API 33**: from API 34 the system CA store moved into the conscrypt APEX and the self-signed test cert can no longer be trusted. Not parallelisable. **Part of the stable-release gate** (skippable only when the runtime cannot be provisioned).
-  **Measured cycle time** (2026-08-23, `n2-standard-8` + API 33 emulator): scenarios ~1m45s; the whole
-  procedure including both instances is ~20 minutes, dominated by AVD host provisioning (~13 min) —
-  budget for that, not for the test run.
-- **b-4** — a live **plain WebDAV** server (Apache httpd + `mod_dav` in a local container). This is the
+## Running the suite (Docker only)
+
+Every layer runs in containers through one entry point, `tests/docker/run.sh`. Nothing else is
+installed on the host: the runner image carries Node, pnpm, a JDK, the Android platform tools and
+Xvfb, and the Nextcloud, WebDAV and Android services are containers too.
+
+```
+bash tests/docker/run.sh <a|b1|b2|b3|b4|all>     # `all` = a, b4, b1, b2, b3 in that order
+```
+
+**Host prerequisites**: Docker with Compose 2.23.1 or newer. `b3` and `all` also need the kernel's
+`binder` support (the `binder_linux` module) because the Android runtime is a Redroid container —
+`grep -w binder /proc/filesystems` must print a line. Redroid needs no hardware virtualisation.
+
+| Exit code | Meaning |
+|---|---|
+| 0 | every test passed |
+| 1 | a test failed |
+| 2 | the environment could not be prepared (image build, start-up, CA check, Android boot, timeout) |
+| 3 | a prerequisite is missing, so nothing ran (no Docker, old Compose, no binder, another run in progress, bad argument) |
+| 130 | interrupted (everything is cleaned up first) |
+
+What the entry point guarantees:
+
+- The repository working tree is left untouched. The only host path written is the git-ignored
+  `.test-output/`; a run that passes deletes its own subdirectory, a failed run keeps it for diagnostics.
+- Containers, networks and the per-run volumes are removed when the run ends, however it ends. Only two
+  cache volumes (`ncs-suite-cache-obsidian`, `ncs-suite-cache-obsidian-android`) and the images stay.
+- One run at a time (a second one exits with 3).
+- Credentials and the TLS certificate authority are generated for each run, passed to the containers
+  from memory, and masked in any diagnostics. The repo-root `.env` is never read or mounted.
+- Tests trust the per-run CA instead of switching certificate checks off (Node, the desktop Electron
+  and the Android system trust store).
+
+Layers:
+
+- **a** — pure logic + the spec-coverage meta-test. No network, no UI.
+- **b-1** — a live Nextcloud (PostgreSQL, Redis for file locking, `files_lock`/versions/trash-bin enabled,
+  TLS in front) plus a second user for the lock-holder tests. The "N actor" tests, which change files
+  directly in the server's data directory, go through a small side-car (`nc-fsops`) instead of SSH.
+  Under the suite, a missing server feature or missing env value **fails** the test instead of skipping it.
+  Tests that are `it.skip` stubs in the source (with the reason written next to them) are not environment
+  skips and stay as they are.
+- **b-2** — the real desktop Obsidian UI via `wdio-obsidian-service` (downloads Obsidian into a cache
+  volume), run under Xvfb. Smoke + main wiring only.
+- **b-3** — the real Obsidian **on an Android runtime** (Capacitor, not Electron) via `wdio-obsidian-service`
+  + Appium, in a Redroid container (Android 13, **API 33**). It covers only what the Capacitor runtime
+  changes: app background/foreground transitions, real-filesystem limits and the mobile `requestUrl`
+  implementation. API 33 is pinned because from API 34 the system CA store moves into the conscrypt APEX
+  and a per-run CA can no longer be placed in it by a file mount. Not parallelisable.
+- **b-4** — a live **plain WebDAV** server (Apache httpd + `mod_dav` in a container). This is the
   one layer that is deliberately *not* Nextcloud, and that is its entire reason to exist: b-1/b-2/b-3
   all point at Nextcloud, so the plugin's documented degradation for non-Nextcloud servers was never
   exercised by anything but mocks — which is how a dispatch bug survived long enough for a user to
   report it (feature 073). Apache refuses `PROPFIND Depth: infinity` by default, so it also exercises
-  the `Depth: 1` recursion that `StandardWebDAVClient` was written for. Needs Docker, **not** a
-  Nextcloud instance, and **must not read `NEXTCLOUD_*`** — letting those leak in would quietly turn
-  this back into another Nextcloud test. `pnpm test:b4` starts and stops the container itself
-  (a local container, unlike the shared cloud instances the other live layers use).
+  the `Depth: 1` recursion that `StandardWebDAVClient` was written for. It never reads `NEXTCLOUD_*` —
+  letting those leak in would quietly turn this back into another Nextcloud test.
+
+**Release gating**: a beta release requires `bash tests/docker/run.sh all` to pass (exit 3 aborts it too);
+a stable release runs no tests, because it promotes code whose every layer already passed at the beta.
+
+**Measured cycle times** (this suite's own host, 16 vCPU, warm caches unless noted):
+
+| Layer | Wall time |
+|---|---|
+| a | about 23 s |
+| b-4 | about 8 s |
+| b-1 | about 8 min (8 jest workers) |
+| b-2 | about 1 min 20 s |
+| b-3 | about 3 min 20 s |
+| first-ever image build (no cache) | runner about 78 s, Nextcloud about 13 s |
 
 File naming: `*.test.ts` (a), `*.b1.test.ts` (b-1), `*.b2.test.ts` (b-2), `*.b3.test.ts` (b-3), `*.b4.test.ts` (b-4).
 
@@ -73,7 +128,7 @@ it(`${spec('CF-2', 'FR-008')} same-line conflict skips`, () => { /* ... */ });
 known spec-vs-implementation deviations visible:
 
 - **F1** server returns 415 for sync-collection → incremental sync unusable (TK-*)
-- **F3** owner-based file lock → 423 not reproducible with one user (LK-4/5)
+- **F3** missing-file LOCK behaviour is server-specific, so LK-5 cannot be asserted reliably
 
 (F4 — Diff3Strategy misreading node-diff3 → frontmatter conflict strategy inert — was
 fixed in 0.7.1 (993de3c) and is no longer a waiver; CF-12 is now verified at layer a.)
@@ -86,31 +141,28 @@ fixed in 0.7.1 (993de3c) and is no longer a waiver; CF-12 is now verified at lay
    `waiver` in `clauses.ts` and open a follow-up to update the spec / fix `src`.
    (`src/` is not changed by the test-reorg work itself.)
 
-## b-3 が session 作成で全滅したときの読み方
+## Reading a b-3 run where session creation fails for every test
+
+An error such as
 
 `Activity name '.md.obsidian.MainActivity' used to start the app doesn't exist or cannot be launched!`
-というエラーは、**設定した activity 名が間違っているという意味ではない**。`appium-adb` の
-`build/lib/tools/app-commands.js:544-551` に「`am start` が `Error: Activity class ... does not exist`
-を返したら activity 名の先頭に `.` を付けて 1 回だけ再試行する」経路があり、例外メッセージに載るのは
-**再試行後**の名前である。`wdio.android.conf.mts` も `wdio-obsidian-service` も `appActivity` を渡して
-いないので、そこを探しても何も見つからない。
 
-真因は「その時点でアプリが端末に存在しない」こと。まず診断バンドルの次の 2 つを見る。
+does **not** mean the configured activity name is wrong. `appium-adb` retries `am start` once with a `.`
+prepended to the activity name when the first attempt answers `Error: Activity class ... does not exist`,
+and the exception carries the name from the **retry**. Neither `wdio.android.conf.mts` nor
+`wdio-obsidian-service` passes `appActivity`, so searching for it finds nothing.
 
-- `.b3-diagnostics/host-diagnostics.txt` の `--- guest: installed packages ---` — `md.obsidian` の在否
-- `.b3-diagnostics/appium-server.log` — session 作成中の `installApp` / `removeApp` / `am start` の順序
+The real cause is that the app is not on the device at that moment. Look first at the diagnostics kept
+under `.test-output/<run_id>/` after a failed run:
 
-`afterTest` の診断コレクタ（`tests/b3-android-ui/support/diagnostics.ts`）は `browser` セッション経由で
-動くため、**session 作成そのものが失敗すると 1 バイトも採れない**。上の 2 つはその穴を埋めるために
-ホスト側（`scripts/b3-android.sh` と appium サーバー）で採っている。
+- `b3/host-diagnostics.txt` — the device state (`adb devices`, memory, low-memory-killer lines, installed
+  packages: is `md.obsidian` there?)
+- `b3/appium-server.log` — the order of `installApp` / `removeApp` / `am start` during session creation
+- `host/redroid.log` and `host/redroid-state.txt` — the Android container's own log and whether it was OOM-killed
 
-否定済みの仮説（2026-09-08、実機で検証。同じ道を再走しないこと）:
+The `afterTest` collector (`tests/b3-android-ui/support/diagnostics.ts`) runs through the `browser`
+session, so when session creation itself fails it can collect nothing; the files above cover that gap.
 
-| 仮説 | 結果 |
-|---|---|
-| AVD の RAM 不足 | 否定。8 GB 割当・4.7 GB 空き |
-| appium / uiautomator2 の版 | 否定。3.6.0 / 8.5.0 に戻しても同一エラー |
-| Obsidian APK の破損・SDK 非互換 | 否定。`aapt` v1・`aapt2` とも解析でき、手動 `adb install` も成功 |
-
-**手動で `adb install` して端末の状態を作らないこと。** `wdio-obsidian-service` は `dumpsys` で版を見て
-`removeApp` → `installApp` する。手で入れた版が食い違うと、この判定と噛み合わずに失敗しうる。
+Do not `adb install` by hand to prepare the device: `wdio-obsidian-service` reads the installed version
+with `dumpsys` and then runs `removeApp` → `installApp`, and a hand-installed version that disagrees can
+make that check fail.

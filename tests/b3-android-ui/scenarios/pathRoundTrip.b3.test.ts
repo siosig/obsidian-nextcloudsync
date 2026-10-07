@@ -20,15 +20,23 @@ import { RemoteProbe } from '../support/webdav';
 const env = requireAndroidEnv();
 const stamp = `b3-path-${process.pid}`;
 
-/** Names that have historically broken encoding, one property each. */
+/**
+ * Names that have historically broken encoding, one property each.
+ *
+ * `name` is what the test PUTs; `arrivesAs` is the name the vault must end up with. They differ only
+ * for the combining diacritic: Nextcloud (with PHP intl) stores and lists file names in Unicode
+ * normalization form C, so a decomposed `e` + U+0301 PUT to the server comes back as the precomposed
+ * U+00E9. The plugin must carry that name through the mobile HTTP stack unchanged, which is what the
+ * test checks; expecting the decomposed form would test the server's normalization, not the plugin.
+ */
 const TRICKY_NAMES = [
   { label: 'ASCII space', name: `${stamp} with space.md` },
-  { label: 'Japanese', name: `${stamp}-メモ.md` },
-  { label: 'Japanese with space', name: `${stamp}-会議 メモ.md` },
+  { label: 'Japanese', name: `${stamp}-\u30e1\u30e2.md` },
+  { label: 'Japanese with space', name: `${stamp}-\u4f1a\u8b70 \u30e1\u30e2.md` },
   { label: 'percent literal', name: `${stamp}-100%done.md` },
   { label: 'plus sign', name: `${stamp}-a+b.md` },
-  { label: 'combining diacritic', name: `${stamp}-café.md` },
-];
+  { label: 'combining diacritic', name: `${stamp}-cafe\u0301.md` },
+].map((n) => ({ ...n, arrivesAs: n.name.normalize('NFC') }));
 
 describe('[SPEC:AND-3] b-3 — path and body round trip through the mobile HTTP stack', function () {
   let probe: RemoteProbe | undefined;
@@ -45,7 +53,7 @@ describe('[SPEC:AND-3] b-3 — path and body round trip through the mobile HTTP 
     for (const p of created) await probe.removeQuietly(p);
   });
 
-  for (const { label, name } of TRICKY_NAMES) {
+  for (const { label, name, arrivesAs } of TRICKY_NAMES) {
     it(`downloads a remote note whose name contains ${label}`, async function () {
       const content = `remote ${label}\n`;
       created.push(name);
@@ -60,14 +68,14 @@ describe('[SPEC:AND-3] b-3 — path and body round trip through the mobile HTTP 
           const got = await browser.executeObsidian(
             async ({ app }, path: string) =>
               (await app.vault.adapter.exists(path)) ? app.vault.adapter.read(path) : null,
-            name,
+            arrivesAs,
           );
           return got as string | null;
         },
         {
           timeout: 120_000,
           interval: 3_000,
-          timeoutMsg: `"${name}" never arrived — a 404 here means the path was encoded twice`,
+          timeoutMsg: `"${arrivesAs}" never arrived — a 404 here means the path was encoded twice`,
         },
       );
       expect(local).toBe(content);
@@ -76,7 +84,7 @@ describe('[SPEC:AND-3] b-3 — path and body round trip through the mobile HTTP 
 
   it('uploads a binary attachment without altering a single byte', async function () {
     // Every byte value 0..255, so any transcoding or truncation in the mobile stack shows up.
-    const name = `${stamp}-バイナリ 添付.bin`;
+    const name = `${stamp}-\u30d0\u30a4\u30ca\u30ea \u6dfb\u4ed8.bin`;
     created.push(name);
     const bytes = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
 

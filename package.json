@@ -12,14 +12,10 @@
     "secretlint": "secretlint \"**/*\"",
     "test": "jest --passWithNoTests",
     "test:watch": "jest --watch",
-    "test:b1": "jest --config jest.b1.config.js --runInBand",
-    "test:b1:par": "jest --config jest.b1.config.js --maxWorkers=5",
-    "test:b1:cluster": "bash scripts/b1-cluster.sh",
+    "test:b1": "jest --config jest.b1.config.js",
     "test:b2": "wdio run wdio.conf.mts",
-    "test:b2:instance": "bash scripts/b2-instance.sh",
     "test:b3": "wdio run wdio.android.conf.mts",
-    "test:b3:instance": "bash scripts/b3-android.sh",
-    "test:b4": "bash scripts/b4-plain-webdav.sh"
+    "test:b4": "jest --config jest.b4.config.js --runInBand"
   },
   "keywords": [
     "obsidian",

@@ -87,7 +87,7 @@ export const CLAUSES: Clause[] = [
   { id: 'LK-1', source: 'report/mock_test.md §3.E', layer: 'b-1', waiver: DEFER_HARNESS },
   { id: 'LK-2', source: 'report/mock_test.md §3.E', layer: 'b-1' },
   { id: 'LK-3', source: 'report/mock_test.md §3.E', layer: 'b-1', waiver: DEFER_HARNESS },
-  { id: 'LK-4', source: 'report/mock_test.md §3.E', layer: 'b-1', waiver: F3 },
+  { id: 'LK-4', source: 'report/mock_test.md §3.E', layer: 'b-1' },
   { id: 'LK-5', source: 'report/mock_test.md §3.E', layer: 'b-1', waiver: F3 },
   // --- LDO/SLE/SL: 423 lock discovery & ServerLockedError wiring (spec 090, GitHub issue #58) ---
   { id: 'LDO-1', source: 'specs/main/spec.md §6.5a', layer: 'a' },
@@ -106,7 +106,7 @@ export const CLAUSES: Clause[] = [
   { id: 'SLE-10', source: 'specs/main/spec.md §6.5a', layer: 'a' },
   { id: 'SLE-11', source: 'specs/main/spec.md §6.5a', layer: 'a' },
   { id: 'SLE-12', source: 'specs/main/spec.md §6.5a', layer: 'a' },
-  { id: 'SL-1', source: 'specs/main/spec.md §6.5a', layer: 'b-1', waiver: F3 },
+  { id: 'SL-1', source: 'specs/main/spec.md §6.5a', layer: 'b-1' },
   { id: 'SL-2', source: 'specs/main/spec.md §6.5a', layer: 'b-1' },
   // --- CF: conflict resolution ---
   { id: 'CF-1', source: 'report/mock_test.md §3.F', layer: 'b-1' },
@@ -607,7 +607,7 @@ export const CLAUSES: Clause[] = [
   // (specs/078-watch-typing-corruption/findings.md).
   { id: 'WOV-2', source: 'specs/main/spec.md §5.7 / specs/078-watch-typing-corruption/spec.md (a REMOTE -> LOCAL write — download or conflict resolution — is deferred while the path is being edited and re-queued; uploads are not deferred, since they only read the file)', layer: 'a' },
   { id: 'WOV-1', source: 'specs/main/spec.md §5.7 / specs/078-watch-typing-corruption/spec.md (watch cycles on one path are serialized: a second cycle neither reads the first cycle\'s own upload as a remote change nor PROPFINDs before the first has recorded its baseline)', layer: 'a' },
-  { id: 'RSY-4', source: 'specs/079-mobile-foreground-sync/spec.md (verified on a real Android device: the platform delivers the foreground signal to the plugin\'s own subscription, a return after the cooldown runs a sync, and a return inside it does not)', layer: 'b-3', waiver: 'Verified in the b-3 layer against a real Obsidian on a real Android emulator (pnpm test:b3:instance); cannot run in the default CI suite, which has no device.' },
+  { id: 'RSY-4', source: 'specs/079-mobile-foreground-sync/spec.md (verified on a real Android device: the platform delivers the foreground signal to the plugin\'s own subscription, a return after the cooldown runs a sync, and a return inside it does not)', layer: 'b-3', waiver: 'Verified in the b-3 layer against a real Obsidian on a real Android runtime (bash tests/docker/run.sh b3); cannot run in the default CI suite, which has no device.' },
   { id: 'RMO-1', source: 'specs/main/spec.md §5.8 / specs/082-respect-manual-only/spec.md (a foreground resume does not sync when startupSyncDelaySeconds is 0 — startup sync and resume sync are the same question asked at two moments, so declining the first declines the second — read fresh on every resume so a mid-session change takes effect on the very next one; the trigger is otherwise unaffected)', layer: 'a' },
   // --- EAD / VRR: absence deletion on an empty listing, and re-seeding a missing vault folder (feature 083, issue #50) ---
   { id: 'EAD-1', source: 'specs/main/spec.md §8 / specs/083-empty-listing-absence-delete/spec.md (a tracked, locally-unchanged file missing from an EMPTY full-scan listing is trashed locally once a Depth 0 PROPFIND confirms the 404, and drops out of State — the listing\'s size is not part of the safety decision)', layer: 'a' },

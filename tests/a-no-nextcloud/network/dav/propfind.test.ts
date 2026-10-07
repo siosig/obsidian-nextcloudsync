@@ -3,7 +3,7 @@
 // No [SPEC:...] tags: the clauses these serve are claimed by the client-level and b-1 suites.
 //
 // This file is the point of the extraction. Every case below used to require a running Nextcloud —
-// a GCE instance, four minutes, and a real server willing to produce a malformed answer on demand,
+// a cloud VM, four minutes, and a real server willing to produce a malformed answer on demand,
 // which is why abnormal responses were barely covered at all. They are strings now, so a new case
 // costs one table row.
 //

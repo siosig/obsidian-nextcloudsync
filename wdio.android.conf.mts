@@ -1,20 +1,18 @@
 // Classification "b-3" (live Nextcloud + real Obsidian on a real Android runtime)
 // runner config. Appium + UiAutomator2 drive the actual Obsidian APK inside an
-// Android Virtual Device, so this layer exercises the Capacitor runtime that
+// Redroid container (Android 13 / API 33), so this layer exercises the Capacitor runtime that
 // b-2 (Electron desktop) can never reproduce. Runs ONLY via `pnpm test:b3`
-// (normally through `pnpm test:b3:instance`); never in the default `pnpm test`
+// (normally through `bash tests/docker/run.sh b3`); never in the default `pnpm test`
 // or CI.
 //
 // This file is deliberately separate from wdio.conf.mts (b-2): the Android
 // capabilities are incompatible with the desktop ones, and branching inside a
 // single config would put the b-2 execution path at risk.
 //
-// Prerequisites (all satisfied on the AVD host instance, not on the dev VM):
-//   pnpm add -D appium appium-uiautomator2-driver @wdio/appium-service
+// Prerequisites (all provided by `bash tests/docker/run.sh b3`):
 //   pnpm build   # produce main.js / manifest.json / styles.css at repo root
-//   an AVD named `obsidian_test` (Android 13 / API 33, google_apis, x86_64,
-//   started with a writable system image so the test CA can be injected)
-// The dev VM has no hardware virtualization; run this on the AVD host.
+//   a booted Redroid device (API 33) with the test CA in its system trust store,
+//   targeted through ANDROID_SERIAL (adb serial, e.g. host:port)
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { requireAndroidEnv } from './tests/b3-android-ui/support/env';
@@ -31,6 +29,7 @@ const SIDELOADED_PACKAGES = [
   'md.obsidian',
 ] as const;
 
+// adb honours the ANDROID_SERIAL environment variable, so no `-s` is needed to target the device.
 function adb(args: string[], timeoutMs: number): string {
   return execFileSync('adb', args, { encoding: 'utf8', timeout: timeoutMs, stdio: ['ignore', 'pipe', 'pipe'] });
 }
@@ -62,22 +61,20 @@ async function waitForBootedDevice(deadlineMs: number): Promise<void> {
   }
 }
 
-// The AVD name is owned by the host provisioning, so it is READ here, never redeclared: the runner
-// exports it from the host's connection.json. Hard-coding a second copy is how the two drift
-// apart and the run dies with "avd not found". The fallback only serves a manual `pnpm test:b3`.
-const AVD_NAME = process.env.B3_AVD_NAME ?? 'node33';
+// Diagnostics base directory; same base as tests/b3-android-ui/support/diagnostics.ts.
+const DIAGNOSTICS_DIR = process.env.B3_DIAGNOSTICS_DIR ?? '.b3-diagnostics';
 
 export const config: WebdriverIO.Config = {
   runner: 'local',
   framework: 'mocha',
   specs: ['./tests/b3-android-ui/scenarios/**/*.b3.test.ts'],
-  maxInstances: 1, // Android tests cannot run in parallel (one AVD per host)
+  maxInstances: 1, // Android tests cannot run in parallel (one device per run)
 
   // NOTE: `specFileRetries` is intentionally absent (FR-005c). Verification
   // failures must never be retried: a retry setting here would silently swallow
   // real regressions, and once the option exists someone will eventually raise
   // its value. Retrying is allowed only while preparing the environment, which
-  // scripts/b3-android.sh handles outside the test runner.
+  // tests/docker/run.sh handles outside the test runner.
 
   capabilities: [
     {
@@ -85,8 +82,9 @@ export const config: WebdriverIO.Config = {
       browserVersion: 'latest',
       platformName: 'Android',
       'appium:automationName': 'UiAutomator2',
-      'appium:avd': AVD_NAME,
-      // Keep the emulator/app state between specs; the service resets Obsidian
+      // The device is addressed by adb serial; Appium never starts an emulator itself.
+      'appium:udid': process.env.ANDROID_SERIAL,
+      // Keep the device/app state between specs; the service resets Obsidian
       // itself when it needs to, and a full reset per spec is far too slow.
       'appium:noReset': true,
       // Several scenarios wait on the SERVER (polling WebDAV from node) for up to two minutes
@@ -107,7 +105,7 @@ export const config: WebdriverIO.Config = {
   services: [
     'obsidian',
     // chromedriver_autodownload: the WebView driver must match whatever Chrome
-    // version the emulator image ships. adb_shell: needed to pull system logs
+    // version the Android image ships. adb_shell: needed to pull system logs
     // for the failure diagnostics bundle.
     ['appium', {
       args: {
@@ -116,7 +114,7 @@ export const config: WebdriverIO.Config = {
         // the `browser` object, and there is no browser. The server's own log is then the only record
         // of what happened — which install/uninstall ran, in what order, and what `am start` said.
         // Written under the diagnostics directory so the runner's existing rsync brings it back.
-        log: path.resolve('.b3-diagnostics/appium-server.log'),
+        log: path.resolve(DIAGNOSTICS_DIR, 'appium-server.log'),
         logLevel: 'debug',
         logTimestamp: true,
       },
@@ -127,7 +125,7 @@ export const config: WebdriverIO.Config = {
   // different artifact set, and sharing one directory would let the two layers
   // invalidate each other's cache (gitignored).
   cacheDir: path.resolve('.obsidian-cache-android'),
-  // Emulator round-trips are far slower than the desktop app's.
+  // Device round-trips are far slower than the desktop app's.
   mochaOpts: { ui: 'bdd', timeout: 180000 },
   logLevel: 'warn',
 
@@ -135,9 +133,8 @@ export const config: WebdriverIO.Config = {
    * Wait for a fully booted device, then clear package records left behind by apps that an emulator
    * restart has already removed.
    *
-   * The emulator is EXPECTED to die mid-run — `ansible/templates/emulator.service.j2` says so in as
-   * many words, and carries `Restart=on-failure` precisely because of it. What that restart takes
-   * with it is every sideloaded APK: the AVD boots with `-no-snapshot`, and afterwards
+   * The device may restart mid-run (the Redroid container can be killed and restarted under memory
+   * pressure). What that restart can take with it is every sideloaded APK, and afterwards
    * `pm list packages` no longer lists io.appium.settings, the UiAutomator2 servers, or md.obsidian.
    *
    * The damage is done by what it leaves BEHIND. `dumpsys package <pkg>` still answers with a
@@ -158,10 +155,10 @@ export const config: WebdriverIO.Config = {
    *
    * This is the one place a local `adb` is spawned, and it has to be: the hook runs BEFORE the
    * session exists, so there is no `browser` to route `mobile: shell` through the way
-   * tests/b3-android-ui/support/diagnostics.ts does. Under `pnpm test:b3:instance` — the release
-   * gate's path — wdio runs ON the AVD host with adb on PATH, so this reaches the device directly.
-   * A manual `pnpm test:b3` from a machine that only talks to a remote host has no local adb; there
-   * the call fails, the warning is logged, and the run proceeds exactly as it did before.
+   * tests/b3-android-ui/support/diagnostics.ts does. Under `bash tests/docker/run.sh b3` — the release
+   * gate's path — wdio runs in the runner container with adb on PATH and ANDROID_SERIAL set, so this
+   * reaches the device directly. Without a local adb the call fails, the warning is logged, and the
+   * run proceeds exactly as it did before.
    *
    * Best-effort by design: a failure here is logged, never thrown. If adb is genuinely unusable the
    * session creation that follows will say so far more precisely than this hook could.
@@ -196,7 +193,7 @@ export const config: WebdriverIO.Config = {
 
   onPrepare() {
     // `missing` means "not configured" and `blocked` means "configured, but this
-    // host cannot run b-3" (wrong API level, CA not injected, host not ready).
+    // device cannot run b-3" (wrong API level, CA not injected).
     // Keep them apart so a warning is never misread as the other case.
     if (android.missing.length > 0) {
       // eslint-disable-next-line no-console
@@ -204,7 +201,7 @@ export const config: WebdriverIO.Config = {
     }
     if (android.blocked.length > 0) {
       // eslint-disable-next-line no-console
-      console.warn(`[b-3] AVD host cannot run this layer: ${android.blocked.join('; ')}`);
+      console.warn(`[b-3] Android device cannot run this layer: ${android.blocked.join('; ')}`);
     }
   },
 

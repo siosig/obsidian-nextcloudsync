@@ -3,7 +3,7 @@
 // Why a second client exists at all: the plugin under test talks to Nextcloud through Obsidian's
 // mobile `requestUrl` inside the Android WebView, which is precisely the implementation b-3 is here
 // to exercise. Verifying the result with that same implementation would make the test agree with
-// itself. These helpers run in the wdio process (plain Node on the AVD host) and reach the server
+// itself. These helpers run in the wdio process (plain Node in the runner container started by `bash tests/docker/run.sh b3`) and reach the server
 // independently, so a Capacitor-side encoding or body-length bug shows up as a mismatch instead of
 // cancelling out.
 //

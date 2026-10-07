@@ -1,9 +1,9 @@
 /** @type {import('jest').Config} */
 // Classification "a" (Nextcloud-independent, no UI). This is the DEFAULT `pnpm test`
 // and the only suite that runs in CI: pure logic + the spec-coverage meta-test.
-// The live suites live under tests/b1-nextcloud-headless/ (pnpm test:b1),
-// tests/b2-nextcloud-ui/ (pnpm test:b2), tests/b3-android-ui/ (pnpm test:b3:instance) and
-// tests/b4-plain-webdav/ (pnpm test:b4) and are excluded here.
+// The live suites live under tests/b1-nextcloud-headless/ (bash tests/docker/run.sh b1),
+// tests/b2-nextcloud-ui/ (bash tests/docker/run.sh b2), tests/b3-android-ui/ (bash tests/docker/run.sh b3) and
+// tests/b4-plain-webdav/ (bash tests/docker/run.sh b4) and are excluded here.
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',

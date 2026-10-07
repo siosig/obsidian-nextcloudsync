@@ -1,10 +1,7 @@
-// Loads live-server connection values for the E2E suite.
-// Values are read ONLY at runtime from process.env or a gitignored env file.
+// Loads live-server connection values for the b-1 (headless) suite.
+// Values are read ONLY at runtime from process.env, which the Docker suite runner
+// (`bash tests/docker/run.sh b1`) injects. No env file is ever read.
 // Nothing here is ever committed with real values.
-// Named imports (not `import * as`) so no tslib __importStar helper is needed
-// (tsconfig has importHelpers: true and tslib is not a dependency).
-import { readFileSync } from 'fs';
-import { resolve } from 'path';
 
 export interface LiveEnv {
   /** WebDAV files endpoint (.../remote.php/dav/files/<user>[/...]). */
@@ -15,45 +12,22 @@ export interface LiveEnv {
   username: string;
   /** Nextcloud app password used as the WebDAV app password. */
   appPassword: string;
+  /** Optional second account (for share/lock tests); set only when all 3 user2 keys are present. */
+  user2?: { serverUrl: string; username: string; password: string };
 }
 
-// NEXTCLOUD_VAULT_NAME is OPTIONAL (empty ⇒ operate under the SERVER_URL root —
+// NEXTCLOUD_VAULT_NAME is OPTIONAL (empty => operate under the SERVER_URL root —
 // i.e. the "no vault configured yet" initial state).
 const REQUIRED_KEYS = ['NEXTCLOUD_SERVER_URL', 'NEXTCLOUD_USER', 'NEXTCLOUD_PASSWORD'] as const;
 
-/** Minimal `KEY=value` / `KEY="value"` parser (no dotenv dependency). */
-function parseEnvFile(filePath: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  let raw: string;
-  try {
-    raw = readFileSync(filePath, 'utf-8');
-  } catch {
-    return out;
-  }
-  for (const line of raw.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const eq = trimmed.indexOf('=');
-    if (eq < 0) continue;
-    const key = trimmed.slice(0, eq).trim();
-    let value = trimmed.slice(eq + 1).trim();
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
-    }
-    out[key] = value;
-  }
-  return out;
+function envValue(key: string): string | undefined {
+  const v = process.env[key];
+  return v != null && v.length > 0 ? v : undefined;
 }
 
-function readRawValues(): Record<string, string> {
-  // process.env wins; fall back to a gitignored .env file at repo root.
-  const fileValues = parseEnvFile(resolve(process.cwd(), '.env'));
-  const merged: Record<string, string> = { ...fileValues };
-  for (const key of REQUIRED_KEYS) {
-    const fromProc = process.env[key];
-    if (fromProc != null && fromProc.length > 0) merged[key] = fromProc;
-  }
-  return merged;
+/** When SUITE_REQUIRE_ENV=1, missing env must fail the run instead of skipping. */
+function requireEnvMode(): boolean {
+  return process.env.SUITE_REQUIRE_ENV === '1';
 }
 
 export type LiveEnvResult =
@@ -62,31 +36,62 @@ export type LiveEnvResult =
 
 /** Returns the live env config, or the list of missing required keys. */
 export function requireLiveEnv(): LiveEnvResult {
-  const values = readRawValues();
-  const missing = REQUIRED_KEYS.filter((k) => !values[k] || values[k].length === 0);
+  const missing = REQUIRED_KEYS.filter((k) => !envValue(k));
   if (missing.length > 0) return { ok: false, missing };
+
+  const url2 = envValue('NEXTCLOUD_SERVER_URL2');
+  const user2 = envValue('NEXTCLOUD_USER2');
+  const pass2 = envValue('NEXTCLOUD_PASSWORD2');
   return {
     ok: true,
     env: {
-      serverUrl: values.NEXTCLOUD_SERVER_URL,
+      serverUrl: envValue('NEXTCLOUD_SERVER_URL')!,
       // The Vault name is the top remote folder; tests isolate into a unique
-      // subfolder beneath it (NEXTCLOUD_VAULT_NAME/e2e-<ts>). Empty/unset ⇒
+      // subfolder beneath it (NEXTCLOUD_VAULT_NAME/e2e-<ts>). Empty/unset =>
       // isolate directly under the SERVER_URL root (no-vault initial state).
-      syncFolder: values.NEXTCLOUD_VAULT_NAME ?? '',
-      username: values.NEXTCLOUD_USER,
-      appPassword: values.NEXTCLOUD_PASSWORD,
+      syncFolder: process.env.NEXTCLOUD_VAULT_NAME ?? '',
+      username: envValue('NEXTCLOUD_USER')!,
+      appPassword: envValue('NEXTCLOUD_PASSWORD')!,
+      ...(url2 && user2 && pass2 ? { user2: { serverUrl: url2, username: user2, password: pass2 } } : {}),
     },
   };
 }
 
+/** Returns the second account, or throws when its env keys were not provided. */
+export function requireUser2(env: LiveEnv): NonNullable<LiveEnv['user2']> {
+  if (!env.user2) {
+    throw new Error(
+      'second Nextcloud account (NEXTCLOUD_USER2/NEXTCLOUD_PASSWORD2/NEXTCLOUD_SERVER_URL2) is required',
+    );
+  }
+  return env.user2;
+}
+
+/**
+ * Registers a describe() containing one failing test that lists the missing keys.
+ * Used in SUITE_REQUIRE_ENV=1 mode so a missing environment is a visible failure, never a skip.
+ */
+function describeMissingEnv(title: string, missing: string[]): void {
+  describe(title, () => {
+    it('requires the suite environment', () => {
+      throw new Error(`missing env: ${missing.join(', ')}`);
+    });
+  });
+}
+
 /**
  * describe() that runs only when live credentials are present; otherwise skips
- * cleanly with a message naming the missing keys. The callback receives a getter
- * that returns the validated LiveEnv (safe to call inside the describe body).
+ * cleanly with a message naming the missing keys (or fails when SUITE_REQUIRE_ENV=1).
+ * The callback receives a getter that returns the validated LiveEnv (safe to call
+ * inside the describe body).
  */
 export function describeLive(title: string, fn: (getEnv: () => LiveEnv) => void): void {
   const result = requireLiveEnv();
   if (!result.ok) {
+    if (requireEnvMode()) {
+      describeMissingEnv(title, result.missing);
+      return;
+    }
     // eslint-disable-next-line no-console -- surface why the live suite is skipped
     console.warn(`[e2e] skipping "${title}": missing env ${result.missing.join(', ')}`);
     describe.skip(title, () => { it('skipped (missing live env)', () => undefined); });
@@ -95,33 +100,35 @@ export function describeLive(title: string, fn: (getEnv: () => LiveEnv) => void)
   describe(title, () => fn(() => result.env));
 }
 
-// The "N" actor (feature 051) — a change made DIRECTLY on the Nextcloud server FS via SSH + occ —
-// is only reachable against the ephemeral instance (nextcloud-testinstance), which exports these keys via
-// scripts/b1-cluster.sh. NEXTCLOUD_USER is already a live-env key, so N needs only SSH target + data dir.
-const CLUSTER_KEYS = ['NEXTCLOUD_SSH_TARGET', 'NEXTCLOUD_DATA_HOST'] as const;
+// The "N" actor (feature 051) — a change made DIRECTLY on the Nextcloud server FS — is reached over
+// HTTP through the nc-fsops sidecar of the Docker suite (`bash tests/docker/run.sh b1`), which
+// exports NEXTCLOUD_FSOPS_URL. NEXTCLOUD_USER is already a live-env key, so N needs only this URL.
+const CLUSTER_KEYS = ['NEXTCLOUD_FSOPS_URL'] as const;
 
 /** Which cluster-only (N actor) keys are missing from process.env, if any. */
 export function missingClusterKeys(): string[] {
-  return CLUSTER_KEYS.filter((k) => !process.env[k] || process.env[k]!.length === 0);
+  return CLUSTER_KEYS.filter((k) => !envValue(k));
 }
 
 /**
  * describe() for the 3-actor (feature 051) suites, which need BOTH live WebDAV credentials AND the
- * ephemeral cluster's N actor (SSH + occ + host data dir). Runs only when both are present; otherwise
- * skips CLEANLY (visible in the report as "skipped", never a silent pass). The default
- * `pnpm test:b1` (localhost/.env, no cluster) skips these; `pnpm test:b1:cluster`
- * (scripts/b1-cluster.sh) sets the cluster env so they run. This keeps the default b1 suite green
- * while still exercising the 3-actor matrix on the cluster.
+ * N actor (nc-fsops HTTP endpoint). Runs only when both are present; otherwise skips CLEANLY
+ * (visible in the report as "skipped", never a silent pass) — or fails when SUITE_REQUIRE_ENV=1.
+ * `bash tests/docker/run.sh b1` provides the full environment so they run.
  */
 export function describeCluster(title: string, fn: (getEnv: () => LiveEnv) => void): void {
   const live = requireLiveEnv();
   const missingCluster = missingClusterKeys();
   if (!live.ok || missingCluster.length > 0) {
     const missing = [...(live.ok ? [] : live.missing), ...missingCluster];
+    if (requireEnvMode()) {
+      describeMissingEnv(title, missing);
+      return;
+    }
     // eslint-disable-next-line no-console -- surface why the cluster suite is skipped
     console.warn(`[e2e] skipping "${title}": cluster N unavailable (missing ${missing.join(', ')})`);
     describe.skip(title, () => {
-      it('skipped (cluster N unavailable — run `pnpm test:b1:cluster`)', () => undefined);
+      it('skipped (cluster N unavailable — run `bash tests/docker/run.sh b1`)', () => undefined);
     });
     return;
   }
