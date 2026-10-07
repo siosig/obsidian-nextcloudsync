@@ -72,6 +72,12 @@ Layers:
   the `Depth: 1` recursion that `StandardWebDAVClient` was written for. It never reads `NEXTCLOUD_*` —
   letting those leak in would quietly turn this back into another Nextcloud test.
 
+The b-1 worker count is fixed at 8 in `tests/docker/runner/bin/suite-entry.sh`: of 4, 8 and 12 workers
+(three runs each), only 8 finished all three runs without a failure, and it is within 10% of the
+fastest setting that did. One test, MD-3 (a stale `If-Match` validator must be refused with 412),
+failed once at 4 and once at 12 workers and never at 8, so it looks timing-dependent rather than
+load-dependent; it is tracked as a follow-up and not changed here.
+
 **Release gating**: a beta release requires `bash tests/docker/run.sh all` to pass (exit 3 aborts it too);
 a stable release runs no tests, because it promotes code whose every layer already passed at the beta.
 
@@ -81,7 +87,7 @@ a stable release runs no tests, because it promotes code whose every layer alrea
 |---|---|
 | a | about 23 s |
 | b-4 | about 8 s |
-| b-1 | about 8 min (8 jest workers) |
+| b-1 | about 8 min (8 jest workers; measured 4 / 8 / 12 workers: about 9.5 / 8 / 7.3 min) |
 | b-2 | about 1 min 20 s |
 | b-3 | about 3 min 20 s |
 | first-ever image build (no cache) | runner about 78 s, Nextcloud about 13 s |
