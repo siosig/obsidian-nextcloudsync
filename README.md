@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (1.0.8)
+## What's new in this release (1.0.9-beta.1)
 
-- **Fixed: `HTTP 423` after a force-resolve or a normal sync gave no indication of why (1.0.8)** — when a file was locked on the Nextcloud server side (most commonly a lock left behind by the Nextcloud Text web editor), every failed PUT/DELETE just showed a bare `HTTP 423 (PUT)` with no explanation. The plugin now looks up the lock owner when the server reports one and includes it in the notice and the Sync Status result listing, so you know who or what is holding the file and can act accordingly (see the new FAQ entry for what to do next).
+- **New: "Sync on file change" now works on mobile (1.0.9-beta.1)** — the watch mode can be turned on in Android and iOS (it stays off by default there). It runs only while Obsidian is open, and anything it misses is sent on the next sync. When "Sync on Wi-Fi only" is on, it pauses on a cellular connection.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
