@@ -21,13 +21,13 @@ describeLive('Layer A — chunked upload (CHK)', (getEnv) => {
     if (client && ws) await cleanupWorkspace(client, ws);
   });
 
-  it('CHK-1 chunked upload round-trips (>10MB, single+overflow chunk)', async () => {
+  it('[SPEC:CHK-1] chunked upload round-trips (>10MB, single+overflow chunk)', async () => {
     const data = bytesBuf(11 * MB);
     await client.uploadChunked('chk1.bin', data, CHUNK);
     expect(buffersEqual(await client.downloadFile('chk1.bin'), data)).toBe(true);
   });
 
-  it('CHK-2 multi-chunk (12MB = 2 chunks) reassembles byte-equal', async () => {
+  it('[SPEC:CHK-2] multi-chunk (12MB = 2 chunks) reassembles byte-equal', async () => {
     const data = bytesBuf(12 * MB);
     await client.uploadChunked('chk2.bin', data, CHUNK);
     expect(buffersEqual(await client.downloadFile('chk2.bin'), data)).toBe(true);

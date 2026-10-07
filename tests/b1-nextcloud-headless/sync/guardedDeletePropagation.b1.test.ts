@@ -31,7 +31,7 @@ describeLive('Layer B — guarded delete propagation (feature 086 / issue #46)',
     if (baseClient && ws) await cleanupWorkspace(baseClient, ws);
   });
 
-  it('GDP-30: a folder deleted on the server is trashed locally and leaves nothing that could be pushed back', async () => {
+  it('[SPEC:GDP-30]: a folder deleted on the server is trashed locally and leaves nothing that could be pushed back', async () => {
     const env = getEnv();
     const a = makeDevice(env, ws.remoteBase, 'deviceA-gdp30');
     // An unrelated note keeps the listing non-empty, so this exercises the ordinary shape of the bug
@@ -75,7 +75,7 @@ describeLive('Layer B — guarded delete propagation (feature 086 / issue #46)',
     deleteFile.mockRestore();
   });
 
-  it('GDP-31: a folder the user deletes locally is still propagated to the server', async () => {
+  it('[SPEC:GDP-31]: a folder the user deletes locally is still propagated to the server', async () => {
     const env = getEnv();
     const a = makeDevice(env, ws.remoteBase, 'deviceA-gdp31');
     a.vault.seedLocal('gdp31-keep.md', 'survivor');
@@ -92,7 +92,7 @@ describeLive('Layer B — guarded delete propagation (feature 086 / issue #46)',
     expect(a.stateDB.getFile('GDP31/a.md')).toBeUndefined();
   });
 
-  it('GDP-32: deleting locally a note another device just edited restores it instead of destroying it', async () => {
+  it('[SPEC:GDP-32]: deleting locally a note another device just edited restores it instead of destroying it', async () => {
     const env = getEnv();
     const a = makeDevice(env, ws.remoteBase, 'deviceA-gdp32');
     const b = makeDevice(env, ws.remoteBase, 'deviceB-gdp32');

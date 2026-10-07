@@ -16,7 +16,7 @@ describeLive('Layer A — standard WebDAV fallback (ST)', (getEnv) => {
     std = new StandardWebDAVClient(makeSettings(env), env.appPassword, ws.remoteBase);
   });
 
-  it('ST-1 Nextcloud-only features throw FeatureUnsupportedError', async () => {
+  it('[SPEC:ST-1] Nextcloud-only features throw FeatureUnsupportedError', async () => {
     const fakeVersion: FileVersion = { versionId: '1', href: '', lastModified: 0, size: 0 };
     await expect(std.listVersions('1')).rejects.toBeInstanceOf(FeatureUnsupportedError);
     await expect(std.getVersionContent(fakeVersion, '1')).rejects.toBeInstanceOf(FeatureUnsupportedError);

@@ -59,7 +59,7 @@ const fileState = (path: string): FileState => ({
   remoteFileId: null, isConflicted: false,
 });
 
-describe('[G1-2] SyncEngine.deleteSingleFile — remote delete failure must not drop tracking', () => {
+describe('[SPEC:G1-2] SyncEngine.deleteSingleFile — remote delete failure must not drop tracking', () => {
   it('keeps the StateDB entry when the remote DELETE fails (real failure, not 404)', async () => {
     const { engine, files, stateDB } = makeFileEngine(fileState('Notes/gone.md'));
 
@@ -93,7 +93,7 @@ describe('[G1-2] SyncEngine.deleteSingleFile — remote delete failure must not 
   });
 });
 
-describe('[G1-2] SyncEngine.deleteSingleFolder — remote delete failure must not drop tracking', () => {
+describe('[SPEC:G1-2] SyncEngine.deleteSingleFolder — remote delete failure must not drop tracking', () => {
   it('keeps the tracked directory when the remote collection DELETE fails', async () => {
     const { engine, dirs, stateDB } = makeFolderEngine({ path: 'Old', remoteFileId: null });
 

@@ -6,7 +6,7 @@ import { MergeContext } from '../../../src/types';
 // frontmatter — a non-markdown file's `---` block is not guaranteed to be YAML, and the old
 // frontmatter path fell back to a silent whole-side pick that could DISCARD a one-sided edit inside
 // that block instead of diff3-merging it like the rest of the file.
-describe('[G3-3] MergeEngine.merge() never treats a leading --- block as frontmatter (non-markdown)', () => {
+describe('[SPEC:G3-3] MergeEngine.merge() never treats a leading --- block as frontmatter (non-markdown)', () => {
   const engine = new MergeEngine();
 
   it('a one-sided edit inside a leading --- block is 3-way merged, not discarded by a whole-side pick', () => {

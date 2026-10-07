@@ -99,7 +99,7 @@ const NOT_PROVING: ReadonlyArray<[string, number]> = [
 ];
 
 describe('RemoteDirCache — one MKCOL per directory, and only success is remembered (feature 088)', () => {
-  describe('MSF-1 ensure collapses concurrent requests for the same path into a single MKCOL', () => {
+  describe('[SPEC:MSF-1] ensure collapses concurrent requests for the same path into a single MKCOL', () => {
     it.each(CONCURRENCY)('%i concurrent callers issue exactly one MKCOL', async (n) => {
       const cache = new RemoteDirCache();
       const mkcol = controlledMkcol();
@@ -131,7 +131,7 @@ describe('RemoteDirCache — one MKCOL per directory, and only success is rememb
       expect(mkcol.callsFor('F')).toBe(1);
     });
 
-    it('MSF-5 a proven path resolves without calling mkcol again', async () => {
+    it('[SPEC:MSF-5] a proven path resolves without calling mkcol again', async () => {
       const cache = new RemoteDirCache();
       const mkcol = immediate(201);
       await cache.ensure('F', mkcol);
@@ -154,7 +154,7 @@ describe('RemoteDirCache — one MKCOL per directory, and only success is rememb
     });
   });
 
-  describe('MSF-2 when the single MKCOL fails, every waiter sees that same failure', () => {
+  describe('[SPEC:MSF-2] when the single MKCOL fails, every waiter sees that same failure', () => {
     it.each(CONCURRENCY)('all %i callers reject with the identical error — none resolves', async (n) => {
       const cache = new RemoteDirCache();
       const mkcol = controlledMkcol();
@@ -180,7 +180,7 @@ describe('RemoteDirCache — one MKCOL per directory, and only success is rememb
       for (const r of settled) expect((r as { ok: false; err: unknown }).err).toBe(firstErr);
     });
 
-    it('MSF-1 a single caller that fails produces no unhandled rejection (C-1)', async () => {
+    it('[SPEC:MSF-1] a single caller that fails produces no unhandled rejection (C-1)', async () => {
       // The trap this guards: an implementation that stores a DERIVED promise (mkcol().then(cleanup))
       // in the in-flight map and returns a different one. Nobody awaits the stored promise, so its
       // rejection escapes to the process even though the caller handled its own.
@@ -200,7 +200,7 @@ describe('RemoteDirCache — one MKCOL per directory, and only success is rememb
       }
     });
 
-    it('MSF-1 a waiter that joins mid-flight also sees the failure', async () => {
+    it('[SPEC:MSF-1] a waiter that joins mid-flight also sees the failure', async () => {
       const cache = new RemoteDirCache();
       const mkcol = controlledMkcol();
 
@@ -216,7 +216,7 @@ describe('RemoteDirCache — one MKCOL per directory, and only success is rememb
     });
   });
 
-  describe('MSF-3 a failure is not remembered — the next ensure tries again', () => {
+  describe('[SPEC:MSF-3] a failure is not remembered — the next ensure tries again', () => {
     it('issues exactly one new MKCOL immediately after a failed one', async () => {
       const cache = new RemoteDirCache();
       const mkcol = controlledMkcol();
@@ -250,7 +250,7 @@ describe('RemoteDirCache — one MKCOL per directory, and only success is rememb
       expect(third).not.toHaveBeenCalled();
     });
 
-    it('MSF-2 concurrent callers arriving after a failure share one NEW MKCOL, not the dead one', async () => {
+    it('[SPEC:MSF-2] concurrent callers arriving after a failure share one NEW MKCOL, not the dead one', async () => {
       const cache = new RemoteDirCache();
       const mkcol = controlledMkcol();
 
@@ -268,7 +268,7 @@ describe('RemoteDirCache — one MKCOL per directory, and only success is rememb
     });
   });
 
-  describe('MSF-4 different paths never block each other', () => {
+  describe('[SPEC:MSF-4] different paths never block each other', () => {
     it('three distinct paths have their MKCOLs in flight at the same time', async () => {
       const cache = new RemoteDirCache();
       const mkcol = controlledMkcol();
@@ -306,7 +306,7 @@ describe('RemoteDirCache — one MKCOL per directory, and only success is rememb
     });
   });
 
-  describe('MSF-5 only 201 and 405 prove existence', () => {
+  describe('[SPEC:MSF-5] only 201 and 405 prove existence', () => {
     it.each(PROVING)('%s resolves and is remembered', async (_label, status) => {
       const cache = new RemoteDirCache();
       await expect(cache.ensure('F', immediate(status))).resolves.toBeUndefined();
@@ -370,8 +370,8 @@ describe('RemoteDirCache — one MKCOL per directory, and only success is rememb
     });
   });
 
-  describe('MSF-5 forgetAncestorsOf drops proven ancestors only (C-2)', () => {
-    it('MSF-1 removes every proven ancestor of the file, so the next ensure re-issues MKCOL', async () => {
+  describe('[SPEC:MSF-5] forgetAncestorsOf drops proven ancestors only (C-2)', () => {
+    it('[SPEC:MSF-1] removes every proven ancestor of the file, so the next ensure re-issues MKCOL', async () => {
       const cache = new RemoteDirCache();
       await cache.ensure('F', immediate(201));
       await cache.ensure('F/sub', immediate(201));
@@ -402,7 +402,7 @@ describe('RemoteDirCache — one MKCOL per directory, and only success is rememb
       expect(untouched).not.toHaveBeenCalled();
     });
 
-    it('MSF-1 does NOT touch an in-flight entry — the outstanding MKCOL stays shared (US3-5)', async () => {
+    it('[SPEC:MSF-1] does NOT touch an in-flight entry — the outstanding MKCOL stays shared (US3-5)', async () => {
       const cache = new RemoteDirCache();
       const mkcol = controlledMkcol();
 
@@ -457,8 +457,8 @@ describe('RemoteDirCache — one MKCOL per directory, and only success is rememb
   });
 });
 
-describe('MSF-1 clear() leaves an in-flight MKCOL alone', () => {
-  it('MSF-1 MSF-5: a MKCOL already out survives clear() and still proves its own path', async () => {
+describe('[SPEC:MSF-1] clear() leaves an in-flight MKCOL alone', () => {
+  it('[SPEC:MSF-1] [SPEC:MSF-5]: a MKCOL already out survives clear() and still proves its own path', async () => {
     // createVaultRoot calls clear() when the vault folder turns out to have been absent. Dropping an
     // in-flight entry there would strand whoever is waiting on it, and the MKCOL it is waiting for
     // really does create the folder — so its result is worth keeping (plan.md, contract C-2).

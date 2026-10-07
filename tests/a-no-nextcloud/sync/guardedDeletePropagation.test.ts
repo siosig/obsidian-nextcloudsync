@@ -266,7 +266,7 @@ beforeEach(() => {
   (globalThis as { navigator?: unknown }).navigator ??= {};
 });
 
-describe('GDP-8 trashing a folder forgets everything under it, not just the folder', () => {
+describe('[SPEC:GDP-8] trashing a folder forgets everything under it, not just the folder', () => {
   it('drops the child file rows and the nested directory row along with the folder', async () => {
     const { h } = await vaultWithTrashedFolder();
 
@@ -288,7 +288,7 @@ describe('GDP-8 trashing a folder forgets everything under it, not just the fold
   });
 });
 
-describe('GDP-9 a folder the listing was wrong about comes back, and nothing is deleted on the way', () => {
+describe('[SPEC:GDP-9] a folder the listing was wrong about comes back, and nothing is deleted on the way', () => {
   it('downloads the surviving file again instead of deleting it from the server', async () => {
     const { h, w } = await vaultWithTrashedFolder();
 
@@ -312,7 +312,7 @@ describe('GDP-9 a folder the listing was wrong about comes back, and nothing is 
   });
 });
 
-describe('GDP-10 a folder the listing was right about stays gone, quietly', () => {
+describe('[SPEC:GDP-10] a folder the listing was right about stays gone, quietly', () => {
   it('converges to a no-op sync with nothing left tracked under it', async () => {
     const { h, w } = await vaultWithTrashedFolder();
 
@@ -333,7 +333,7 @@ describe('GDP-10 a folder the listing was right about stays gone, quietly', () =
   });
 });
 
-describe('GDP-11 a folder trashed because the SERVER said so forgets its subtree too', () => {
+describe('[SPEC:GDP-11] a folder trashed because the SERVER said so forgets its subtree too', () => {
   // Driven straight at processRemoteDeletion rather than through applyRemoteMirror, which is the
   // other caller that hands it a folder. Mirror finishes by reconciling State against the remote
   // listing, and that step would drop the stranded rows on its own — so a mirror-based test would
@@ -356,7 +356,7 @@ describe('GDP-11 a folder trashed because the SERVER said so forgets its subtree
   });
 });
 
-describe('GDP-12 a trash that failed forgets nothing', () => {
+describe('[SPEC:GDP-12] a trash that failed forgets nothing', () => {
   it('keeps every row so the next sync retries instead of stranding the files', async () => {
     const { h } = await vaultWithTrashedFolder();
     h.failTrash();
@@ -373,7 +373,7 @@ describe('GDP-12 a trash that failed forgets nothing', () => {
   });
 });
 
-describe('GDP-13 the trash is announced as the plugin\'s own before it happens', () => {
+describe('[SPEC:GDP-13] the trash is announced as the plugin\'s own before it happens', () => {
   it('registers the folder and its tracked subtree with the watcher first', async () => {
     const { h } = await vaultWithTrashedFolder();
 
@@ -409,7 +409,7 @@ async function vaultWithUnlistedMissingFile(w: Partial<RemoteWorld> = {}) {
   return h;
 }
 
-describe('GDP-20 the server is asked before anything is deleted', () => {
+describe('[SPEC:GDP-20] the server is asked before anything is deleted', () => {
   it('probes the exact path, and only then decides', async () => {
     // Deliberately the world where a DELETE really does follow, so the ordering has two events to
     // compare. A probe issued after the DELETE it was meant to justify would have decided nothing.
@@ -424,7 +424,7 @@ describe('GDP-20 the server is asked before anything is deleted', () => {
   });
 });
 
-describe('GDP-21 a path the server really does not have costs no DELETE', () => {
+describe('[SPEC:GDP-21] a path the server really does not have costs no DELETE', () => {
   it('forgets it instead, which is the same end state one round trip cheaper', async () => {
     const h = await vaultWithUnlistedMissingFile({ stat: () => null });
 
@@ -439,7 +439,7 @@ describe('GDP-21 a path the server really does not have costs no DELETE', () => 
   });
 });
 
-describe('GDP-22 a path the server still holds unchanged is a real user deletion', () => {
+describe('[SPEC:GDP-22] a path the server still holds unchanged is a real user deletion', () => {
   it('propagates it, because the checksum proves nothing was lost by doing so', async () => {
     const serverCopy = await listed('x.md', 'base body');
     const h = await vaultWithUnlistedMissingFile({ stat: () => serverCopy });
@@ -453,7 +453,7 @@ describe('GDP-22 a path the server still holds unchanged is a real user deletion
   });
 });
 
-describe('GDP-23 a path the server has EDITED is not a deletion at all', () => {
+describe('[SPEC:GDP-23] a path the server has EDITED is not a deletion at all', () => {
   it('restores the server copy rather than destroying another device\'s work', async () => {
     // The case the bare DELETE got wrong, and the reason absence is no longer accepted as proof: the
     // file was missing from the listing and very much present — and newer — on the server.
@@ -472,7 +472,7 @@ describe('GDP-23 a path the server has EDITED is not a deletion at all', () => {
   });
 });
 
-describe('GDP-24 a path the server cannot vouch for is left alone', () => {
+describe('[SPEC:GDP-24] a path the server cannot vouch for is left alone', () => {
   it('keeps it tracked, because absence of proof is not proof', async () => {
     const h = await vaultWithUnlistedMissingFile({
       stat: () => ({ path: 'x.md', fileId: 'fid-x.md', checksum: null, etag: null, size: 9, lastModified: 0 }),
@@ -487,7 +487,7 @@ describe('GDP-24 a path the server cannot vouch for is left alone', () => {
   });
 });
 
-describe('GDP-25 an unanswerable probe deletes nothing and is retried', () => {
+describe('[SPEC:GDP-25] an unanswerable probe deletes nothing and is retried', () => {
   it('keeps the row rather than reading an outage as "gone"', async () => {
     const h = await vaultWithUnlistedMissingFile({ stat: () => 'throw' });
 
@@ -502,7 +502,7 @@ describe('GDP-25 an unanswerable probe deletes nothing and is retried', () => {
   });
 });
 
-describe('GDP-26 a genuine local deletion still reaches the server', () => {
+describe('[SPEC:GDP-26] a genuine local deletion still reaches the server', () => {
   it('deletes a file the listing shows unchanged and the vault no longer has', async () => {
     // The listing-present route — a different branch from GDP-22, and the one most local deletions
     // take. It has demanded a checksum since spec 023; this pins that feature 086 left it alone.
@@ -522,7 +522,7 @@ describe('GDP-26 a genuine local deletion still reaches the server', () => {
   });
 });
 
-describe('GDP-27 a genuine local folder deletion still reaches the server', () => {
+describe('[SPEC:GDP-27] a genuine local folder deletion still reaches the server', () => {
   it('deletes the child file and then the emptied collection', async () => {
     // Everything under F is gone from the vault and from the folder list, but the server still has
     // all of it and agrees with our base. Tracked-and-absent on this side, present on that one: a
@@ -546,7 +546,7 @@ describe('GDP-27 a genuine local folder deletion still reaches the server', () =
   });
 });
 
-describe('GDP-28 a folder deleted on another device leaves nothing behind here', () => {
+describe('[SPEC:GDP-28] a folder deleted on another device leaves nothing behind here', () => {
   it('settles in one sync and the next one has nothing to do', async () => {
     // The down direction, end to end: the server dropped F entirely, so the files are trashed by the
     // absence pass and the folder by directory reconciliation. What matters afterwards is that the
@@ -580,7 +580,7 @@ describe('GDP-28 a folder deleted on another device leaves nothing behind here',
   });
 });
 
-describe('GDP-29 the added round trip is bounded', () => {
+describe('[SPEC:GDP-29] the added round trip is bounded', () => {
   it('probes each deletion candidate exactly once', async () => {
     // The cost of demanding proof: one PROPFIND per candidate, replacing the DELETE that used to go
     // out unasked. A per-candidate probe that fanned out would make large local deletions expensive

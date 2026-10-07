@@ -48,7 +48,7 @@ function makeEngine() {
   return { engine, setFileCalls };
 }
 
-describe('[G1-1] SyncEngine.resolveByWrite — merge upload failure must not look converged', () => {
+describe('[SPEC:G1-1] SyncEngine.resolveByWrite — merge upload failure must not look converged', () => {
   it('keeps isConflicted:true when clean=true but the merge re-upload throws', async () => {
     const { engine, setFileCalls } = makeEngine();
     // Simulate a failing upload strategy (423 locked / 412 / network) — never resolves 'skipped', always throws.

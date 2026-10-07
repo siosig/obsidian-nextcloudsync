@@ -9,7 +9,7 @@
 // SyncStatusModal's click handlers do, to prove the concurrency guard itself is correct.
 import { KeyedBusyGate } from '../../../src/ui/SyncStatusModal';
 
-describe('SyncStatusModal force-resolve guard (G6-1)', () => {
+describe('SyncStatusModal force-resolve guard ([SPEC:G6-1])', () => {
   test('per-file: a re-render recreating the Apply button cannot re-trigger the same in-flight resolution', async () => {
     const gate = new KeyedBusyGate();
     let calls = 0;

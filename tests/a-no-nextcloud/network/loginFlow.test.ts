@@ -71,7 +71,7 @@ describe('LoginFlowV2', () => {
 
   // Issue #34: on mobile the webview's timers are suspended while the browser holds the foreground,
   // so the interval never fires and the loop parks on one await. Returning to the app must wake it.
-  describe('[LF-1] polling survives a suspended timer and resumes when the app does', () => {
+  describe('[SPEC:LF-1] polling survives a suspended timer and resumes when the app does', () => {
     it('polls again on resume even though the interval timer never fires', async () => {
       const neverSleep = (): Promise<void> => new Promise<void>(() => undefined); // suspended timer
       let resume: (() => void) | null = null;
@@ -108,7 +108,7 @@ describe('LoginFlowV2', () => {
       expect(unsubscribe).toHaveBeenCalledTimes(1);
     });
 
-    it('[LF-2] the deadline matches the server-side token lifetime (20 minutes)', () => {
+    it('[SPEC:LF-2] the deadline matches the server-side token lifetime (20 minutes)', () => {
       // Nextcloud's LoginFlowV2Mapper::lifetime is 1200 s; giving up earlier would strand a token
       // the server would still honour, which is what the old 90-iteration cap effectively did.
       expect(LoginFlowV2.POLL_DEADLINE_MS).toBe(20 * 60 * 1000);

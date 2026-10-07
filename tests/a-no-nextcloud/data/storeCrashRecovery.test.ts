@@ -25,7 +25,7 @@ function makeAdapter(seed: Record<string, string> = {}): DataAdapter & { files: 
 const DIR = '.obsidian/plugins/nextcloud-sync';
 const DEVICE_ID = 'dev1';
 
-describe('[G4-2] load() recovers from a surviving tmp file when the primary save crashed mid remove→rename', () => {
+describe('[SPEC:G4-2] load() recovers from a surviving tmp file when the primary save crashed mid remove→rename', () => {
   it('StateDB.load() recovers persisted state from tmp when statePath is absent', async () => {
     const statePath = `${DIR}/state-${DEVICE_ID}.json`;
     const tmpPath = `${statePath}.tmp`;

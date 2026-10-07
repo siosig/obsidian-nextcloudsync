@@ -225,7 +225,8 @@ export const CLAUSES: Clause[] = [
   // spec 020 FR-006 (exhaustive tooltip catalog) was retired by feature 077: tooltips were removed and
   // their text merged into each row's desc, which DSD-1..DSD-5 cover.
   { id: 'FR-007', source: 'spec 020 (Server URL desc / 405; always-visible desc since feature 077)', layer: 'a' },
-  { id: 'FR-014', source: 'spec 020 (no new settings)', layer: 'a' },
+  // spec 020 FR-014 ("change no behaviour or data model, UI strings only") constrained that one feature's
+  // diff and describes no current behaviour, so it is not a clause any test can verify; retired.
   // --- DP: directory propagation (spec 021, specs/main/spec.md §8a) ---
   // DP-1..15 are all covered at layer a (dirSync.test.ts); DP-e2e / DP-e2e-empty at b-1.
   { id: 'DP-1',  source: 'specs/main/spec.md §8a.1 (local-only untracked → MKCOL)', layer: 'a' },

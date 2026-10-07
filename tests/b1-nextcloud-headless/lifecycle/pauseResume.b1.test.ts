@@ -25,7 +25,7 @@ describeLive('Lifecycle — pause/resume mid-sync', (getEnv) => {
 
   const client = (id: string): NextcloudClient => makeClient(getEnv(), ws.remoteBase, { deviceId: id });
 
-  it('PR-1 interrupted upload batch resumes from a fresh client without duplication or loss', async () => {
+  it('[SPEC:PR-1] interrupted upload batch resumes from a fresh client without duplication or loss', async () => {
     const batch = ['pr1-a.md', 'pr1-b.md', 'pr1-c.md', 'pr1-d.md'];
 
     // First "session": only the first two land before the simulated stop.
@@ -47,7 +47,7 @@ describeLive('Lifecycle — pause/resume mid-sync', (getEnv) => {
     expect(finalNames.length).toBe(batch.length);
   });
 
-  it('PR-2 resume does not re-overwrite files already uploaded before the stop (idempotent)', async () => {
+  it('[SPEC:PR-2] resume does not re-overwrite files already uploaded before the stop (idempotent)', async () => {
     const s1 = client('deviceA');
     await s1.uploadFile('pr2-keep.md', textBuf('original'));
     const etagBefore = (await s1.getFiles('')).find((f) => f.path.endsWith('pr2-keep.md'))?.etag;

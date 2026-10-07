@@ -208,7 +208,7 @@ describe('[SPEC:CSF-12] config JSON conflict resolves via Other File / latest-mt
     expect(summary.errorCount).toBe(0);
     expect(summary.conflictedCount).toBe(0);
     expect(h.setFile).not.toHaveBeenCalled();
-    // ES-11: the tie must invalidate the root-ETag short-circuit so the next sync re-scans instead of
+    // [SPEC:ES-11]: the tie must invalidate the root-ETag short-circuit so the next sync re-scans instead of
     // rebuilding from stale State and silently uploading the local JSON over the remote.
     expect(h.setRemoteRootEtag).toHaveBeenCalledWith(null);
   });

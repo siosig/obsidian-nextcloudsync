@@ -18,7 +18,7 @@
 // These tests drive the REAL `NextcloudClient` (so the real `ensureRemoteDir` + `createdDirs` cache
 // are under test) against an in-memory WebDAV server behind the `requestUrl` mock. The three answers
 // that matter were MEASURED against the b-1 instance (Nextcloud 34) on 2026-09-10 with raw HTTP, no
-// client cache involved — see "実サーバーでの確認" in the spec:
+// client cache involved — see the live-server confirmation section in the spec:
 //
 //   - concurrent MKCOL on the SAME collection → first 201, the others 423 Locked
 //     (`OCA\DAV\Connector\Sabre\Exception\FileLocked`); observed [201,423,405,423] and
@@ -354,7 +354,7 @@ beforeAll(() => {
 });
 afterAll(() => { (globalThis as unknown as { DOMParser: unknown }).DOMParser = prevDOMParser; });
 
-describe('MSF-12 two files under a brand-new two-level folder both reach the server in ONE session', () => {
+describe('[SPEC:MSF-12] two files under a brand-new two-level folder both reach the server in ONE session', () => {
   it('uploads F/a.md and F/sub/b.md with no errors, and leaves both collections on the server', async () => {
     // The reported failure, stated as the user sees it: create a folder, put a note in it and a note
     // in a subfolder, sync once. Observed before the fix (live b-1, ~1 run in 4):
@@ -383,7 +383,7 @@ describe('MSF-12 two files under a brand-new two-level folder both reach the ser
   });
 });
 
-describe('MSF-13 the shared ancestor is created by exactly one request', () => {
+describe('[SPEC:MSF-13] the shared ancestor is created by exactly one request', () => {
   it('issues a single MKCOL for F even though two upload chains need it at the same time', async () => {
     // The mechanism, asserted directly. Two concurrent MKCOLs on one collection is what the server
     // answers 423 to, and one 423 recorded as "created" is what poisons the rest of the session.
@@ -403,7 +403,7 @@ describe('MSF-13 the shared ancestor is created by exactly one request', () => {
   });
 });
 
-describe('MSF-14 a deeper tree behaves the same, one MKCOL per level', () => {
+describe('[SPEC:MSF-14] a deeper tree behaves the same, one MKCOL per level', () => {
   it('uploads all three files and creates F, F/x, F/x/y and F/x/y/z exactly once each', async () => {
     // Three chains (parents `F`, `F/x`, `F/x/y/z`) contend for `F`, and two of them also contend for
     // `F/x`. Depth is what multiplies the race, so a fix that only special-cased the two-level case
@@ -433,7 +433,7 @@ describe('MSF-14 a deeper tree behaves the same, one MKCOL per level', () => {
   });
 });
 
-describe('MSF-15 a single new level keeps working exactly as before', () => {
+describe('[SPEC:MSF-15] a single new level keeps working exactly as before', () => {
   it('uploads F/a.md and F/b.md through one MKCOL, unchanged by the fix', async () => {
     // The regression half. Both files share the parent `F`, so `serializeByDir` already puts them on
     // one chain and there is no race to fix here — the second PUT simply finds the folder the first
@@ -457,7 +457,7 @@ describe('MSF-15 a single new level keeps working exactly as before', () => {
   });
 });
 
-describe('MSF-16 an ancestor that genuinely cannot be created costs one file, not the session', () => {
+describe('[SPEC:MSF-16] an ancestor that genuinely cannot be created costs one file, not the session', () => {
   it('records the error for the file below it and still uploads everything else', async () => {
     // Distinguishing a fixable race from a real refusal matters: the fix must not turn "the server
     // says no" into a thrown session. A permanently failing MKCOL (403 here) is reported against the

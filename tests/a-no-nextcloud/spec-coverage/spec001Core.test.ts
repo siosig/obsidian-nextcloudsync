@@ -23,13 +23,13 @@ function resolver(overrides: Partial<MergeConfig>): ConflictResolver {
 describe('spec 001 — core requirements', () => {
   // ---- Expected to be SATISFIED ----
 
-  it('FR-019: credentials are referenced by secret id, not stored as plaintext password', () => {
+  it('[SPEC:FR-019]: credentials are referenced by secret id, not stored as plaintext password', () => {
     expect(DEFAULT_SETTINGS).toHaveProperty('passwordSecretId');
     expect(DEFAULT_SETTINGS).not.toHaveProperty('password');
     expect(DEFAULT_SETTINGS).not.toHaveProperty('appPassword');
   });
 
-  it('FR-020: minimum Obsidian version is 1.13.0 (declarative settings API)', () => {
+  it('[SPEC:FR-020]: minimum Obsidian version is 1.13.0 (declarative settings API)', () => {
     // Raised from 1.11.4 (which the secret-storage API required) by feature 077. The settings tab
     // now returns definitions instead of implementing display(), and Obsidian only renders from
     // those on 1.13.0+ — below it the tab would come up EMPTY, so the floor has to move with it.
@@ -39,7 +39,7 @@ describe('spec 001 — core requirements', () => {
     expect(manifest.minAppVersion).toBe('1.13.0');
   });
 
-  it('FR-020: the runtime version guard agrees with the manifest floor', () => {
+  it('[SPEC:FR-020]: the runtime version guard agrees with the manifest floor', () => {
     // Two independent copies of the same number: manifest.json gates DELIVERY (Obsidian withholds
     // the update), main.ts gates EXECUTION (the notice on load). If they disagree the plugin either
     // refuses to run for users Obsidian happily shipped it to, or runs where it cannot render.
@@ -48,7 +48,7 @@ describe('spec 001 — core requirements', () => {
     expect(mainTs).toContain(`const MIN_OBSIDIAN_VERSION = '${manifest.minAppVersion}';`);
   });
 
-  it('FR-008: a conflict preserves BOTH sides (feature 040: frontmatter merged semantically, body preserved)', () => {
+  it('[SPEC:FR-008]: a conflict preserves BOTH sides (feature 040: frontmatter merged semantically, body preserved)', () => {
     // Feature 040: scalar frontmatter (k:1 vs k:2) is now resolved by policy (remote-win default).
     // Both body sections (LOCAL-ONLY, REMOTE-ONLY) are preserved via reconcile-text merge.
     const r = resolver({ autoMergeFileTypes: ['md'], autoMergeFileStrategy: 'merge' });
@@ -68,7 +68,7 @@ describe('spec 001 — core requirements', () => {
     expect(DEFAULT_SETTINGS.autoMergeFileStrategy).toBe('merge');
   });
 
-  it('FR-010 (finalized): YAML frontmatter is auto-merged (non-overlapping lines merge cleanly)', () => {
+  it('[SPEC:FR-010] (finalized): YAML frontmatter is auto-merged (non-overlapping lines merge cleanly)', () => {
     // Finalized D5: frontmatter is IN scope for auto-merge — non-overlapping frontmatter
     // edits (different keys) merge cleanly via diff3; only same-line divergence conflicts.
     const engine = new MergeEngine();

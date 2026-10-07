@@ -156,7 +156,7 @@ beforeEach(() => {
   (globalThis as { navigator?: unknown }).navigator ??= {};
 });
 
-describe('ULG-13 an unreadable getFiles listing fails the session instead of deleting anything', () => {
+describe('[SPEC:ULG-13] an unreadable getFiles listing fails the session instead of deleting anything', () => {
   it.each([
     ['above the mass-delete breaker threshold', 30],
     ['below the mass-delete breaker threshold', 3],
@@ -180,7 +180,7 @@ describe('ULG-13 an unreadable getFiles listing fails the session instead of del
   });
 });
 
-describe('ULG-14 self-healing: a failed session does not stop the vault from converging', () => {
+describe('[SPEC:ULG-14] self-healing: a failed session does not stop the vault from converging', () => {
   it('US1-7: the following sync with a readable listing deletes nothing extra and leaves tracking intact', async () => {
     const vault = { 'a.md': 'alpha' };
     let broken = true;
@@ -216,7 +216,7 @@ describe('ULG-14 self-healing: a failed session does not stop the vault from con
   });
 });
 
-describe('ULG-15 an unreadable getDirectories listing skips directory reconciliation only', () => {
+describe('[SPEC:ULG-15] an unreadable getDirectories listing skips directory reconciliation only', () => {
   it('US2-1: no folder is trashed or deleted, dir tracking is untouched, and the skip is logged', async () => {
     const vault = { 'F/a.md': 'alpha' };
     const h = await buildEngine(vault, {
@@ -238,7 +238,7 @@ describe('ULG-15 an unreadable getDirectories listing skips directory reconcilia
   });
 });
 
-describe('ULG-16 an unreadable statFile probe keeps tracking instead of deleting', () => {
+describe('[SPEC:ULG-16] an unreadable statFile probe keeps tracking instead of deleting', () => {
   it('US2-2: a file absent locally and from the listing is neither deleted nor forgotten', async () => {
     const h = await buildEngine({}, {
       listing: [],
@@ -256,7 +256,7 @@ describe('ULG-16 an unreadable statFile probe keeps tracking instead of deleting
   });
 });
 
-describe('ULG-17 an unreadable listing on the very first sync uploads nothing', () => {
+describe('[SPEC:ULG-17] an unreadable listing on the very first sync uploads nothing', () => {
   it('leaves State empty rather than treating local files as new uploads', async () => {
     const h = await buildEngine({ 'a.md': 'alpha' }, { listing: () => { throw unreadable('getFiles'); }, rootEtag: null });
     // No track() call: StateDB starts empty, which is what routes syncManual to the initial-sync path.

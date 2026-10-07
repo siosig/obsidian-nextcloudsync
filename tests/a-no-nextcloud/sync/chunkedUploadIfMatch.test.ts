@@ -27,7 +27,7 @@ function uploadConfig(over: Partial<UploadConfig>): UploadConfig {
 
 const data = new ArrayBuffer(10);
 
-describe('G5-1: ChunkedUploadStrategy forwards ifMatchEtag to uploadChunked (large-file path)', () => {
+describe('[SPEC:G5-1]: ChunkedUploadStrategy forwards ifMatchEtag to uploadChunked (large-file path)', () => {
   it('passes opts (including ifMatchEtag) through on the main chunked-upload call', async () => {
     const client = fakeClient();
     const s = new ChunkedUploadStrategy(uploadConfig({ maxFileSizeMB: 100 }));
@@ -41,7 +41,7 @@ describe('G5-1: ChunkedUploadStrategy forwards ifMatchEtag to uploadChunked (lar
   });
 });
 
-describe('G5-1: NextcloudClient.uploadChunked — assembling MOVE carries If-Match', () => {
+describe('[SPEC:G5-1]: NextcloudClient.uploadChunked — assembling MOVE carries If-Match', () => {
   const mockRequestUrl = requestUrl as unknown as jest.Mock;
 
   const settings: DavSyncSettings = {

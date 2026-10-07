@@ -23,12 +23,12 @@ describeLive('Layer A — initial state (no vault folder on server yet)', (getEn
     if (client && ws) await cleanupWorkspace(client, ws);
   });
 
-  it('INIT-1 connect succeeds even though the vault folder does not exist', async () => {
+  it('[SPEC:INIT-1] connect succeeds even though the vault folder does not exist', async () => {
     const features = await client.connect();
     expect(features.isNextcloud).toBe(true);
   });
 
-  it('INIT-2 getFiles on a non-existent vault folder reports it as missing, not as empty', async () => {
+  it('[SPEC:INIT-2] getFiles on a non-existent vault folder reports it as missing, not as empty', async () => {
     // Feature 083 (issue #50) split these two facts apart. A 404 on the vault root used to be
     // flattened into an empty listing, which the full scan then read as "the server has no files" —
     // i.e. as every tracked file having been deleted. The client now says which one it is, and the
@@ -36,7 +36,7 @@ describeLive('Layer A — initial state (no vault folder on server yet)', (getEn
     await expect(client.getFiles('')).rejects.toThrow(RemoteRootMissingError);
   });
 
-  it('INIT-3 first upload into a fresh vault creates the folder and the file', async () => {
+  it('[SPEC:INIT-3] first upload into a fresh vault creates the folder and the file', async () => {
     // First-ever upload into a fresh vault: reactive MKCOL now handles the 404 missing-parent
     // (no pre-creation), the file round-trips, and the once-empty vault lists it.
     await client.uploadFile('first-note.md', textBuf('first sync'));

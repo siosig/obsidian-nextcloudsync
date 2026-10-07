@@ -58,7 +58,7 @@ describeLive('Layer A — server lock detection on 423 (SL, feature 090)', (getE
   });
 
   // SL-1: a lock held by another account makes PUT and DELETE fail with ServerLockedError.
-  it('SL-1 423-on-PUT/DELETE from a foreign lock holder', async () => {
+  it('[SPEC:SL-1] 423-on-PUT/DELETE from a foreign lock holder', async () => {
     if (!hasLocking) {
       if (process.env.SUITE_REQUIRE_ENV === '1') throw new Error('server has no files_lock');
       console.warn('[e2e] SL-1 skipped: server has no files_lock');
@@ -86,7 +86,7 @@ describeLive('Layer A — server lock detection on 423 (SL, feature 090)', (getE
     }
   });
 
-  it('SL-2 lockdiscovery PROPFIND round-trip against a real server', async () => {
+  it('[SPEC:SL-2] lockdiscovery PROPFIND round-trip against a real server', async () => {
     if (!hasLocking) {
       if (process.env.SUITE_REQUIRE_ENV === '1') throw new Error('server has no files_lock');
       console.warn('[e2e] SL-2 skipped: server has no files_lock');

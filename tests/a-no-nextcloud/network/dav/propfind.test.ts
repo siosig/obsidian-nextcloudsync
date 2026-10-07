@@ -69,21 +69,21 @@ describe('parseResponses', () => {
   // request to delete the whole vault — held back only by the mass-delete breaker (large vaults) or
   // the per-file 404 re-check (small ones). This is the upstream fix: an unreadable body is an error.
 
-  it('ULG-1 rejects an empty body — that is not a listing of nothing, it is no listing', () => {
+  it('[SPEC:ULG-1] rejects an empty body — that is not a listing of nothing, it is no listing', () => {
     for (const body of ['', '\n  ', '   ']) {
       expect(() => parseResponses(body)).toThrow(MultistatusUnreadableError);
       expect(() => parseResponses(body)).toThrow(/empty body/);
     }
   });
 
-  it('ULG-2 turns a throwing parser (xmldom) into the same typed error', () => {
+  it('[SPEC:ULG-2] turns a throwing parser (xmldom) into the same typed error', () => {
     // @xmldom throws on malformed XML. The type has to be ours so callers can catch one thing.
     const truncated = '<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:respo';
     expect(() => parseResponses(truncated)).toThrow(MultistatusUnreadableError);
     expect(() => parseResponses(truncated)).toThrow(/^parser threw: /);
   });
 
-  it('ULG-3 rejects a Blink-shaped parsererror document whether it is the root or a child', () => {
+  it('[SPEC:ULG-3] rejects a Blink-shaped parsererror document whether it is the root or a child', () => {
     // Obsidian's DOMParser never throws; it hands back a document with the error inside it. In the
     // "root" shape nothing else parsed. In the "nested" shape a REAL response survived next to the
     // error element — the shape that used to yield a partial listing, the worst possible output.
@@ -98,7 +98,7 @@ describe('parseResponses', () => {
     expect(() => parseResponses(nestedShape)).toThrow(/^parser error: /);
   });
 
-  it('ULG-3 keeps the parser message short enough for a single log line', () => {
+  it('[SPEC:ULG-3] keeps the parser message short enough for a single log line', () => {
     const input = '<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:respo';
     dom.simulateParserError(input, 'root');
     let reason = '';
@@ -116,21 +116,21 @@ describe('parseResponses', () => {
     expect(() => parseResponses(body)).toThrow(reason);
   });
 
-  it('ULG-4 also rejects an XML declaration with no root element (not well-formed at all)', () => {
+  it('[SPEC:ULG-4] also rejects an XML declaration with no root element (not well-formed at all)', () => {
     // Distinct from the table above: this document has no root element, so it is malformed rather
     // than "well-formed but wrong root" — real parsers reject it the same way they reject a
     // truncated body (ULG-2/ULG-3), not via the root-name check.
     expect(() => parseResponses('<?xml version="1.0"?>')).toThrow(MultistatusUnreadableError);
   });
 
-  it('ULG-5 still returns an empty list for a genuine multistatus with no responses', () => {
+  it('[SPEC:ULG-5] still returns an empty list for a genuine multistatus with no responses', () => {
     // Feature 083 depends on this: a vault the server says is empty must read as empty, not as an
     // error, or absence-based deletion never converges on a small vault.
     expect(parseResponses(multistatus())).toEqual([]);
     expect(parseResponses('<d:multistatus xmlns:d="DAV:"/>')).toEqual([]);
   });
 
-  describe('ULG-6 accepts every legitimate shape a real server sends', () => {
+  describe('[SPEC:ULG-6] accepts every legitimate shape a real server sends', () => {
     it.each([
       ['a default namespace instead of a prefix', `<?xml version="1.0"?><multistatus xmlns="DAV:"><response><href>/a</href><propstat><prop><getetag>"e"</getetag></prop></propstat></response></multistatus>`],
       ['an upper-case D: prefix', `<?xml version="1.0"?><D:multistatus xmlns:D="DAV:"><D:response><D:href>/a</D:href><D:propstat><D:prop><D:getetag>"e"</D:getetag></D:prop></D:propstat></D:response></D:multistatus>`],
@@ -309,12 +309,12 @@ describe('readLockDiscoveryOwner (feature 090)', () => {
   const NO_OWNER_AT_ALL = '<d:lockdiscovery><d:activelock><d:lockscope><d:exclusive/></d:lockscope></d:activelock></d:lockdiscovery>';
   const EMPTY_OWNER = '<d:lockdiscovery><d:activelock><d:owner></d:owner></d:activelock></d:lockdiscovery>';
 
-  it('LDO-1 reads D:owner, the RFC 4918 standard element, with highest priority', () => {
+  it('[SPEC:LDO-1] reads D:owner, the RFC 4918 standard element, with highest priority', () => {
     const xml = lockMultistatus(response('/a.md', OWNER_AND_NC_OWNER, 'HTTP/1.1 200 OK'));
     expect(readLockDiscoveryOwner(xml)).toBe('alice');
   });
 
-  it('LDO-2 falls back to nc:lock-owner when D:owner is absent', () => {
+  it('[SPEC:LDO-2] falls back to nc:lock-owner when D:owner is absent', () => {
     const xml = lockMultistatus(response('/a.md', NC_OWNER_ONLY, 'HTTP/1.1 200 OK'));
     expect(readLockDiscoveryOwner(xml)).toBe('bob@nextcloud');
   });
@@ -323,7 +323,7 @@ describe('readLockDiscoveryOwner (feature 090)', () => {
     ['neither D:owner nor nc:lock-owner is present', NO_OWNER_AT_ALL],
     ['D:owner is present but empty, and nc:lock-owner is absent', EMPTY_OWNER],
     ['lockdiscovery itself is absent (server holds no lock, plain WebDAV props only)', FILE_PROPS],
-  ])('LDO-3 returns null when %s', (_label, propBody) => {
+  ])('[SPEC:LDO-3] returns null when %s', (_label, propBody) => {
     const xml = lockMultistatus(response('/a.md', propBody, 'HTTP/1.1 200 OK'));
     expect(readLockDiscoveryOwner(xml)).toBeNull();
   });
@@ -333,7 +333,7 @@ describe('readLockDiscoveryOwner (feature 090)', () => {
     ['an HTML error page', '<html><body>502 Bad Gateway</body></html>'],
     ['truncated XML', '<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:respo'],
     ['a well-formed but unrelated XML root', '<?xml version="1.0"?><foo/>'],
-  ])('LDO-4 returns null, and never throws, for %s', (_label, body) => {
+  ])('[SPEC:LDO-4] returns null, and never throws, for %s', (_label, body) => {
     expect(() => readLockDiscoveryOwner(body)).not.toThrow();
     expect(readLockDiscoveryOwner(body)).toBeNull();
   });

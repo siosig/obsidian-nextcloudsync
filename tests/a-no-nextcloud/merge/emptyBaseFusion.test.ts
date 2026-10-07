@@ -6,7 +6,7 @@ import { MergeContext } from '../../../src/types';
 // The length/repeated-block guards miss a pure concatenation; `linesSurvive` catches it and routes the
 // case to a real conflict instead of silently persisting corrupted content. Uses the REAL
 // reconcile-text (no mock) so it exercises the actual fusion.
-describe('[G3-1] empty-base merge never silently fuses two divergent sides', () => {
+describe('[SPEC:G3-1] empty-base merge never silently fuses two divergent sides', () => {
   const engine = new MergeEngine();
   const markers: MergeContext = { localMtime: 0, remoteMtime: 0, conflictStrategy: 'conflict-markers' };
 

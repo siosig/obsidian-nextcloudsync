@@ -300,13 +300,13 @@ describe('DeletionService.deleteLocallyMissing — proof before an unlisted DELE
     return { h, s, go: () => h.deletion.deleteLocallyMissing(h.client, 'note.md', base(), s) };
   };
 
-  it('GDP-14 asks the server before deciding, exactly once', async () => {
+  it('[SPEC:GDP-14] asks the server before deciding, exactly once', async () => {
     const { h, go } = run({ stat: null });
     await go();
     expect(h.calls.stats).toEqual(['note.md']);
   });
 
-  it('GDP-15 a 404 means nothing to delete: no DELETE, and the tracking goes', async () => {
+  it('[SPEC:GDP-15] a 404 means nothing to delete: no DELETE, and the tracking goes', async () => {
     const { h, s, go } = run({ stat: null });
 
     expect(await go()).toBe('untracked');
@@ -320,7 +320,7 @@ describe('DeletionService.deleteLocallyMissing — proof before an unlisted DELE
     expect(s.deletedCount).toBe(0);
   });
 
-  it('GDP-16 present and unchanged: the deletion is real and propagates', async () => {
+  it('[SPEC:GDP-16] present and unchanged: the deletion is real and propagates', async () => {
     const { h, s, go } = run({ stat: remote({ checksum: 'BASE-HASH' }) });
 
     expect(await go()).toBe('deleted');
@@ -332,7 +332,7 @@ describe('DeletionService.deleteLocallyMissing — proof before an unlisted DELE
 
   // The case the old code got wrong. The file was absent from the listing but present and EDITED on
   // the server; a bare DELETE threw away another device's work with no way back.
-  it('GDP-17 present but diverged: the remote copy is restored, never deleted', async () => {
+  it('[SPEC:GDP-17] present but diverged: the remote copy is restored, never deleted', async () => {
     const { h, go } = run({ stat: remote({ checksum: 'THEIR-EDIT' }) });
 
     expect(await go()).toBe('restored');
@@ -342,7 +342,7 @@ describe('DeletionService.deleteLocallyMissing — proof before an unlisted DELE
     expect(h.calls.stateDeletes).toEqual([]); // still tracked — the file is back
   });
 
-  it('GDP-18 present but unprovable (no checksum): kept, because absence of proof is not proof', async () => {
+  it('[SPEC:GDP-18] present but unprovable (no checksum): kept, because absence of proof is not proof', async () => {
     const { h, go } = run({ stat: remote({ checksum: null }), recalc: null });
 
     expect(await go()).toBe('kept');
@@ -355,7 +355,7 @@ describe('DeletionService.deleteLocallyMissing — proof before an unlisted DELE
   // G1-2: an indeterminate answer keeps the tracking so the next sync retries. Dropping it would let
   // the next sync see the still-present remote file as new and download it back, quietly undoing the
   // user's deletion.
-  it('GDP-19 an unanswerable probe deletes nothing and leaves the tracking for the next sync', async () => {
+  it('[SPEC:GDP-19] an unanswerable probe deletes nothing and leaves the tracking for the next sync', async () => {
     const { h, go } = run({ stat: 'throw' });
 
     await expect(go()).rejects.toThrow();
@@ -365,7 +365,7 @@ describe('DeletionService.deleteLocallyMissing — proof before an unlisted DELE
     expect(h.calls.droppedBase).toEqual([]);
   });
 
-  it('GDP-19 a DELETE that really fails also keeps the tracking', async () => {
+  it('[SPEC:GDP-19] a DELETE that really fails also keeps the tracking', async () => {
     const { h, go } = run({ stat: remote({ checksum: 'BASE-HASH' }), deleteFails: 423 });
 
     await expect(go()).rejects.toThrow();

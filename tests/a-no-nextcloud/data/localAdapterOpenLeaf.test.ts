@@ -84,7 +84,7 @@ describe('[OL-1] text file open -> in-place vault.modify, no delete event', () =
   });
 });
 
-describe('[OL-2] binary file open -> in-place vault.modifyBinary, no delete event', () => {
+describe('[SPEC:OL-2] binary file open -> in-place vault.modifyBinary, no delete event', () => {
   it('applies the update via vault.modifyBinary and never touches adapter.remove/adapter.rename', async () => {
     const path = 'attachments/open.png';
     const file = makeTFile(path);
@@ -128,7 +128,7 @@ function makeDeferredWorkspace(openPath: string): Workspace {
  * tmp-write -> remove -> rename path. That `remove()` is the physical delete that makes Obsidian drop
  * the leaf back to the previous note. Detection now also consults the leaf's serialized view state.
  */
-describe('[OL-4] file open in a DEFERRED (background) leaf -> must still update in place (issue #32)', () => {
+describe('[SPEC:OL-4] file open in a DEFERRED (background) leaf -> must still update in place (issue #32)', () => {
   it('applies the update via vault.modify and never touches adapter.remove/adapter.rename', async () => {
     const path = 'Notes/background-tab.md';
     const file = makeTFile(path);
@@ -201,7 +201,7 @@ describe('[OL-4] file open in a DEFERRED (background) leaf -> must still update 
   });
 });
 
-describe('[OL-3] not-open file (or no workspace injected) -> existing tmp-write/remove/rename path, no vault.modify', () => {
+describe('[SPEC:OL-3] not-open file (or no workspace injected) -> existing tmp-write/remove/rename path, no vault.modify', () => {
   it('falls back to the atomic tmp-write path when no Workspace is injected at all', async () => {
     const path = 'Notes/no-workspace.md';
     const { adapter, files } = makeAdapter();

@@ -403,7 +403,7 @@ describe('DirectoryReconciler.resolveAllSkippedDirs', () => {
 // sync propagated it to the server. Feature 081 stopped one WAY of getting here (asking the server
 // before trashing); this is the amplifier itself.
 describe('[SPEC:DTV-3] DirectoryReconciler.reconcileDirectories — a plugin trash is not a user deletion', () => {
-  it('GDP-4 forgets the whole subtree, not just the folder row', async () => {
+  it('[SPEC:GDP-4] forgets the whole subtree, not just the folder row', async () => {
     const { reconciler, client, calls } = build({
       local: ['F'],
       tracked: [{ path: 'F', remoteFileId: null }],
@@ -425,7 +425,7 @@ describe('[SPEC:DTV-3] DirectoryReconciler.reconcileDirectories — a plugin tra
     );
   });
 
-  it('GDP-4 leaves siblings that merely share a name prefix tracked', async () => {
+  it('[SPEC:GDP-4] leaves siblings that merely share a name prefix tracked', async () => {
     const { reconciler, client, calls } = build({
       local: ['F'],
       tracked: [{ path: 'F', remoteFileId: null }],
@@ -440,7 +440,7 @@ describe('[SPEC:DTV-3] DirectoryReconciler.reconcileDirectories — a plugin tra
   // G1-2: a failed operation keeps its tracking so the next sync retries. Dropping the rows here
   // would strand files that are still sitting on disk, and the sync after would re-upload them as
   // brand-new — the user's folder would silently come back.
-  it('GDP-5 drops nothing when the trash itself fails', async () => {
+  it('[SPEC:GDP-5] drops nothing when the trash itself fails', async () => {
     const { reconciler, client, calls } = build({
       local: ['F'],
       tracked: [{ path: 'F', remoteFileId: null }],
@@ -469,7 +469,7 @@ describe('[SPEC:DTV-3] DirectoryReconciler.reconcileDirectories — a plugin tra
   // the folder and every file under it, and nothing says those arrive after this method finishes —
   // watch mode could act on them first. So the paths are registered as the plugin's own doing
   // BEFORE the trash, which is the same mechanism downloads already use to avoid an upload loop.
-  it('GDP-6 registers the subtree as its own vault event before trashing, not after', async () => {
+  it('[SPEC:GDP-6] registers the subtree as its own vault event before trashing, not after', async () => {
     const { reconciler, client, calls } = build({
       local: ['F'],
       tracked: [{ path: 'F', remoteFileId: null }],
@@ -487,7 +487,7 @@ describe('[SPEC:DTV-3] DirectoryReconciler.reconcileDirectories — a plugin tra
 
   // Feature 081 is the gate in front of all of this and must stay shut: absence from the listing is
   // a reason to ask the server, not a reason to delete.
-  it('GDP-7 neither trashes nor forgets anything when the server still has the folder', async () => {
+  it('[SPEC:GDP-7] neither trashes nor forgets anything when the server still has the folder', async () => {
     const { reconciler, client, calls } = build({
       local: ['F'],
       tracked: [{ path: 'F', remoteFileId: null }],

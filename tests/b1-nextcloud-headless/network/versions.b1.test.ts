@@ -23,11 +23,11 @@ describeLive('Layer A — versions (VR)', (getEnv) => {
     if (client && ws) await cleanupWorkspace(client, ws);
   });
 
-  it('VR-4 listVersions with empty fileId → FeatureUnsupportedError', async () => {
+  it('[SPEC:VR-4] listVersions with empty fileId → FeatureUnsupportedError', async () => {
     await expect(client.listVersions('')).rejects.toBeInstanceOf(FeatureUnsupportedError);
   });
 
-  it('VR-1/2/3 list (newest-first), fetch and restore a prior version', async () => {
+  it('[SPEC:VR-1]/2/3 list (newest-first), fetch and restore a prior version', async () => {
     // Create two revisions to generate a version.
     await client.uploadFile('vr.md', textBuf('VERSION-ONE'));
     await sleep(1100);
@@ -53,12 +53,12 @@ describeLive('Layer A — versions (VR)', (getEnv) => {
       expect(versions[i - 1].lastModified).toBeGreaterThanOrEqual(versions[i].lastModified);
     }
 
-    // VR-2: a prior version's content is retrievable.
+    // [SPEC:VR-2]: a prior version's content is retrievable.
     const prior = versions[versions.length - 1];
     const content = await client.getVersionContent(prior, fileId);
     expect(typeof decodeBuf(content)).toBe('string');
 
-    // VR-3: restoring makes the prior version current.
+    // [SPEC:VR-3]: restoring makes the prior version current.
     await client.restoreVersion(prior, fileId);
     const restored = decodeBuf(await client.downloadFile('vr.md'));
     expect(restored.length).toBeGreaterThan(0);

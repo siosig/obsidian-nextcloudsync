@@ -22,7 +22,7 @@ describeLive('Layer B — directory rename propagation (engine)', (getEnv) => {
     if (baseClient && ws) await cleanupWorkspace(baseClient, ws);
   });
 
-  it('DR-local: renaming a folder locally MOVEs its files on the remote, prunes the old dir, and device B picks up the new name', async () => {
+  it('[SPEC:DR-local]: renaming a folder locally MOVEs its files on the remote, prunes the old dir, and device B picks up the new name', async () => {
     const env = getEnv();
 
     // Device A creates old/note.md plus an anchor file, then syncs.
@@ -54,7 +54,7 @@ describeLive('Layer B — directory rename propagation (engine)', (getEnv) => {
     expect(b.vault.folderExists('new')).toBe(true);
   });
 
-  it('DR-concurrent: A renames 1111→2222, B independently creates 2222/other.md — both converge with no data loss', async () => {
+  it('[SPEC:DR-concurrent]: A renames 1111→2222, B independently creates 2222/other.md — both converge with no data loss', async () => {
     const env = getEnv();
 
     // Phase 1: A sets up the initial state and B picks it up.

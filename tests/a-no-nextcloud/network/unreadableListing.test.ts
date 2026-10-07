@@ -40,7 +40,7 @@ const NONEMPTY_MULTISTATUS = `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"
   </d:response>
 </d:multistatus>`;
 
-/** The four ways a 207 body can fail to be a listing (data-model.md §応答本文の分類). */
+/** The four ways a 207 body can fail to be a listing (data-model.md, the response-body classification section). */
 const UNREADABLE_BODIES: ReadonlyArray<[string, string]> = [
   ['an empty body', ''],
   ['a truncated document', '<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:respo'],
@@ -59,7 +59,7 @@ describe('IWebDAVClient — an unreadable listing is a failure, not an empty one
   beforeEach(() => mockRequestUrl.mockReset());
 
   describe.each(CLIENTS)('%s', (_name, makeClient) => {
-    describe.each(UNREADABLE_BODIES)('ULG-7 ULG-8 ULG-9 %s', (_label, body) => {
+    describe.each(UNREADABLE_BODIES)('[SPEC:ULG-7] [SPEC:ULG-8] [SPEC:ULG-9] %s', (_label, body) => {
       it('getFiles throws RemoteListingUnreadableError instead of returning []', async () => {
         mockRequestUrl.mockReturnValueOnce(res(207, body));
         const err: unknown = await makeClient('Vault').getFiles('').catch((e: unknown) => e);
@@ -100,7 +100,7 @@ describe('IWebDAVClient — an unreadable listing is a failure, not an empty one
     });
   });
 
-  describe('ULG-10 ULG-11 Nextcloud-specific calls', () => {
+  describe('[SPEC:ULG-10] [SPEC:ULG-11] Nextcloud-specific calls', () => {
     function nc(): NextcloudClient {
       return new NextcloudClient(settings, 'app-pw', 'Vault');
     }
@@ -129,7 +129,7 @@ describe('IWebDAVClient — an unreadable listing is a failure, not an empty one
     });
   });
 
-  describe('ULG-18 StandardWebDAVClient recursion never yields a partial listing', () => {
+  describe('[SPEC:ULG-18] StandardWebDAVClient recursion never yields a partial listing', () => {
     it('an unreadable body from a subfolder fails the whole getFiles call, not just that branch', async () => {
       const ROOT_WITH_SUBFOLDER = `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:">
         <d:response><d:href>/remote.php/dav/files/alice/Vault/</d:href>
@@ -153,7 +153,7 @@ describe('IWebDAVClient — an unreadable listing is a failure, not an empty one
     });
   });
 
-  describe('ULG-12 the diagnostic message is a single line and never carries the body verbatim', () => {
+  describe('[SPEC:ULG-12] the diagnostic message is a single line and never carries the body verbatim', () => {
     it('names the call, the path, the status, and a bounded fragment — nothing past 256 characters', async () => {
       const earlyMarker = 'EARLYMARKER'; // well inside the first 256 characters
       const lateMarker = 'LATEMARKER'; // padded out past 256 characters — must never reach the message
@@ -172,7 +172,7 @@ describe('IWebDAVClient — an unreadable listing is a failure, not an empty one
     });
 
     it('counts bytes, not characters, for a multi-byte body', async () => {
-      const body = `<html>${'ノ'.repeat(10)}</html>`; // each ノ is 3 bytes in UTF-8
+      const body = `<html>${'\u30ce'.repeat(10)}</html>`; // each U+30CE (katakana NO) is 3 bytes in UTF-8
       mockRequestUrl.mockReturnValueOnce(res(207, body));
       const err: unknown = await new NextcloudClient(settings, 'pw', 'Vault').getFiles('').catch((e: unknown) => e);
       expect((err as RemoteListingUnreadableError).bodyLength).toBe(new TextEncoder().encode(body).length);

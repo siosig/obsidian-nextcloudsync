@@ -32,7 +32,7 @@ describeLive('Layer A — locking (LK)', (getEnv) => {
   // LK-1: lock disabled → plain PUT. Engine-level (SyncEngine), not Layer A.
   it.skip('LK-1 lock disabled → plain PUT (engine-level, see Layer B)', () => undefined);
 
-  it('LK-2 lock → PUT → unlock when supported', async () => {
+  it('[SPEC:LK-2] lock → PUT → unlock when supported', async () => {
     if (!hasLocking) {
       if (process.env.SUITE_REQUIRE_ENV === '1') throw new Error('server has no files_lock');
       console.warn('[e2e] LK-2 skipped: server has no files_lock');
@@ -51,7 +51,7 @@ describeLive('Layer A — locking (LK)', (getEnv) => {
   // LK-4: a lock held by one account must make a DIFFERENT account's lock attempt fail with 423.
   // Same-owner re-lock is permitted, so this needs the second account: admin uploads + locks, shares
   // the file to ncuser2 (it appears at ncuser2's files root), then ncuser2 tries to lock it.
-  it('LK-4 second holder gets 423', async () => {
+  it('[SPEC:LK-4] second holder gets 423', async () => {
     if (!hasLocking) {
       if (process.env.SUITE_REQUIRE_ENV === '1') throw new Error('server has no files_lock');
       console.warn('[e2e] LK-4 skipped: server has no files_lock');

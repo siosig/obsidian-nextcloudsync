@@ -24,7 +24,7 @@ function makeCrashingAdapter(target: string) {
   return { adapter, files };
 }
 
-describe('[G4-1] atomicWrite/atomicWriteBinary must not delete the sole surviving tmp copy on a post-remove rename failure', () => {
+describe('[SPEC:G4-1] atomicWrite/atomicWriteBinary must not delete the sole surviving tmp copy on a post-remove rename failure', () => {
   it('atomicWrite: rename fails after remove(target) — tmp is kept (not deleted) and the error still propagates', async () => {
     const target = 'Notes/hello.md';
     const { adapter, files } = makeCrashingAdapter(target);

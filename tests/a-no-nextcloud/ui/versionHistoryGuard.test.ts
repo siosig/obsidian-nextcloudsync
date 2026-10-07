@@ -8,7 +8,7 @@
 // VersionHistoryModal's Restore click handler does, to prove the concurrency guard itself is correct.
 import { BusyGate } from '../../../src/ui/VersionHistoryModal';
 
-describe('VersionHistoryModal restore guard (G6-2)', () => {
+describe('VersionHistoryModal restore guard ([SPEC:G6-2])', () => {
   test('clicking Restore on version B while version A is still restoring is ignored', async () => {
     const gate = new BusyGate();
     let calls = 0;

@@ -21,7 +21,7 @@ describeLive('Layer B — empty-dir pruning end-to-end (engine)', (getEnv) => {
     if (baseClient && ws) await cleanupWorkspace(baseClient, ws);
   });
 
-  it('DP-e2e: a folder emptied on device A is pruned on the remote and on device B', async () => {
+  it('[SPEC:DP-e2e]: a folder emptied on device A is pruned on the remote and on device B', async () => {
     const env = getEnv();
 
     // Device A creates a folder of notes (plus an unrelated note that survives the whole test, so
@@ -57,7 +57,7 @@ describeLive('Layer B — empty-dir pruning end-to-end (engine)', (getEnv) => {
     expect(b.vault.folderExists('2011')).toBe(false);
   });
 
-  it('DP-e2e-empty: an EMPTY directory created on device A is propagated to the remote and device B', async () => {
+  it('[SPEC:DP-e2e-empty]: an EMPTY directory created on device A is propagated to the remote and device B', async () => {
     const env = getEnv();
 
     // Device A creates an empty folder (no files) plus an unrelated note, then syncs.

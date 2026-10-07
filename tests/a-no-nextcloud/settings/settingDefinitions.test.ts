@@ -369,7 +369,7 @@ describe('[SPEC:FR-007] Server URL row always shows the full-endpoint guidance',
   });
 });
 
-describe('Server compatibility notice (VSN-2)', () => {
+describe('Server compatibility notice ([SPEC:VSN-2])', () => {
   // GitHub issue #54: the banner's `visible` never consulted isSupportedNextcloudVersion(), so it
   // showed for every detected server, including ones at or above MIN_NEXTCLOUD_VERSION.
   const serverCompatibilityVisible = (host: SettingDefinitionsHost): boolean => {
@@ -387,7 +387,7 @@ describe('Server compatibility notice (VSN-2)', () => {
   );
 
   it.each(['32.0.5', '25'])(
-    '[VSN-1] shows the banner, with the detected version in the text, below MIN_NEXTCLOUD_VERSION (%s)',
+    '[SPEC:VSN-1] shows the banner, with the detected version in the text, below MIN_NEXTCLOUD_VERSION (%s)',
     (version) => {
       const host = makeHost({ settings: { ...DEFAULT_SETTINGS, lastKnownServerVersion: version } });
       expect(serverCompatibilityVisible(host)).toBe(true);
@@ -396,7 +396,7 @@ describe('Server compatibility notice (VSN-2)', () => {
     },
   );
 
-  it('[VSN-3] never builds a "Server compatibility" row when no server version has been detected yet', () => {
+  it('[SPEC:VSN-3] never builds a "Server compatibility" row when no server version has been detected yet', () => {
     const host = makeHost({ settings: { ...DEFAULT_SETTINGS, lastKnownServerVersion: '' } });
     const row = rowsOf(buildSettingDefinitions(host)).find((r) => r.name === 'Server compatibility');
     expect(row).toBeUndefined();

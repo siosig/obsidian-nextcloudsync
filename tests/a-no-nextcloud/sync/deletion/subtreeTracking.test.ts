@@ -35,7 +35,7 @@ function build(trackedFiles: string[], trackedDirs: string[]) {
   return { deps, calls, remaining: () => ({ files, dirs }) };
 }
 
-describe('GDP-1 collectSubtreePaths — what counts as "under" a folder', () => {
+describe('[SPEC:GDP-1] collectSubtreePaths — what counts as "under" a folder', () => {
   it('collects the folder itself and everything below it', () => {
     const { deps } = build(['F/a.md', 'F/sub/b.md'], ['F', 'F/sub']);
     const found = collectSubtreePaths(deps.stateDB, 'F');
@@ -45,7 +45,7 @@ describe('GDP-1 collectSubtreePaths — what counts as "under" a folder', () => 
 
   // The separator is the whole guard. Without it, trashing `F` would also forget `F2` and `F.md`,
   // and those rows would then be re-uploaded as brand-new files on the next sync.
-  it('GDP-2 requires a path separator, so siblings sharing a name prefix are never included', () => {
+  it('[SPEC:GDP-2] requires a path separator, so siblings sharing a name prefix are never included', () => {
     const { deps } = build(
       ['F/a.md', 'F2/note.md', 'F.md', 'FF/note.md', 'G/F/note.md'],
       ['F', 'F2', 'FF', 'G/F'],
@@ -55,13 +55,13 @@ describe('GDP-1 collectSubtreePaths — what counts as "under" a folder', () => 
     expect(found.dirs).toEqual(['F']);
   });
 
-  it('GDP-2 returns nothing for an empty folder path, so the vault root is never swept', () => {
+  it('[SPEC:GDP-2] returns nothing for an empty folder path, so the vault root is never swept', () => {
     const { deps } = build(['a.md', 'F/b.md'], ['F']);
     expect(collectSubtreePaths(deps.stateDB, '')).toEqual({ files: [], dirs: [] });
   });
 });
 
-describe('GDP-3 dropSubtreeTracking — all three stores, or none', () => {
+describe('[SPEC:GDP-3] dropSubtreeTracking — all three stores, or none', () => {
   it('drops file state, merge base and clean-side snapshot for every file under the folder', () => {
     const { deps, calls } = build(['F/a.md', 'F/sub/b.md', 'Other/c.md'], ['F', 'F/sub', 'Other']);
 

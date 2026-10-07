@@ -120,9 +120,12 @@ reproduces none of the above.
 ## Spec tagging & the coverage map
 
 Every clause the suite must cover lives in
-`a-no-nextcloud/spec-coverage/clauses.ts`. Tests reference a clause by a bare id
-in the test name (e.g. `CF-2`, `FR-019`) or an explicit tag via
-`spec()` from `a-no-nextcloud/support/specRef.ts`:
+`a-no-nextcloud/spec-coverage/clauses.ts`. Tests reference a clause only by an
+explicit `[SPEC:<id>]` tag — in the test name, or in a comment that labels an
+assertion inside an active test — or through `spec()` from
+`a-no-nextcloud/support/specRef.ts`, which renders the same tag. A bare id such as
+`CF-2` does not count: ids like `FR-014` recur across features with different
+meanings, and a bare match once made an unrelated test look like coverage.
 
 ```ts
 import { spec } from '../support/specRef';
