@@ -4,7 +4,7 @@
 // the plugin behaves against a server that is not Nextcloud, so letting Nextcloud credentials leak in
 // would let a misconfigured run silently test the wrong thing — the exact failure mode this layer was
 // created to catch. The values come only from the environment that `scripts/b4-plain-webdav.sh`
-// exports for the container it just started.
+// exports for the container it just started (`bash tests/docker/run.sh b4`).
 
 export interface PlainDavEnv {
   /** WebDAV collection URL of the ephemeral Apache container, e.g. http://127.0.0.1:32768/dav/ */
@@ -38,8 +38,17 @@ function requirePlainDavEnv(): EnvResult {
 export function describePlainDav(title: string, fn: (getEnv: () => PlainDavEnv) => void): void {
   const result = requirePlainDavEnv();
   if (!result.ok) {
+    // Under the Docker suite runner the env is mandatory: a missing key must fail, never skip silently.
+    if (process.env.SUITE_REQUIRE_ENV === '1') {
+      describe(title, () => {
+        it('requires the b-4 harness env', () => {
+          throw new Error(`[b4] missing required env: ${result.missing.join(', ')}`);
+        });
+      });
+      return;
+    }
     // eslint-disable-next-line no-console -- surface why the layer is skipped
-    console.warn(`[b4] skipping "${title}": missing env ${result.missing.join(', ')} — run via \`pnpm test:b4\``);
+    console.warn(`[b4] skipping "${title}": missing env ${result.missing.join(', ')} — run via \`bash tests/docker/run.sh b4\``);
     describe.skip(title, () => { it('skipped (harness not started)', () => undefined); });
     return;
   }

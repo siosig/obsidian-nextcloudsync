@@ -1,85 +1,64 @@
 // Feature 051: the "N" actor — a change made DIRECTLY on the Nextcloud server's filesystem (as if by
-// another tool), then made visible to WebDAV via `occ files:scan`. Only meaningful against the
-// ephemeral instance (nextcloud-testinstance), which exposes SSH + a host bind-mounted data dir + an `occ`
-// wrapper. The cluster runner (scripts/b1-cluster.sh) exports the connection details as env vars:
-//   NEXTCLOUD_SSH_TARGET  e.g. runner@<instance-ip>  (never hard-code a real address here:
-//                         this file is public and the value is read from the gitignored connection
-//                         info at run time)
-//   NEXTCLOUD_DATA_HOST   e.g. /opt/svc-node/data
-//   NEXTCLOUD_USER        e.g. admin
-//   NEXTCLOUD_SSH_KEY     the instance's access key (optional; see ssh() for why it is passed
-//                         explicitly rather than left to an ssh-agent)
-// When they are absent (localhost / plain b1), N is unavailable and the 3-actor suites skip cleanly
-// via describeCluster() (see support/env.ts) — the default `pnpm test:b1` never exercises this module.
+// another tool), then made visible to WebDAV via `occ files:scan`. In the Docker suite this is done
+// by the `nc-fsops` sidecar, which shares the Nextcloud data volume and exposes a small JSON HTTP API
+// (POST /v1/write, /v1/remove, /v1/scan). The runner exports its base URL as:
+//   NEXTCLOUD_FSOPS_URL   e.g. http://nc-fsops:8080  (reachable only inside the run network)
+// The API stays synchronous (curl via execFileSync) so callers need no change.
+// When the variable is absent, N is unavailable and the 3-actor suites skip cleanly via
+// describeCluster() (see support/env.ts); `bash tests/docker/run.sh b1` provides it.
 import { execFileSync } from 'child_process';
 
-function req(key: string): string {
-  const v = process.env[key];
-  if (!v) throw new Error(`nextcloudFs: ${key} is not set (run via scripts/b1-cluster.sh against the cluster)`);
-  return v;
+function fsopsUrl(): string {
+  const v = process.env.NEXTCLOUD_FSOPS_URL;
+  if (!v) throw new Error('nextcloudFs: NEXTCLOUD_FSOPS_URL is not set (run via `bash tests/docker/run.sh b1`)');
+  return v.replace(/\/$/, '');
 }
 
-/** Run one command on the cluster VM over SSH (batch mode, no host-key checks). */
-function ssh(command: string): string {
-  // NEXTCLOUD_SSH_KEY names the instance's own access key, which the runner reads from the same
-  // connection info as the address. Naming it matters: the key is called `<prefix>-access_ed25519`,
-  // which ssh's default identity search (id_rsa, id_ed25519, ...) never looks at, so without `-i`
-  // the only way it is ever found is an ssh-agent that happens to be holding it. On 2026-09-10 that
-  // agent had died mid-session and the three-actor suites — and only those — failed with
-  // "Permission denied (publickey)", which reads as a test failure rather than as a missing key.
-  // IdentitiesOnly keeps a loaded agent from offering its own keys first and exhausting MaxAuthTries.
-  // The variable is absent against a plain localhost b1 (and older connection info), where the
-  // agent-based behaviour this replaces is still correct.
-  const key = process.env.NEXTCLOUD_SSH_KEY;
-  const identity = key ? ['-i', key, '-o', 'IdentitiesOnly=yes'] : [];
-  // Ephemeral cluster VMs reuse external IPs, so a cached (now-stale) host key would otherwise make
-  // ssh refuse with "offending key". Disable host-key checking entirely (throwaway test VM).
-  return execFileSync(
-    'ssh',
-    [
-      '-o', 'StrictHostKeyChecking=no', '-o', 'UserKnownHostsFile=/dev/null',
-      '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15',
-      ...identity,
-      req('NEXTCLOUD_SSH_TARGET'), command,
-    ],
-    { encoding: 'utf8', timeout: 60_000 },
-  );
+/** POST one JSON request to the fsops sidecar; throws with curl's stderr on any failure. */
+function fsops(op: 'write' | 'remove' | 'scan', body: Record<string, string>): void {
+  try {
+    execFileSync(
+      'curl',
+      [
+        '-fsS', '-X', 'POST', '--data-binary', '@-',
+        '-H', 'Content-Type: application/json',
+        `${fsopsUrl()}/v1/${op}`,
+      ],
+      { input: JSON.stringify(body), encoding: 'utf8', timeout: 60_000, stdio: ['pipe', 'pipe', 'pipe'] },
+    );
+  } catch (e) {
+    const err = e as { stderr?: Buffer | string; message?: string };
+    const detail = (err.stderr ? String(err.stderr) : err.message ?? String(e)).trim();
+    throw new Error(`fsops ${op} failed: ${detail}`);
+  }
 }
 
 /**
  * The N actor scoped to one isolated workspace folder (`remoteBase`, e.g. `e2e-<id>`). All paths are
- * relative to that folder. Writes go to the host bind-mounted data dir (owned by www-data uid 33) and
- * are picked up by `occ files:scan` so the WebDAV layer (and thus the plugin devices) see them.
+ * relative to that folder. Changes are applied on the server FS by nc-fsops and picked up by
+ * `occ files:scan` so the WebDAV layer (and thus the plugin devices) see them.
  */
 export class NextcloudFs {
   constructor(private readonly remoteBase: string) {}
 
-  private user(): string { return req('NEXTCLOUD_USER'); }
-  private baseDir(): string { return `${req('NEXTCLOUD_DATA_HOST')}/${this.user()}/files/${this.remoteBase}`; }
-  private scanTarget(): string { return `${this.user()}/files/${this.remoteBase}`; }
-
   /** Create or overwrite a file directly on the server FS, then rescan so WebDAV sees it. */
   write(relPath: string, content: string): void {
-    const abs = `${this.baseDir()}/${relPath}`;
-    const b64 = Buffer.from(content, 'utf8').toString('base64');
-    // base64 avoids all shell-quoting hazards for the file content; chown -R keeps the whole workspace
-    // owned by www-data so occ can read it.
-    ssh(
-      `sudo mkdir -p "$(dirname '${abs}')" && ` +
-      `printf '%s' '${b64}' | base64 -d | sudo tee '${abs}' >/dev/null && ` +
-      `sudo chown -R 33:33 '${this.baseDir()}'`,
-    );
+    fsops('write', {
+      base: this.remoteBase,
+      path: relPath,
+      content_b64: Buffer.from(content, 'utf8').toString('base64'),
+    });
     this.scan();
   }
 
   /** Delete a file or folder directly on the server FS, then rescan. */
   remove(relPath: string): void {
-    ssh(`sudo rm -rf '${this.baseDir()}/${relPath}'`);
+    fsops('remove', { base: this.remoteBase, path: relPath });
     this.scan();
   }
 
   /** Force Nextcloud to re-index this workspace so direct-FS changes become visible to WebDAV. */
   scan(): void {
-    ssh(`occ files:scan --path='${this.scanTarget()}' 2>/dev/null || occ files:scan --path='${this.scanTarget()}'`);
+    fsops('scan', { base: this.remoteBase });
   }
 }

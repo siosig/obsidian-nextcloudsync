@@ -17,7 +17,7 @@ import { isSyncTmpPath, LocalAdapter } from './data/LocalAdapter';
 import type { MergeBaseStore } from './data/MergeBaseStore';
 import { v4 as uuidv4 } from './util/uuid';
 import { hostToken, LogPlatform } from './util/hostToken';
-import { migrateConfigSyncCategories, migrateBookmarksToConfigSync, migrateStartupToggleToDelay, migrateConflictSettingsToStrategies, migrateFrontmatterScalarPolicyToStrategy, migrateMarkdownAutoMergeType, pruneObsoleteSettings, resetDebugIdentityFields, applyMobileFirstRunDefaults, isWatchModeActive } from './util/settingsMigration';
+import { migrateConfigSyncCategories, migrateBookmarksToConfigSync, migrateStartupToggleToDelay, migrateConflictSettingsToStrategies, migrateFrontmatterScalarPolicyToStrategy, migrateMarkdownAutoMergeType, pruneObsoleteSettings, resetDebugIdentityFields, applyMobileFirstRunDefaults } from './util/settingsMigration';
 import { debugLogPath, isActiveOwnLog } from './util/logPaths';
 import { autoNetworkConcurrency } from './util/platformDefaults';
 
@@ -183,12 +183,11 @@ export default class ObsidianNextcloudsync extends Plugin {
 
       // Watch mode: react to individual file events with lightweight single-file operations.
       // Full vault sync is reserved for manual Sync Now and the periodic interval.
-      // Watch mode is disabled on mobile (OS suspends background work). This is enforced here at
-      // runtime via isWatchModeActive (G7-2) — not just via the first-run default in loadSettings —
-      // so a `watchOnChangeEnabled: true` persisted from another device (e.g. a copied/synced
-      // `.obsidian` folder) can never make watch mode fire on mobile.
+      // Watch mode runs on every platform (feature 091). On mobile it only ever fires while the app is
+      // in the foreground — which is exactly when the user is editing — and whatever it misses is found
+      // by the next full sync. "Wi-Fi only" is enforced inside each operation (WatchOperations).
       const guard = (file: TAbstractFile): file is TFile =>
-        isWatchModeActive(this.settings.watchOnChangeEnabled, Platform.isMobile) && file instanceof TFile;
+        this.settings.watchOnChangeEnabled && file instanceof TFile;
 
       // Vault events caused by the plugin itself (downloads / conflict writes use atomic
       // tmp-write → rename) must not be propagated back to the server, or every download
@@ -215,9 +214,8 @@ export default class ObsidianNextcloudsync extends Plugin {
         debouncedUpload();
       }));
       // Feature 046: folders (TFolder) propagate immediately via single-folder ops; files keep the
-      // debounced upload path. watchOn() is the master gate — false on mobile regardless of the
-      // persisted value (G7-2; see isWatchModeActive above).
-      const watchOn = (): boolean => isWatchModeActive(this.settings.watchOnChangeEnabled, Platform.isMobile);
+      // debounced upload path. watchOn() is the master gate.
+      const watchOn = (): boolean => this.settings.watchOnChangeEnabled;
       this.registerEvent(this.app.vault.on('create', (file: TAbstractFile) => {
         if (!watchOn() || isOwnSyncEvent(file.path)) return;
         if (file instanceof TFolder) { void this.syncEngine?.createSingleFolder(file.path); return; }
@@ -243,8 +241,9 @@ export default class ObsidianNextcloudsync extends Plugin {
 
       // Feature 079 (discussion #44): sync when the app comes back to the foreground.
       //
-      // On mobile this is the only trigger that fires at all once the app has been left running —
-      // periodic sync and watch mode are both off there because the OS suspends background timers.
+      // On mobile this is the only trigger that fires once the app has been left running in the
+      // background — periodic sync is off there because the OS suspends background timers, and watch
+      // mode only reacts to edits made while the app is open.
       // Registered on every platform rather than only on mobile: a desktop that slept has the same
       // hole, since its interval timer did not tick while it was asleep, and not branching is
       // simpler than branching. The cooldown inside the handler is what keeps a burst of app

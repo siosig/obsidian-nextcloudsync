@@ -1,0 +1,12 @@
+{
+  admin off
+  auto_https off
+}
+https://nc.test {
+  tls /run/suite/tls.crt /run/secrets/suite_tls_key
+  redir /.well-known/carddav /remote.php/dav/ 301
+  redir /.well-known/caldav /remote.php/dav/ 301
+  reverse_proxy nc-app:80 {
+    header_up X-Forwarded-Proto https
+  }
+}

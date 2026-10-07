@@ -195,8 +195,9 @@ export function resetDebugIdentityFields(
  *   - `syncOnWifiOnly`      = `true`  — cellular-cost-safe default (iOS lacks the API, so effectively
  *                                        inert there, but Android honours it).
  *   - `maxFileSizeMB`       = `20`    — OOM-safe cap; the mobile WebView holds the whole file in memory.
- *   - `watchOnChangeEnabled`= `false` — mobile delivers no reliable file-change events and continuous
- *                                        syncing drains battery.
+ *   - `watchOnChangeEnabled`= `false` — opt-in on mobile: watch mode runs only while the app is in
+ *                                        the foreground and costs battery and data (feature 091
+ *                                        removed the runtime mobile guard; only the default stays).
  *   - `syncIntervalMinutes` = `0`     — the mobile OS suspends background timers, so periodic sync never
  *                                        fires (see the `!Platform.isMobile` guard in
  *                                        `applyAutoSyncInterval`); defaulting to 0 (= manual only) makes
@@ -217,21 +218,6 @@ export function applyMobileFirstRunDefaults(
   if (saved.maxFileSizeMB === undefined) settings.maxFileSizeMB = 20;
   if (saved.watchOnChangeEnabled === undefined) settings.watchOnChangeEnabled = false;
   if (saved.syncIntervalMinutes === undefined) settings.syncIntervalMinutes = 0;
-}
-
-/**
- * Runtime guard (G7-2, feature 055): watch mode must never fire on mobile, regardless of the
- * persisted `watchOnChangeEnabled` value. {@link applyMobileFirstRunDefaults} only defaults this
- * to `false` on a brand-new install — a value copied in from another device (e.g. a synced
- * `.obsidian` folder) or carried over from an older profile can still persist `true` on a mobile
- * device. main.ts's vault-event listeners consult this single decision point (instead of reading
- * `watchOnChangeEnabled` directly) so the mobile constraint holds no matter how the persisted flag
- * got there. Pure and platform-agnostic — the caller passes `Platform.isMobile` — so it needs no
- * Obsidian mock to unit test. A no-op on desktop (`isMobile` false passes `watchOnChangeEnabled`
- * straight through).
- */
-export function isWatchModeActive(watchOnChangeEnabled: boolean, isMobile: boolean): boolean {
-  return watchOnChangeEnabled && !isMobile;
 }
 
 /**

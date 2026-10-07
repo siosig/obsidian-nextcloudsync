@@ -20,6 +20,10 @@
 //
 //   Stay silent unless the user has to know. Watch mode runs unattended, so routine uploads and
 //   downloads say nothing; only a failure or a genuine divergence raises a notice.
+//
+//   Respect "Wi-Fi only" (feature 091). Each operation first asks the same question the full sync
+//   asks at its entry, and on cellular does nothing at all; the change is picked up by the next
+//   full sync's scan.
 import { Notice } from 'obsidian';
 import { FileState, RemoteFileInfo, SyncSessionSummary, NetworkError } from '../../types';
 import { LocalAdapter } from '../../data/LocalAdapter';
@@ -38,6 +42,9 @@ import { isLocallyUnchanged } from '../policy';
 import { FileLogger } from '../../util/FileLogger';
 import { sha256 } from '../../util/hash';
 import { AsyncMutex } from '../../util/AsyncMutex';
+
+/** Feature 091: the operation names used in the "skipped on cellular" log line. */
+type WatchOpName = 'sync' | 'delete' | 'rename' | 'folder-create' | 'folder-delete' | 'folder-rename';
 
 /** The connected server, resolved by the caller before each operation. */
 export interface Connection {
@@ -62,6 +69,12 @@ export interface WatchDeps {
   /** The rename tracker, created lazily by the engine because it needs the connected client. */
   renameTracker(): RenameTracker;
 
+  /**
+   * Feature 091 (FR-005): the SAME "Wi-Fi only" decision the full sync makes at its entry
+   * (SyncEngine.isBlockedByWifiOnly -> isCellularBlocked). True means: skip this watch operation
+   * entirely — no network, no local write, no StateDB change.
+   */
+  isBlockedByWifiOnly(): boolean;
   /** Whether a full sync is running right now. */
   isSyncRunning(): boolean;
   /**
@@ -136,6 +149,18 @@ export class WatchOperations {
     if (this.inFlight === 0 && !this.deps.isSyncRunning()) this.deps.statusBar.setStatus('idle');
   }
 
+  /**
+   * Feature 091 (FR-005/FR-006): skip a watch operation while "Wi-Fi only" is on and the
+   * connection is cellular. Decided at execution time, before any lock, StateDB read or network
+   * call, so a skip leaves nothing behind: the next full sync finds the change on its own scan
+   * (self-healing, FR-007). Silent apart from one log line — the user asked for this.
+   */
+  private skippedOnCellular(op: WatchOpName, target: string): boolean {
+    if (!this.deps.isBlockedByWifiOnly()) return false;
+    void this.deps.logger?.log(`watch: skipped ${op} ${target} — Wi-Fi only is on and the connection is cellular`);
+    return true;
+  }
+
   /** Run `fn` with exclusive access to `path`, queueing FIFO behind any cycle already holding it. */
   private withPathLock<T>(path: string, fn: () => Promise<T>): Promise<T> {
     let lock = this.pathLocks.get(path);
@@ -169,6 +194,7 @@ export class WatchOperations {
    */
   async syncSingleFile(path: string): Promise<void> {
     if (this.deps.isSystemExcluded(path)) return;
+    if (this.skippedOnCellular('sync', path)) return;
     // The two early exits below stay OUTSIDE the lock: neither touches shared state, and taking a
     // lock to decide not to act would queue a no-op behind real work.
     return this.withPathLock(path, () => this.syncSingleFileLocked(path));
@@ -248,6 +274,7 @@ export class WatchOperations {
    */
   async deleteSingleFile(path: string): Promise<void> {
     if (this.deps.isSystemExcluded(path)) return;
+    if (this.skippedOnCellular('delete', path)) return;
     // Same lock as syncSingleFile: an upload and a delete crossing on one path decide between "the
     // file comes back" and "the file is gone" by timing alone.
     return this.withPathLock(path, () => this.deleteSingleFileLocked(path));
@@ -289,6 +316,7 @@ export class WatchOperations {
   /** MOVE a single file on the remote when it was renamed/moved locally. */
   async renameSingleFile(oldPath: string, newPath: string): Promise<void> {
     if (this.deps.isSystemExcluded(oldPath) && this.deps.isSystemExcluded(newPath)) return;
+    if (this.skippedOnCellular('rename', `${oldPath} → ${newPath}`)) return;
     // Both ends are locked: a rename moves state between two paths, so holding only one leaves the
     // other open to a concurrent cycle acting on a half-applied move.
     return this.withTwoPathLocks(oldPath, newPath, () => this.renameSingleFileLocked(oldPath, newPath));
@@ -315,6 +343,7 @@ export class WatchOperations {
    */
   async createSingleFolder(path: string): Promise<void> {
     if (this.deps.isSystemExcluded(path)) return;
+    if (this.skippedOnCellular('folder-create', path)) return;
     const conn = await this.deps.connect();
     this.begin();
     try {
@@ -337,6 +366,7 @@ export class WatchOperations {
    */
   async deleteSingleFolder(path: string): Promise<void> {
     if (this.deps.isSystemExcluded(path)) return;
+    if (this.skippedOnCellular('folder-delete', path)) return;
     if (!this.deps.stateDB.getDir(path)) return; // untracked → nothing to do on the remote
     // Feature 086: same rule as deleteSingleFile (C-2 row 1). This one had no such guard, and it is
     // the loudest sink there is — a recursive collection DELETE. A running scan trashes folders
@@ -373,6 +403,7 @@ export class WatchOperations {
    */
   async renameSingleFolder(oldPath: string, newPath: string): Promise<void> {
     if (this.deps.isSystemExcluded(oldPath) && this.deps.isSystemExcluded(newPath)) return;
+    if (this.skippedOnCellular('folder-rename', `${oldPath} → ${newPath}`)) return;
     const conn = await this.deps.connect();
     this.begin();
     try {

@@ -14,7 +14,8 @@
 //     environment.
 //   * All device interaction goes through the WebdriverIO / Appium protocol
 //     (`mobile: shell`, `takeScreenshot`, `pullFile`). A local `adb` binary is never
-//     spawned — the emulator lives on a remote AVD host, not on this machine.
+//     spawned — the Android device is a Redroid container reached over the network
+//     (`bash tests/docker/run.sh b3`), not a local emulator.
 import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 

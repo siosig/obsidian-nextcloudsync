@@ -35,10 +35,18 @@ describeLive('Layer A — versions (VR)', (getEnv) => {
 
     const files = await client.getFiles('');
     const fileId = files.find((f) => f.path.endsWith('vr.md'))?.fileId;
-    if (!fileId) { console.warn('[e2e] VR skipped: no fileId from PROPFIND'); return; }
+    if (!fileId) {
+      if (process.env.SUITE_REQUIRE_ENV === '1') throw new Error('no fileId from PROPFIND');
+      console.warn('[e2e] VR skipped: no fileId from PROPFIND');
+      return;
+    }
 
     const versions = await client.listVersions(fileId);
-    if (versions.length === 0) { console.warn('[e2e] VR skipped: versioning app disabled'); return; }
+    if (versions.length === 0) {
+      if (process.env.SUITE_REQUIRE_ENV === '1') throw new Error('versioning app disabled');
+      console.warn('[e2e] VR skipped: versioning app disabled');
+      return;
+    }
 
     // VR-1: newest-first ordering.
     for (let i = 1; i < versions.length; i++) {

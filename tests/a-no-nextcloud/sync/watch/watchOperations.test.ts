@@ -136,6 +136,7 @@ function build(o: Opts = {}, over: Partial<WatchDeps> = {}) {
         calls.renames.push([a, b]);
       },
     }) as unknown as RenameTracker,
+    isBlockedByWifiOnly: () => false,
     isSyncRunning: () => o.running === true,
     processFile: async (r: RemoteFileInfo, s: SyncSessionSummary) => {
       calls.processed.push(r.path);

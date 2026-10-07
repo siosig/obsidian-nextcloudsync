@@ -1,16 +1,17 @@
 // Classification "b-2" (live Nextcloud + real Obsidian UI) runner config.
 // wdio-obsidian-service downloads & launches Obsidian with this plugin installed
-// and enabled (no Obsidian account needed). Runs ONLY via `pnpm test:b2`; never
-// in the default `pnpm test` or CI.
+// and enabled (no Obsidian account needed). Runs ONLY via
+// `bash tests/docker/run.sh b2` (Docker); never in the default `pnpm test` or CI.
+// The container provides the display (Xvfb), the toolchain and the Nextcloud
+// connection (NEXTCLOUD_* via process.env).
 //
-// Prerequisites (install first — kept out of the default toolchain):
-//   pnpm add -D wdio-obsidian-service wdio-obsidian-reporter @wdio/cli \
-//     @wdio/local-runner @wdio/mocha-framework mocha @types/mocha
-//   pnpm build   # produce main.js / manifest.json / styles.css at repo root
-// Linux/CI also needs a display: run under `xvfb-run -a pnpm test:b2`.
+// TLS: the run CA is trusted through the NSS user database (~/.pki/nssdb) that the
+// container entrypoint populates, so Electron validates certificates normally.
+// There is deliberately no certificate-error bypass in this config.
 //
 // Skips cleanly when NEXTCLOUD_* are absent (the plugin needs them to talk to the
-// server); Obsidian itself is provisioned by the service regardless.
+// server) unless SUITE_REQUIRE_ENV=1, in which case env.ts throws; Obsidian itself
+// is provisioned by the service regardless.
 import * as path from 'path';
 import { requireUiEnv } from './tests/b2-nextcloud-ui/support/env';
 
@@ -34,11 +35,9 @@ export const config: WebdriverIO.Config = {
         // Throwaway vault opened as a copy so tests never mutate the template.
         vault: 'tests/b2-nextcloud-ui/support/vault',
       },
-      // Electron sandbox off for CI containers. The ephemeral test instance
-      // (nextcloud-testinstance) uses a self-signed cert; accept it so requestUrl
-      // (Chromium's net stack under Electron) doesn't reject with ERR_CERT_AUTHORITY_INVALID.
-      'goog:chromeOptions': { args: ['--no-sandbox', '--ignore-certificate-errors'] },
-      acceptInsecureCerts: true,
+      // Electron sandbox off for containers. Certificates are NOT bypassed: the run
+      // CA is installed in the NSS user database, which Chromium consults.
+      'goog:chromeOptions': { args: ['--no-sandbox'] },
     } as WebdriverIO.Capabilities,
   ],
 

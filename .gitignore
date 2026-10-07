@@ -62,3 +62,4 @@ scripts/
 /.specify/
 /.vscode/
 /specs/
+.test-output/

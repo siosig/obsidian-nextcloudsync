@@ -17,7 +17,7 @@
 // Prefer suspend(). restart() exists for cases that genuinely need a cold start.
 //
 // NOTE (verify on the first real run, see research.md R-8): whether the HOME key alone is enough to
-// get the OS to suspend the WebView's timers on this emulator image has not been confirmed against a
+// get the OS to suspend the WebView's timers on this Redroid image has not been confirmed against a
 // live device yet. If a scenario that relies on suspend() passes even with the fix reverted, this is
 // the first thing to check — raise BACKGROUND_SETTLE_MS, or push a second app to the foreground with
 // `startOtherApp()`, before concluding the code is correct.

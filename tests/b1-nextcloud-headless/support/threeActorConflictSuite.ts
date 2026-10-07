@@ -5,7 +5,7 @@
 //   - delete-vs-modify   → convergence (self-healing), winner left to the strategy
 // Cluster-only: N needs SSH + occ. describeCluster() SKIPS the whole suite (visible in the report,
 // never a silent pass) when the cluster env is absent, so the default `pnpm test:b1` stays green.
-// Run the matrix via `pnpm test:b1:cluster` (which exports the N-actor env).
+// Run the matrix via `bash tests/docker/run.sh b1` (which exports the N-actor env).
 import { describeCluster } from './env';
 import { setupWorkspace } from './workspace';
 import { cleanupWorkspace, IsolatedWorkspace } from './isolation';
@@ -74,7 +74,7 @@ export function defineThreeActorConflict(cfg: PairCfg): void {
       //   merge     → semantic 3-way: arrays SET-merge (union tl+tr); the title scalar clash defers to
       //               conflictStrategy (fixed remote-win here) → title REMOTE.
       //   local-win → adopt the WHOLE local frontmatter block verbatim (title LOCAL, tags [t0, tl]);
-      //               remote's tr is NOT unioned in ("merge 以外は丸ごと片側採用").
+      //               remote's tr is NOT unioned in (everything other than "merge" adopts one side wholesale).
       //   remote-win→ adopt the WHOLE remote frontmatter block verbatim (title REMOTE, tags [t0, tr]).
       if (fm === 'merge') {
         expect(hasTag(fmb, 'tl')).toBe(true);
