@@ -302,6 +302,7 @@ export class SyncEngine {
       isSystemExcluded: (p) => this.isSystemExcluded(p),
       connect: () => this.connection(),
       renameTracker: () => this.getOrCreateRenameTracker(),
+      isBlockedByWifiOnly: () => this.isBlockedByWifiOnly(),
       isSyncRunning: () => this.running,
       processFile: (remote, summary) => this.processFileWithRetry(remote, summary),
       queueRetry: (p) => { this.retryQueue.push(p); },
@@ -364,9 +365,11 @@ export class SyncEngine {
   }
 
   /**
-   * "Wi-Fi only" gate. Skips when enabled and on a cellular connection.
-   * Network type is only detectable on Chromium (desktop / Android); iOS (WebKit) has no
-   * `navigator.connection`, so the setting is ignored there (and its toggle is disabled).
+   * "Wi-Fi only" gate. Skips when enabled and on a cellular connection. Shared by the full sync's
+   * entry and every watch-mode operation (feature 091), so both paths answer the same way.
+   * `navigator.connection.type` is exposed only by Chromium on Android (and ChromeOS): desktop
+   * Electron leaves it undefined, so this never blocks there, and iOS (WebKit) has no
+   * `navigator.connection` at all (the setting is ignored there and its toggle is disabled).
    */
   private isBlockedByWifiOnly(): boolean {
     const conn = (navigator as Navigator & { connection?: { type?: string } }).connection;

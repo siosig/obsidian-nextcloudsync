@@ -23,7 +23,7 @@ describe('applyMobileFirstRunDefaults (§15.3)', () => {
       applyMobileFirstRunDefaults({}, s);
       expect(s.maxFileSizeMB).toBe(20);
     });
-    it('watchOnChangeEnabled defaults to false (no reliable change events, battery)', () => {
+    it('[SPEC:MWM-6] watchOnChangeEnabled defaults to false on mobile (opt-in: runs only in the foreground and costs battery/data)', () => {
       const s = freshSettings();
       applyMobileFirstRunDefaults({}, s);
       expect(s.watchOnChangeEnabled).toBe(false);
@@ -43,7 +43,7 @@ describe('applyMobileFirstRunDefaults (§15.3)', () => {
       applyMobileFirstRunDefaults({ syncIntervalMinutes: 15 }, s);
       expect(s.syncIntervalMinutes).toBe(15);
     });
-    it('keeps persisted values for the other three mobile keys', () => {
+    it('[SPEC:MWM-6] keeps persisted values for the other three mobile keys', () => {
       const s = freshSettings();
       s.syncOnWifiOnly = false;
       s.maxFileSizeMB = 100;

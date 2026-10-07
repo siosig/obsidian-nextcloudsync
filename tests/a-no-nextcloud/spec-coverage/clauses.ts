@@ -201,9 +201,15 @@ export const CLAUSES: Clause[] = [
   { id: 'G5-1', source: 'specs/main/spec.md §18.1 (chunked upload carries the If-Match precondition like single PUT — large files are not exempt from optimistic concurrency)', layer: 'a' },
   { id: 'G6-1', source: 'specs/main/spec.md §18.1 (force-resolve / bulk-resolve are guarded by an instance field that survives re-render, preventing double execution)', layer: 'a' },
   { id: 'G6-2', source: 'specs/main/spec.md §18.1 (version Restore is guarded by a modal-level in-flight gate)', layer: 'a' },
-  { id: 'G7-2', source: 'specs/main/spec.md §18.1 (mobile watch-mode is gated at runtime on Platform.isMobile, not only by first-run defaulting)', layer: 'a' },
   { id: 'G3-1', source: 'specs/main/spec.md §18.1 (empty-base merge never silently fuses two divergent sides at the character level; line-preserving unions stay clean)', layer: 'a' },
   { id: 'G3-3', source: 'specs/main/spec.md §18.1 (MergeEngine.merge for non-markdown never splits a leading --- block as frontmatter — a one-sided in-block edit is 3-way merged, not discarded)', layer: 'a' },
+  // --- MWM: watch mode on mobile + "Wi-Fi only" applied to watch (feature 091) ---
+  { id: 'MWM-1', source: 'specs/main/spec.md §5.7c (the "Sync on file change" toggle is enabled and described identically on every platform)', layer: 'a' },
+  { id: 'MWM-2', source: 'specs/main/spec.md §5.7c (while "Wi-Fi only" blocks on cellular, all six watch operations end with zero side effects and one log line)', layer: 'a' },
+  { id: 'MWM-3', source: 'specs/main/spec.md §5.7c (watch changes skipped on cellular converge on a live server after the next full sync on Wi-Fi)', layer: 'b-1' },
+  { id: 'MWM-4', source: 'specs/main/spec.md §5.7c (on a real Android device the WebView exposes navigator.connection.type and watch mode pushes a create and an edit without "Sync now")', layer: 'b-3', waiver: 'Verified in the b-3 layer against a real Obsidian on a real Android emulator (bash tests/docker/run.sh b3); cannot run in the default CI suite, which has no device.' },
+  { id: 'MWM-5', source: 'specs/main/spec.md §5.7c (the real SyncEngine hands its own "Wi-Fi only" decision to watch mode: syncOnWifiOnly x connection type x iOS)', layer: 'a' },
+  { id: 'MWM-6', source: 'specs/main/spec.md §15 (watchOnChangeEnabled stays opt-in on mobile: first-run default false, a saved value is kept)', layer: 'a' },
   // --- LOG: active-log self-sync exclusion + write-failure visibility ---
   { id: 'LOG-1', source: 'specs/main/spec.md §9.1', layer: 'a' },
   { id: 'LOG-2', source: 'specs/main/spec.md §12 (log write failures surface as a Notice)', layer: 'a' },

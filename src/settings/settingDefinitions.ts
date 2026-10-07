@@ -343,11 +343,9 @@ function syncGroup(host: SettingDefinitionsHost): SettingDefinitionGroup {
     },
     {
       name: 'Sync on file change',
-      desc: host.isMobile
-        ? 'Disabled on mobile (the OS suspends background work). Use "Startup sync delay" or "Sync now".'
-        : 'Immediately sync a file or folder right after you create, edit, delete, or rename it (a short delay after you stop editing). Deletions and renames propagate too. Works alongside the periodic sync interval. Desktop only.',
+      desc: 'Immediately sync a file or folder right after you create, edit, delete, or rename it (a short delay after you stop editing). Deletions and renames propagate too. Works alongside the periodic sync interval. On mobile it runs only while Obsidian is open; anything it misses is sent on the next sync. Paused on cellular when "Sync on Wi-Fi only" is on.',
       aliases: ['watch', 'auto sync', 'realtime', 'live', 'on save'],
-      control: { type: 'toggle', key: 'watchOnChangeEnabled', disabled: () => host.isMobile },
+      control: { type: 'toggle', key: 'watchOnChangeEnabled' },
     },
     slider(
       host,
