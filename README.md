@@ -134,6 +134,8 @@ Mobile is supported, with a few platform-aware differences (desktop behaviour is
    **not just the host**. Entering only `https://cloud.example.com` fails with **HTTP 405**. `<user>` is your
    Nextcloud user ID (usually not your email). You may append a subfolder (e.g. `.../<user>/Documents`) to
    sync there instead of at the account root.
+   The subfolder must already exist in Nextcloud: the plugin creates the vault folder inside it but does not create the
+   subfolder itself. If the sync fails with `HTTP 409 (MKCOL)`, check that it exists (see the FAQ).
 3. Authenticate:
    - **Recommended:** click **Login with browser** (Login Flow v2), approve in the browser, and credentials are filled in and stored automatically; **or**
    - enter your **username** and a manually issued **app password**.
@@ -181,6 +183,14 @@ A 423 means the file is locked on the Nextcloud **server** side, not by this plu
 When the server reports a lock owner, the plugin's notice and Sync Status result listing now show that owner instead of the previous bare "HTTP 423 (PUT)" message with no explanation.
 
 This plugin does not resolve the lock automatically and has no in-app "unlock" action — releasing a lock without knowing its origin risks overwriting someone else's in-progress edit. To resolve it, close the session or tab holding the lock (e.g. the Nextcloud Text editor tab), or ask a server administrator to clear it if it's genuinely leaked or stuck.
+
+---
+
+**I got `HTTP 409 (MKCOL)` after adding a subfolder to the Server URL — what does that mean?**
+
+A 409 on `MKCOL` means a parent folder is missing on the server. The usual cause is a Server URL such as `https://<host>/remote.php/dav/files/<user>/Test` where `Test` does not exist in Nextcloud yet: the plugin creates the vault folder *inside* `Test` but does not create `Test` itself, because a mistyped path would otherwise be created silently and put your vault in the wrong place. The notice and the Sync Status result listing now say this next to the error.
+
+To fix it, create the subfolder in Nextcloud (for example in the web interface) or correct the Server URL, then sync again.
 
 ---
 

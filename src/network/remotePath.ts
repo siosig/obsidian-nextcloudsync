@@ -1,6 +1,6 @@
 import { NO_CACHE_HEADERS } from './noCacheHeaders';
 import { requestUrlWithTimeout } from './requestWithTimeout';
-import { NetworkError, RemoteDirCreateError, VaultRootOutcome } from '../types';
+import { MissingParentFolderError, NetworkError, RemoteDirCreateError, VaultRootOutcome } from '../types';
 import { RemoteDirCache, ancestorsOf } from './RemoteDirCache';
 
 // Maps between Vault-relative paths (what the engine uses) and files-root-relative remote paths (<base>/...);
@@ -132,5 +132,6 @@ export async function mkcolStrict(
   }, ctx.timeoutMs ?? 0);
   if (res.status === 201) return 'created';
   if (res.status === 405) return 'exists';
+  if (res.status === 409) throw new MissingParentFolderError();
   throw new NetworkError(res.status, res.text, 'MKCOL');
 }

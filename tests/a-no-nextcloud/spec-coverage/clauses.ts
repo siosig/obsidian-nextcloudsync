@@ -535,6 +535,10 @@ export const CLAUSES: Clause[] = [
   { id: 'URE-3', source: 'specs/065-unify-url-encoding/contracts/remote-url-encoding.md (C-3: encode → hrefToRelative round-trips back to the original vault-relative path)', layer: 'a' },
   { id: 'URE-4', source: 'specs/065-unify-url-encoding/contracts/remote-url-encoding.md (C-4: encodeServerUrl leaves an already-encoded Server URL untouched and encodes a raw one, never producing %25)', layer: 'a' },
   { id: 'URE-5', source: 'specs/065-unify-url-encoding/contracts/remote-url-encoding.md (C-5: NetworkError carries the HTTP method, message keeps the "HTTP <status>" prefix, and every collected sync error is written to the debug log individually without credentials)', layer: 'a' },
+  { id: 'SU-1', source: 'docs/spec.md §11.2', layer: 'a' },
+  { id: 'SU-2', source: 'docs/spec.md §11.2', layer: 'a' },
+  { id: 'SU-3', source: 'docs/spec.md §11.2', layer: 'b-1' },
+  { id: 'SU-4', source: 'docs/spec.md §11.2', layer: 'a' },
   // SWC: lint gate resync with the reviewer
   // C1 (lint gate follows the reviewer-equivalent plugin version, `pnpm lint` exits 0) is a whole-gate
   // outcome, not a unit-testable value: the SWC-1/SWC-3 static checks plus a manual `pnpm lint` run cover it.
