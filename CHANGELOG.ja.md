@@ -11,6 +11,12 @@
 
 > 英語版（原文）は [`CHANGELOG.md`](CHANGELOG.md) を参照してください。
 
+## [1.0.10] - 2026-10-08
+
+### 変更
+- **Server URL のサブフォルダが無いときのエラーを分かりやすくしました。** Server URL の末尾に付けたサブフォルダが Nextcloud 上に無いと、これまでは `HTTP 409 (MKCOL)` とだけ表示されて失敗していました。通知と Sync Status の一覧に、親フォルダが無いこと、先に Nextcloud 上でサブフォルダを作成する必要があること（プラグインは作成しません）が表示されます。README にも同じ説明を追記しました。同期の動作は変わりません。
+- **開発用依存の整理。** テストスイートだけが使う YAML ライブラリを置き換え、コミュニティディレクトリの審査で指摘されないようにしました。配布されるプラグインの動作は変わりません。
+
 ## [1.0.9] - 2026-10-08
 
 ### 追加
@@ -478,6 +484,7 @@ Nextcloud 特化同期エンジンの初回公開リリース（0.2.0 〜 0.2.1�
 - **Dry-run でのコンフリクト結果の明確化** — 初回同期プレビューがコンフリクト解決の結果を説明し、各コンフリクトファイルをクリックするとマージ後の内容（変更前後）をプレビューできます。
 - **汎用 WebDAV より高速な同期** — 内容ハッシュと Nextcloud の `sync-token` を突き合わせ、毎回リモートツリー全体を再帰的に走査するのではなく、実際に変更された分だけを転送します。更新日時ベースの WebDAV プラグインより同期が明確に速くなります。
 
+[1.0.10]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.10
 [1.0.9]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.9
 [1.0.8]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.8
 [1.0.7]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.7

@@ -11,6 +11,12 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [1.0.10] - 2026-10-08
+
+### Changed
+- **Clearer error when the Server URL subfolder is missing.** If the Server URL ends in a subfolder that does not exist in Nextcloud, the sync used to fail with a bare `HTTP 409 (MKCOL)`. The notice and the Sync Status listing now say that a parent folder is missing and that the subfolder must be created in Nextcloud first (the plugin does not create it). The README explains this too. Sync behavior is unchanged.
+- **Development dependency cleanup.** The YAML library used only by the test suite was replaced, so the community-directory review no longer flags it. None of this changes the packaged plugin's behavior.
+
 ## [1.0.9] - 2026-10-08
 
 ### Added
@@ -478,6 +484,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[1.0.10]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.10
 [1.0.9]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.9
 [1.0.8]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.8
 [1.0.7]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.7

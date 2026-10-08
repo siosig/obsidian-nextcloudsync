@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (1.0.10-beta.1)
+## What's new in this release (1.0.10)
 
-- **Clearer error when the Server URL subfolder is missing (1.0.10-beta.1)** — if the Server URL ends in a subfolder that does not exist in Nextcloud, the sync used to fail with a bare `HTTP 409 (MKCOL)`. The notice and the Sync Status listing now say that a parent folder is missing and that the subfolder must be created in Nextcloud first (the plugin does not create it). The README explains this too. Sync behavior is unchanged.
+- **Clearer error when the Server URL subfolder is missing (1.0.10)** — if the Server URL ends in a subfolder that does not exist in Nextcloud, the sync used to fail with a bare `HTTP 409 (MKCOL)`. The notice and the Sync Status listing now say that a parent folder is missing and that the subfolder must be created in Nextcloud first (the plugin does not create it). The README explains this too. Sync behavior is unchanged.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
