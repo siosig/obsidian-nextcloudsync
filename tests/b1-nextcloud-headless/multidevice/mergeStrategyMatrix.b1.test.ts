@@ -1,13 +1,9 @@
-// Layer B — two-client merge-strategy × edit-timing matrix against a live Nextcloud (Docker).
-// Two real SyncEngine devices (D, M) share one remote folder. For every Auto Merge File strategy
-// and across the edit-timing permutations (sequential / concurrent D-first / concurrent M-first /
-// repeated rounds) we assert the plugin converges correctly: no data loss for the winning side, the
-// merge strategy preserves BOTH non-overlapping edits with NO duplicated blocks (feature 038's true
-// 3-way base), and a follow-up sync leaves both sides identical and unconflicted (self-healing).
-//
-// The merge base store (feature 038) is wired into each device by makeDevice exactly as in
-// production, so this exercises the real cross-device 3-way merge — the only place the empty-base
-// duplication bug could regress.
+// Layer B — two-client merge-strategy x edit-timing matrix against a live Nextcloud. Two real SyncEngine devices (D, M)
+// share one remote folder; for every Auto Merge File strategy and edit-timing permutation (sequential / concurrent
+// D-first / concurrent M-first / repeated rounds) the plugin must converge: no data loss for the winning side, merge
+// keeps BOTH non-overlapping edits with NO duplicated blocks (true 3-way base), and a follow-up sync leaves both sides
+// identical and unconflicted. The merge base store is wired into each device by makeDevice as in production, so this
+// exercises the real cross-device 3-way merge, the only place the empty-base duplication bug could regress.
 import { describeLive } from '../support/env';
 import { setupWorkspace } from '../support/workspace';
 import { cleanupWorkspace, IsolatedWorkspace } from '../support/isolation';
@@ -33,14 +29,12 @@ describeLive('Layer B — 2-client merge-strategy × timing matrix', (getEnv) =>
 
   const remote = (p: string): Promise<string> => baseClient.downloadFile(p).then(decodeBuf);
 
-  /** Fresh device pair sharing the remote; M (resolver) carries the strategy under test. */
   function pair(tag: string, over: Partial<DavSyncSettings>): { d: Device; m: Device } {
     const d = makeDevice(getEnv(), ws.remoteBase, `D-${tag}`, over);
     const m = makeDevice(getEnv(), ws.remoteBase, `M-${tag}`, { syncIntervalMinutes: 0, watchOnChangeEnabled: false, ...over });
     return { d, m };
   }
 
-  /** Seed file `f` identically on both devices (both end with base[f] = body). */
   async function seedBoth(d: Device, m: Device, f: string, body: string): Promise<void> {
     d.vault.seedLocal('anchor.md', 'anchor'); // keep the remote folder non-empty across the run
     d.vault.seedLocal(f, body);
@@ -48,7 +42,7 @@ describeLive('Layer B — 2-client merge-strategy × timing matrix', (getEnv) =>
     await m.sync();   // M downloads f; M base = body
   }
 
-  // ── Sequential edits (no conflict): each side's change propagates cleanly ──────────────────────
+  // Sequential edits (no conflict): each side's change propagates cleanly
   it('sequential edits propagate with no spurious conflict', async () => {
     const { d, m } = pair('seq', { autoMergeFileStrategy: 'merge' });
     const f = 'seq.md';
@@ -65,7 +59,7 @@ describeLive('Layer B — 2-client merge-strategy × timing matrix', (getEnv) =>
     expect(d.stateDB.getFile(f)?.isConflicted ?? false).toBe(false);
   }, 180_000);
 
-  // ── merge strategy: both non-overlapping edits survive, no duplicated blocks, converge ─────────
+  // merge strategy: both non-overlapping edits survive, no duplicated blocks, converge
   it.each([
     ['D-first', false],
     ['M-first', true],
@@ -94,13 +88,13 @@ describeLive('Layer B — 2-client merge-strategy × timing matrix', (getEnv) =>
     expect(dC).toBe(await remote(f)); // and the server matches
     expect(dC).toContain('L1-D');     // D's edit preserved (no data loss)
     expect(dC).toContain('L3-M');     // M's edit preserved (no data loss)
-    expect(occ(dC, 'L2')).toBe(1);    // shared block NOT duplicated (feature 038 base)
+    expect(occ(dC, 'L2')).toBe(1);    // shared block NOT duplicated (true 3-way base)
     expect(occ(dC, 'L1-D')).toBe(1);
     expect(occ(dC, 'L3-M')).toBe(1);
     expect(m.stateDB.getFile(f)?.isConflicted ?? false).toBe(false);
   }, 180_000);
 
-  // ── merge strategy, repeated conflict rounds: duplication must not accumulate (feature 038) ────
+  // merge strategy, repeated conflict rounds: duplication must not accumulate
   it('merge strategy, repeated conflict rounds do not accumulate duplicated blocks', async () => {
     const { d, m } = pair('merge-rounds', { autoMergeFileStrategy: 'merge' });
     const f = 'rounds.md';
@@ -125,7 +119,7 @@ describeLive('Layer B — 2-client merge-strategy × timing matrix', (getEnv) =>
     expect(dC.split('\n').filter((l) => l.length > 0).length).toBeLessThanOrEqual(4);
   }, 240_000);
 
-  // ── deterministic strategies: the configured winner takes both sides, the loser is overwritten ─
+  // deterministic strategies: the configured winner takes both sides, the loser is overwritten
   it('local-win → M (resolver/local) content wins on both sides', async () => {
     const { d, m } = pair('local', { autoMergeFileStrategy: 'local-win' });
     const f = 'local.md';

@@ -1,13 +1,7 @@
-// b-3 smoke: prove the plugin actually runs on a real Android runtime and completes one sync
-// round trip in each direction.
-//
-// The first two cases (plugin enabled, settings persist) are PRECONDITIONS, not b-3 clauses —
-// b-2 already covers them on desktop, and the dedup rule says one behaviour lives in one class.
-// They are here so a failure points at the harness rather than at the sync engine.
-//
-// The round-trip cases ARE b-3 clauses (AND-4): on Android the transfer goes through Obsidian's
-// Capacitor `requestUrl`, a different implementation from the Electron one b-2 exercises. Every
-// mobile transfer bug this project has shipped lived in that implementation.
+// b-3 smoke: the plugin runs on a real Android runtime and completes one sync round trip in each direction.
+// The first two cases (plugin enabled, settings persist) are preconditions, not b-3 clauses; they make a failure
+// point at the harness. The round-trip cases are b-3 clauses (AND-4): on Android the transfer goes through
+// Capacitor's `requestUrl`, a different implementation from the Electron one b-2 exercises.
 import { browser, expect } from '@wdio/globals';
 import { requireAndroidEnv, requireEnvOrSkip } from '../support/env';
 import { seedConnection, pluginLogTail } from '../support/plugin';
@@ -15,7 +9,7 @@ import { RemoteProbe } from '../support/webdav';
 
 const env = requireAndroidEnv();
 
-/** Unique per run so a crashed run never poisons the next one. */
+// Unique per run so a crashed run never poisons the next one.
 const stamp = `b3-smoke-${process.pid}`;
 
 describe('b-3 smoke — plugin runs on a real Android runtime', function () {
@@ -33,7 +27,6 @@ describe('b-3 smoke — plugin runs on a real Android runtime', function () {
     for (const p of created) await probe.removeQuietly(p);
   });
 
-  // --- preconditions (not clause-tagged; see file header) ------------------------------------
   it('the Nextcloud Sync plugin is installed and enabled', async () => {
     const enabled = await browser.executeObsidian(
       ({ app }) => !!(app as any).plugins.enabledPlugins.has('nextcloud-sync'),
@@ -42,8 +35,7 @@ describe('b-3 smoke — plugin runs on a real Android runtime', function () {
   });
 
   it('the plugin reports the Android runtime, not desktop', async () => {
-    // Guards against the whole suite silently running on a desktop build: every b-3 clause below
-    // assumes Capacitor, and would prove nothing under Electron.
+    // Guards against the suite silently running on a desktop build; every b-3 clause assumes Capacitor.
     const platform = await browser.executeObsidian(({ obsidian }) => ({
       isAndroidApp: (obsidian as any).Platform.isAndroidApp,
       isDesktopApp: (obsidian as any).Platform.isDesktopApp,
@@ -53,8 +45,6 @@ describe('b-3 smoke — plugin runs on a real Android runtime', function () {
   });
 
   it('connection settings and credentials are in place', async function () {
-    // seedConnection() already ran in before(); this asserts the plugin actually kept them, which is
-    // the precondition every sync case below depends on.
     const state = await browser.executeObsidian(({ app }) => {
       const p = (app as any).plugins.plugins['nextcloud-sync'];
       return { username: p.settings.username, secretId: p.settings.passwordSecretId };
@@ -63,7 +53,6 @@ describe('b-3 smoke — plugin runs on a real Android runtime', function () {
     expect(state.secretId).toBeTruthy();
   });
 
-  // --- b-3 clauses ---------------------------------------------------------------------------
   it('[SPEC:AND-4] a locally created note reaches the server with identical content', async function () {
     const rel = `${stamp}-local-to-remote.md`;
     const content = `local origin ${stamp}\n`;
@@ -85,7 +74,7 @@ describe('b-3 smoke — plugin runs on a real Android runtime', function () {
         timeoutMsg: `${rel} never appeared on the server`,
       });
     } catch (e) {
-      // A bare "never appeared" says nothing about WHY. The plugin's own log does.
+      // The plugin's own log explains why the file never appeared.
       throw new Error(`${(e as Error).message}\n--- plugin debug log ---\n${await pluginLogTail()}`);
     }
 

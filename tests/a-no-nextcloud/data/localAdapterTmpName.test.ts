@@ -1,4 +1,4 @@
-// [SPEC:TN-1..TN-8] specs/main/spec.md — atomic-write temp-file naming under the 255-byte NAME_MAX.
+// [SPEC:TN-1..TN-8] atomic-write temp-file naming under the 255-byte NAME_MAX.
 // The temp file must NOT inherit the target's length: a final name within 255 bytes must always
 // write, even when `target + legacy-suffix` would have exceeded 255 (the Android FILE_NOTCREATED bug).
 // Only a final name that itself exceeds 255 bytes is unwritable; that case yields a friendly error.
@@ -9,15 +9,12 @@ const NAME_MAX = 255;
 const buf = (n: number): ArrayBuffer => new Uint8Array(n).buffer;
 const lastComponent = (p: string): string => p.slice(p.lastIndexOf('/') + 1);
 const byteLen = (s: string): number => new TextEncoder().encode(s).length;
-/** ASCII filename of exactly `n` UTF-8 bytes ending in `.md` (1 byte per char). */
 const nameOfBytes = (n: number): string => 'a'.repeat(n - 3) + '.md';
 
 interface Recorder { writes: string[]; renames: Array<[string, string]>; }
 
-/**
- * In-memory DataAdapter that mimics Android's per-component 255-byte limit: any path whose final
- * component exceeds 255 UTF-8 bytes is rejected with a FILE_NOTCREATED-like error on create/rename.
- */
+// In-memory DataAdapter mimicking Android's per-component 255-byte limit: a final path component over 255 UTF-8 bytes
+// is rejected with a FILE_NOTCREATED-like error on create/rename.
 function fakeFsAdapter(rec: Recorder, statOverride?: () => Promise<{ size: number; mtime: number } | null>): DataAdapter {
   const sizes = new Map<string, number>();
   const enforce = (p: string): void => {

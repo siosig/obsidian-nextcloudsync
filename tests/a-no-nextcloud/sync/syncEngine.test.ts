@@ -10,7 +10,6 @@ function classify(
   remoteId: string,
 ): 'unchanged' | 'local-modified' | 'remote-modified' | 'conflicted' | 'new-remote' | 'new-local' {
   if (!base) {
-    // file not in StateDB
     if (localHash && remoteId) return 'conflicted';
     if (localHash) return 'new-local';
     return 'new-remote';
@@ -75,7 +74,6 @@ describe('StateDB integration with SyncEngine logic', () => {
     await db.load();
     db.setFile({ path: 'a.md', localHash: 'x', remoteId: 'x', idType: 'sha256', size: 10, mtime: 0, remoteFileId: null, isConflicted: true });
     expect(db.countConflicted()).toBe(1);
-    // After resolution
     const f = db.getFile('a.md')!;
     db.setFile({ ...f, isConflicted: false });
     expect(db.countConflicted()).toBe(0);
@@ -86,8 +84,8 @@ describe('SyncEngine.handleConflict — strategy actions (feature 037)', () => {
   const enc = new TextEncoder();
   const toBuf = (s: string): ArrayBuffer => enc.encode(s).buffer;
 
-  // Feature 037: a per-type strategy decides every conflict. Each case sets the relevant strategy
-  // (otherFileStrategy for image.png, or autoMergeFileTypes+autoMergeFileStrategy to route it to merge).
+  // A per-type strategy decides every conflict. Each case sets the relevant strategy (otherFileStrategy for
+  // image.png, or autoMergeFileTypes+autoMergeFileStrategy to route it to merge).
   function makeSettings(over: Partial<DavSyncSettings>): DavSyncSettings {
     return { ...DEFAULT_SETTINGS, deviceId: 'dev-abcd', ...over };
   }
@@ -138,8 +136,8 @@ describe('SyncEngine.handleConflict — strategy actions (feature 037)', () => {
     (engine as unknown as { client: unknown }).client = client;
     (engine as unknown as { uploadStrategy: unknown }).uploadStrategy = { upload };
 
-    // remote.size must match the body length so the spec-025 server-anomaly guard (advertised vs
-    // received) does not refuse the prefer-remote overwrite in these conflict tests.
+    // remote.size must match the body length so the server-anomaly guard (advertised vs received) does not
+    // refuse the prefer-remote overwrite in these conflict tests.
     const harnessRemote: RemoteFileInfo = {
       ...remote, size: enc.encode(remoteContent).byteLength, lastModified: remoteMtime,
     };
@@ -176,9 +174,8 @@ describe('SyncEngine.handleConflict — strategy actions (feature 037)', () => {
     const arg = h.setFile.mock.calls[0][0] as FileState;
     expect(arg.isConflicted).toBe(false);
     expect(arg.remoteId).toBe('rem-checksum');
-    // 051-webdav-cache-headers: forced prefer-remote resolution must fetch through the shared
-    // client.downloadFile() (not a bespoke fetch), since that is the single choke point where
-    // NO_CACHE_HEADERS is applied — proven separately in noCacheHeaders.test.ts.
+    // Forced prefer-remote resolution must fetch through the shared client.downloadFile(), the single choke
+    // point where NO_CACHE_HEADERS is applied (proven in noCacheHeaders.test.ts).
     expect(h.client.downloadFile).toHaveBeenCalledWith('image.png');
   });
 
@@ -265,8 +262,8 @@ describe('SyncEngine.handleConflict — strategy actions (feature 037)', () => {
     expect(h.setFile).not.toHaveBeenCalled();
   });
 
-  // SC-004 self-healing: a latest-mtime tie is a non-destructive no-op and re-evaluates next sync —
-  // once one side becomes newer, the same divergence resolves deterministically.
+  // Self-healing: a latest-mtime tie is a non-destructive no-op and re-evaluates next sync; once one side
+  // becomes newer, the same divergence resolves deterministically.
   it('SH self-healing: a latest-mtime tie is a no-op, then resolves once a side becomes newer', async () => {
     const base: FileState = {
       path: 'image.png', localHash: 'lh', remoteId: 'rh', idType: 'sha256',
@@ -312,8 +309,8 @@ describe('SyncEngine.processRemoteDeletion — out-of-scope safety', () => {
       vault: { adapter: { exists, remove }, getAbstractFileByPath },
       fileManager: { trashFile },
     };
-    // getAllFiles/getAllDirs/deleteDir: feature 086 — the deletion sink forgets a trashed folder's
-    // whole subtree, so it enumerates tracking even for a plain file path (where it finds nothing).
+    // getAllFiles/getAllDirs/deleteDir: the deletion sink forgets a trashed folder's whole subtree, so it
+    // enumerates tracking even for a plain file path (where it finds nothing).
     const stateDB = { deleteFile, getAllFiles: () => [], getAllDirs: () => [], deleteDir: jest.fn() };
     const bookmarks = opts.bookmarks ?? false;
     const settings = {
@@ -479,10 +476,9 @@ describe('SyncEngine.processRemoteFile — divergent (corrupt) baseline detectio
   }
 
   it('reconciles via handleConflict when an etag baseline is internally inconsistent (size disagrees with the recorded hash)', async () => {
-    // Reproduces the real bug: base.localHash matches the CURRENT local file,
-    // remote etag is unchanged (remoteChanged=false), yet base.size records the
-    // remote's size (10600) — so local(small) and remote(10600) genuinely differ.
-    // The old code classified this "unchanged" and skipped it forever.
+    // base.localHash matches the CURRENT local file and the remote etag is unchanged (remoteChanged=false), yet
+    // base.size records the remote's size (10600), so local(small) and remote(10600) genuinely differ: such a
+    // file must not be classified "unchanged" and skipped forever.
     const localData = enc.encode('short-local-content').buffer;
     const localHash = await sha256(localData);
     const base: FileState = {

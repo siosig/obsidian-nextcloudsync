@@ -1,13 +1,8 @@
-// [SPEC:UBC-1..UBC-8] specs/063-fix-untracked-overwrite/contracts/sync-classification.md
-//
-// Rows 8/9 of the classification contract: a file that exists on BOTH sides but has NO StateDB
-// record (base === undefined). The incremental path used to skip local-change detection entirely
-// whenever base was missing, so it fell through to "remote changed only" and downloaded over the
-// local content — silent data loss (GitHub issue #23).
-//
-// These tests drive the REAL SyncEngine.processRemoteFile. They deliberately do NOT reimplement the
-// classification logic: the bug survived for so long precisely because syncEngine.test.ts asserted
-// against a local copy of `classify()` that the engine never calls.
+// [SPEC:UBC-1..UBC-8] A file that exists on BOTH sides but has NO StateDB record (base === undefined) must
+// still get local-change detection; otherwise it falls through to "remote changed only" and is downloaded
+// over the local content: silent data loss (GitHub issue #23; docs/spec.md §5.3).
+// These tests drive the REAL SyncEngine.processRemoteFile and do NOT reimplement the classification: a
+// test asserting against a local copy of `classify()` that the engine never calls hid the bug.
 import { DataAdapter } from 'obsidian';
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { StateDB } from '../../../src/data/StateDB';
@@ -38,10 +33,8 @@ function makeSummary(): SyncSessionSummary {
   };
 }
 
-/**
- * In-memory local vault. `files` maps path -> current content; a path that is absent means the file
- * does not exist locally. mtimes are fixed per path so the deterministic strategies are predictable.
- */
+// In-memory local vault. `files` maps path -> current content; a path that is absent means the file does
+// not exist locally. mtimes are fixed per path so the deterministic strategies are predictable.
 function makeLocalAdapter(files: Record<string, string>, mtimes: Record<string, number> = {}) {
   const mtimeOf = (p: string): number => mtimes[p] ?? 1_000;
   return {
@@ -92,7 +85,7 @@ const remoteOf = (path: string, body: string, over: Partial<RemoteFileInfo> = {}
     size: enc.encode(body).length, lastModified: 9_000, ...over,
   });
 
-/** Seed an unrelated tracked file so the StateDB is non-empty (the engine is past its first sync). */
+// Seed an unrelated tracked file so the StateDB is non-empty (the engine is past its first sync).
 function seedUnrelated(stateDB: StateDB): void {
   const other: FileState = {
     path: 'unrelated.md', localHash: 'h', remoteId: 'h', idType: 'sha256',

@@ -1,31 +1,14 @@
 // [SPEC:EAD-1] [SPEC:EAD-2] [SPEC:EAD-3] [SPEC:EAD-4] An empty remote listing is a listing, not a
-// reason to stop reconciling (feature 083, GitHub issue #50).
+// reason to stop reconciling (GitHub issue #50): a note deleted on another device must still be trashed
+// here when the remote listing is empty, otherwise a small vault never converges.
 //
-// The report: a vault holding a single note. The note is deleted on another device; this device syncs,
-// logs `REAL full scan (remote=0)` — and then `del=0`. The note stays. Every later sync makes it
-// worse: the root-ETag short-circuit rebuilds the listing from State, the stale entry is rebuilt as
-// "present on the server", and nothing ever re-examines it. The vault never converges until some
-// unrelated file is added and the listing is non-empty again.
+// Deleting on an empty listing is safe: a non-207 listing response throws and a missing vault folder is a
+// separate case (VRR-*), so an empty array means the server really answered "nothing here". No file is
+// trashed on the listing alone: each candidate gets a Depth 0 PROPFIND that must return 404 (EAD-3), and
+// the breaker refuses the batch when too much of the vault looks gone at once (EAD-4). (docs/spec.md §8)
 //
-// The cause is one clause. The full-scan absence-deletion block is guarded by
-// `isFullScan && remotePathSet.size > 0`, so a listing of zero files skips candidate enumeration
-// entirely. That guard was added (3d74a01) when it was the ONLY protection against a truncated or
-// failed listing wiping a vault. The very next release (c441390) added the two defences that actually
-// carry that weight — the mass-delete breaker, and a per-candidate Depth 0 PROPFIND that must return
-// 404 before anything is trashed — and the size check has been redundant ever since. Redundant, and
-// wrong for exactly one vault shape: the small one, where "everything is gone" is a thing that
-// genuinely happens.
-//
-// Why deleting on an empty listing is safe. The listing PROPFIND does not fail quietly: a non-207
-// response throws, and a missing vault folder is a distinct, separately-handled case (VRR-*), so an
-// empty array means the server really did answer "nothing here". On top of that, no file is trashed
-// on the strength of the listing alone — each candidate is asked about directly, and only a definitive
-// 404 counts (EAD-3), with the breaker refusing the whole batch when too much of the vault looks gone
-// at once (EAD-4). Removing the guard removes a false negative, not a safety net.
-//
-// These tests drive the REAL SyncEngine against a real StateDB (in-memory DataAdapter); only the
-// WebDAV client, the LocalAdapter and Obsidian's App are test doubles. Re-implementing the
-// classification in a mock would prove nothing here — this bug lives in the classification.
+// These tests drive the REAL SyncEngine against a real StateDB (in-memory DataAdapter); only the WebDAV
+// client, the LocalAdapter and Obsidian's App are test doubles, because the bug lives in the classification.
 import { DataAdapter } from 'obsidian';
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { StateDB } from '../../../src/data/StateDB';
@@ -55,10 +38,8 @@ function makeStateAdapter(): DataAdapter {
   } as unknown as DataAdapter;
 }
 
-/**
- * In-memory local vault. `listVaultFiles` is what the full scan enumerates, so it is derived from the
- * file map rather than fixed: a file the sync trashes disappears from the next scan on its own.
- */
+// In-memory local vault. `listVaultFiles` is what the full scan enumerates, so it is derived from the
+// file map rather than fixed: a file the sync trashes disappears from the next scan on its own.
 function makeLocalAdapter(files: Record<string, string>) {
   const sizeOf = (p: string): number => enc.encode(files[p]).length;
   return {
@@ -78,16 +59,13 @@ function makeLocalAdapter(files: Record<string, string>) {
   };
 }
 
-/** What the client double answers with, mutable between syncs within one test. */
+// What the client double answers with, mutable between syncs within one test.
 interface RemoteWorld {
-  /** The full-scan listing (`getFiles('')`). */
+  // The full-scan listing (`getFiles('')`).
   listing: RemoteFileInfo[];
-  /** Vault root ETag. Constant across syncs means "nothing changed" → short-circuit. */
+  // Vault root ETag. Constant across syncs means "nothing changed" → short-circuit.
   rootEtag: string | null;
-  /**
-   * The per-candidate Depth 0 re-check: a blanket answer, a per-path answer, or `'reject'` for a
-   * client that cannot answer at all.
-   */
+  // The per-candidate Depth 0 re-check: a blanket answer, a per-path answer, or `'reject'` for a client that cannot answer at all.
   exists: boolean | 'reject' | ((path: string) => boolean);
 }
 
@@ -153,11 +131,9 @@ async function buildEngine(vault: Record<string, string>, world: RemoteWorld) {
   return { engine, stateDB, localAdapter, client, app, trashed, logs, sync, vault };
 }
 
-/**
- * Records `path` as converged: the recorded hash matches the body on disk, and the stat signature
- * matches what the vault double reports. Both matter — the signature keeps the file out of the upload
- * pass, and the hash is what the absence pass compares against before considering it a candidate.
- */
+// Records `path` as converged: the recorded hash matches the body on disk, and the stat signature
+// matches what the vault double reports. Both matter — the signature keeps the file out of the upload
+// pass, and the hash is what the absence pass compares against before considering it a candidate.
 async function track(stateDB: StateDB, path: string, body: string): Promise<FileState> {
   const hash = await sha256(toBuf(body));
   const size = enc.encode(body).length;
@@ -179,26 +155,25 @@ beforeEach(() => {
 describe('[SPEC:EAD-1] the last file in a vault, deleted on another device, is deleted here', () => {
   it('confirms the absence with a Depth 0 re-check and trashes the file', async () => {
     const world: RemoteWorld = { listing: [], rootEtag: 'etag-empty', exists: false };
-    const h = await buildEngine({ 'メモ.md': 'note body' }, world);
-    await track(h.stateDB, 'メモ.md', 'note body');
+    const h = await buildEngine({ '\u30e1\u30e2.md': 'note body' }, world);
+    await track(h.stateDB, '\u30e1\u30e2.md', 'note body');
 
     const summary = await h.sync();
 
     // The listing said nothing; the server was asked about this one path directly, and said 404.
     expect(h.client.getFiles).toHaveBeenCalledTimes(1);
     expect(h.client.remoteExists).toHaveBeenCalledTimes(1);
-    expect(h.client.remoteExists).toHaveBeenCalledWith('メモ.md');
+    expect(h.client.remoteExists).toHaveBeenCalledWith('\u30e1\u30e2.md');
 
-    expect(h.trashed).toEqual(['メモ.md']);
+    expect(h.trashed).toEqual(['\u30e1\u30e2.md']);
     expect(h.app.fileManager.trashFile).toHaveBeenCalledTimes(1);
-    expect(h.vault['メモ.md']).toBeUndefined();
-    expect(h.stateDB.getFile('メモ.md')).toBeUndefined(); // FR-005: no ghost left for the rebuild
+    expect(h.vault['\u30e1\u30e2.md']).toBeUndefined();
+    expect(h.stateDB.getFile('\u30e1\u30e2.md')).toBeUndefined(); // FR-005: no ghost left for the rebuild
     expect(summary.errorCount).toBe(0);
 
     // A remote deletion applied locally is counted by processRemoteDeletion, which has always
     // incremented `downloadedCount` (the "changes brought down from the server" counter) rather than
-    // `deletedCount` (which counts local deletions pushed UP). spec.md's "del=1" phrasing is about the
-    // outcome, not this counter; nothing in feature 083 changes where it lands.
+    // `deletedCount` (which counts local deletions pushed UP).
     expect(summary.downloadedCount).toBe(1);
 
     // Nothing was pushed the other way: the file is gone because the server says so, and it is not
@@ -220,13 +195,13 @@ describe('[SPEC:EAD-2] the deleted file does not come back on the next sync', ()
     const world: RemoteWorld = {
       listing: [], rootEtag: 'etag-stable', exists: (p) => p === 'keep.md',
     };
-    const h = await buildEngine({ 'メモ.md': 'gone body', 'keep.md': 'kept body' }, world);
-    await track(h.stateDB, 'メモ.md', 'gone body');
+    const h = await buildEngine({ '\u30e1\u30e2.md': 'gone body', 'keep.md': 'kept body' }, world);
+    await track(h.stateDB, '\u30e1\u30e2.md', 'gone body');
     await track(h.stateDB, 'keep.md', 'kept body');
 
     await h.sync();
-    expect(h.trashed).toEqual(['メモ.md']);
-    expect(h.stateDB.getFile('メモ.md')).toBeUndefined();
+    expect(h.trashed).toEqual(['\u30e1\u30e2.md']);
+    expect(h.stateDB.getFile('\u30e1\u30e2.md')).toBeUndefined();
 
     const summary = await h.sync();
 
@@ -238,9 +213,9 @@ describe('[SPEC:EAD-2] the deleted file does not come back on the next sync', ()
 
     // Nothing resurrects it: no second trash, no download, no upload, and it stays out of both the
     // vault and State.
-    expect(h.trashed).toEqual(['メモ.md']);
-    expect(h.vault['メモ.md']).toBeUndefined();
-    expect(h.stateDB.getFile('メモ.md')).toBeUndefined();
+    expect(h.trashed).toEqual(['\u30e1\u30e2.md']);
+    expect(h.vault['\u30e1\u30e2.md']).toBeUndefined();
+    expect(h.stateDB.getFile('\u30e1\u30e2.md')).toBeUndefined();
     expect(h.client.downloadFile).not.toHaveBeenCalled();
     expect(h.client.uploadFile).not.toHaveBeenCalled();
     expect(summary.uploadedCount).toBe(0);
@@ -254,17 +229,17 @@ describe('[SPEC:EAD-2] the deleted file does not come back on the next sync', ()
     // up. It cannot here, because the file is gone locally too; this pins that the fix converges
     // rather than trading a stranded file for a resurrected one.
     const world: RemoteWorld = { listing: [], rootEtag: 'etag-empty', exists: false };
-    const h = await buildEngine({ 'メモ.md': 'note body' }, world);
-    await track(h.stateDB, 'メモ.md', 'note body');
+    const h = await buildEngine({ '\u30e1\u30e2.md': 'note body' }, world);
+    await track(h.stateDB, '\u30e1\u30e2.md', 'note body');
 
     await h.sync();
-    expect(h.trashed).toEqual(['メモ.md']);
+    expect(h.trashed).toEqual(['\u30e1\u30e2.md']);
 
     const summary = await h.sync();
 
-    expect(h.trashed).toEqual(['メモ.md']); // not trashed twice
-    expect(h.vault['メモ.md']).toBeUndefined();
-    expect(h.stateDB.getFile('メモ.md')).toBeUndefined();
+    expect(h.trashed).toEqual(['\u30e1\u30e2.md']); // not trashed twice
+    expect(h.vault['\u30e1\u30e2.md']).toBeUndefined();
+    expect(h.stateDB.getFile('\u30e1\u30e2.md')).toBeUndefined();
     expect(h.client.uploadFile).not.toHaveBeenCalled();
     expect(summary.uploadedCount).toBe(0);
     expect(summary.errorCount).toBe(0);
@@ -276,15 +251,15 @@ describe('[SPEC:EAD-3] a file the server still has is kept, whatever the listing
     // A listing that is wrong about a file it omitted. The re-check is the only thing standing between
     // that and a deleted note, so it is asked, and its answer wins over the listing.
     const world: RemoteWorld = { listing: [], rootEtag: 'etag-empty', exists: true };
-    const h = await buildEngine({ 'メモ.md': 'note body' }, world);
-    await track(h.stateDB, 'メモ.md', 'note body');
+    const h = await buildEngine({ '\u30e1\u30e2.md': 'note body' }, world);
+    await track(h.stateDB, '\u30e1\u30e2.md', 'note body');
 
     const summary = await h.sync();
 
-    expect(h.client.remoteExists).toHaveBeenCalledWith('メモ.md');
+    expect(h.client.remoteExists).toHaveBeenCalledWith('\u30e1\u30e2.md');
     expect(h.trashed).toEqual([]);
-    expect(h.vault['メモ.md']).toBe('note body');
-    expect(h.stateDB.getFile('メモ.md')).toBeDefined();
+    expect(h.vault['\u30e1\u30e2.md']).toBe('note body');
+    expect(h.stateDB.getFile('\u30e1\u30e2.md')).toBeDefined();
     expect(summary.downloadedCount).toBe(0);
     expect(h.logs.join('\n')).toContain('re-check found it still on server');
   });
@@ -293,15 +268,15 @@ describe('[SPEC:EAD-3] a file the server still has is kept, whatever the listing
     // No answer is not the same as "gone" — the same rule the folder side follows (DTV-1). An
     // undecidable re-check falls back to "present", so an offline or erroring probe can never delete.
     const world: RemoteWorld = { listing: [], rootEtag: 'etag-empty', exists: 'reject' };
-    const h = await buildEngine({ 'メモ.md': 'note body' }, world);
-    await track(h.stateDB, 'メモ.md', 'note body');
+    const h = await buildEngine({ '\u30e1\u30e2.md': 'note body' }, world);
+    await track(h.stateDB, '\u30e1\u30e2.md', 'note body');
 
     await h.sync();
 
-    expect(h.client.remoteExists).toHaveBeenCalledWith('メモ.md');
+    expect(h.client.remoteExists).toHaveBeenCalledWith('\u30e1\u30e2.md');
     expect(h.trashed).toEqual([]);
-    expect(h.vault['メモ.md']).toBe('note body');
-    expect(h.stateDB.getFile('メモ.md')).toBeDefined();
+    expect(h.vault['\u30e1\u30e2.md']).toBe('note body');
+    expect(h.stateDB.getFile('\u30e1\u30e2.md')).toBeDefined();
   });
 });
 
@@ -330,19 +305,19 @@ describe('[SPEC:EAD-4] the breaker still refuses a vault-sized batch, and local 
     // never mtime, so a file whose body has moved on is protected and pushed up rather than trashed —
     // the resurrection side of a delete/edit race, which the user still has locally.
     const world: RemoteWorld = { listing: [], rootEtag: 'etag-empty', exists: true };
-    const h = await buildEngine({ 'メモ.md': 'edited body, longer than the base' }, world);
-    await track(h.stateDB, 'メモ.md', 'base body'); // recorded hash/size ≠ what is on disk now
+    const h = await buildEngine({ '\u30e1\u30e2.md': 'edited body, longer than the base' }, world);
+    await track(h.stateDB, '\u30e1\u30e2.md', 'base body'); // recorded hash/size ≠ what is on disk now
 
     const summary = await h.sync();
 
     expect(h.client.uploadFile).toHaveBeenCalledTimes(1);
-    expect(h.client.uploadFile).toHaveBeenCalledWith('メモ.md', expect.anything(), BASE_MTIME, expect.anything());
+    expect(h.client.uploadFile).toHaveBeenCalledWith('\u30e1\u30e2.md', expect.anything(), BASE_MTIME, expect.anything());
     expect(summary.uploadedCount).toBe(1);
 
     // Nothing was trashed, and the file is still tracked — now against the body that was uploaded.
     expect(h.trashed).toEqual([]);
-    expect(h.vault['メモ.md']).toBe('edited body, longer than the base');
-    expect(h.stateDB.getFile('メモ.md')!.localHash).toBe(await sha256(toBuf('edited body, longer than the base')));
+    expect(h.vault['\u30e1\u30e2.md']).toBe('edited body, longer than the base');
+    expect(h.stateDB.getFile('\u30e1\u30e2.md')!.localHash).toBe(await sha256(toBuf('edited body, longer than the base')));
     expect(summary.errorCount).toBe(0);
   });
 });

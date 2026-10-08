@@ -1,7 +1,5 @@
-// Lifecycle — pause / resume mid-sync against a live server (FR-016).
-// Emulates a sync that is interrupted partway through a batch of uploads (process
-// stop), then resumed by a fresh client carrying forward only what already landed.
-// Asserts: no duplication, no lost work, convergence on resume.
+// Lifecycle — pause / resume mid-sync against a live server (FR-016): an interrupted batch of uploads resumed by a
+// fresh client must show no duplication, no lost work, and convergence.
 import { NextcloudClient } from '../../../src/network/NextcloudClient';
 import { describeLive } from '../support/env';
 import { makeClient } from '../support/clientFactory';
@@ -28,13 +26,10 @@ describeLive('Lifecycle — pause/resume mid-sync', (getEnv) => {
   it('[SPEC:PR-1] interrupted upload batch resumes from a fresh client without duplication or loss', async () => {
     const batch = ['pr1-a.md', 'pr1-b.md', 'pr1-c.md', 'pr1-d.md'];
 
-    // First "session": only the first two land before the simulated stop.
     const s1 = client('deviceA');
     await s1.uploadFile(batch[0], textBuf('A'));
     await s1.uploadFile(batch[1], textBuf('B'));
-    // <-- process stop here (s1 discarded; remaining items not yet uploaded)
 
-    // Resume "session": a fresh client re-reads remote, uploads only the missing.
     const s2 = client('deviceA');
     const present = new Set((await s2.getFiles('')).map((f) => f.path));
     for (const name of batch) {
@@ -42,7 +37,6 @@ describeLive('Lifecycle — pause/resume mid-sync', (getEnv) => {
     }
 
     const finalNames = (await s2.getFiles('')).map((f) => f.path).filter((p) => p.startsWith('pr1-'));
-    // All four present exactly once (no loss, no duplication).
     expect(new Set(finalNames)).toEqual(new Set(batch));
     expect(finalNames.length).toBe(batch.length);
   });
@@ -52,7 +46,6 @@ describeLive('Lifecycle — pause/resume mid-sync', (getEnv) => {
     await s1.uploadFile('pr2-keep.md', textBuf('original'));
     const etagBefore = (await s1.getFiles('')).find((f) => f.path.endsWith('pr2-keep.md'))?.etag;
 
-    // Resume: a fresh client sees it already present and skips re-upload.
     const s2 = client('deviceA');
     const present = new Set((await s2.getFiles('')).map((f) => f.path));
     if (!present.has('pr2-keep.md')) await s2.uploadFile('pr2-keep.md', textBuf('SHOULD-NOT-HAPPEN'));

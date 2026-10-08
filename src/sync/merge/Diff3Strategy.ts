@@ -9,18 +9,14 @@ interface Diff3Chunk {
 export class Diff3Strategy implements IMergeStrategy {
   merge(base: string, local: string, remote: string): MergeResult {
     try {
-      // node-diff3's package.json ships only an `exports` map (no `main`), so it is unresolvable
-      // under tsconfig.test.json's legacy `moduleResolution: "node"` (ts-jest) — confirmed by
-      // running `pnpm test` against an ESM `import` here (feature 058): TS2307 "Cannot find
-      // module 'node-diff3'". esbuild (bundler resolution) has no such issue, so require() is kept
-      // to stay working under both.
+      // node-diff3 ships only an `exports` map (no `main`), so an ESM import fails under ts-jest's legacy
+      // `moduleResolution: "node"` (TS2307); require() works under both that and esbuild.
       // eslint-disable-next-line @typescript-eslint/no-require-imports, no-undef -- CJS interop for an untyped bundled dependency (esbuild inlines this; never a runtime Node require)
       const { diff3Merge } = require('node-diff3') as {
         diff3Merge: (a: string[], o: string[], b: string[], opts?: Record<string, unknown>) => Diff3Chunk[];
       };
-      // Use diff3Merge (returns a MergeRegion[] of {ok}|{conflict}); merge() returns a different
-      // shape ({conflict, result: string[]}) that this strategy must NOT consume — that mismatch
-      // silently dropped real conflicts (e.g. frontmatter), see report/spec_conformance.md D1.
+      // Use diff3Merge ({ok}|{conflict} regions), not merge(): its different result shape silently dropped
+      // real conflicts (e.g. frontmatter).
       const localLines = local.split('\n');
       const baseLines = base.split('\n');
       const remoteLines = remote.split('\n');

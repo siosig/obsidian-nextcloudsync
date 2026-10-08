@@ -1,6 +1,5 @@
-// Spec-conformance: 014-obsidian-config-sync (defaults & migration; pure).
-// Category inclusion / hard exclusions are covered by ConfigSyncResolver.test and
-// e2e CG-1..10; here we assert the master default and the bookmarks migration.
+// Defaults and migration (pure): the master default and the bookmarks migration. Category inclusion and
+// hard exclusions are covered by ConfigSyncResolver.test and e2e CG-1..10.
 import { DEFAULT_SETTINGS } from '../../../src/types';
 import { migrateBookmarksToConfigSync } from '../../../src/util/settingsMigration';
 

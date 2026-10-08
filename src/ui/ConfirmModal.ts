@@ -3,18 +3,12 @@ import { App, Modal, Setting } from 'obsidian';
 export interface ConfirmOptions {
   title: string;
   message: string;
-  /** Confirm button label. */
   cta?: string;
-  /** Cancel button label. */
   cancel?: string;
-  /** Style the confirm button as destructive (red). */
   destructive?: boolean;
 }
 
-/**
- * Promise-based confirmation dialog — a plugin-friendly replacement for window.confirm
- * (which Obsidian's guidelines disallow). Resolves true on confirm, false on cancel/dismiss.
- */
+// Replaces window.confirm, which Obsidian's guidelines disallow.
 export function confirmModal(app: App, opts: ConfirmOptions): Promise<boolean> {
   return new Promise((resolve) => {
     new ConfirmModal(app, opts, resolve).open();

@@ -85,8 +85,8 @@ describe('SyncEngine.pullRemoteToLocal', () => {
   test('L1: success writes remote bytes locally, records downloaded, saves', async () => {
     const { engine, localAdapter, record, historyStore, stateDB } = makeEngine({ remote: remoteInfo('a.md'), remoteContent: 'pulled' });
     await engine.pullRemoteToLocal('a.md');
-    // atomicWriteBinary is the plugin-owned write path (it registers an ignore so the modify
-    // watcher does not echo the write back as an upload) — L3.
+    // atomicWriteBinary is the plugin-owned write path (it registers an ignore so the modify watcher does not
+    // echo the write back as an upload).
     expect(localAdapter.atomicWriteBinary).toHaveBeenCalledTimes(1);
     const [writtenPath] = localAdapter.atomicWriteBinary.mock.calls[0];
     expect(writtenPath).toBe('a.md');

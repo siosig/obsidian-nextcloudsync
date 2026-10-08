@@ -1,8 +1,6 @@
-// Layer B — config-folder sync (CG-1..10) per report/mock_test.md §3.G.
-// Exercises ConfigSyncResolver.isIncluded() (pure). Part of the e2e suite as Layer B logic.
-// Feature 029: the five config-sync categories collapsed into two — Bookmarks + Other settings.
-// CG-2..CG-5 now verify each former category's files are included via the single `others` toggle,
-// keeping the CG-1..10 clause numbering the coverage catalog (clauses.ts) pins.
+// Layer B — config-folder sync (CG-1..10). Exercises ConfigSyncResolver.isIncluded() (pure).
+// The categories are Bookmarks + Other settings; CG-2..CG-5 verify each former category's files are included via the
+// single `others` toggle, keeping the CG-1..10 numbering pinned by the coverage catalog (clauses.ts).
 import { DavSyncSettings, DEFAULT_SETTINGS, ConfigSyncCategories } from '../../../src/types';
 import { LocalAdapter } from '../../../src/data/LocalAdapter';
 import { ConfigSyncResolver } from '../../../src/sync/ConfigSyncResolver';
@@ -31,9 +29,8 @@ describe('Layer B — config-folder sync (CG)', () => {
     expect(r.isIncluded(p('bookmarks.json'))).toBe(false);
   });
 
-  // CG-2..CG-5: the former appearance / themes-snippets / hotkeys / core-plugins categories are
-  // now folded into the single "Other settings" (others) toggle; each former group's files are
-  // included when `others` is on.
+  // CG-2..CG-5: appearance / themes-snippets / hotkeys / core-plugins files are covered by the single "Other settings"
+  // (others) toggle; each is included when `others` is on.
   it('[SPEC:CG-2] Other settings includes appearance.json / app.json', () => {
     const r = resolver(true, { ...ALL_OFF, others: true });
     expect(r.isIncluded(p('appearance.json'))).toBe(true);

@@ -1,9 +1,5 @@
-// Layer B — empty-directory pruning (DP) and directory rename (DR) against a
-// live Nextcloud (localhost Docker via .env NEXTCLOUD_*).
-//
-// Root bug: the engine is file-centric. Every delete sink issues a per-file
-// DELETE only; a directory that becomes empty as a result is never removed, so
-// empty directories linger forever on the remote AND on every client.
+// Layer B — empty-directory pruning (DP) and directory rename (DR) against a live Nextcloud. The engine is file-centric:
+// every delete sink issues a per-file DELETE only, so a directory emptied that way lingers on the remote and on every client.
 import { describeLive } from '../support/env';
 import { setupWorkspace, ensureParentDirs } from '../support/workspace';
 import { cleanupWorkspace, IsolatedWorkspace } from '../support/isolation';
@@ -24,17 +20,15 @@ describeLive('Layer B — empty-dir pruning (DP) & dir rename (DR)', (getEnv) =>
     if (client && ws) await cleanupWorkspace(client, ws);
   });
 
-  // ── Reproduction: characterize the CURRENT (buggy) behaviour ───────────────
   it('DP-repro: deleting every file in a folder leaves the empty directory on the remote', async () => {
     await ensureParentDirs(getEnv(), ws, 'reprodir/x.md');
     await client.uploadFile('reprodir/a.md', textBuf('a'));
     await client.uploadFile('reprodir/b.md', textBuf('b'));
 
-    // Delete every file the way the engine does (per-file DELETE).
     await client.deleteFile('reprodir/a.md', '');
     await client.deleteFile('reprodir/b.md', '');
 
-    // BUG: the now-empty directory still exists — only files were removed.
+    // The now-empty directory still exists: only files were removed.
     expect(await client.remoteExists('reprodir')).toBe(true);
 
     // And the file-centric scan never surfaces the empty directory, so nothing
@@ -43,7 +37,6 @@ describeLive('Layer B — empty-dir pruning (DP) & dir rename (DR)', (getEnv) =>
     expect(files.some((f) => f.path.startsWith('reprodir'))).toBe(false);
   });
 
-  // ── Fix surface on NextcloudClient (RED until implemented) ─────────────────
 
   const stripSlash = (p: string): string => p.replace(/\/+$/, '');
 

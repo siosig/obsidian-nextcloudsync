@@ -1,11 +1,5 @@
-// b-2 smoke + main wiring (FR-025). Scope is deliberately shallow (clarify D):
-// plugin enabled -> settings entered -> manual sync command runs -> status shown.
-// Deep pause/resume & conflict behaviour stays in b-1.
-//
-// Uses wdio-obsidian-service browser commands (executeObsidian /
-// executeObsidianCommand) + the wdio/mocha globals. Sync steps skip when
-// NEXTCLOUD_* are absent; the enable/wiring checks still run (Obsidian is always
-// provisioned by the service).
+// b-2 smoke: plugin enabled -> settings entered -> manual sync command runs -> status shown.
+// Sync steps skip when NEXTCLOUD_* are absent; the enable/wiring checks still run. Deep behaviour stays in b-1.
 import { browser, expect } from '@wdio/globals';
 import { requireUiEnv } from '../support/env';
 
@@ -24,8 +18,7 @@ describe('[SPEC:FR-025] b-2 smoke — enable, settings, manual sync, status', fu
     const saved = await browser.executeObsidian(
       async ({ app }, server: string, user: string) => {
         const p = (app as any).plugins.plugins['nextcloud-sync'];
-        // Single source of truth: seed validated values (login flow derives the
-        // WebDAV endpoint; no free-form URL entry).
+        // Seed validated values directly; the login flow derives the WebDAV endpoint.
         p.settings.serverUrl = server;
         p.settings.username = user;
         await p.saveData?.(p.settings);

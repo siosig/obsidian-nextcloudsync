@@ -2,24 +2,20 @@ import { DataAdapter, FileView, Notice, Platform, TFile, Vault, Workspace, norma
 
 export interface LocalFileEntry { path: string; size: number; mtime: number; }
 
-// Atomic-write temp suffix. Kept short on purpose: the temp file lives in the SAME directory as its
-// target, and a filesystem caps each path component at NAME_MAX bytes (255 on ext4/F2FS, i.e. Android
-// internal storage). The temp NAME must not inherit the target's length, or a target that is itself
-// within 255 bytes could still fail to write because `target + suffix` overflows (the FILE_NOTCREATED
-// bug). See `tmpPathFor`. LEGACY_TMP_SUFFIX is only recognised (never produced) so stale temp files
-// from older plugin versions are still ignored by the watcher and cleaned up.
+// Atomic-write temp suffix, kept short: the temp file lives in the target's own directory and each path component is
+// capped at NAME_MAX bytes (255 on ext4/F2FS), so the temp name must not inherit the target's length (see tmpPathFor).
+// LEGACY_TMP_SUFFIX is only recognised, never produced, so stale temp files from older versions are still ignored and cleaned up.
 const TMP_SUFFIX = '.ncs.tmp';
 const LEGACY_TMP_SUFFIX = '.nextcloudsync.tmp';
 const NAME_MAX_BYTES = 255;
 const IGNORE_TIMEOUT_MS = 5000;
 
-/** UTF-8 byte length (NAME_MAX is measured in bytes, not UTF-16 code units). */
+// NAME_MAX is measured in bytes, not UTF-16 code units.
 function utf8ByteLength(s: string): number {
   return new TextEncoder().encode(s).length;
 }
 
-/** Deterministic, non-cryptographic 32-bit FNV-1a hash → base36. Collision strength is irrelevant
- *  here: it only needs to make per-target temp names unique within a directory. */
+// Non-cryptographic 32-bit FNV-1a -> base36; it only needs to make per-target temp names unique within a directory.
 function shortHash(s: string): string {
   let h = 0x811c9dc5;
   for (let i = 0; i < s.length; i++) {
@@ -29,12 +25,8 @@ function shortHash(s: string): string {
   return (h >>> 0).toString(36);
 }
 
-/**
- * Temp path for an atomic write: a short, fixed-length hidden name in the target's OWN directory.
- * Because the name is derived from a hash (not the target name) it stays well within NAME_MAX even
- * when the target name is near the 255-byte limit, and being in the same directory keeps the final
- * rename atomic. Distinct targets get distinct temp names; the same target is stable across calls.
- */
+// Short, fixed-length hidden temp name in the target's own directory: hash-derived so it stays within NAME_MAX even for
+// near-limit targets, and same-directory so the final rename stays atomic.
 export function tmpPathFor(targetPath: string): string {
   const lastSlash = targetPath.lastIndexOf('/');
   const dir = lastSlash >= 0 ? targetPath.slice(0, lastSlash) : '';
@@ -42,11 +34,8 @@ export function tmpPathFor(targetPath: string): string {
   return dir ? `${dir}/${tmpName}` : tmpName;
 }
 
-/**
- * Translate a raw write error into an actionable one when the target's final name itself exceeds
- * NAME_MAX (unavoidable: the OS cannot store it). Other errors (e.g. write-back verification) pass
- * through unchanged so they are never masked. Reactive by design: only consulted from a catch block.
- */
+// Rewrites a raw write error when the target's final name itself exceeds NAME_MAX (unstorable); other errors pass through
+// unmasked. Only consulted from a catch block.
 function translateNameTooLong(err: unknown, targetPath: string): unknown {
   const name = targetPath.slice(targetPath.lastIndexOf('/') + 1);
   const bytes = utf8ByteLength(name);
@@ -58,20 +47,13 @@ function translateNameTooLong(err: unknown, targetPath: string): unknown {
   return err;
 }
 
-/** True for this plugin's own atomic-write temp files (never user content). Matches the current
- *  suffix and the legacy one so older stray temp files remain recognised. */
+// This plugin's own atomic-write temp files (current and legacy suffix), never user content.
 export function isSyncTmpPath(path: string): boolean {
   return path.endsWith(TMP_SUFFIX) || path.endsWith(LEGACY_TMP_SUFFIX);
 }
 
-/**
- * Thin wrapper over Obsidian's `DataAdapter` for the plugin's local file IO. The Adapter API
- * (rather than the higher-level Vault API) is used deliberately: it gives the tmp-write → rename
- * atomicity the sync relies on, can address paths the Vault index does not track (the plugin's own
- * state / log files), and reads raw bytes for hashing and binary attachments — none of which the
- * `TFile`-based Vault API offers. All paths entering from the remote→local mapping are passed
- * through `normalizePath()` at the boundary for cross-platform safety.
- */
+// Uses the Adapter API rather than the Vault API: it gives tmp-write -> rename atomicity, reaches paths the Vault index
+// does not track (state/log files), and reads raw bytes. Remote->local paths go through normalizePath() at the boundary.
 export class LocalAdapter {
   private ignoreList: Map<string, number> = new Map();
 
@@ -81,26 +63,9 @@ export class LocalAdapter {
     private readonly workspace?: Workspace,
   ) {}
 
-  /**
-   * The TFile currently displayed by any open leaf at `path`, or null if none (or no `workspace`
-   * was injected, e.g. in unit tests). `FileView` is the common base for every file-backed view
-   * (markdown, image, PDF, ...), so this covers both text and binary attachments uniformly.
-   */
-  /**
-   * Resolve `path` to the TFile a leaf currently holds, or null when no leaf holds it.
-   *
-   * Two kinds of leaf can hold a file, and BOTH must be recognised — missing either one sends the
-   * write down the destructive tmp-write -> remove -> rename path, whose `remove()` is what makes
-   * Obsidian detach the leaf and fall back to the previous note in its history (issues #15, #32):
-   *
-   * 1. A loaded leaf, whose `view` is the real `FileView` subclass for its type.
-   * 2. A DEFERRED leaf. Since Obsidian 1.7.2 a background leaf carries a `DeferredView` instead of
-   *    its real view (`WorkspaceLeaf.isDeferred`), and `DeferredView` is NOT a `FileView` — verified
-   *    against the shipped app bundle, where the deferred class's prototype chain has none of
-   *    FileView's members. So `instanceof FileView` alone silently misses every note sitting in an
-   *    inactive tab. The path survives in the leaf's serialized view state, so resolve it there and
-   *    look the TFile up through the Vault.
-   */
+  // Resolves `path` to the TFile held by an open leaf, or null. A DEFERRED leaf (background tab, Obsidian >= 1.7.2) carries a
+  // DeferredView that is not a FileView, so its path is read from the serialized view state and looked up via the Vault;
+  // missing it sends the write down the destructive remove -> rename path that detaches the leaf (issues #15, #32).
   private findOpenTFile(path: string): TFile | null {
     if (!this.workspace) return null;
     let found: TFile | null = null;
@@ -122,32 +87,22 @@ export class LocalAdapter {
     return found;
   }
 
-  /** Register a path to be ignored for Vault events (prevents sync loop). */
   ignore(path: string): void {
     const existing = this.ignoreList.get(path);
     if (existing) window.clearTimeout(existing);
     const timer = window.setTimeout(() => this.ignoreList.delete(path), IGNORE_TIMEOUT_MS);
-    // In Node-based tests setTimeout returns a Timeout handle that keeps the process alive;
-    // unref it so a pending ignore window can't block exit. No-op in Electron/the browser,
-    // where window.setTimeout returns a number.
+    // Node timers keep the process alive in tests: unref when present (window.setTimeout returns a number in Electron).
     (timer as unknown as { unref?: () => void }).unref?.();
     this.ignoreList.set(path, timer);
   }
 
-  /**
-   * Returns true while the path is inside its ignore window. NOT consumed on read: one
-   * atomicWrite fires several Vault events for the same path (create/delete/rename), so a
-   * consume-on-first-event entry would let the later events leak through as user edits.
-   * Entries expire via the timeout instead.
-   */
+  // Not consumed on read: one atomicWrite fires several Vault events (create/delete/rename) for the same path, so consuming
+  // on the first would leak the rest as user edits. Entries expire by timeout.
   shouldIgnore(path: string): boolean {
     return this.ignoreList.has(path);
   }
 
-  /**
-   * Clear all pending ignore timers. Call from the plugin's onunload so a pending timer
-   * can't fire after teardown and so timers don't leak across plugin reloads.
-   */
+  // Call from onunload so pending timers cannot fire after teardown or leak across reloads.
   dispose(): void {
     for (const timer of this.ignoreList.values()) window.clearTimeout(timer);
     this.ignoreList.clear();
@@ -157,21 +112,15 @@ export class LocalAdapter {
     const lastSlash = filePath.lastIndexOf('/');
     if (lastSlash > 0) {
       const dir = filePath.slice(0, lastSlash);
-      // Feature 046: mark the parent folder as our own write BEFORE creating it, so watch mode does
-      // not pick up the resulting folder-create event and propagate a spurious MKCOL back to the
-      // server (the folder already exists remotely — that is where the download came from). The
-      // idempotent createSingleFolder is a second safety net if a deeper ancestor is missed here.
+      // Mark the parent folder as our own write BEFORE creating it, so watch mode does not propagate the folder-create
+      // back to the server as a spurious MKCOL.
       this.ignore(dir);
       await this.adapter.mkdir(dir);
     }
   }
 
-  /**
-   * Write text content to `targetPath`. If the path is currently displayed by an open leaf
-   * (issue #15: a background sync must not evict the user's open note), update it in place via
-   * `Vault.modify` — a single write with no delete event, so Obsidian never detaches the leaf.
-   * Otherwise fall back to the tmp-write → remove existing → rename atomicity below unchanged.
-   */
+  // An open leaf is updated in place via Vault.modify (no delete event, so Obsidian never detaches it, issue #15);
+  // otherwise tmp-write -> remove existing -> rename.
   async atomicWrite(targetPath: string, content: string): Promise<void> {
     targetPath = normalizePath(targetPath);
     const openFile = this.findOpenTFile(targetPath);
@@ -193,11 +142,8 @@ export class LocalAdapter {
       }
       await this.adapter.rename(tmpPath, targetPath);
     } catch (err) {
-      // G4-1: if `remove(targetPath)` already succeeded before `rename` threw (mobile process kill /
-      // Windows AV lock / external-storage blip mid-rename), tmpPath is the ONLY surviving copy of the
-      // new content — neither the old file nor the new one is on disk at targetPath. Deleting tmp here
-      // would destroy the sole copy outright. Only clean up tmp when the destructive remove() never
-      // happened, i.e. tmp is still disposable scratch and the original target is untouched.
+      // If remove(targetPath) already succeeded before rename threw, tmpPath is the ONLY surviving copy of the new content:
+      // clean up tmp only when the destructive remove() never happened.
       if (!targetRemoved && await this.adapter.exists(tmpPath)) {
         await this.adapter.remove(tmpPath);
       }
@@ -205,12 +151,7 @@ export class LocalAdapter {
     }
   }
 
-  /**
-   * Write binary content to `targetPath`. Same open-file in-place path as {@link atomicWrite}
-   * (via `Vault.modifyBinary`), covering binary attachments (images, PDFs, ...) shown in a
-   * non-markdown `FileView`. Falls back to the tmp-write → remove → rename atomicity (with its
-   * read-back verification) when the path is not currently open.
-   */
+  // Same open-file in-place path as atomicWrite (Vault.modifyBinary); otherwise tmp-write -> remove -> rename with read-back verification.
   async atomicWriteBinary(targetPath: string, data: ArrayBuffer): Promise<void> {
     targetPath = normalizePath(targetPath);
     const openFile = this.findOpenTFile(targetPath);
@@ -231,19 +172,15 @@ export class LocalAdapter {
         targetRemoved = true;
       }
       await this.adapter.rename(tmpPath, targetPath);
-      // Read-back verification (spec 025, report §4.4): fsync is unavailable via the Obsidian adapter,
-      // so confirm the file actually landed at the intended byte length. A truncated/empty write throws
-      // here so the caller leaves Base unadvanced and re-syncs (self-heal) instead of recording a
-      // corrupt download as converged.
+      // Read-back verification (docs/spec.md §9.2): fsync is unavailable through the adapter, so confirm the byte length;
+      // a truncated write throws so the caller leaves Base unadvanced and re-syncs.
       const written = await this.adapter.stat(targetPath);
       if (!written || written.size !== data.byteLength) {
         throw new Error(`write-back verification failed for ${targetPath}: expected ${data.byteLength} bytes, found ${written ? written.size : 'none'}`);
       }
     } catch (err) {
-      // G4-1: see the matching comment in atomicWrite() — once remove(targetPath) has run, tmpPath may
-      // be the only surviving copy of the new content, so it must not be deleted on a later failure
-      // (e.g. a rename crash). If rename already succeeded and only the read-back check above failed,
-      // tmpPath no longer exists (it was renamed away), so this guard is a no-op in that case.
+      // See atomicWrite(): once remove(targetPath) has run, tmpPath may be the only copy and must not be deleted;
+      // if rename already succeeded, tmp is gone and this is a no-op.
       if (!targetRemoved && await this.adapter.exists(tmpPath)) {
         await this.adapter.remove(tmpPath);
       }
@@ -271,13 +208,8 @@ export class LocalAdapter {
     return this.adapter.list(normalizePath(path));
   }
 
-  /**
-   * Apply a specific mtime to a local file.
-   * Desktop (Electron/Node.js): calls fs.utimes. Mobile or unavailable: silently skips.
-   */
   async setMtime(path: string, mtime: number): Promise<void> {
-    // Node's fs is desktop-only (Electron). On mobile this is a no-op; change detection is
-    // hash-based, so a missing mtime does not affect sync correctness.
+    // Node's fs is desktop-only; on mobile this is a no-op because change detection is hash-based.
     if (!Platform.isDesktopApp) return;
     try {
       const nodefs = (window as Window & { require?: (m: string) => { utimes: (p: string, a: number, m: number, cb: (e: Error | null) => void) => void } }).require?.('fs');
@@ -291,7 +223,7 @@ export class LocalAdapter {
     } catch { /* best-effort: silently ignore on mobile or unsupported environments */ }
   }
 
-  /** Remove a tmp file only (never call remove on user files). */
+  // Tmp files only: never call remove on user files.
   async removeTmp(tmpPath: string): Promise<void> {
     if (isSyncTmpPath(tmpPath) && await this.adapter.exists(tmpPath)) {
       await this.adapter.remove(tmpPath);
@@ -302,13 +234,8 @@ export class LocalAdapter {
     new Notice(message, timeout);
   }
 
-  /**
-   * Enumerate Vault-tracked files (path + cached stat) WITHOUT any native FS round-trip.
-   * On mobile, adapter.list()/stat() each cross the JS↔native bridge; Vault.getFiles() and
-   * TFile.stat are served from Obsidian's in-memory index. The config folder (.obsidian) is not
-   * Vault-tracked and is intentionally excluded here — callers inject those paths separately.
-   * Returns [] when no Vault was injected (used only by IO-level unit tests).
-   */
+  // Reads Vault.getFiles()/TFile.stat from Obsidian's in-memory index to avoid native-bridge round trips on mobile.
+  // The config folder is not Vault-tracked and is excluded (callers inject it). Returns [] when no Vault was injected (unit tests).
   listVaultFiles(): LocalFileEntry[] {
     if (!this.vault) return [];
     return this.vault.getFiles().map((f) => ({ path: f.path, size: f.stat.size, mtime: f.stat.mtime }));

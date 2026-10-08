@@ -1,5 +1,4 @@
-// Layer A — file-size boundary (SZ-1..7) per report/mock_test.md §3.C.
-// Drives the upload strategies directly with small thresholds.
+// Layer A — file-size boundary (SZ-1..7): drives the upload strategies directly with small thresholds.
 import { NextcloudClient } from '../../../src/network/NextcloudClient';
 import { StandardWebDAVClient } from '../../../src/network/StandardWebDAVClient';
 import { ChunkedUploadStrategy } from '../../../src/sync/upload/ChunkedUploadStrategy';

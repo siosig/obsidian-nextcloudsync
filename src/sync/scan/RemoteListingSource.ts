@@ -1,34 +1,21 @@
-// Remote enumeration lifted out of SyncEngine (feature 074, Phase 2).
-//
-// Produces the remote side of a full scan: either a real listing, or the same listing rebuilt from
-// State when the vault root ETag proves nothing changed. Both forms are complete, which is what lets
-// the caller treat them identically.
-//
-// The WebDAV client is a PARAMETER on every method, never a field. SyncEngine creates it lazily and
-// can replace it (ensureClient), so a source that captured one at construction would keep talking to
-// a client the engine has already moved on from.
+// Produces the remote side of a full scan: a real listing, or the same listing rebuilt from State when the
+// vault root ETag proves nothing changed (docs/spec.md §8a.5). Both are complete, so callers treat them alike.
+// The WebDAV client is a PARAMETER on every method, never a field: SyncEngine creates it lazily and can
+// replace it, so a captured one would go stale.
 import { RemoteFileInfo, RemoteDirInfo } from '../../types';
 import { StateDB } from '../../data/StateDB';
 import { IWebDAVClient } from '../../network/IWebDAVClient';
 import { FORCE_FULL_SCAN_EVERY } from '../../util/limits';
 import { FileLogger } from '../../util/FileLogger';
 
-/**
- * What the listing source needs. `isNextcloud` and `networkConcurrency` are accessors because both
- * change during an engine's life — capabilities arrive on connect, settings can be edited — and a
- * captured value would go stale without anything failing loudly.
- */
+// `isNextcloud` and `networkConcurrency` are accessors because both change during an engine's life
+// (capabilities arrive on connect, settings can be edited).
 export interface RemoteListingDeps {
   stateDB: Pick<StateDB,
     'getAllFiles' | 'getAllDirs' | 'getRemoteRootEtag' | 'setRemoteRootEtag'
     | 'getFullScanSkipCount' | 'setFullScanSkipCount'>;
-  /** Whether the connected server is a Nextcloud — the root-ETag shortcut exists nowhere else. */
   isNextcloud(): boolean;
-  /**
-   * Configured parallelism for the on-demand checksum pass. Callers are expected to floor the raw
-   * setting (which exposes 0), but the batching loop below floors it again: it advances by this
-   * value, so a 0 arriving here would not be slow — it would never terminate.
-   */
+  // The batching loop advances by this value, so it floors it again: a 0 would never terminate.
   networkConcurrency(): number;
   logger?: Pick<FileLogger, 'log'>;
 }
@@ -36,18 +23,9 @@ export interface RemoteListingDeps {
 export class RemoteListingSource {
   constructor(private readonly deps: RemoteListingDeps) {}
 
-  /**
-   * Root-ETag short-circuit (spec 023). Obtain the COMPLETE remote file listing for a full scan,
-   * either by a real Depth:infinity PROPFIND (`getFiles('')`) or — when this is Nextcloud and the
-   * vault root ETag is unchanged since the last REAL scan — by rebuilding it from State, skipping the
-   * heavy listing. Returns the rebuilt directory list too (non-null only when short-circuited) so
-   * reconcileDirectories can likewise skip getDirectories('').
-   *
-   * Safety: the rebuilt listing is COMPLETE (every tracked file/dir), so it flows through the normal
-   * full-scan path unchanged — absence-based remote-deletion, the mass-delete breaker, conflict
-   * resolution and uploads are all untouched. The stored root ETag is updated ONLY on a real scan, so
-   * a local upload/delete/rename (which changes the remote root ETag) forces a real scan next time.
-   */
+  // Returns cachedDirs only when short-circuited, so reconcileDirectories can skip getDirectories('').
+  // The rebuilt listing is COMPLETE, so downstream deletion and conflict logic is unchanged. The stored root
+  // ETag is updated ONLY on a real scan, so a local upload/delete/rename forces a real scan next time.
   async obtainFullScanListing(
     client: IWebDAVClient,
   ): Promise<{ remoteFiles: RemoteFileInfo[]; cachedDirs: RemoteDirInfo[] | null }> {
@@ -57,9 +35,8 @@ export class RemoteListingSource {
     const skipCount = db.getFullScanSkipCount();
     const forced = skipCount >= FORCE_FULL_SCAN_EVERY;
 
-    // Capture the current root ETag BEFORE listing so a real scan never stores a value NEWER than its
-    // listing: any remote change interleaving here yields a mismatch next sync (an extra real scan,
-    // never a missed change). Nextcloud only — getRootEtag() is null elsewhere (no short-circuit).
+    // Captured BEFORE listing so a real scan never stores a value NEWER than its listing: an interleaved remote
+    // change yields a mismatch next sync (an extra scan, never a missed change). Null off Nextcloud.
     const cur = isNextcloud ? await client.getRootEtag() : null;
 
     if (cur != null && stored != null && cur === stored && !forced) {
@@ -72,8 +49,7 @@ export class RemoteListingSource {
       return { remoteFiles, cachedDirs };
     }
 
-    // Real full scan. Persist the captured root ETag (may be null on non-Nextcloud / fetch failure →
-    // next sync simply real-scans again) and reset the skip budget.
+    // A null ETag (non-Nextcloud, or fetch failure) just makes the next sync real-scan again.
     const remoteFiles = await client.getFiles('');
     db.setRemoteRootEtag(cur);
     db.setFullScanSkipCount(0);
@@ -83,8 +59,7 @@ export class RemoteListingSource {
     return { remoteFiles, cachedDirs: null };
   }
 
-  /** Rebuild the remote file listing from State (root-ETag short-circuit). Every entry must read as
-   *  "remote unchanged" against its own base: effective id = checksum ?? etag ?? size = remoteId. */
+  // Every entry must read as "remote unchanged" against its own base: effective id = checksum ?? etag ?? size = remoteId.
   rebuildRemoteFilesFromState(): RemoteFileInfo[] {
     return this.deps.stateDB.getAllFiles().map((fs) => ({
       path: fs.path,
@@ -96,8 +71,7 @@ export class RemoteListingSource {
     }));
   }
 
-  /** Rebuild the remote directory listing from State (root-ETag short-circuit). reconcileDirectories
-   *  only needs path/fileId; etag/lastModified are unused there. */
+  // reconcileDirectories only needs path/fileId; etag/lastModified are unused there.
   rebuildRemoteDirsFromState(): RemoteDirInfo[] {
     return this.deps.stateDB.getAllDirs().map((d) => ({
       path: d.path,
@@ -107,12 +81,8 @@ export class RemoteListingSource {
     }));
   }
 
-  /**
-   * For files that exist on both sides but whose server-side checksum is not yet stored,
-   * ask the server to compute SHA-256 on demand (no download; Nextcloud ChecksumUpdatePlugin).
-   * Best-effort and bounded-parallel: clients/servers without support leave the checksum null,
-   * which makes buildInitialPlan fall back to content-based conflict resolution.
-   */
+  // Asks the server to compute SHA-256 on demand (no download). Best-effort: unsupported servers leave the
+  // checksum null, so buildInitialPlan falls back to content-based conflict resolution.
   async resolveRemoteChecksums(
     client: IWebDAVClient,
     remoteFiles: RemoteFileInfo[],

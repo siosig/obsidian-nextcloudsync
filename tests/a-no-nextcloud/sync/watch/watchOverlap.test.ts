@@ -1,26 +1,11 @@
-// Overlapping watch cycles on one path (issue #42 investigation, feature 078).
-//
-// The reported symptom is text being deleted, reformatted, or filled with conflict markers WHILE
-// TYPING, on a single device with no other client touching the server. Turning "Sync on file change"
-// off stops it. The reporter's log shows conflicts resolving over and over on one file, plus an
-// HTTP 423 on a PUT.
-//
-// Two explanations were investigated and one was measured to death first:
-//
-//   REFUTED — "the server does not return checksums, so the recorded remoteId can never match".
-//     The reporter's capabilities really do lack `checksums`, which looked like confirmation. But
-//     running the same official Docker image (nextcloud:latest, 34.0.3) shows PROPFIND returning
-//     `oc:checksums` anyway, equal to the local SHA256, and five successive uploads matching every
-//     time. Capability absence is not output absence. See specs/078-.../findings.md; the fix that
-//     theory implied would have BROKEN every official-image user.
-//
-//   REMAINING — concurrency. syncSingleFile has no per-path exclusion. It is invoked as
-//     `void syncEngine.syncSingleFile(path)` (main.ts) and its steps are: stat -> PROPFIND ->
-//     classify -> upload -> record base. Nothing stops a second call for the same path from
-//     starting while the first is between its upload and its base record.
-//
-// These tests drive that interleaving deliberately. They are written to FAIL while the defect is
-// present: each asserts the behaviour we want, so a green run means the race is closed.
+// Overlapping watch cycles on one path (GitHub issue #42; docs/spec.md §5.7b).
+// Symptom: text deleted, reformatted, or filled with conflict markers WHILE TYPING on a single device with no
+// other client touching the server, plus conflicts resolving over and over on one file and an HTTP 423 on a PUT.
+// Cause: concurrency. syncSingleFile has no per-path exclusion; it is invoked as
+// `void syncEngine.syncSingleFile(path)` (main.ts) and its steps are stat -> PROPFIND -> classify -> upload ->
+// record base, so a second call for the same path can start between the first's upload and its base record.
+// These tests drive that interleaving deliberately; each asserts the wanted behaviour, so a green run means
+// the race is closed.
 import { WatchOperations, WatchDeps } from '../../../../src/sync/watch/WatchOperations';
 import { SyncJournal } from '../../../../src/sync/session/SyncJournal';
 import { MergeBaseRecorder } from '../../../../src/sync/session/MergeBaseRecorder';
@@ -35,37 +20,28 @@ import { IUploadStrategy } from '../../../../src/sync/upload/IUploadStrategy';
 const PATH = 'note.md';
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
-/**
- * Wait until `predicate` holds, or give up after a bounded number of turns.
- *
- * A fixed number of ticks is not enough here and made this file flaky: reaching the network costs
- * several awaits (stat, hash, connect, then the PROPFIND), and how many turns that takes is not
- * fixed. Waiting on the condition instead of on a guessed delay removes the guess.
- */
+// Wait until `predicate` holds, or give up after a bounded number of turns. A fixed tick count is flaky:
+// reaching the network costs several awaits (stat, hash, connect, PROPFIND) and how many turns that takes is
+// not fixed.
 async function waitFor(predicate: () => boolean, turns = 50): Promise<void> {
   for (let i = 0; i < turns && !predicate(); i++) await tick();
 }
 
-/**
- * A harness that models the one thing that matters here: the server and the state DB are shared
- * mutable state, and a cycle reads them at one moment and writes them at a later one.
- */
+// A harness modelling the one thing that matters: the server and the state DB are shared mutable state, and
+// a cycle reads them at one moment and writes them at a later one.
 function buildRacy() {
   const events: string[] = [];
-  /** The server's current identity for PATH, changed by each upload. */
+  // The server's current identity for PATH, changed by each upload.
   let serverId = 'r0';
-  /** The recorded baseline, written only after an upload completes. */
+  // The recorded baseline, written only after an upload completes.
   let base: FileState | undefined = {
     path: PATH, localHash: 'h0', remoteId: 'r0', idType: 'etag',
     size: 2, mtime: 1000, remoteFileId: 'fid', isConflicted: false,
   };
-  /** Local content, as if the user keeps typing. */
+  // Local content, as if the user keeps typing.
   let localContent = 'h0';
-  /**
-   * While held, every PROPFIND parks here until release(). Collected as a LIST, not a single slot:
-   * with one slot the second waiter overwrites the first's resolver and that cycle never wakes,
-   * which reads as a hang rather than as the harness losing it.
-   */
+  // While held, every PROPFIND parks here until release(). Collected as a LIST: with one slot the second
+  // waiter overwrites the first's resolver and that cycle never wakes, which reads as a hang.
   let holding = false;
   const parked: Array<() => void> = [];
 
@@ -132,7 +108,7 @@ function buildRacy() {
     watch: new WatchOperations(deps),
     events,
     type: (s: string) => { localContent = s; },
-    /** Park every PROPFIND from now on until release() is called. */
+    // Park every PROPFIND from now on until release() is called.
     holdNextStat: () => { holding = true; },
     release: () => {
       holding = false;

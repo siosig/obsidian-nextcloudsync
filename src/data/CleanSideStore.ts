@@ -3,26 +3,12 @@ import { AsyncMutex } from '../util/AsyncMutex';
 import { CleanSideSnapshot } from '../types';
 
 const TMP_SUFFIX = '.tmp';
-/** Trailing-debounce window for coalesced saves (mirrors StateDB / MergeBaseStore). */
 const SAVE_DEBOUNCE_MS = 2000;
 
-/**
- * Persistent store of the two CLEAN sides of each currently marker-conflicted note (feature 044).
- *
- * When a text merge conflicts, `resolveByWrite` writes conflict markers locally AND uploads them, so
- * both local and remote end up holding the marker content and BOTH original clean sides are lost.
- * Force-resolution ("Use remote" / "Use local" / "Latest" / "Biggest") then has nothing clean to
- * recover. This store captures the local pre-merge body and the remote body at conflict-detection
- * time, keyed by path, so force-resolution can restore a real clean version.
- *
- * Stored in its OWN file (`conflict-clean-<deviceId>.json`), NOT in StateDB: StateDB is a high-churn
- * per-file metadata store (hashes/sizes/mtimes); folding two full bodies per conflicted file into it
- * would bloat and slow every save. This mirrors the feature-038 MergeBaseStore rationale and shape
- * (tmp→rename + debounce + flush), but holds the TWO divergent clean sides (not one converged base).
- *
- * Bounded to currently-conflicted files: entries are dropped at every convergence/resolution point
- * (self-healing). A corrupt store loads empty and re-captures on the next conflict.
- */
+// The two clean sides of each marker-conflicted note. resolveByWrite writes markers locally and remotely, so both clean
+// sides would be lost; capturing them at conflict time lets force-resolution restore a real clean version.
+// Own file, not StateDB (two full bodies per conflicted file would bloat its saves). Entries are dropped at every
+// convergence/resolution point; a corrupt store loads empty.
 export class CleanSideStore {
   private snapshots: Record<string, CleanSideSnapshot> = {};
   private readonly storePath: string;
@@ -44,9 +30,7 @@ export class CleanSideStore {
       let readPath = this.storePath;
       let recoveredFromTmp = false;
       if (!(await this.adapter.exists(readPath))) {
-        // G4-2: a crash between remove(storePath) and rename(tmpPath, storePath) in doSave leaves
-        // storePath absent while tmpPath still holds the fully-written new data. Recover from tmp
-        // instead of silently treating this as "no snapshots yet".
+        // A crash between remove(storePath) and rename(tmpPath, storePath) leaves only tmp: recover from it.
         if (!(await this.adapter.exists(this.tmpPath))) return;
         readPath = this.tmpPath;
         recoveredFromTmp = true;
@@ -55,47 +39,40 @@ export class CleanSideStore {
       const parsed = JSON.parse(raw) as Record<string, CleanSideSnapshot>;
       if (parsed && typeof parsed === 'object') this.snapshots = parsed;
       if (recoveredFromTmp) {
-        // Adopt the recovered tmp as the primary file; best-effort (the next save() recreates
-        // storePath from the now-recovered in-memory snapshots if this rename also fails).
+        // Best-effort; the next save() recreates storePath from the in-memory snapshots.
         await this.adapter.rename(this.tmpPath, this.storePath).catch(() => undefined);
       }
     } catch {
-      // Corrupted store — start empty. Snapshots re-capture at the next conflict (self-healing).
+      // Corrupted store: start empty; snapshots re-capture at the next conflict.
       console.warn('[CleanSideStore] Failed to parse clean-side store; starting empty');
     }
   }
 
-  /** The captured clean sides for `path`, or undefined when none is known. */
   get(path: string): CleanSideSnapshot | undefined {
     return this.snapshots[path];
   }
 
-  /** Record/replace the two clean sides for `path`. Callers gate this on the marker-write path. */
   set(path: string, snapshot: CleanSideSnapshot): void {
     this.snapshots[path] = snapshot;
   }
 
-  /** Drop the snapshot for `path` (on resolution / convergence / deletion) so it does not leak. */
   delete(path: string): void {
     delete this.snapshots[path];
   }
 
-  /** Number of stored snapshots — equals the count of currently marker-conflicted files at rest. */
   size(): number {
     return Object.keys(this.snapshots).length;
   }
 
-  /** All paths with a stored snapshot (for the end-of-sync self-healing sweep). */
   paths(): string[] {
     return Object.keys(this.snapshots);
   }
 
-  /** Atomically persist (tmp → rename), serialized so concurrent saves never race the unlink step. */
+  // Serialized so concurrent saves never race the unlink step.
   save(): Promise<void> {
     return this.saveMutex.run(() => this.doSave());
   }
 
-  /** Coalesce frequent saves into one write via a trailing debounce. */
   requestSave(): void {
     if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
     this.saveTimer = window.setTimeout(() => {
@@ -104,7 +81,6 @@ export class CleanSideStore {
     }, SAVE_DEBOUNCE_MS);
   }
 
-  /** Flush any pending debounced save and await it (call before a full-sync save and on unload). */
   async flush(): Promise<void> {
     if (this.saveTimer !== null) {
       window.clearTimeout(this.saveTimer);

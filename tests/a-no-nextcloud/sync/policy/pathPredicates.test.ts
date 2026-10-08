@@ -1,11 +1,7 @@
-// Direct tests for the small path predicates (feature 074, Phase 1).
-//
-// No [SPEC:...] tags here — see the note at the top of localUnchanged.test.ts.
-//
-// These three had no test naming them before the extraction. They are small, but each one is load
-// bearing: parentDir keys the per-directory serialisation that avoids Nextcloud's 423 directory
-// locks, isDotName gates the adapter walk that covers what Vault.getFiles() omits, and isTextEligible
-// decides whether Compare offers a text diff at all.
+// Direct tests for the small path predicates; no [SPEC:...] tags (see localUnchanged.test.ts).
+// Each is load bearing: parentDir keys the per-directory serialisation that avoids Nextcloud's 423
+// directory locks, isDotName gates the adapter walk that covers what Vault.getFiles() omits, and
+// isTextEligible decides whether Compare offers a text diff.
 import { parentDir, isDotName, isTextEligible } from '../../../../src/sync/policy';
 
 describe('parentDir', () => {

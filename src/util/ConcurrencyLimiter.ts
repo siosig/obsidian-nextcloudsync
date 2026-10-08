@@ -1,12 +1,6 @@
-/**
- * Bounded-concurrency primitives for the sync transfer loops (research R5 / contracts/concurrency.md).
- * Dependency-free (no p-limit) to keep the mobile bundle small and the behavior testable.
- */
+// Bounded-concurrency primitives for the sync transfer loops (docs/plan.md §11).
+// Dependency-free (no p-limit) to keep the mobile bundle small.
 
-/**
- * Create a limiter that runs at most `maxConcurrent` tasks at once; excess tasks queue and start as
- * slots free. Each task's result/throw is returned to its caller. `maxConcurrent < 1` is clamped to 1.
- */
 export function createLimiter(maxConcurrent: number): <T>(task: () => Promise<T>) => Promise<T> {
   // `|| 1` also guards against NaN/undefined (a missing setting) which would otherwise wedge the queue.
   const limit = Math.max(1, Math.floor(maxConcurrent)) || 1;
@@ -23,8 +17,7 @@ export function createLimiter(maxConcurrent: number): <T>(task: () => Promise<T>
     return new Promise<T>((resolve, reject) => {
       const start = (): void => {
         active++;
-        // Run the task; free the slot when it settles, then forward its result/rejection faithfully.
-        // (resolve/reject are passed by reference so a non-Error task rejection propagates unchanged.)
+        // resolve/reject are passed by reference so a non-Error rejection propagates unchanged.
         const settled = Promise.resolve().then(task);
         void settled.then(release, release);
         settled.then(resolve, reject);
@@ -35,12 +28,9 @@ export function createLimiter(maxConcurrent: number): <T>(task: () => Promise<T>
   };
 }
 
-/**
- * A byte budget for in-flight transfers. `requestUrl` buffers whole bodies in memory, so concurrency
- * must be bounded by total bytes (not just count) to avoid OOM on mobile. A task acquires its size
- * before reading the file; a file LARGER than the whole budget is admitted alone (acquires the full
- * budget) so it can never deadlock. `acquire` resolves with an idempotent release function.
- */
+// A byte budget for in-flight transfers: `requestUrl` buffers whole bodies in memory, so concurrency
+// must be bounded by bytes (not just count) to avoid OOM on mobile. `acquire` resolves with an
+// idempotent release function.
 export class ByteSemaphore {
   private available: number;
   private readonly max: number;
@@ -70,7 +60,7 @@ export class ByteSemaphore {
     });
   }
 
-  /** Grant queued waiters in FIFO order while the head fits (head-of-line to preserve fairness). */
+  // FIFO and head-of-line on purpose: preserves fairness.
   private drain(): void {
     while (this.waiters.length > 0 && this.waiters[0].bytes <= this.available) {
       const w = this.waiters.shift()!;

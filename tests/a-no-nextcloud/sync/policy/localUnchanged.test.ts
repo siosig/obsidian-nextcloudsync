@@ -1,16 +1,11 @@
-// Direct tests for the local-unchanged fast-path (feature 074, Phase 1).
-//
-// Deliberately carries no [SPEC:...] tags. The clauses these rules serve are already claimed by the
-// SyncEngine-level tests; tagging here too would double-count one behaviour in the coverage checker.
-// What this file adds is reach, not coverage: before the predicate was a plain function, the safety
-// window could only be approached through a whole engine, and no test named it at all.
+// Direct tests for the local-unchanged fast-path. Carries no [SPEC:...] tags: the clauses are already
+// claimed by the SyncEngine-level tests, and tagging here too would double-count them.
 import { isLocallyUnchanged, withinSafetyWindow } from '../../../../src/sync/policy';
 import { SIGNATURE_SAFETY_WINDOW_MS } from '../../../../src/util/limits';
 import { FileState } from '../../../../src/types';
 
 const W = SIGNATURE_SAFETY_WINDOW_MS;
 
-/** A converged state whose stat signature matches `stat` below exactly. */
 function baseAt(mtime: number, size = 100): FileState {
   return {
     path: 'note.md', localHash: 'h', remoteId: 'e', idType: 'etag',
@@ -19,7 +14,7 @@ function baseAt(mtime: number, size = 100): FileState {
   };
 }
 
-/** A clock far enough from every mtime used here that the window never trips by accident. */
+// A clock far enough from every mtime used here that the window never trips by accident.
 const farClock = { now: () => 10_000_000, lastSyncTime: () => 0 };
 
 describe('isLocallyUnchanged — signature preconditions', () => {
@@ -44,9 +39,8 @@ describe('isLocallyUnchanged — signature preconditions', () => {
 });
 
 describe('isLocallyUnchanged — safety window boundaries', () => {
-  // The window is why a same-size in-place edit made inside the filesystem's mtime granularity is
-  // not silently skipped. Its edges are what decide whether a real edit is seen, so they are pinned
-  // here rather than left to the constant.
+  // The window keeps a same-size in-place edit made inside the filesystem's mtime granularity from being
+  // skipped; its edges are pinned here rather than left to the constant.
   const mtime = 1_000_000;
   const stat = { mtime, size: 100 };
 

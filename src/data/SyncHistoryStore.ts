@@ -2,19 +2,10 @@ import { DataAdapter } from 'obsidian';
 import { SyncFileOp, SyncHistoryDetail, SyncHistoryEntry } from '../types';
 
 const TMP_SUFFIX = '.tmp';
-/** Rolling retention window: entries older than this are dropped. */
-const DEFAULT_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
-/** Hard cap on stored entries to bound the on-disk file for large vaults. */
+const DEFAULT_WINDOW_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_MAX_ENTRIES = 2000;
 
-/**
- * Persisted, time-pruned log of per-file sync outcomes (uploaded / downloaded / deleted /
- * conflict / error). Backs the "recent activity" section of the sync status dialog so the user
- * can see what synced — including successes — within the last 24 hours, across restarts.
- *
- * Storage mirrors StateDB: atomic tmp→rename writes, serialized save chain, corruption-tolerant
- * load. Records are held in memory during a sync and flushed once at session end.
- */
+// Rolling 24h log of per-file sync outcomes for the status dialog; flushed once at session end.
 export class SyncHistoryStore {
   private entries: SyncHistoryEntry[] = [];
   private readonly filePath: string;
@@ -36,9 +27,7 @@ export class SyncHistoryStore {
       let readPath = this.filePath;
       let recoveredFromTmp = false;
       if (!(await this.adapter.exists(readPath))) {
-        // G4-2: a crash between remove(filePath) and rename(tmpPath, filePath) in doSave leaves
-        // filePath absent while tmpPath still holds the fully-written new history. Recover from tmp
-        // instead of silently treating this as "no history yet".
+        // A crash between remove(filePath) and rename(tmpPath, filePath) leaves only tmp: recover from it.
         if (!(await this.adapter.exists(this.tmpPath))) return;
         readPath = this.tmpPath;
         recoveredFromTmp = true;
@@ -48,8 +37,7 @@ export class SyncHistoryStore {
       this.entries = Array.isArray(parsed) ? (parsed as SyncHistoryEntry[]) : [];
       this.prune(now);
       if (recoveredFromTmp) {
-        // Adopt the recovered tmp as the primary file; best-effort (the next save() recreates
-        // filePath from the now-recovered in-memory entries if this rename also fails).
+        // Best-effort; the next save() recreates filePath from the recovered in-memory entries.
         await this.adapter.rename(this.tmpPath, this.filePath).catch(() => undefined);
       }
     } catch {
@@ -58,17 +46,13 @@ export class SyncHistoryStore {
     }
   }
 
-  /**
-   * Record one file outcome. Held in memory until save(). `message` is for errors only.
-   * `detail` carries optional checksum/size data for the sync log; only defined fields are stored.
-   */
+  // `message` is for errors only; `detail` carries optional checksum/size data for the sync log.
   record(
     path: string, op: SyncFileOp, at: number = Date.now(),
     message?: string, detail?: SyncHistoryDetail, runStartedAt?: number,
   ): void {
     const entry: SyncHistoryEntry = { path, op, at };
     if (message) entry.message = message;
-    // Tag the entry with its sync run's start time so the dialog can group activity by run.
     if (runStartedAt !== undefined) entry.runStartedAt = runStartedAt;
     if (detail) {
       if (detail.localHash !== undefined) entry.localHash = detail.localHash;
@@ -80,18 +64,15 @@ export class SyncHistoryStore {
     this.entries.push(entry);
   }
 
-  /** Entries within the rolling window, newest first. */
   recent(now: number = Date.now()): SyncHistoryEntry[] {
     const cutoff = now - this.windowMs;
     return this.entries.filter(e => e.at >= cutoff).sort((a, b) => b.at - a.at);
   }
 
-  /** Entries recorded at or after `startedAt`, in chronological (sync) order — one sync session. */
   since(startedAt: number): SyncHistoryEntry[] {
     return this.entries.filter(e => e.at >= startedAt).sort((a, b) => a.at - b.at);
   }
 
-  /** Drop entries older than the window, then cap total count keeping the newest. */
   private prune(now: number = Date.now()): void {
     const cutoff = now - this.windowMs;
     let kept = this.entries.filter(e => e.at >= cutoff);
@@ -101,7 +82,6 @@ export class SyncHistoryStore {
     this.entries = kept;
   }
 
-  /** Atomically persist (tmp → rename), pruning first. Serialized like StateDB.save(). */
   save(now: number = Date.now()): Promise<void> {
     this.prune(now);
     const run = this.saveChain.then(() => this.doSave());

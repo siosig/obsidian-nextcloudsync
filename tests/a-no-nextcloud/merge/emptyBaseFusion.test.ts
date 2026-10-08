@@ -1,11 +1,9 @@
 import { MergeEngine } from '../../../src/sync/merge/MergeEngine';
 import { MergeContext } from '../../../src/types';
 
-// Bug G3-1: on an empty merge base, reconcile-text can FUSE two divergent sides at the character
-// level (destroying the line boundary between two independent edits) and report it as a clean merge.
-// The length/repeated-block guards miss a pure concatenation; `linesSurvive` catches it and routes the
-// case to a real conflict instead of silently persisting corrupted content. Uses the REAL
-// reconcile-text (no mock) so it exercises the actual fusion.
+// On an empty merge base, reconcile-text can FUSE two divergent sides at the character level (destroying the line
+// boundary between two independent edits) and report a clean merge. The length/repeated-block guards miss a pure
+// concatenation; `linesSurvive` catches it and routes it to a real conflict. Uses the REAL reconcile-text (no mock).
 describe('[SPEC:G3-1] empty-base merge never silently fuses two divergent sides', () => {
   const engine = new MergeEngine();
   const markers: MergeContext = { localMtime: 0, remoteMtime: 0, conflictStrategy: 'conflict-markers' };

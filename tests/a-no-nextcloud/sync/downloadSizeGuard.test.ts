@@ -1,4 +1,4 @@
-// [SPEC:DSG-1..DSG-8] specs/main/spec.md — download-side "Maximum file size" guard (spec 035).
+// [SPEC:DSG-1..DSG-8] Download-side "Maximum file size" guard (docs/spec.md §9.4).
 // The maxFileSizeMB cap is applied symmetrically on DOWNLOAD: before any GET, a remote whose
 // PROPFIND-advertised size exceeds the cap is skipped (no body fetched) across every remote-body
 // path — normal download, delete-vs-edit restore, conflict, compare, manual pull. This prevents the
@@ -33,11 +33,10 @@ function makeSummary(): SyncSessionSummary {
 const remoteOf = (path: string, size: number, over: Partial<RemoteFileInfo> = {}): RemoteFileInfo =>
   ({ path, fileId: 'f', checksum: null, etag: 'e-new', size, lastModified: 0, ...over });
 
-/** The mock Notice records every constructed toast on a static `instances` array (test double only). */
+// The mock Notice records every constructed toast on a static `instances` array (test double only).
 const notices = (): { message: string }[] =>
   (Notice as unknown as { instances: { message: string }[] }).instances;
 
-/** Build an engine with a real StateDB and a configurable local adapter + client. */
 async function buildEngine(maxFileSizeMB: number, localAdapter: Record<string, unknown> = {}) {
   const stateDB = new StateDB(makeStateAdapter(), PLUGIN_DIR, 'dev-1');
   await stateDB.load();

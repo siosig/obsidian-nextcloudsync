@@ -1,18 +1,13 @@
-// [SPEC:WSF-7] specs/064-watch-single-file-conflict/contracts/watch-single-file-sync.md (C-5)
-//
-// C-5: full sync exclusivity. While a full sync (syncManual) is running, `syncSingleFile` must not
-// touch the network or the local filesystem — it only records the path (in-memory) and returns
-// immediately. Once the full sync completes, every recorded path is re-evaluated at least once, and
-// recording the same path more than once still yields exactly one re-evaluation. `deleteSingleFile`
-// takes the opposite tack: it does NOTHING at all while a full sync is running (not even deferred),
-// because the running scan already detects local absence and propagates the deletion itself (C-2
-// row 1) — queuing it here would risk a second delete against a path the scan already handled.
-//
-// These tests drive the REAL SyncEngine (syncManual + syncSingleFile + deleteSingleFile) against a
-// real StateDB (in-memory DataAdapter, same harness as untrackedBothSides.test.ts); only the WebDAV
-// client and LocalAdapter are test doubles. The full sync is held open for a controllable window by
-// making the client's `getFiles` await a promise the test resolves explicitly — never a timer — so
-// there is a deterministic window in which `running === true` to probe the watch-mode paths.
+// [SPEC:WSF-7] Full sync exclusivity (docs/spec.md §5.7). While a full sync (syncManual) is running,
+// `syncSingleFile` must not touch the network or the local filesystem: it only records the path (in-memory)
+// and returns. Once the full sync completes, every recorded path is re-evaluated at least once, and recording
+// a path more than once still yields exactly one re-evaluation. `deleteSingleFile` does NOTHING while a full
+// sync runs (not even deferred): the running scan already detects local absence and propagates the deletion,
+// so queuing it would risk a second delete.
+// These tests drive the REAL SyncEngine (syncManual + syncSingleFile + deleteSingleFile) against a real
+// StateDB (in-memory DataAdapter, same harness as untrackedBothSides.test.ts); only the WebDAV client and
+// LocalAdapter are doubles. The full sync is held open by making the client's `getFiles` await a promise the
+// test resolves explicitly (never a timer), giving a deterministic window in which `running === true`.
 import { DataAdapter } from 'obsidian';
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { StateDB } from '../../../src/data/StateDB';
@@ -35,12 +30,9 @@ function makeStateAdapter(): DataAdapter {
   } as unknown as DataAdapter;
 }
 
-/**
- * In-memory local vault used only for the watch-mode single-file calls. `listVaultFiles` (used by the
- * full sync's own scan) always reports empty so the full-sync body itself completes with an empty
- * plan — the point of these tests is the exclusivity gate, not full-sync file classification (already
- * covered elsewhere, e.g. untrackedBothSides.test.ts).
- */
+// In-memory local vault used only for the watch-mode single-file calls. `listVaultFiles` (the full sync's own
+// scan) always reports empty so the full sync completes with an empty plan: the point is the exclusivity
+// gate, not full-sync classification.
 function makeLocalAdapter(files: Record<string, string>) {
   return {
     files,
@@ -58,12 +50,9 @@ function makeLocalAdapter(files: Record<string, string>) {
   };
 }
 
-/**
- * Builds a real SyncEngine wired to a real StateDB and a WebDAV client whose `getFiles` call — the
- * first network call the (empty-state) full sync makes — stays pending until the returned
- * `releaseFullSync()` is invoked. This gives the test a deterministic window in which the engine's
- * private `running` flag is true, without relying on any timer.
- */
+// Builds a real SyncEngine wired to a real StateDB and a WebDAV client whose `getFiles` (the first network
+// call of the empty-state full sync) stays pending until `releaseFullSync()` is invoked, giving a
+// deterministic window in which the engine's private `running` flag is true.
 async function buildEngine(files: Record<string, string> = {}) {
   const stateDB = new StateDB(makeStateAdapter(), PLUGIN_DIR, 'dev1');
   await stateDB.load();
@@ -89,7 +78,7 @@ async function buildEngine(files: Record<string, string> = {}) {
   return { engine, stateDB, localAdapter, client, releaseFullSync };
 }
 
-/** Seeds a tracked FileState so `deleteSingleFile` treats the path as a known deletion candidate. */
+// Seeds a tracked FileState so `deleteSingleFile` treats the path as a known deletion candidate.
 function trackFile(stateDB: StateDB, path: string, body: string): void {
   const fs: FileState = {
     path, localHash: 'h', remoteId: 'h', idType: 'sha256',
@@ -145,10 +134,9 @@ describe('[SPEC:WSF-7] C-5 — full sync exclusivity for watch-mode single-file 
     releaseFullSync();
     await fullSyncDone;
 
-    // Two reads, not one, and the split matters: one re-evaluation of the deferred path, plus the
-    // post-upload re-read feature 080 added. This harness reports `isNextcloud: false`, so the upload
-    // has to ask the server what identity it now holds rather than assuming the checksum it sent came
-    // back. Three defers that failed to coalesce would show as six.
+    // Two reads, not one: one re-evaluation of the deferred path, plus the post-upload re-read. This harness
+    // reports `isNextcloud: false`, so the upload has to ask the server what identity it now holds rather than
+    // assuming the checksum it sent came back. Three defers that failed to coalesce would show as six.
     expect(client.statFile).toHaveBeenCalledTimes(2);
     expect(client.statFile).toHaveBeenCalledWith('note.md');
     await stateDB.flush();
@@ -189,11 +177,10 @@ describe('[SPEC:WSF-7] C-5 — full sync exclusivity for watch-mode single-file 
   });
 
   it('deleteSingleFile does nothing while a full sync is running and leaves StateDB tracking untouched', async () => {
-    // 'tracked.md' is tracked in StateDB but absent from the local vault (files: {}) — exactly the
-    // real-world trigger for a watch-mode deleteSingleFile call (the file was just deleted locally).
-    // The running full sync's own absence-detection is therefore expected to pick it up on its own;
-    // C-5/C-2 row 1 is specifically that the SKIPPED deleteSingleFile call contributes nothing extra
-    // (no direct client call, no StateDB mutation, no deferral) — not that the delete never happens.
+    // 'tracked.md' is tracked in StateDB but absent from the local vault (files: {}): the real-world trigger for
+    // a watch-mode deleteSingleFile call. The running full sync's own absence-detection is expected to pick it
+    // up; the SKIPPED deleteSingleFile call must contribute nothing extra (no client call, no StateDB mutation,
+    // no deferral), which is not the same as the delete never happening.
     const { engine, stateDB, client, releaseFullSync } = await buildEngine();
     trackFile(stateDB, 'tracked.md', 'server body');
     const before = stateDB.getFile('tracked.md');
@@ -206,9 +193,9 @@ describe('[SPEC:WSF-7] C-5 — full sync exclusivity for watch-mode single-file 
     expect(client.deleteFile).not.toHaveBeenCalled();
     expect(stateDB.getFile('tracked.md')).toEqual(before); // neither dropped nor re-queued
 
-    // Feature 086: the scan no longer deletes a path just because the listing lacks it — it asks the
-    // server first. So the world has to say what the server holds. Here: still there, and still
-    // byte-identical to our base, which is what makes the deletion provably the user's.
+    // The scan does not delete a path just because the listing lacks it; it asks the server first, so the world
+    // has to say what the server holds. Here: still there and byte-identical to our base, which makes the
+    // deletion provably the user's.
     client.statFile.mockResolvedValue({
       path: 'tracked.md', fileId: 'f1', checksum: 'h', etag: null, size: 11, lastModified: 0,
     });

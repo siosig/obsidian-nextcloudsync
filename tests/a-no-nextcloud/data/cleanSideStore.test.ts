@@ -1,6 +1,5 @@
-// [SPEC:CSS-10][SPEC:CSS-13] specs/044-conflict-clean-snapshot — CleanSideStore persistence.
-// Captures the two clean sides of a marker-conflicted note in its own per-device file so
-// force-resolution can recover a real clean version. Mirrors the MergeBaseStore persistence shape.
+// [SPEC:CSS-10][SPEC:CSS-13] CleanSideStore persistence: captures the two clean sides of a marker-conflicted note in
+// its own per-device file so force-resolution can recover a real clean version. Mirrors the MergeBaseStore shape.
 import { DataAdapter } from 'obsidian';
 import { CleanSideStore } from '../../../src/data/CleanSideStore';
 import { CleanSideSnapshot } from '../../../src/types';

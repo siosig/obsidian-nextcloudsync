@@ -5,14 +5,12 @@ import { FrontmatterMergeStrategy } from '../../../src/sync/merge/FrontmatterMer
 import { MergeEngine } from '../../../src/sync/merge/MergeEngine';
 import { MergeContext } from '../../../src/types';
 
-/** Parse the `tags` value out of a resolved `---`-wrapped frontmatter block. */
 function tagsOf(frontmatter: string): unknown {
   const info = getFrontMatterInfo(frontmatter);
   const obj = parseYaml(info.frontmatter) as Record<string, unknown> | null;
   return obj?.tags;
 }
 
-/** True when any line is a plugin conflict-marker line. */
 function hasMarkerLines(s: string): boolean {
   return /^(?:<<<<<<<|=======|>>>>>>>)/m.test(s);
 }
@@ -36,8 +34,6 @@ function fm(...lines: string[]): string {
   return `---\n${lines.join('\n')}\n---`;
 }
 
-// ─── US4: no-frontmatter passthrough ─────────────────────────────────────────
-
 describe('FrontmatterMergeStrategy – no frontmatter (US4)', () => {
   const strategy = new FrontmatterMergeStrategy();
 
@@ -57,16 +53,13 @@ describe('FrontmatterMergeStrategy – no frontmatter (US4)', () => {
   });
 });
 
-// ─── US1: array union merge ───────────────────────────────────────────────────
-
 describe('FrontmatterMergeStrategy – array union (US1)', () => {
   const strategy = new FrontmatterMergeStrategy();
   const base = fm('tags:\n  - work');
 
   it('[SPEC:HFM-2] base-aware set merge: remote replaced the only tag, local unchanged → replacement wins (043 supersedes blind union)', () => {
-    // base [work]; local keeps work; remote deleted work + added ideas. Under the base-aware set 3-way
-    // the remote deletion of `work` propagates (feature 043 replaced feature 040's blind union, which
-    // would have kept both). This is the deletion-propagation the whole feature exists to deliver.
+    // base [work]; local keeps work; remote deleted work + added ideas. Under the base-aware set 3-way the remote
+    // deletion of `work` propagates (a blind union would have kept both).
     const local = fm('tags:\n  - work');
     const remote = fm('tags:\n  - ideas');
     const result = strategy.merge(base, local, remote);
@@ -114,15 +107,12 @@ describe('FrontmatterMergeStrategy – array union (US1)', () => {
   });
 });
 
-// ─── YAML parse failure fallback ──────────────────────────────────────────────
-
 describe('FrontmatterMergeStrategy – YAML parse failure fallback', () => {
   const strategy = new FrontmatterMergeStrategy();
 
   it('[SPEC:HFM-7] an unparseable side makes merge return success:false with empty (never marker-laden) frontmatter', () => {
-    // { unclosed flow mapping → parseYaml throws. Feature 043: success:false means ONLY "caller must
-    // pick a whole side per policy" — it is NOT a signal to text-diff, so the returned frontmatter is
-    // empty and can never carry conflict-marker lines.
+    // { unclosed flow mapping -> parseYaml throws. success:false means ONLY "caller must pick a whole side per policy",
+    // NOT a signal to text-diff, so the returned frontmatter is empty and can never carry conflict-marker lines.
     const bad = '---\n{ unclosed: yaml\n---';
     const good = fm('tags:\n  - work');
     const result = strategy.merge('', bad, good);
@@ -135,8 +125,6 @@ describe('FrontmatterMergeStrategy – YAML parse failure fallback', () => {
     expect(flipped.frontmatter).toBe('');
   });
 });
-
-// ─── US2: scalar auto-resolve ─────────────────────────────────────────────────
 
 describe('FrontmatterMergeStrategy – scalar auto-resolve (US2)', () => {
   const strategy = new FrontmatterMergeStrategy();
@@ -208,14 +196,11 @@ describe('FrontmatterMergeStrategy – scalar auto-resolve (US2)', () => {
   });
 });
 
-// ─── HFM-6: scalar conflict via fixed latest-mtime tiebreak; nested objects stay opaque ───
-
 describe('FrontmatterMergeStrategy – scalar latest-mtime tiebreak + nested-object opacity (HFM-6, feature 047)', () => {
   const strategy = new FrontmatterMergeStrategy();
 
   it('[SPEC:HFM-6] a both-sides scalar conflict is decided by a fixed latest-mtime tiebreak (no policy knob)', () => {
-    // Both sides changed `status` to different values → the newer side wins. Feature 047 removed the
-    // experimental scalar policy; the tiebreak is now a fixed latest-mtime.
+    // Both sides changed `status` to different values -> the newer side wins (fixed latest-mtime tiebreak).
     const base = fm('status: draft');
     const local = fm('status: done');
     const remote = fm('status: in-review');
@@ -241,8 +226,6 @@ describe('FrontmatterMergeStrategy – scalar latest-mtime tiebreak + nested-obj
     expect(result.frontmatter).not.toContain('Bob');
   });
 });
-
-// ─── Feature 047: scalar tiebreak is a fixed latest-mtime (remote wins on tie) ───
 
 describe('FrontmatterMergeStrategy – scalar latest-mtime tiebreak (feature 047)', () => {
   const strategy = new FrontmatterMergeStrategy();
@@ -296,8 +279,6 @@ describe('FrontmatterMergeStrategy – scalar latest-mtime tiebreak (feature 047
   });
 });
 
-// ─── MergeEngine integration: frontmatter is merged semantically ──────────────
-
 describe('MergeEngine – frontmatter semantic merge integration', () => {
   const engine = new MergeEngine();
 
@@ -305,7 +286,7 @@ describe('MergeEngine – frontmatter semantic merge integration', () => {
     const base = '---\ntags:\n  - work\n---\nBody';
     const local = '---\ntags:\n  - work\n  - local-tag\n---\nBody';
     const remote = '---\ntags:\n  - work\n  - remote-tag\n---\nBody';
-    // frontmatter merge is the markdown path (resolveMarkdown); merge() is now non-md body-only (G3-3).
+    // frontmatter merge is the markdown path (resolveMarkdown); merge() is non-md body-only.
     const result = engine.resolveMarkdown(base, local, remote, { frontmatterStrategy: 'merge', bodyStrategy: 'merge' });
     expect(result.success).toBe(true);
     expect(result.mergedContent).toContain('local-tag');
@@ -335,8 +316,6 @@ describe('MergeEngine – frontmatter semantic merge integration', () => {
     expect(result.mergedContent).not.toContain('in-review');
   });
 });
-
-// ─── Feature 043: base-aware SET 3-way for list fields ─────────────────────────
 
 describe('FrontmatterMergeStrategy – base-aware set merge (feature 043)', () => {
   const strategy = new FrontmatterMergeStrategy();
@@ -405,10 +384,7 @@ describe('FrontmatterMergeStrategy – base-aware set merge (feature 043)', () =
   });
 });
 
-// ─── HFM-1: production parses/serializes via Obsidian, never a directly-bundled YAML lib ───────
-
 describe('Frontmatter merge production code – no raw js-yaml import (HFM-1)', () => {
-  /** Recursively collect every .ts file under a directory. */
   function collect(dir: string, acc: string[] = []): string[] {
     for (const name of readdirSync(dir)) {
       const p = join(dir, name);

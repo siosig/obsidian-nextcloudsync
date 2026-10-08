@@ -1,13 +1,7 @@
-// feature 090 (specs/090-server-lock-force-resolve/contracts/lockdiscovery-propfind.md)
-// No [SPEC:...] tags: the clauses this serves are claimed once specs/main/spec.md is updated
-// (see tests/a-no-nextcloud/network/dav/propfind.test.ts for the same convention).
-//
-// NextcloudClient.uploadFile (PUT) / deleteFile (DELETE): on a 423 response, one extra Depth:0
-// lockdiscovery PROPFIND is issued to the same path. If it comes back 207 with a readable lock
-// owner, a ServerLockedError (carrying the owner) is thrown instead of a plain NetworkError. Any
-// failure of that extra lookup (non-207, owner unreadable) MUST fall back to exactly the original
-// plain NetworkError('HTTP 423 (<method>)') — the lookup must never replace or hide the original
-// 423 with something worse (contract "呼び出し側の契約", FR-004).
+// NextcloudClient.uploadFile (PUT) / deleteFile (DELETE): on a 423, one extra Depth:0 lockdiscovery PROPFIND goes to
+// the same path. A 207 with a readable lock owner throws ServerLockedError (carrying the owner) instead of a plain
+// NetworkError. Any failure of that lookup (non-207, owner unreadable) MUST fall back to exactly the original
+// NetworkError('HTTP 423 (<method>)'): the lookup must never replace or hide the 423 (docs/spec.md §6.5a).
 import { requestUrl } from 'obsidian';
 import { NextcloudClient } from '../../../src/network/NextcloudClient';
 import { DEFAULT_SETTINGS, DavSyncSettings, NetworkError, ServerLockedError } from '../../../src/types';

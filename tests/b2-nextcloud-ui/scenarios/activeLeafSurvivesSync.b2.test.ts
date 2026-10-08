@@ -1,13 +1,6 @@
-// Repro for GitHub issue #15: "Auto sync closes the currently open note after synchronization".
-//
-// A note is open in the active leaf; a remote-side change (simulated via the plugin's own
-// already-authenticated WebDAV client, standing in for another device's edit) is pulled down by
-// sync-now — the same code path a periodic background sync takes. LocalAdapter.atomicWrite /
-// atomicWriteBinary (src/data/LocalAdapter.ts) apply that change as write-tmp -> remove(target) ->
-// rename(tmp, target): a physical delete+recreate of the file Obsidian is displaying. Obsidian
-// detaches the view on the delete event, leaving an empty pane in the same leaf — reproduced
-// 2026-07-11 against a live instance (leaf survives, but its view drops to viewType "empty" with
-// no file). Expected to fail until atomicWrite avoids delete+recreate for a currently open file.
+// Regression test for GitHub issue #15: sync closed the note that was open in the active leaf.
+// atomicWrite replaces a file via remove(target) -> rename(tmp, target); Obsidian detaches the view of
+// the deleted file and leaves an empty leaf. Expected to fail until an open file avoids delete+recreate.
 import { browser, expect } from '@wdio/globals';
 import { requireUiEnv } from '../support/env';
 
@@ -34,7 +27,6 @@ describe('[issue-15][SPEC:OL-1] active leaf survives a sync that updates the ope
         if (existing) await app.vault.delete(existing);
         await app.vault.create(path, content);
 
-        // Establish the baseline: push the note to the server and record it as synced.
         await p.runSyncNow();
       },
       ui.values.NEXTCLOUD_SERVER_URL,
@@ -54,7 +46,6 @@ describe('[issue-15][SPEC:OL-1] active leaf survives a sync that updates the ope
     }, NOTE_PATH);
     expect(leafId).not.toBeNull();
 
-    // Simulate another device changing the file on the server, then pull it down with sync-now.
     await browser.executeObsidian(
       async ({ app }, path: string, content: string) => {
         const p = (app as any).plugins.plugins['nextcloud-sync'];
@@ -77,7 +68,7 @@ describe('[issue-15][SPEC:OL-1] active leaf survives a sync that updates the ope
       };
     }, leafId as string, NOTE_PATH);
 
-    // The bug: sync's delete+recreate of the open file detaches the leaf's view (empty pane).
+    // The bug: delete+recreate of the open file detaches the leaf's view (empty pane).
     expect(after.leafSurvived).toBe(true);
     expect(after.stillShowingNote).toBe(true);
     expect(after.editorContent).toBe(REMOTE_EDIT_CONTENT);

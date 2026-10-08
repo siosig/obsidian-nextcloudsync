@@ -1,13 +1,9 @@
-// Spec clause catalog (machine-checkable coverage source of truth).
+// Spec clause catalog: the source of truth for machine-checked coverage.
 //
-// Replaces the per-suite "conformance" mechanism: every in-scope spec clause is
-// listed here, and coverage.test.ts statically maps clauses -> tests by scanning
-// test names for the clause id (bare, e.g. "CF-2"/"FR-019") or an explicit
-// [SPEC:<id>] tag. A clause with no matching test and no `waiver` FAILS the
-// meta-test (uncovered). A clause with a non-empty `waiver` is reported as a
-// pending spec-vs-implementation adjudication (NOT a failure) — this is how the
-// known live-server findings F1..F5 (report/mock_test.md §7) stay visible
-// instead of passing silently.
+// Every in-scope clause is listed here, and coverage.test.ts maps clauses to tests by scanning for an
+// explicit [SPEC:<id>] tag. A clause with no test and no `waiver` fails the meta-test; one with a
+// non-empty `waiver` is reported as pending adjudication (not a failure), which keeps the known
+// live-server findings F1..F5 visible instead of passing silently.
 //
 // Stored as a typed TS module (not YAML) to avoid adding a parser dependency.
 
@@ -21,41 +17,36 @@ export interface Clause {
   waiver?: string;
 }
 
-// Findings reused as waiver reasons (report/mock_test.md §7).
+// Live-server findings reused as waiver reasons.
 const F1 = 'F1: server returns 415 for sync-collection REPORT -> getSyncToken null, incremental sync unusable; behaviour adjudication pending';
 const F3 = 'F3: files_lock is owner-based -> 423 not reproducible with same app password; needs a second user';
 const CHK_CORRUPT = 'post-assembly checksum corruption cannot be induced against an uncontrolled live server';
 const SF_AGG = 'sync-folder subcategory aggregated under CG/SF-1; dedicated split deferred (not yet a test)';
-// Deferred b-1 end-to-end stubs (it.skip): traced + documented but not yet executed against a live
-// server / SyncEngine harness. Surfaced as waivers (pending adjudication) instead of silently passing
-// via the skipped test's title — the coverage scanner now ignores skipped-test traceability.
+// Deferred b-1 end-to-end stubs (it.skip), surfaced as waivers because the coverage scanner ignores
+// skipped tests.
 const DEFER_HARNESS = 'b-1 e2e deferred (it.skip) — engine-level, needs a SyncEngine harness';
 const DEFER_SERVER = 'b-1 e2e deferred (it.skip) — cannot force the required live-server condition from a test';
-// spec 042 (bulk conflict resolution): jest runs with testEnvironment: 'node' (no `document`, no real
-// Modal/Setting instantiation — same constraint as SNI-5/SNI-6 and the FRC UI clauses), so
-// SyncStatusModal DOM rendering + main.ts host-wiring clauses are waived to the b-2 UI layer /
-// quickstart manual check; the pure batch-logic core they depend on is covered by BRC-1..7/9.
+// jest runs under testEnvironment 'node' (no `document`, no real Modal/Setting), so SyncStatusModal DOM
+// rendering and main.ts host wiring are waived to the b-2 UI layer / manual check; the pure batch logic
+// is covered by BRC-1..7/9.
 const BRC_DOM =
   'DOM/host wiring verified via quickstart manual check (specs/042-bulk-resolve-conflicts/quickstart.md); ' +
   'batch logic core covered by BRC-1..7,9 (forceResolution.test.ts, layer a)';
-// spec 056 (mass-delete breaker report notes + dir bulk-resolve): SyncStatusModal.addErrorSection /
-// addDirBreakerBulkResolveRow DOM rendering (click opens a report note; the dir-only bulk-resolve
-// row) cannot be exercised under jest's testEnvironment: 'node' (no `document`) — same constraint as
-// BRC_DOM/SNI-5/SNI-6. The pure logic it depends on (report note formatting, resolveSkippedDir/
-// resolveAllSkippedDirs, sync exclusion) is covered at layer a by MDV-6..9.
+// SyncStatusModal.addErrorSection / addDirBreakerBulkResolveRow DOM rendering cannot run under
+// testEnvironment 'node' (same constraint as BRC_DOM); the pure logic is covered at layer a by MDV-6..9.
 const MDV_DOM =
   'DOM rendering verified via quickstart manual check ' +
   '(specs/056-massdelete-breaker-report-bulk-resolve/quickstart.md); ' +
   'pure logic covered by MDV-6..9 (dirSync.test.ts/breakerReport.test.ts, layer a)';
 
 export const CLAUSES: Clause[] = [
-  // --- CN: connection/auth ---
+  // CN: connection/auth
   { id: 'CN-1', source: 'report/mock_test.md §3.A', layer: 'b-1' },
   { id: 'CN-2', source: 'report/mock_test.md §3.A', layer: 'b-1' },
   { id: 'CN-3', source: 'report/mock_test.md §3.A', layer: 'b-1', waiver: DEFER_SERVER },
   { id: 'CN-4', source: 'report/mock_test.md §3.A', layer: 'b-1' },
   { id: 'CN-5', source: 'report/mock_test.md §3.A', layer: 'b-1' },
-  // --- UP/DL/DEL/MV: CRUD ---
+  // UP/DL/DEL/MV: CRUD
   { id: 'UP-1', source: 'report/mock_test.md §3.B', layer: 'b-1' },
   { id: 'UP-2', source: 'report/mock_test.md §3.B', layer: 'b-1' },
   { id: 'UP-3', source: 'report/mock_test.md §3.B', layer: 'b-1' },
@@ -65,12 +56,12 @@ export const CLAUSES: Clause[] = [
   { id: 'DL-2', source: 'report/mock_test.md §3.B', layer: 'b-1' },
   { id: 'DEL-1', source: 'report/mock_test.md §3.B', layer: 'b-1' },
   { id: 'DEL-2', source: 'report/mock_test.md §3.B', layer: 'b-1' },
-  // Mass-delete circuit breaker threshold (specs/main/spec.md §8): extracted to a pure helper and verified
-  // at layer a (massDeletion.test.ts). The b-1 full-scan e2e remains a deferred it.skip (SF-1 waiver).
+  // Mass-delete circuit breaker threshold (docs/spec.md §8): a pure helper verified at layer a
+  // (massDeletion.test.ts). The b-1 full-scan e2e remains a deferred it.skip (SF-1 waiver).
   { id: 'DEL-3', source: 'specs/main/spec.md §8 (mass-delete circuit breaker)', layer: 'a' },
   { id: 'MV-1', source: 'report/mock_test.md §3.B', layer: 'b-1' },
   { id: 'MV-2', source: 'report/mock_test.md §3.B', layer: 'b-1' },
-  // --- SZ: size boundary ---
+  // SZ: size boundary
   { id: 'SZ-1', source: 'report/mock_test.md §3.C', layer: 'b-1' },
   { id: 'SZ-2', source: 'report/mock_test.md §3.C', layer: 'b-1' },
   { id: 'SZ-3', source: 'report/mock_test.md §3.C', layer: 'b-1' },
@@ -78,18 +69,18 @@ export const CLAUSES: Clause[] = [
   { id: 'SZ-5', source: 'report/mock_test.md §3.C', layer: 'b-1' },
   { id: 'SZ-6', source: 'report/mock_test.md §3.C', layer: 'b-1' },
   { id: 'SZ-7', source: 'report/mock_test.md §3.C', layer: 'b-1' },
-  // --- CHK: chunked ---
+  // CHK: chunked
   { id: 'CHK-1', source: 'report/mock_test.md §3.D', layer: 'b-1' },
   { id: 'CHK-2', source: 'report/mock_test.md §3.D', layer: 'b-1' },
   { id: 'CHK-3', source: 'report/mock_test.md §3.D', layer: 'b-1', waiver: CHK_CORRUPT },
   { id: 'CHK-4', source: 'report/mock_test.md §3.D', layer: 'b-1', waiver: DEFER_SERVER },
-  // --- LK: locking ---
+  // LK: locking
   { id: 'LK-1', source: 'report/mock_test.md §3.E', layer: 'b-1', waiver: DEFER_HARNESS },
   { id: 'LK-2', source: 'report/mock_test.md §3.E', layer: 'b-1' },
   { id: 'LK-3', source: 'report/mock_test.md §3.E', layer: 'b-1', waiver: DEFER_HARNESS },
   { id: 'LK-4', source: 'report/mock_test.md §3.E', layer: 'b-1' },
   { id: 'LK-5', source: 'report/mock_test.md §3.E', layer: 'b-1', waiver: F3 },
-  // --- LDO/SLE/SL: 423 lock discovery & ServerLockedError wiring (spec 090, GitHub issue #58) ---
+  // LDO/SLE/SL: 423 lock discovery & ServerLockedError wiring (issue #58)
   { id: 'LDO-1', source: 'specs/main/spec.md §6.5a', layer: 'a' },
   { id: 'LDO-2', source: 'specs/main/spec.md §6.5a', layer: 'a' },
   { id: 'LDO-3', source: 'specs/main/spec.md §6.5a', layer: 'a' },
@@ -108,7 +99,7 @@ export const CLAUSES: Clause[] = [
   { id: 'SLE-12', source: 'specs/main/spec.md §6.5a', layer: 'a' },
   { id: 'SL-1', source: 'specs/main/spec.md §6.5a', layer: 'b-1' },
   { id: 'SL-2', source: 'specs/main/spec.md §6.5a', layer: 'b-1' },
-  // --- CF: conflict resolution ---
+  // CF: conflict resolution
   { id: 'CF-1', source: 'report/mock_test.md §3.F', layer: 'b-1' },
   { id: 'CF-2', source: 'report/mock_test.md §3.F', layer: 'b-1' },
   { id: 'CF-3', source: 'report/mock_test.md §3.F', layer: 'b-1' },
@@ -117,18 +108,18 @@ export const CLAUSES: Clause[] = [
   { id: 'CF-6', source: 'report/mock_test.md §3.F', layer: 'b-1' },
   { id: 'CF-7', source: 'report/mock_test.md §3.F', layer: 'b-1' },
   { id: 'CF-8', source: 'report/mock_test.md §3.F', layer: 'b-1' },
-  // CF-9 (conflict-region cap) removed by feature 048: there is no region-count cap any more — each body
-  // conflict region is resolved by conflictStrategy, not counted against a threshold.
+  // CF-9 (conflict-region cap) was removed: each body conflict region is resolved by conflictStrategy, not
+  // counted against a threshold.
   { id: 'CF-10', source: 'report/mock_test.md §3.F', layer: 'b-1' },
   { id: 'CF-11', source: 'report/mock_test.md §3.F', layer: 'b-1' },
-  // F4 resolved in 0.7.1 (993de3c): Diff3Strategy now uses diff3Merge; verified at layer a.
+  // F4 resolved: Diff3Strategy uses diff3Merge; verified at layer a.
   { id: 'CF-12', source: 'specs/main/spec.md §6.2 / §18 (F4 resolved)', layer: 'a' },
   { id: 'CF-13', source: 'report/mock_test.md §3.F', layer: 'b-1', waiver: 'CF-13 If-Match 412 → conflict routing: b-1 e2e deferred (it.skip, engine-level); the 412→PreconditionFailedError client unit is exercised at layer a' },
-  // F5 resolved (2026-06-21, option a): MergeEngine.mergeText now feeds the real diff3 region count
-  // to the maxConflictRegions breaker, so body conflicts reach conflictFailurePolicy when the cap is
-  // exceeded. Verified at layer a (mergeEngine.test.ts).
+  // F5 resolved: MergeEngine.mergeText feeds the real diff3 region count to the maxConflictRegions
+  // breaker, so body conflicts reach conflictFailurePolicy once the cap is exceeded. Verified at layer a
+  // (mergeEngine.test.ts).
   { id: 'CF-14', source: 'specs/main/spec.md §6.2 / §18 (F5 resolved)', layer: 'a' },
-  // --- CSF: conflict strategy by file type (feature 037) ---
+  // CSF: conflict strategy by file type
   { id: 'CSF-1', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md', layer: 'a' },
   { id: 'CSF-2', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md', layer: 'a' },
   { id: 'CSF-3', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md', layer: 'a' },
@@ -142,14 +133,14 @@ export const CLAUSES: Clause[] = [
   { id: 'CSF-11', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md (R3 migration)', layer: 'a' },
   { id: 'CSF-12', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md (FR-013)', layer: 'a' },
   { id: 'CSF-13', source: 'specs/037-conflict-strategy-by-filetype/contracts/conflict-strategy.md (FR-010)', layer: 'a' },
-  // --- RT: retry queue ---
-  // retryQueue enqueue policy (specs/main/spec.md §6.3): NetworkError → retry, other errors → record only.
+  // RT: retry queue
+  // retryQueue enqueue policy (docs/plan.md §13): NetworkError -> retry, other errors -> record only.
   // Verified at layer a via the real processFileWithRetry wiring (retryQueue.test.ts).
   { id: 'RT-1', source: 'specs/main/spec.md §6.3 (retryQueue)', layer: 'a' },
-  // withRetry() shouldRetry predicate injection (specs/main/spec.md §6.3, feature 067): default
-  // preserves legacy NetworkError-only behavior; callers may inject a custom predicate.
+  // withRetry() shouldRetry predicate injection (docs/plan.md §13): the default preserves NetworkError-only
+  // behavior; callers may inject a custom predicate.
   { id: 'RT-2', source: 'specs/main/spec.md §6.3 (withRetry shouldRetry injection, feature 067)', layer: 'a' },
-  // --- CG: config-folder categories ---
+  // CG: config-folder categories
   { id: 'CG-1', source: 'report/mock_test.md §3.G', layer: 'b-1' },
   { id: 'CG-2', source: 'report/mock_test.md §3.G', layer: 'b-1' },
   { id: 'CG-3', source: 'report/mock_test.md §3.G', layer: 'b-1' },
@@ -160,40 +151,40 @@ export const CLAUSES: Clause[] = [
   { id: 'CG-8', source: 'report/mock_test.md §3.G', layer: 'b-1' },
   { id: 'CG-9', source: 'report/mock_test.md §3.G', layer: 'b-1' },
   { id: 'CG-10', source: 'report/mock_test.md §3.G', layer: 'b-1', waiver: DEFER_HARNESS },
-  // --- SF: sync-folder ---
+  // SF: sync-folder
   { id: 'SF-1', source: 'report/mock_test.md §3.G', layer: 'b-1', waiver: 'SF-1 full-scan deletion safety: b-1 e2e deferred (it.skip) — needs a SyncEngine harness; the mass-delete circuit-breaker threshold is verified at layer a (DEL-3)' },
   { id: 'SF-2', source: 'report/mock_test.md §3.G', layer: 'b-1', waiver: SF_AGG },
   { id: 'SF-3', source: 'report/mock_test.md §3.G', layer: 'b-1', waiver: SF_AGG },
   { id: 'SF-4', source: 'report/mock_test.md §3.G', layer: 'b-1', waiver: SF_AGG },
-  // --- TK: sync-token ---
+  // TK: sync-token
   { id: 'TK-1', source: 'report/mock_test.md §3.H', layer: 'b-1', waiver: F1 },
   { id: 'TK-2', source: 'report/mock_test.md §3.H', layer: 'b-1', waiver: F1 },
-  // --- VR: versions ---
+  // VR: versions
   { id: 'VR-1', source: 'report/mock_test.md §3.I', layer: 'b-1' },
   { id: 'VR-2', source: 'report/mock_test.md §3.I', layer: 'b-1' },
   { id: 'VR-3', source: 'report/mock_test.md §3.I', layer: 'b-1' },
   { id: 'VR-4', source: 'report/mock_test.md §3.I', layer: 'b-1' },
-  // --- ST: status ---
+  // ST: status
   { id: 'ST-1', source: 'report/mock_test.md §3', layer: 'b-1' },
-  // --- INIT: install initial state (lifecycle) ---
+  // INIT: install initial state (lifecycle)
   { id: 'INIT-1', source: 'report/mock_test.md §7.3', layer: 'b-1' },
   { id: 'INIT-2', source: 'report/mock_test.md §7.3', layer: 'b-1' },
   { id: 'INIT-3', source: 'report/mock_test.md §7.3', layer: 'b-1' },
-  // --- MD: multi-device convergence (lifecycle) ---
+  // MD: multi-device convergence (lifecycle)
   { id: 'MD-1', source: 'spec 019 FR-014', layer: 'b-1' },
   { id: 'MD-2', source: 'spec 019 FR-014', layer: 'b-1' },
   { id: 'MD-3', source: 'spec 019 FR-014', layer: 'b-1' },
-  // --- PR: pause / resume mid-sync (lifecycle) ---
+  // PR: pause / resume mid-sync (lifecycle)
   { id: 'PR-1', source: 'spec 019 FR-016', layer: 'b-1' },
   { id: 'PR-2', source: 'spec 019 FR-016', layer: 'b-1' },
-  // --- CONC: concurrency / running-guard integrity ---
+  // CONC: concurrency / running-guard integrity
   { id: 'CONC-1', source: 'specs/main/spec.md §5 (a failed ensureClient must not strand the running guard; feature 053)', layer: 'a' },
-  // --- NET: network request timeout (feature 054) ---
+  // NET: network request timeout
   { id: 'NET-1', source: 'specs/main/spec.md §5.6 (networkTimeoutSeconds bounds every WebDAV request so a hang cannot lock the engine)', layer: 'a' },
   // Read-only WebDAV requests (PROPFIND/GET) retry up to 2x on a transient req() rejection; writes and
-  // REPORT are explicitly out of scope (specs/main/spec.md §5.6a, feature 067).
+  // REPORT are out of scope (docs/spec.md §5.6a).
   { id: 'NET-3', source: 'specs/main/spec.md §5.6a (read-only WebDAV requests retry up to 2x on transient failure, writes/REPORT excluded)', layer: 'a' },
-  // --- BUG: findbugs 2026-07-06 high-priority data-safety / concurrency fixes (feature 055) ---
+  // BUG: high-priority data-safety / concurrency fixes
   { id: 'G1-1', source: 'specs/main/spec.md §18.1 (a merge upload failure keeps the file flagged; the merge result is never silently dropped)', layer: 'a' },
   { id: 'G1-2', source: 'specs/main/spec.md §18.1 (StateDB tracking is cleared only on a successful remote delete; a real failure keeps the entry so the deletion retries)', layer: 'a' },
   { id: 'G4-1', source: 'specs/main/spec.md §18.1 (atomicWrite keeps the tmp copy when rename fails after the target was removed — never loses the sole surviving copy)', layer: 'a' },
@@ -203,31 +194,31 @@ export const CLAUSES: Clause[] = [
   { id: 'G6-2', source: 'specs/main/spec.md §18.1 (version Restore is guarded by a modal-level in-flight gate)', layer: 'a' },
   { id: 'G3-1', source: 'specs/main/spec.md §18.1 (empty-base merge never silently fuses two divergent sides at the character level; line-preserving unions stay clean)', layer: 'a' },
   { id: 'G3-3', source: 'specs/main/spec.md §18.1 (MergeEngine.merge for non-markdown never splits a leading --- block as frontmatter — a one-sided in-block edit is 3-way merged, not discarded)', layer: 'a' },
-  // --- MWM: watch mode on mobile + "Wi-Fi only" applied to watch (feature 091) ---
+  // MWM: watch mode on mobile + "Wi-Fi only" applied to watch
   { id: 'MWM-1', source: 'specs/main/spec.md §5.7c (the "Sync on file change" toggle is enabled and described identically on every platform)', layer: 'a' },
   { id: 'MWM-2', source: 'specs/main/spec.md §5.7c (while "Wi-Fi only" blocks on cellular, all six watch operations end with zero side effects and one log line)', layer: 'a' },
   { id: 'MWM-3', source: 'specs/main/spec.md §5.7c (watch changes skipped on cellular converge on a live server after the next full sync on Wi-Fi)', layer: 'b-1' },
   { id: 'MWM-4', source: 'specs/main/spec.md §5.7c (on a real Android device the WebView exposes navigator.connection.type and watch mode pushes a create and an edit without "Sync now")', layer: 'b-3', waiver: 'Verified in the b-3 layer against a real Obsidian on a real Android emulator (bash tests/docker/run.sh b3); cannot run in the default CI suite, which has no device.' },
   { id: 'MWM-5', source: 'specs/main/spec.md §5.7c (the real SyncEngine hands its own "Wi-Fi only" decision to watch mode: syncOnWifiOnly x connection type x iOS)', layer: 'a' },
   { id: 'MWM-6', source: 'specs/main/spec.md §15 (watchOnChangeEnabled stays opt-in on mobile: first-run default false, a saved value is kept)', layer: 'a' },
-  // --- LOG: active-log self-sync exclusion + write-failure visibility ---
+  // LOG: active-log self-sync exclusion + write-failure visibility
   { id: 'LOG-1', source: 'specs/main/spec.md §9.1', layer: 'a' },
   { id: 'LOG-2', source: 'specs/main/spec.md §12 (log write failures surface as a Notice)', layer: 'a' },
-  // --- EXCL-HARD: machine-managed folders (.git/.trash) permanently excluded from sync ---
+  // EXCL-HARD: machine-managed folders (.git/.trash) permanently excluded from sync
   { id: 'EXCL-HARD-1', source: 'specs/main/spec.md §9.3 (.git and .trash are hard-excluded regardless of the user list; targeted, not blanket — .archive/.env still sync)', layer: 'a' },
-  // --- file-mix distribution ---
+  // file-mix distribution
   { id: 'FR-017', source: 'spec 019', layer: 'a' },
-  // --- spec 019 (this feature's own requirements: traceability mechanism) ---
+  // Traceability mechanism
   { id: 'FR-002', source: 'spec 019 (coverage map)', layer: 'a' },
   { id: 'FR-003', source: 'spec 019 (deviation visibility)', layer: 'a' },
   { id: 'FR-025', source: 'spec 019 (b-2 UI)', layer: 'b-2' },
-  // --- spec 020 (settings tooltips + sign-in clarity); FR-001/005/010 shared above ---
-  // spec 020 FR-006 (exhaustive tooltip catalog) was retired by feature 077: tooltips were removed and
-  // their text merged into each row's desc, which DSD-1..DSD-5 cover.
+  // Settings tooltips + sign-in clarity (FR-001/005/010 shared above)
+  // FR-006 (exhaustive tooltip catalog) is retired: tooltips were removed and their text merged into each
+  // row's desc, which DSD-1..DSD-5 cover.
   { id: 'FR-007', source: 'spec 020 (Server URL desc / 405; always-visible desc since feature 077)', layer: 'a' },
-  // spec 020 FR-014 ("change no behaviour or data model, UI strings only") constrained that one feature's
-  // diff and describes no current behaviour, so it is not a clause any test can verify; retired.
-  // --- DP: directory propagation (spec 021, specs/main/spec.md §8a) ---
+  // FR-014 ("change no behaviour or data model") constrained one change and describes no current
+  // behaviour, so no test can verify it; retired.
+  // DP: directory propagation (docs/spec.md §8a)
   // DP-1..15 are all covered at layer a (dirSync.test.ts); DP-e2e / DP-e2e-empty at b-1.
   { id: 'DP-1',  source: 'specs/main/spec.md §8a.1 (local-only untracked → MKCOL)', layer: 'a' },
   { id: 'DP-2',  source: 'specs/main/spec.md §8a.1 (remote-only untracked → mkdir)', layer: 'a' },
@@ -240,21 +231,21 @@ export const CLAUSES: Clause[] = [
   { id: 'DP-9',  source: 'specs/main/spec.md §8a.1 (delete ordering: deep-first)', layer: 'a' },
   { id: 'DP-10', source: 'specs/main/spec.md §8a.1 (non-empty probe skips delete)', layer: 'a' },
   { id: 'DP-11', source: 'specs/main/spec.md §8a.1 (circuit breaker)', layer: 'a' },
-  // DP-12 (lock ON wraps delete) removed in feature 033 — file locking is always off (see FX-4).
+  // DP-12 (lock ON wraps delete) was removed: file locking is always off (see FX-4).
   { id: 'DP-13', source: 'specs/main/spec.md §8a.1 (no lock around delete — locking always off, 033)', layer: 'a' },
   { id: 'DP-14', source: 'specs/main/spec.md §8a.1 (self-healing: one failed delete continues)', layer: 'a' },
   { id: 'DP-15', source: 'specs/main/spec.md §8a.1 (self-healing: listing failure skips session)', layer: 'a' },
   { id: 'DP-e2e',       source: 'specs/main/spec.md §8a.1 (cross-device empty-dir pruning e2e)', layer: 'b-1' },
   { id: 'DP-e2e-empty', source: 'specs/main/spec.md §8a.1 (empty dir created on A propagates to remote + B)', layer: 'b-1' },
-  // --- FX: fixed sync config (feature 033 — five low-value settings removed from the UI) ---
+  // FX: fixed sync config (five low-value settings removed from the UI)
   { id: 'FX-1', source: 'specs/main/spec.md §15 (fixed values: locking off, chunked on, regions unlimited)', layer: 'a' },
   { id: 'FX-2', source: 'specs/main/spec.md §15 (chunked upload always on, gated by server capability)', layer: 'a' },
   { id: 'FX-3', source: 'specs/main/spec.md §15 (chunk threshold platform-derived: 50 desktop / 20 mobile)', layer: 'a' },
   { id: 'FX-4', source: 'specs/main/spec.md §15 (file locking always off; If-Match is the lost-update guard)', layer: 'a' },
-  // --- DR: directory rename convergence (spec 021, specs/main/spec.md §8a.2) ---
+  // DR: directory rename convergence (docs/spec.md §8a.2)
   { id: 'DR-local',      source: 'specs/main/spec.md §8a.2 (local rename propagates via MOVE + dir reconcile)', layer: 'b-1' },
   { id: 'DR-concurrent', source: 'specs/main/spec.md §8a.2 (concurrent rename vs create converges without data loss)', layer: 'b-1' },
-  // --- ES: root-ETag short-circuit (spec 023, specs/main/spec.md §8a.5) ---
+  // ES: root-ETag short-circuit (docs/spec.md §8a.5)
   { id: 'ES-1',  source: 'specs/main/spec.md §8a.5 (full-scan path fetches root ETag)', layer: 'a' },
   { id: 'ES-2',  source: 'specs/main/spec.md §8a.5 (root ETag match → short-circuit, skip getFiles∞)', layer: 'a' },
   { id: 'ES-3',  source: 'specs/main/spec.md §8a.5 (rebuilt listing is complete → deletion safety unchanged)', layer: 'a' },
@@ -266,14 +257,14 @@ export const CLAUSES: Clause[] = [
   { id: 'ES-9',  source: 'specs/main/spec.md §8a.5 (remoteRootEtag/skipCount persist + pre-023 back-compat)', layer: 'a' },
   { id: 'ES-10', source: 'specs/main/spec.md §8a.5 (short-circuit also skips getDirectories∞ via rebuilt dirs)', layer: 'a' },
   { id: 'ES-11', source: 'specs/main/spec.md §8a.5 (tie no-op invalidates root ETag → next sync re-scans; no silent local-wins upload)', layer: 'a' },
-  // --- SG/WB: download safety guards (spec 025, specs/main/spec.md §9) ---
+  // SG/WB: download safety guards (docs/spec.md §9.2)
   { id: 'SG-1', source: 'specs/main/spec.md §9 (advertised size > received ⇒ anomalous remote)', layer: 'a' },
   { id: 'SG-2', source: 'specs/main/spec.md §9 (anomalous download refused: no overwrite, Base kept, retry)', layer: 'a' },
   { id: 'SG-3', source: 'specs/main/spec.md §9 (legitimate empty not flagged — zero false positives)', layer: 'a' },
   { id: 'SG-4', source: 'specs/main/spec.md §9 (guard applies to download and prefer-remote overwrite)', layer: 'a' },
   { id: 'WB-1', source: 'specs/main/spec.md §9 (atomicWriteBinary read-back: size matches ⇒ ok)', layer: 'a' },
   { id: 'WB-2', source: 'specs/main/spec.md §9 (atomicWriteBinary read-back: mismatch/missing ⇒ throws)', layer: 'a' },
-  // --- DSG: download-side Maximum file size guard (spec 035, specs/main/spec.md §9) ---
+  // DSG: download-side Maximum file size guard (docs/spec.md §9.4)
   { id: 'DSG-1', source: 'specs/main/spec.md §9 (sync download skips oversized remote before GET; no fetch/write/Base/retry, not an error)', layer: 'a' },
   { id: 'DSG-2', source: 'specs/main/spec.md §9 (delete-vs-edit restore routes through the same download guard)', layer: 'a' },
   { id: 'DSG-3', source: 'specs/main/spec.md §9 (conflict both-changed × oversized remote: skip, keep local, flag conflicted, no retry)', layer: 'a' },
@@ -282,7 +273,7 @@ export const CLAUSES: Clause[] = [
   { id: 'DSG-6', source: 'specs/main/spec.md §9 (maxFileSizeMB=0 unlimited: downloads regardless of size)', layer: 'a' },
   { id: 'DSG-7', source: 'specs/main/spec.md §9 (size exactly at cap is allowed — boundary)', layer: 'a' },
   { id: 'DSG-8', source: 'specs/main/spec.md §9 (self-healing: raising the cap downloads the once-skipped file)', layer: 'a' },
-  // --- SNI: slider numeric input (spec 036) ---
+  // SNI: slider numeric input
   { id: 'SNI-1', source: 'specs/036-slider-numeric-input (numeric input clamps out-of-range to bounds)', layer: 'a' },
   { id: 'SNI-2', source: 'specs/036-slider-numeric-input (invalid/empty/NaN input reverts to current value)', layer: 'a' },
   { id: 'SNI-3', source: 'specs/036-slider-numeric-input (off-grid integers in range accepted)', layer: 'a' },
@@ -290,7 +281,7 @@ export const CLAUSES: Clause[] = [
   { id: 'SNI-5', source: 'specs/036-slider-numeric-input (slider<->numeric input two-way sync)', layer: 'a', waiver: 'DOM wiring verified via quickstart manual check; logic core covered by SNI-1..4' },
   { id: 'SNI-6', source: 'specs/036-slider-numeric-input (numeric input commits on blur/Enter, not per keystroke)', layer: 'a', waiver: 'DOM event wiring verified via quickstart manual check' },
   { id: 'SNI-11', source: 'specs/036-slider-numeric-input (existing 5 sliders ranges/defaults unchanged)', layer: 'a' },
-  // --- MB: merge base store for true 3-way merge (spec 038) ---
+  // MB: merge base store for true 3-way merge
   { id: 'MB-1', source: 'specs/038-merge-base-store (base present → shared blocks not duplicated)', layer: 'a' },
   { id: 'MB-2', source: 'specs/038-merge-base-store (repeated conflicts stay clean as base advances)', layer: 'a' },
   { id: 'MB-3', source: 'specs/038-merge-base-store (base absent → empty-base duplication caught by expansion guard)', layer: 'a' },
@@ -305,7 +296,7 @@ export const CLAUSES: Clause[] = [
   { id: 'MB-12', source: 'specs/038-merge-base-store (MergeBaseStore persistence round-trip)', layer: 'a' },
   { id: 'MB-13', source: 'specs/038-merge-base-store (base/file mismatch converges next sync; guard is the backstop)', layer: 'a', waiver: 'crash-consistency convergence covered by MB-3/MB-4 self-healing; no separate forced-crash harness' },
   { id: 'MB-14', source: 'specs/038-merge-base-store (no new DavSyncSettings key)', layer: 'a' },
-  // --- MM: merge-marker re-entrancy guard + nested-marker backstop + base-aware 3-way (spec 039) ---
+  // MM: merge-marker re-entrancy guard + nested-marker backstop + base-aware 3-way
   { id: 'MM-1', source: 'specs/039-merge-marker-reentrancy (local already has plugin markers → safe-hold, no merge)', layer: 'a' },
   { id: 'MM-2', source: 'specs/039-merge-marker-reentrancy (remote already has plugin markers → safe-hold)', layer: 'a' },
   { id: 'MM-3', source: 'specs/039-merge-marker-reentrancy (markers removed → merge resumes single-level; self-healing)', layer: 'a' },
@@ -317,23 +308,23 @@ export const CLAUSES: Clause[] = [
   { id: 'MM-9', source: 'specs/039-merge-marker-reentrancy (real base + same-line edits → single-level conflict markers)', layer: 'a' },
   { id: 'MM-10', source: 'specs/039-merge-marker-reentrancy (empty base → legacy reconcile path preserved, no crash)', layer: 'a' },
   { id: 'MM-11', source: 'specs/039-merge-marker-reentrancy (b1: 2 devices same-file concurrent edit → markers → re-sync stays non-expanding, non-nested)', layer: 'b-1', waiver: 'live-server e2e; a-layer MM-1..10 prove the guard/backstop/3-way logic deterministically' },
-  // --- OM: orphan-marker self-heal (spec 041, FR-001..006) ---
+  // OM: orphan-marker self-heal (FR-001..006)
   { id: 'OM-1', source: 'specs/041-orphan-marker-selfheal-force-resolve (lone closing marker → NOT safe-hold, merges/self-heals)', layer: 'a' },
   { id: 'OM-2', source: 'specs/041-orphan-marker-selfheal-force-resolve (lone opening marker → NOT safe-hold, merges)', layer: 'a' },
   { id: 'OM-3', source: 'specs/041-orphan-marker-selfheal-force-resolve (orphan on the remote side → NOT safe-hold, merges)', layer: 'a' },
   { id: 'OM-4', source: 'specs/041-orphan-marker-selfheal-force-resolve (identical orphan both sides → clean marker-free convergence)', layer: 'a' },
-  // --- FRC: per-file force conflict resolution from the status dialog (spec 041, FR-007..016) ---
+  // FRC: per-file force conflict resolution from the status dialog (FR-007..016)
   { id: 'FRC-1', source: 'specs/041-orphan-marker-selfheal-force-resolve (remote → pull, overwrite local with remote)', layer: 'a' },
   { id: 'FRC-2', source: 'specs/041-orphan-marker-selfheal-force-resolve (local → push, overwrite remote with local)', layer: 'a' },
   { id: 'FRC-3', source: 'specs/041-orphan-marker-selfheal-force-resolve (latest modified → newer side wins via push/pull)', layer: 'a' },
   { id: 'FRC-4', source: 'specs/041-orphan-marker-selfheal-force-resolve (biggest size → bigger side wins via push/pull)', layer: 'a' },
   { id: 'FRC-5', source: 'specs/041-orphan-marker-selfheal-force-resolve (tie equal mtime/size → no-op, no notice)', layer: 'a' },
   { id: 'FRC-6', source: 'specs/041-orphan-marker-selfheal-force-resolve (overwrite failure propagates → file stays conflicted)', layer: 'a' },
-  // --- BRC: bulk conflict resolution from the status dialog (spec 042, contracts/bulk-resolve.md) ---
+  // BRC: bulk conflict resolution from the status dialog
   // BRC-1..7 and BRC-9 are the pure `applyBulkForceResolution` fan-out (src/ui/forceResolution.ts),
   // verified directly at layer a (forceResolution.test.ts, tagged [SPEC:BRC-*]). BRC-8/10..21 are
-  // SyncStatusModal DOM rendering + main.ts host wiring (see BRC_DOM above), waived to the b-2 UI
-  // layer / quickstart manual check.
+  // SyncStatusModal DOM rendering + main.ts host wiring (see BRC_DOM above), waived to the b-2 UI layer /
+  // manual check.
   { id: 'BRC-1', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-005 / SC-003: bulk outcome === per-file outcome)', layer: 'a' },
   { id: 'BRC-2', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-013: sequential processing, paths order)', layer: 'a' },
   { id: 'BRC-3', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-013 / SC-004: per-file rejection caught, batch continues)', layer: 'a' },
@@ -358,7 +349,7 @@ export const CLAUSES: Clause[] = [
   { id: 'BRC-19', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-014: exactly one aggregate Notice after the batch, never one per file)', layer: 'a', waiver: BRC_DOM },
   { id: 'BRC-20', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (FR-007: engine loop iterates only the filtered paths set)', layer: 'a', waiver: BRC_DOM },
   { id: 'BRC-21', source: 'specs/042-bulk-resolve-conflicts/contracts/bulk-resolve.md (SC-006 / FR-006: existing per-file onForceResolve wiring unchanged — no regression to feature 041)', layer: 'a', waiver: BRC_DOM },
-  // --- TN: atomic-write temp-file naming under the 255-byte NAME_MAX (spec 026) ---
+  // TN: atomic-write temp-file naming under the 255-byte NAME_MAX (docs/spec.md §9.3)
   { id: 'TN-1', source: 'specs/main/spec.md §9 (final name ≤255B always writes; temp suffix length not leaked)', layer: 'a' },
   { id: 'TN-2', source: 'specs/main/spec.md §9 (temp name length independent of target name length)', layer: 'a' },
   { id: 'TN-3', source: 'specs/main/spec.md §9 (temp names unique per target within a directory)', layer: 'a' },
@@ -367,7 +358,7 @@ export const CLAUSES: Clause[] = [
   { id: 'TN-6', source: 'specs/main/spec.md §9 (final name >255B ⇒ friendly name-too-long error)', layer: 'a' },
   { id: 'TN-7', source: 'specs/main/spec.md §9 (non-length errors pass through untranslated)', layer: 'a' },
   { id: 'TN-8', source: 'specs/main/spec.md §9 (isSyncTmpPath new+legacy suffix; temp cleaned on failure)', layer: 'a' },
-  // --- Core functional requirements asserted at the pure-logic layer ---
+  // Core functional requirements asserted at the pure-logic layer
   { id: 'FR-001', source: 'specs/001-nextcloudsync-plugin', layer: 'a' },
   { id: 'FR-005', source: 'specs/001-nextcloudsync-plugin', layer: 'a' },
   { id: 'FR-008', source: 'specs/001-nextcloudsync-plugin', layer: 'a' },
@@ -375,17 +366,16 @@ export const CLAUSES: Clause[] = [
   { id: 'FR-011', source: 'specs/001-nextcloudsync-plugin', layer: 'a' },
   { id: 'FR-019', source: 'specs/001-nextcloudsync-plugin', layer: 'a' },
   { id: 'FR-020', source: 'specs/001-nextcloudsync-plugin', layer: 'a' },
-  // Feature 028 (settings simplification): the README settings-defaults tables match the code.
+  // The README settings-defaults tables match the code.
   { id: 'SC-005', source: 'specs/028-settings-simplification', layer: 'a' },
-  // Feature 032 (debug settings reduction): the Debug section is a single toggle; device name is
-  // auto-derived and logs go to the vault root (both fixed); existing custom values reset on load.
+  // The Debug section is a single toggle; device name is auto-derived and logs go to the vault root (both
+  // fixed); existing custom values reset on load.
   { id: 'DBG-1', source: 'specs/032-debug-settings-reduction (single Debug toggle) — re-covered by settingDefinitions.test.ts after feature 077 deleted the tooltip catalog it used to be asserted against', layer: 'a' },
   { id: 'DBG-2', source: 'specs/032-debug-settings-reduction (auto device name + vault-root logs)', layer: 'a' },
   { id: 'DBG-3', source: 'specs/032-debug-settings-reduction (custom values reset to the fixed path)', layer: 'a' },
-  // Feature 034 (slider range/step): the numeric settings sliders get new min/max/step, sourced from
-  // SLIDER_LIMITS and mirrored by the mockup. Off-grid defaults stay non-destructive. The 034-rev
-  // amendment folds the "Sync on startup" toggle into the startup-delay slider (0 = off) with a
-  // migration, and exposes networkConcurrency 0 (floored to 1 by consumers).
+  // The numeric settings sliders take min/max/step from SLIDER_LIMITS. Off-grid defaults stay
+  // non-destructive. "Sync on startup" is folded into the startup-delay slider (0 = off) with a migration,
+  // and networkConcurrency 0 is floored to 1 by consumers.
   { id: 'SLD-1', source: 'specs/main/spec.md §15.1-slider (limits match the contract)', layer: 'a' },
   { id: 'SLD-2', source: 'specs/main/spec.md §15.1-slider (max % step === 0, no fractional final step)', layer: 'a' },
   { id: 'SLD-3', source: 'specs/main/spec.md §15.1-slider (on-grid defaults reachable)', layer: 'a' },
@@ -393,16 +383,14 @@ export const CLAUSES: Clause[] = [
   { id: 'SLD-5', source: 'specs/main/spec.md §15.1-slider (sliderLimits is a pure constant module)', layer: 'a' },
   { id: 'SLD-6', source: 'specs/main/spec.md §15.1-slider (desktop mockup mirrors SLIDER_LIMITS)', layer: 'a' },
   { id: 'SLD-7', source: 'specs/main/spec.md §15.1-slider (startup-delay 0 = off folds the toggle; migrateStartupToggleToDelay converges saved state)', layer: 'a' },
-  // SLD-8's guard test greps SyncEngine.ts for raw `settings.networkConcurrency` reads. Since
-  // feature 074 one consumer lives in sync/scan/RemoteListingSource, which receives an already
-  // floored accessor and floors again on its own (its batching loop advances by that value, so a
-  // 0 would not be slow — it would never terminate). That second floor is covered directly by
+  // SLD-8's guard test greps SyncEngine.ts for raw `settings.networkConcurrency` reads. One consumer lives
+  // in sync/scan/RemoteListingSource, which receives an already floored accessor and floors again (its
+  // batching loop advances by that value, so a 0 would never terminate). That second floor is covered by
   // tests/a-no-nextcloud/sync/scan/remoteListingSource.test.ts, not by the grep.
   { id: 'SLD-8', source: 'specs/main/spec.md §15.1-slider (networkConcurrency 0 floors to effective 1 at consumers; consumers now span SyncEngine and sync/scan/RemoteListingSource — spec.md §21)', layer: 'a' },
-  // Feature 043 (harden frontmatter merge): the frontmatter path is resolved STRUCTURALLY through
-  // Obsidian's official getFrontMatterInfo / parseYaml / stringifyYaml / parseFrontMatterStringArray
-  // — conflict-marker lines NEVER enter a `---` block, and list fields merge as a base-aware 3-way SET
-  // so deletions propagate (server-rewrite case) and near-duplicate spellings collapse to one entry.
+  // The frontmatter path is resolved STRUCTURALLY through Obsidian's getFrontMatterInfo / parseYaml /
+  // stringifyYaml / parseFrontMatterStringArray: conflict-marker lines NEVER enter a `---` block, and list
+  // fields merge as a base-aware 3-way SET so deletions propagate and near-duplicate spellings collapse.
   { id: 'HFM-1', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-004: parse/serialize via parseYaml/stringifyYaml; production no longer imports raw js-yaml)', layer: 'a' },
   { id: 'HFM-2', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-006: base-aware SET 3-way — agree→that, disagree→side≠base, both/one-side delete→absent, adds kept)', layer: 'a' },
   { id: 'HFM-3', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-007: no base → deduplicated union, adds preserved, deletions undetectable)', layer: 'a' },
@@ -415,23 +403,21 @@ export const CLAUSES: Clause[] = [
   { id: 'HFM-10', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-005: unparseable side → whole-side pick per scalar policy, latest-mtime/remote-win/local-win)', layer: 'a' },
   { id: 'HFM-11', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-002: nested-marker backstop still holds; combined with HFM-9 markers cannot originate in frontmatter)', layer: 'a' },
   // HFM-12 (FR-010) is a regression meta-clause: the refactor must not change body merge, deterministic
-  // strategies, re-entrancy/self-heal, or clean auto-merge. It is verified by the pre-existing
-  // merge/marker/base corpus (feature 038/039/040/041 clauses MB-*/CF-*, plus the untagged
-  // clean-merge/body tests in mergeEngine.test.ts) staying green — not by a single new assertion.
+  // strategies, re-entrancy/self-heal, or clean auto-merge. It is verified by the existing merge/marker/base
+  // corpus (MB-*/CF-*, plus the untagged clean-merge tests in mergeEngine.test.ts) staying green.
   { id: 'HFM-12', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-010: no behavioural regression to body merge/strategies/self-heal)', layer: 'a', waiver: 'regression meta-clause; guaranteed by the pre-existing merge/marker/base corpus staying green under the refactor, not by a dedicated new test' },
   { id: 'HFM-13', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-011: merged note converges — re-merge yields identical frontmatter, no marker growth, no array growth)', layer: 'a' },
   { id: 'HFM-14', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (layer-a Obsidian double: getFrontMatterInfo/parseYaml/stringifyYaml/parseFrontMatterStringArray per documented semantics)', layer: 'a' },
-  // Feature 043 live multi-device situations (real Docker Nextcloud, pnpm test:b1). The two scenarios
-  // the user asked to cover end-to-end: (1) two devices edit the same note's frontmatter; (2) a
-  // server-side program rewrites the remote frontmatter out of band (the reported real bug).
+  // Live multi-device situations (real Docker Nextcloud, pnpm test:b1): (1) two devices edit the same
+  // note's frontmatter; (2) a server-side program rewrites the remote frontmatter out of band.
   { id: 'FM-B1-1', source: 'specs/043-harden-frontmatter-merge (D deletes+adds a tag / M adds a tag → base-aware set merge: deletion propagates, both adds kept, no frontmatter marker, converges)', layer: 'b-1' },
   { id: 'FM-B1-2', source: 'specs/043-harden-frontmatter-merge (D and M change the same scalar → existing frontmatterScalarConflictPolicy decides one winner, no marker)', layer: 'b-1' },
   { id: 'FM-B1-3', source: 'specs/043-harden-frontmatter-merge (server rewrites tags [t1,t2,t3]→[t2,t3,t4] out of band, local drifted → set merge deletes t1, no union resurrection)', layer: 'b-1' },
   { id: 'FM-B1-4', source: 'specs/043-harden-frontmatter-merge (server rewrite with CRLF + trailing-space fences → getFrontMatterInfo split → no marker inside frontmatter)', layer: 'b-1' },
   { id: 'FM-B1-5', source: 'specs/043-harden-frontmatter-merge (after a set merge, repeated no-edit syncs converge — no churn, no marker growth, no tag growth)', layer: 'b-1' },
-  // Feature 044 (conflict clean-side snapshot): capture both clean sides at marker-conflict time so
-  // force-resolution ("Use remote"/"Use local"/Latest/Biggest) recovers a REAL clean version instead
-  // of the marker-corrupted current content. Internal store, no new user setting.
+  // Conflict clean-side snapshot: capture both clean sides at marker-conflict time so force-resolution
+  // ("Use remote"/"Use local"/Latest/Biggest) recovers a REAL clean version instead of the
+  // marker-corrupted current content. Internal store, no user setting.
   { id: 'CSS-1', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-001: capture both clean sides before a marker write overwrites them)', layer: 'a' },
   { id: 'CSS-2', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-002: Use remote/local restore the captured clean remote/local, not current marker content)', layer: 'a' },
   { id: 'CSS-3', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-003: Latest/Biggest dispatch by snapshot metrics; equal metric → no-op)', layer: 'a' },
@@ -440,9 +426,9 @@ export const CLAUSES: Clause[] = [
   { id: 'CSS-6', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-006: snapshot dropped at every convergence/resolution point — no leak)', layer: 'a' },
   { id: 'CSS-7', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-007: no user-facing setting; DEFAULT_SETTINGS gains no key)', layer: 'a' },
   { id: 'CSS-8', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-008: at rest, snapshot count == currently marker-conflicted file count)', layer: 'a' },
-  // CSS-9 (FR-009) is a regression meta-clause: no behavioural change to body merge, clean auto-merge,
-  // marker self-heal, deterministic strategies, safe-hold, or size holds. Guaranteed by the pre-existing
-  // conflict/merge/force-resolution corpus (CSF-*/MM-*/OM-*/FRC-*/MB-*) staying green under the change.
+  // CSS-9 (FR-009) is a regression meta-clause: no change to body merge, clean auto-merge, marker
+  // self-heal, deterministic strategies, safe-hold, or size holds. Guaranteed by the existing
+  // conflict/merge/force-resolution corpus (CSF-*/MM-*/OM-*/FRC-*/MB-*) staying green.
   { id: 'CSS-9', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-009: no regression to existing conflict/merge/force-resolution behavior)', layer: 'a', waiver: 'regression meta-clause; guaranteed by the pre-existing conflict/merge/force-resolution corpus staying green under the change, not by a dedicated new test' },
   { id: 'CSS-10', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-010: persist to disk, survive restart — save→load round-trip)', layer: 'a' },
   { id: 'CSS-11', source: 'specs/044-conflict-clean-snapshot/contracts/clean-side-recovery.md (FR-011: a repeat marker conflict overwrites the snapshot with the two most recent clean sides)', layer: 'a' },
@@ -451,25 +437,25 @@ export const CLAUSES: Clause[] = [
   { id: 'CSS-B1-1', source: 'specs/044-conflict-clean-snapshot (live 2-device: marker conflict → Use remote recovers clean remote, both converge)', layer: 'b-1' },
   { id: 'CSS-B1-2', source: 'specs/044-conflict-clean-snapshot (live 2-device: marker conflict → Use local recovers clean local, both converge)', layer: 'b-1' },
   { id: 'CSS-B1-3', source: 'specs/044-conflict-clean-snapshot (live: after recovery, a further no-edit sync converges — no marker growth, no snapshot leak)', layer: 'b-1' },
-  // Feature 045 (Remote-authoritative Pull mirror): a Maintenance "Mirror from remote" button forces
-  // this device's vault to exactly match the remote — download what the remote has, delete local-only
-  // files/folders (via the Obsidian trash setting, recoverable), skip content-identical files. Bypasses
-  // the mass-delete breaker COUNT limit but gates on a COMPLETE remote listing.
+  // Remote-authoritative Pull mirror: the Maintenance "Mirror from remote" button forces this vault to
+  // match the remote: download what the remote has, delete local-only files/folders (via the Obsidian trash
+  // setting, recoverable), skip content-identical files. Bypasses the mass-delete breaker COUNT limit but
+  // gates on a COMPLETE remote listing.
   { id: 'MIR-1', source: 'specs/045-remote-mirror-pull/spec.md (FR-002/005/006/007/010/016: buildMirrorPlan classifies download / delete files+folders(child→parent) / skip; exclusions honored; counts for the dialog)', layer: 'a' },
   { id: 'MIR-2', source: 'specs/045-remote-mirror-pull/spec.md (FR-009/SC-005: listing-completeness gate — an incomplete/failed remote listing yields ok:false and zero deletions)', layer: 'a' },
   { id: 'MIR-3', source: 'specs/045-remote-mirror-pull/spec.md (FR-008/011/SC-002: applyRemoteMirror deletes local-only via trash, reconciles StateDB to the remote (converges to zero diff), and bypasses the mass-delete breaker count limit)', layer: 'a' },
   { id: 'MIR-B1-1', source: 'specs/045-remote-mirror-pull (live: mass local-only download+delete not halted by the breaker; vault ends equal to the remote)', layer: 'b-1', waiver: 'deferred b-1 end-to-end stub (it.skip): needs a live Nextcloud; validated manually via quickstart until executed' },
   { id: 'MIR-B1-2', source: 'specs/045-remote-mirror-pull (live: local-only folder deletion incl. empty, child→parent; listing-failure gate performs zero deletions)', layer: 'b-1', waiver: 'deferred b-1 end-to-end stub (it.skip): needs a live Nextcloud; validated manually via quickstart until executed' },
   { id: 'MIR-B1-3', source: 'specs/045-remote-mirror-pull (live: the sync immediately after a mirror converges with zero upload/download/delete — self-healing)', layer: 'b-1', waiver: 'deferred b-1 end-to-end stub (it.skip): needs a live Nextcloud; validated manually via quickstart until executed' },
-  // Feature 046 (watch-mode folder propagation): with "Sync on file change" on, folder create/delete/
-  // rename propagate to the remote immediately (MKCOL / trashbin delete / MOVE), mirroring the file
-  // path. Status bar reflects the immediate propagation. File path is unchanged (non-regression).
+  // Watch mode ("Sync on file change") propagates folder create/delete/rename to the remote immediately
+  // (MKCOL / trashbin delete / MOVE), mirroring the file path. The status bar reflects it; the file path is
+  // unchanged (non-regression).
   { id: 'WF-1', source: 'specs/046-watch-folder-propagation/spec.md (FR-001/005/006/008: createSingleFolder MKCOL, idempotent, exclusions honored; status-bar activity)', layer: 'a' },
   { id: 'WF-2', source: 'specs/046-watch-folder-propagation/spec.md (FR-002: deleteSingleFolder — tracked-only, trashbin/recoverable, untracked no-op, exclusions honored)', layer: 'a' },
   { id: 'WF-3', source: 'specs/046-watch-folder-propagation/spec.md (FR-003/010: renameSingleFolder MOVE, retarget tracking, exclusions honored)', layer: 'a' },
   { id: 'WF-B1-1', source: 'specs/046-watch-folder-propagation (live: folder create/delete/rename propagate immediately as MKCOL/collection-delete/MOVE)', layer: 'b-1', waiver: 'deferred b-1 end-to-end stub (it.skip): needs a live Nextcloud; validated manually via quickstart until executed' },
   { id: 'WF-B1-2', source: 'specs/046-watch-folder-propagation (live: after an immediate folder-op failure, the next full sync converges remote==local — self-healing)', layer: 'b-1', waiver: 'deferred b-1 end-to-end stub (it.skip): needs a live Nextcloud; validated manually via quickstart until executed' },
-  // --- MDV: mass-delete breaker skipped-paths visibility (feature 055) + report notes/dir bulk-resolve (feature 056) ---
+  // MDV: mass-delete breaker skipped-paths visibility, report notes and dir bulk-resolve
   { id: 'MDV-2', source: 'specs/main/spec.md §8 (file mass-delete breaker records skippedPaths.all, full/uncapped)', layer: 'a' },
   { id: 'MDV-4', source: 'specs/main/spec.md §8 (ordinary errors unaffected — regression)', layer: 'a' },
   { id: 'MDV-5', source: 'specs/main/spec.md §8 (breaker report notes excluded from sync — isSystemExcluded, now in src/sync/policy per §21)', layer: 'a' },
@@ -478,40 +464,33 @@ export const CLAUSES: Clause[] = [
   { id: 'MDV-8', source: 'specs/056-massdelete-breaker-report-bulk-resolve/spec.md (resolveSkippedDir: 4 category×choice branches)', layer: 'a' },
   { id: 'MDV-9', source: 'specs/056-massdelete-breaker-report-bulk-resolve/spec.md (resolveAllSkippedDirs: aggregation, in-place mutation, running-guard)', layer: 'a' },
   { id: 'MDV-10', source: 'specs/056-massdelete-breaker-report-bulk-resolve/spec.md (SyncStatusModal: click opens report note, dir-only bulk-resolve row)', layer: 'a', waiver: MDV_DOM },
-  // --- OL: open-leaf survives sync (feature 057, GitHub issue #15) ---
+  // OL: open-leaf survives sync (issue #15)
   { id: 'OL-1', source: 'specs/main/spec.md §9.5 (text file open -> in-place vault.modify, no delete event)', layer: 'a' },
   { id: 'OL-2', source: 'specs/main/spec.md §9.5 (binary file open -> in-place vault.modifyBinary, no delete event)', layer: 'a' },
   { id: 'OL-3', source: 'specs/main/spec.md §9.5 (not-open file / no workspace injected -> existing tmp-write/remove/rename path unchanged)', layer: 'a' },
   { id: 'OL-4', source: 'specs/main/spec.md §9.5 (deferred/background leaf counts as open -> in-place update; unresolvable state path falls back to OL-3) — GitHub issue #32', layer: 'a' },
-  // --- LF: Login Flow v2 polling survives a suspended webview (GitHub issue #34) ---
+  // LF: Login Flow v2 polling survives a suspended webview (issue #34)
   { id: 'LF-1', source: 'specs/main/spec.md §17 (poll waits on the interval timer OR an app-resume signal, whichever is first) — GitHub issue #34', layer: 'a' },
   { id: 'LF-2', source: 'specs/main/spec.md §17 (wall-clock deadline matched to Nextcloud LoginFlowV2Mapper::lifetime = 1200 s, replacing the 90-iteration cap)', layer: 'a' },
-  // --- SCR: the sync-collection REPORT is never issued (GitHub issue #37) ---
+  // SCR: the sync-collection REPORT is never issued (issue #37)
   { id: 'SCR-1', source: 'specs/main/spec.md §18 F1a (getSyncToken never issues the REPORT; no server-side ERROR log per client) — GitHub issue #37', layer: 'a' },
-  // --- SD: server-type detection and client dispatch (feature 073) ---
+  // SD: server-type detection and client dispatch
   { id: 'SD-1', source: 'specs/main/spec.md §1 (detection from probe answers; case table D-1..D-7 in specs/073-webdav-client-dispatch/contracts/server-detection.md)', layer: 'a' },
   { id: 'SD-2', source: 'specs/main/spec.md §1 (detection adds no probe round-trips on the Nextcloud path — INV-4)', layer: 'a' },
   { id: 'SD-3', source: 'specs/main/spec.md §1 (degradation proven against a real plain WebDAV server: standard client, isNextcloud false, listing without Depth: infinity, full round-trip)', layer: 'b-4', waiver: 'Verified in the b-4 layer against a live Apache mod_dav container (pnpm test:b4); cannot run in the default CI suite, which has no server.' },
-  // --- SMB: Sync status "Mirror from remote" button (feature 059) ---
-  // A second entry point to Mirror from remote on the Sync status dialog's top action row. Pure DOM
-  // wiring: no new logic. The button delegates entirely to runRemoteMirror() (single source of truth,
-  // FR-002/004) — its plan/apply/guard logic is already covered at layer a by MIR-1..3, so nothing is
-  // duplicated. The button rendering (same row, mod-warning, capability gate) + host wiring can't be
-  // exercised under jest testEnvironment 'node' (no `document`; constructing SyncStatusModal throws) —
-  // same constraint as BRC_DOM/MDV_DOM — so it is DOM-waived to quickstart manual check / the b-2 layer.
+  // SMB: Sync status "Mirror from remote" button
+  // A second entry point to Mirror from remote on the Sync status dialog's top action row: pure DOM wiring
+  // that delegates to runRemoteMirror() (single source of truth), whose plan/apply/guard logic MIR-1..3 cover.
+  // The button rendering and host wiring cannot run under testEnvironment 'node' (no `document`;
+  // constructing SyncStatusModal throws), same as BRC_DOM/MDV_DOM, so they are DOM-waived to manual check / b-2.
   { id: 'SMB-1', source: 'specs/059-sync-status-mirror-button/spec.md (FR-001/003/005 + contracts/sync-status-modal.md: Mirror button on the Sync now row, mod-warning, re-render after settle)', layer: 'a', waiver: 'DOM rendering verified via quickstart manual check (specs/059-sync-status-mirror-button/quickstart.md); the mirror logic it invokes is covered by MIR-1..3 (layer a)' },
   { id: 'SMB-2', source: 'specs/059-sync-status-mirror-button/spec.md (FR-002/004: button delegates to the same runRemoteMirror() as the Settings-tab button — single source of truth, Settings-tab button unchanged)', layer: 'a', waiver: 'host wiring verified via quickstart manual check; single-source-of-truth reuse of runRemoteMirror (covered by MIR-1..3, layer a) — no logic duplicated' },
-  // --- DSD: declarative settings definitions (feature 077) ---
-  // Obsidian 1.13.0 builds the settings search index only from getSettingDefinitions(), so an
-  // imperative display() renders a screen that search cannot see — before this feature none of the
-  // plugin's settings could be found by name. The tab is now an adapter over a definition array.
-  //
-  // The coverage is deliberately asymmetric. `control` rows carry a `key` bound to storage, so a
-  // typo (a row that renders, accepts input, and persists nothing) IS detectable; `render` rows
-  // carry no key, so it is not. Those rows exist where going declarative would COST something:
-  // the numeric input beside each slider (spec 036 touch-reachability), the SecretComponent for the
-  // app password, and the two settings stored as arrays. DSD-3 states that limit rather than
-  // implying the check covers every row.
+  // DSD: declarative settings definitions
+  // Obsidian 1.13.0 builds the settings search index only from getSettingDefinitions(). Coverage is
+  // asymmetric: `control` rows carry a `key` bound to storage, so a typo (a row that renders, accepts input,
+  // and persists nothing) is detectable; `render` rows carry no key (the numeric input beside each slider,
+  // the SecretComponent for the app password, the two array settings), so it is not. DSD-3 states that
+  // limit rather than implying the check covers every row.
   { id: 'DSD-1', source: 'specs/main/spec.md §15 / specs/077-declarative-settings/spec.md (FR-001/007: getSettingDefinitions() returns a non-empty array whose sections, rows and order match the pre-migration baseline; the config-folder heading is derived from Vault#configDir)', layer: 'a' },
   { id: 'DSD-2', source: 'specs/main/spec.md §15 / specs/077-declarative-settings/spec.md + baseline.md (the row set is dynamic: 27 static rows + one per excluded folder + two config-category rows while the master toggle is on — never a constant)', layer: 'a' },
   { id: 'DSD-3', source: 'specs/main/spec.md §15 / specs/077-declarative-settings/spec.md (FR-011: every control key exists in DEFAULT_SETTINGS, is unique, and matches the stored value type; every setting reaches the UI unless listed in UI_LESS_SETTING_KEYS or RENDER_ONLY_ROWS, and those lists carry no stale entries)', layer: 'a' },
@@ -520,68 +499,57 @@ export const CLAUSES: Clause[] = [
   { id: 'DSD-7', source: 'specs/main/spec.md §15 / specs/077-declarative-settings/spec.md (FR-001: dynamic rows are rebuilt on each render — excluding a folder adds exactly one row and removing it takes the row away; a renderer caching the first array would show a constant count)', layer: 'b-2' },
   { id: 'DSD-8', source: 'specs/main/spec.md §15 / specs/077-declarative-settings/spec.md (FR-003 / SC-004: setControlValue/getControlValue resolve the key path against real storage and survive a plugin reload, dotted keys included — the hazard layer a can only approximate with a fake)', layer: 'b-2' },
   { id: 'DSD-5', source: 'specs/main/spec.md §15 / specs/077-declarative-settings/spec.md (FR-008: disabled/visible predicates reflect isMobile, isIosApp and sign-in state — evaluated for both sides of each, which reading Platform directly would not allow)', layer: 'a' },
-  // --- RIB: sync ribbon button (feature 060, GitHub issue #19) ---
-  // A ribbon entry point for manual sync, added for mobile users. Unlike the SyncStatusModal DOM
-  // clauses above, the wiring is extracted into registerSyncRibbon(host) against a minimal
-  // SyncRibbonHost interface, so it IS exercised for real at layer a (no `document` needed — a plain
-  // fake records the args and counts runSyncNow calls).
+  { id: 'DOC-1', source: 'docs/spec.md §19 (every docs/spec.md / docs/plan.md section reference in a comment resolves to a heading)', layer: 'a' },
+  { id: 'DOC-2', source: 'docs/spec.md §19 (no comment references a private path or carries a feature-number history marker)', layer: 'a' },
+  // RIB: sync ribbon button (issue #19)
+  // A ribbon entry point for manual sync on mobile. Unlike the SyncStatusModal DOM clauses, the wiring is
+  // extracted into registerSyncRibbon(host) against a minimal SyncRibbonHost, so it IS exercised for real at
+  // layer a (a plain fake records the args and counts runSyncNow calls).
   //
-  // RIB-3 is where this catalog got it wrong twice, so the history is worth keeping. It began as a
-  // waived manual check that was never performed. Feature 076 then probed a real device, found
-  // `.side-dock-ribbon` hidden, and rewrote the clause to say the mobile claim was DISPROVED — but
-  // that probe only measured the always-visible container, and the menu that actually carries the
-  // ribbon actions on mobile is built on tap. The clause now asserts the reachable route, at b-3,
-  // with the menu open.
+  // RIB-3 asserts the reachable mobile route at b-3, with the navigation-bar menu open: ribbon actions are
+  // republished in a menu built on tap, so probing the always-visible `.side-dock-ribbon` container proves
+  // nothing.
   { id: 'RIB-1', source: 'specs/main/spec.md §13 / specs/060-mobile-sync-ribbon/spec.md (FR-001/006: onload registers exactly one sync ribbon icon; icon refresh-cw, label "Sync with Nextcloud")', layer: 'a' },
   { id: 'RIB-2', source: 'specs/main/spec.md §13 / specs/060-mobile-sync-ribbon/spec.md (FR-002: ribbon callback invokes the same runSyncNow() as the "Sync now" command — shared entry point, no separate path)', layer: 'a' },
   { id: 'RIB-3', source: 'specs/main/spec.md §13 / specs/060-mobile-sync-ribbon/spec.md (FR-004: on mobile the ribbon BAR is not rendered — .side-dock-ribbon is display:none — but Obsidian republishes every registered ribbon action in the navigation bar\'s "Open menu", so "Sync with Nextcloud" is reachable there in two taps; measured on a real Android runtime with the menu open)', layer: 'b-3' },
-  // --- SEP: two-tap mirror and the Sync Status dialog (feature 076) ---
-  // Mobile has no status bar (addStatusBarItem is documented "Not available on mobile"), which left
-  // "Mirror from remote" about six taps deep in the settings tab. The fix is a ribbon action of its
-  // own: mobile reaches ribbon actions through the navigation bar's "Open menu" (see RIB-3), so the
-  // mirror is two taps there and one click on desktop. It gets its own icon rather than one that
-  // opens the Sync Status dialog, because routing through the dialog would cost a third tap for the
-  // action the user asked to reach in two — and the dialog is not what makes the mirror safe.
+  // SEP: two-tap mirror and the Sync Status dialog
+  // Mobile has no status bar (addStatusBarItem is "Not available on mobile"), so "Mirror from remote" gets its
+  // own ribbon action: mobile reaches ribbon actions through the navigation bar's "Open menu" (see RIB-3),
+  // making it two taps there and one click on desktop. It has its own icon because routing through the Sync
+  // Status dialog would cost a third tap.
   //
-  // The commands are the second route (a mobile-toolbar pin, or a hotkey) and carry the dialog,
-  // which is worth a command and not worth a third ribbon icon. Both wirings are extracted behind a
-  // minimal StatusEntryPointHost, so both ARE exercised for real at layer a with a plain fake.
+  // The commands are the second route (a mobile-toolbar pin, or a hotkey) and carry the dialog. Both wirings
+  // sit behind a minimal StatusEntryPointHost, so both ARE exercised for real at layer a.
   { id: 'SEP-1', source: 'specs/main/spec.md §13 / specs/076-mobile-sync-entry-points/spec.md (FR-001/002: exactly two commands registered — open-sync-status and mirror-from-remote — each carrying Command.icon so a mobile-toolbar pin has something to draw; the status command opens the dialog)', layer: 'a' },
   { id: 'SEP-2', source: 'specs/main/spec.md §13 / specs/076-mobile-sync-entry-points/spec.md (FR-003: both the mirror ribbon and the mirror command route through runRemoteMirror(), keeping the plan -> confirm -> apply dialog and the mirrorInProgress guard; neither calls applyRemoteMirror directly)', layer: 'a' },
   { id: 'SEP-3', source: 'specs/main/spec.md §13 / specs/076-mobile-sync-entry-points/spec.md (FR-004: onload registers exactly one mirror ribbon icon — icon cloud-download, label "Mirror from remote" — alongside feature 060\'s sync icon)', layer: 'a' },
   { id: 'SEP-4', source: 'specs/main/spec.md §13 / specs/076-mobile-sync-entry-points/spec.md (FR-005: on a real Android runtime, opening the navigation bar\'s "Open menu" lists both "Sync with Nextcloud" and "Mirror from remote", so each action is two taps; the commands are registered as the pin/hotkey route)', layer: 'b-3' },
-  // --- URE: one URL-encoding path for every platform (feature 065, GitHub issue #25) ---
-  // Feature 061 made encodeRemoteUrl leave the whole path raw on iOS, betting that the native
-  // request layer re-encodes every character exactly once. Issue #25 disproved that: a raw space
-  // is NOT encoded there, so every path containing one 404s. The bet is not retried in the other
-  // direction either — 065 removes the platform branch entirely and adopts the scheme the rest of
-  // the ecosystem uses (webdav-client's encodePath, which remotely-save ships to iOS users at
-  // scale): percent-encode every segment, keep `/` as the separator. See remotePath.ts for why a
-  // regression on the CJK side points at a reverse proxy rather than at this function.
-  // No iOS device automation exists in this repo, so on-device confirmation stays a release gate
-  // (both reporters must verify the beta) — these clauses cover what IS mechanically provable.
+  // URE: one URL-encoding path for every platform (issue #25)
+  // encodeRemoteUrl percent-encodes every path segment and keeps `/` as the separator on every platform (the
+  // scheme webdav-client's encodePath uses). A raw space is NOT re-encoded by the iOS request layer (issue
+  // #25), so a platform branch would 404 every such path. See remotePath.ts for why a CJK regression points
+  // at a reverse proxy rather than at this function. No iOS device automation exists in this repo, so
+  // on-device confirmation stays a release gate; these clauses cover what IS mechanically provable.
   { id: 'URE-1', source: 'specs/065-unify-url-encoding/contracts/remote-url-encoding.md (C-1: encodeRemoteUrl percent-encodes every segment — space, #, ?, %, &, CJK, emoji — keeps `/` as separator, and takes no platform argument)', layer: 'a' },
   { id: 'URE-2', source: 'specs/065-unify-url-encoding/contracts/remote-url-encoding.md (C-2: every remote-URL call site in both clients uses that one scheme — GET/PUT/DELETE/PROPFIND/REPORT/PATCH/MKCOL/MOVE, including the MOVE Destination header)', layer: 'a' },
   { id: 'URE-3', source: 'specs/065-unify-url-encoding/contracts/remote-url-encoding.md (C-3: encode → hrefToRelative round-trips back to the original vault-relative path)', layer: 'a' },
   { id: 'URE-4', source: 'specs/065-unify-url-encoding/contracts/remote-url-encoding.md (C-4: encodeServerUrl leaves an already-encoded Server URL untouched and encodes a raw one, never producing %25)', layer: 'a' },
   { id: 'URE-5', source: 'specs/065-unify-url-encoding/contracts/remote-url-encoding.md (C-5: NetworkError carries the HTTP method, message keeps the "HTTP <status>" prefix, and every collected sync error is written to the debug log individually without credentials)', layer: 'a' },
-  // --- SWC: Source-code Warning Cleanup — lint gate resync with the reviewer (feature 062) ---
-  // C1 (lint gate follows the reviewer-equivalent plugin version, `pnpm lint` exits 0) is a
-  // whole-gate outcome that isn't itself a unit-testable value; it's covered by the SWC-1/SWC-3
-  // static checks plus the quickstart.md manual `pnpm lint` run (0 errors/0 warnings). C5
-  // (end-user-visible behaviour unchanged) is a regression meta-clause, guaranteed by the existing
-  // a-suite corpus staying green under this change, not by a dedicated new test.
+  // SWC: lint gate resync with the reviewer
+  // C1 (lint gate follows the reviewer-equivalent plugin version, `pnpm lint` exits 0) is a whole-gate
+  // outcome, not a unit-testable value: the SWC-1/SWC-3 static checks plus a manual `pnpm lint` run cover it.
+  // C5 (end-user-visible behaviour unchanged) is a regression meta-clause guaranteed by the existing a-suite
+  // staying green.
   { id: 'SWC-1', source: 'specs/062-source-warning-cleanup/contracts/lint-gate-contract.md (C1: eslint-plugin-obsidianmd pinned to reviewer-equivalent ^0.4.1)', layer: 'a' },
   { id: 'SWC-2', source: 'specs/062-source-warning-cleanup/contracts/lint-gate-contract.md (C2: no createEl(\'div\'/\'span\') call sites remain in src/**, prefer-create-el promoted to error)', layer: 'a' },
   { id: 'SWC-3', source: 'specs/062-source-warning-cleanup/contracts/lint-gate-contract.md (C2/C3: eslint.config.mjs pins prefer-create-el=error and prefer-setting-definitions=off with the spec-062 deferral reason)', layer: 'a' },
   { id: 'SWC-4', source: 'specs/062-source-warning-cleanup/contracts/lint-gate-contract.md (C4: js-yaml is a devDependency only, not a production dependency)', layer: 'a' },
   { id: 'SWC-5', source: 'specs/062-source-warning-cleanup/contracts/lint-gate-contract.md (C5: end-user-visible settings/UI/sync behaviour is unchanged)', layer: 'a', waiver: 'regression meta-clause; guaranteed by the pre-existing settings/UI/sync test corpus staying green under this change, not by a dedicated new test' },
 
-  // Feature 063 (GitHub issue #23): rows 8/9 of the sync classification contract — a file present on
-  // BOTH sides with NO StateDB record. The incremental path skipped local-change detection whenever
-  // base was missing and downloaded over the local content (silent data loss). Tests drive the REAL
-  // processRemoteFile; they must never reimplement the classification (that reimplementation in
-  // syncEngine.test.ts `classify()` is why the bug went unnoticed).
+  // Sync classification rows 8/9: a file present on BOTH sides with NO StateDB record (issue #23). Without a
+  // base, local-change detection must not be skipped, or the download overwrites local content (silent data
+  // loss). Tests drive the REAL processRemoteFile and must never reimplement the classification (a
+  // reimplementation in syncEngine.test.ts `classify()` is why the bug went unnoticed).
   { id: 'UBC-1', source: 'specs/063-fix-untracked-overwrite/contracts/sync-classification.md (row 9 / C-1: untracked file on both sides with differing content — local content is never silently replaced)', layer: 'a' },
   { id: 'UBC-2', source: 'specs/063-fix-untracked-overwrite/contracts/sync-classification.md (row 9: an untracked .md on both sides is resolved by merge, so the result carries both sides)', layer: 'a' },
   { id: 'UBC-3', source: 'specs/063-fix-untracked-overwrite/contracts/sync-classification.md (row 8: an untracked file whose server checksum proves both sides match seeds the state with no transfer)', layer: 'a' },
@@ -592,32 +560,25 @@ export const CLAUSES: Clause[] = [
   { id: 'UBC-8', source: 'specs/063-fix-untracked-overwrite/contracts/sync-classification.md (C-2: rows 1-6 — tracked files keep their existing classification: remote-only download, local-only upload, converged no-op, local deletion propagated)', layer: 'a' },
   { id: 'UBC-9', source: 'specs/063-fix-untracked-overwrite/contracts/sync-classification.md (row 9 end-to-end against a live server: same path created independently on two devices keeps both bodies)', layer: 'b-1' },
 
-  // Feature 064 (GitHub issue #23, re-report): the watch-mode single-file path ("Sync on file
-  // change", ON by default on desktop) uploaded blind — no PROPFIND, no base comparison, and no
-  // If-Match — so another device's edit was overwritten with no conflict, no merge and no notice.
-  // Feature 063 fixed the FULL SYNC classification only; this path was never routed through it. The
-  // tests drive the REAL syncSingleFile/deleteSingleFile and must not reimplement the classification.
-  // --- WOV: overlapping watch cycles on one path (feature 078, GitHub issue #42) ---
-  // Typing corrupts the open note: text vanishes, reformats, or fills with conflict markers, on a
-  // single device with nothing else touching the server. syncSingleFile runs stat -> PROPFIND ->
-  // classify -> upload -> record base, has no per-path exclusion (inFlight is a status-bar counter),
-  // and is invoked as `void syncEngine.syncSingleFile(path)`. A second cycle can therefore PROPFIND
-  // in the window between the first cycle's upload landing and its baseline being written: it reads
-  // its predecessor's own write as "the remote changed", the user is still typing so local changed
-  // too, and both-changed means conflict — whose resolution writes the merged body over the file
-  // being edited.
+  // The watch-mode single-file path ("Sync on file change", ON by default on desktop; issue #23) must be
+  // classified like a full sync (PROPFIND, base comparison, If-Match); a blind upload overwrites another
+  // device's edit with no conflict, merge or notice. Tests drive the REAL syncSingleFile/deleteSingleFile
+  // and must not reimplement the classification.
+  // WOV: overlapping watch cycles on one path (issue #42)
+  // Typing corrupts the open note: syncSingleFile runs stat -> PROPFIND -> classify -> upload -> record base
+  // with no per-path exclusion (inFlight is a status-bar counter), so a second cycle can PROPFIND between
+  // the first cycle's upload landing and its baseline being written. It reads its predecessor's own write as
+  // "the remote changed"; the user is still typing, so both changed, and conflict resolution writes the
+  // merged body over the file being edited.
   //
-  // The catalog records a refuted theory alongside the real one, because acting on the wrong one
-  // would have shipped a regression. "The server returns no checksums, so the recorded remoteId can
-  // never match" fit the reporter's capabilities exactly, but the same official Docker image returns
-  // oc:checksums from PROPFIND regardless of the capability, and the implied fix would have broken
-  // every user of that image. Capability absence is not output absence
-  // (specs/078-watch-typing-corruption/findings.md).
+  // Refuted theory: "the server returns no checksums, so the recorded remoteId can never match". The same
+  // official Docker image returns oc:checksums from PROPFIND regardless of the capability, so capability
+  // absence is not output absence, and the implied fix would break every user of that image.
   { id: 'WOV-2', source: 'specs/main/spec.md §5.7 / specs/078-watch-typing-corruption/spec.md (a REMOTE -> LOCAL write — download or conflict resolution — is deferred while the path is being edited and re-queued; uploads are not deferred, since they only read the file)', layer: 'a' },
   { id: 'WOV-1', source: 'specs/main/spec.md §5.7 / specs/078-watch-typing-corruption/spec.md (watch cycles on one path are serialized: a second cycle neither reads the first cycle\'s own upload as a remote change nor PROPFINDs before the first has recorded its baseline)', layer: 'a' },
   { id: 'RSY-4', source: 'specs/079-mobile-foreground-sync/spec.md (verified on a real Android device: the platform delivers the foreground signal to the plugin\'s own subscription, a return after the cooldown runs a sync, and a return inside it does not)', layer: 'b-3', waiver: 'Verified in the b-3 layer against a real Obsidian on a real Android runtime (bash tests/docker/run.sh b3); cannot run in the default CI suite, which has no device.' },
   { id: 'RMO-1', source: 'specs/main/spec.md §5.8 / specs/082-respect-manual-only/spec.md (a foreground resume does not sync when startupSyncDelaySeconds is 0 — startup sync and resume sync are the same question asked at two moments, so declining the first declines the second — read fresh on every resume so a mid-session change takes effect on the very next one; the trigger is otherwise unaffected)', layer: 'a' },
-  // --- EAD / VRR: absence deletion on an empty listing, and re-seeding a missing vault folder (feature 083, issue #50) ---
+  // EAD / VRR: absence deletion on an empty listing, and re-seeding a missing vault folder (issue #50)
   { id: 'EAD-1', source: 'specs/main/spec.md §8 / specs/083-empty-listing-absence-delete/spec.md (a tracked, locally-unchanged file missing from an EMPTY full-scan listing is trashed locally once a Depth 0 PROPFIND confirms the 404, and drops out of State — the listing\'s size is not part of the safety decision)', layer: 'a' },
   { id: 'EAD-2', source: 'specs/main/spec.md §8a.5 / specs/083-empty-listing-absence-delete/spec.md (applying the deletion is what makes the next sync converge: the file leaves State, so a root-ETag short-circuit cannot rebuild it as "still on the server")', layer: 'a' },
   { id: 'EAD-3', source: 'specs/083-empty-listing-absence-delete/spec.md (an empty listing the server is wrong about changes nothing: a candidate whose re-check answers "present" — or cannot answer at all — is kept and stays tracked, with the reason logged)', layer: 'a' },
@@ -700,10 +661,9 @@ export const CLAUSES: Clause[] = [
   { id: 'WSF-8', source: 'specs/064-watch-single-file-conflict/contracts/watch-single-file-sync.md (C-6: watch mode notifies only on a resolved conflict or an error — routine upload/download/no-op stay silent)', layer: 'a' },
   { id: 'WSF-9', source: 'specs/064-watch-single-file-conflict/contracts/watch-single-file-sync.md (C-3 end-to-end against a live server: two devices editing different lines keep both edits, and syncSingleFile ends in the same state as syncManual)', layer: 'b-1' },
   { id: 'WSF-10', source: 'specs/064-watch-single-file-conflict/contracts/watch-single-file-sync.md (C-7: a write made by the watch path is marked as our own, so it never triggers another single-file sync — no PUT→event→PUT loop)', layer: 'a' },
-  // Feature 072 (b-3): the Capacitor runtime layer. These four are the ONLY clauses whose layer is
-  // 'b-3', and each carries the one sentence the dedup rule demands — why a / b-1 / b-2 cannot
-  // reproduce it. Desktop "mobile emulation" (app.emulateMobile) does not qualify as a substitute:
-  // it flips the UI mode while still running on Electron/Chromium/Node.
+  // The Capacitor runtime layer. These four are the ONLY clauses whose layer is 'b-3', and each carries the
+  // one sentence the dedup rule demands: why a / b-1 / b-2 cannot reproduce it. Desktop "mobile emulation"
+  // (app.emulateMobile) is no substitute: it flips the UI mode while still running on Electron/Chromium/Node.
   { id: 'AND-1', source: 'specs/072-b3-android-e2e-layer/spec.md (US2 / issue #34: browser sign-in completes after the app is backgrounded). Not reproducible elsewhere: the failure IS the OS suspending the webview timers, which desktop Electron never does to an unfocused window.', layer: 'b-3', waiver: 'the END-TO-END half is not yet proven to catch the regression: with the issue #34 fix reverted the scenario still passes, because this emulator image does not suspend the webview timers when the app loses the foreground (verified twice — HOME key, then a real activity pushed in front). The other half (the platform delivers visibilitychange/focus on return) IS verified and passes. Needs a way to force timer suspension, e.g. Doze, before the waiver can be lifted.' },
   { id: 'AND-2', source: 'specs/072-b3-android-e2e-layer/spec.md (US2: an atomic write near NAME_MAX succeeds and leaves no temp file). Not reproducible elsewhere: the 255-byte limit is enforced by the Android filesystem; on desktop the same write simply succeeds.', layer: 'b-3' },
   { id: 'AND-3', source: 'specs/072-b3-android-e2e-layer/spec.md (US2: paths with spaces/non-ASCII and binary bodies survive a round trip byte-for-byte). Not reproducible elsewhere: requestUrl is a different implementation on Capacitor than the Electron net stack b-2 exercises.', layer: 'b-3' },
@@ -728,7 +688,7 @@ export const CLAUSES: Clause[] = [
   { id: 'MSF-16', source: 'specs/088-mkcol-single-flight/spec.md FR MSF-009 (a parent that genuinely cannot be created fails that one file and lets the session carry on, so the next sync retries it)', layer: 'a' },
 
   { id: 'WSF-11', source: 'specs/064-watch-single-file-conflict/spec.md (FR-011: watch-path decisions are logged with a `watch:` prefix so the two entry points are distinguishable in the debug log)', layer: 'a', waiver: 'log text is a diagnostic surface, not a behavioural contract: asserting exact strings would freeze wording without protecting any user-visible outcome. Verified by reading the debug log in quickstart.md' },
-  // --- VSN: server-version compatibility banner visibility (feature 089, GitHub issue #54) ---
+  // VSN: server-version compatibility banner visibility (issue #54)
   { id: 'VSN-1', source: 'specs/089-fix-server-version-notice/spec.md FR-003 (a server below MIN_NEXTCLOUD_VERSION still shows the "Server compatibility" banner, with the detected version in the text) — GitHub issue #54', layer: 'a' },
   { id: 'VSN-2', source: 'specs/089-fix-server-version-notice/spec.md FR-002 (a server at or above MIN_NEXTCLOUD_VERSION no longer shows the banner — the bug reported in issue #54, where the banner appeared unconditionally regardless of isSupportedNextcloudVersion())', layer: 'a' },
   { id: 'VSN-3', source: 'specs/089-fix-server-version-notice/spec.md FR-001/FR-002 (no server version detected yet -> the "Server compatibility" row is not built at all, preserving the existing outer guard)', layer: 'a' },

@@ -1,9 +1,7 @@
-// Feature 087 (issue #51): a 207 response whose body cannot be read as a listing must never be
-// mistaken for a listing that says "nothing here". Both IWebDAVClient implementations funnel every
-// PROPFIND/REPORT body through parseResponses (see propfind.test.ts for the parser-level cases);
-// this file is the client-level guarantee — that getFiles / getDirectories / statFile / getChanges
-// throw RemoteListingUnreadableError instead of quietly returning [] / null / an empty change set,
-// while a genuinely empty or non-empty listing is unaffected.
+// Issue #51: a 207 response whose body cannot be read as a listing must never be mistaken for a listing that says
+// "nothing here". Both clients funnel every PROPFIND/REPORT body through parseResponses (parser-level cases:
+// propfind.test.ts); this is the client-level guarantee that getFiles / getDirectories / statFile / getChanges throw
+// RemoteListingUnreadableError instead of returning [] / null / an empty change set.
 import { requestUrl } from 'obsidian';
 import { NextcloudClient } from '../../../src/network/NextcloudClient';
 import { StandardWebDAVClient } from '../../../src/network/StandardWebDAVClient';
@@ -40,7 +38,7 @@ const NONEMPTY_MULTISTATUS = `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"
   </d:response>
 </d:multistatus>`;
 
-/** The four ways a 207 body can fail to be a listing (data-model.md, the response-body classification section). */
+/** The four ways a 207 body can fail to be a listing. */
 const UNREADABLE_BODIES: ReadonlyArray<[string, string]> = [
   ['an empty body', ''],
   ['a truncated document', '<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:respo'],
@@ -114,10 +112,8 @@ describe('IWebDAVClient — an unreadable listing is a failure, not an empty one
       expect(e.method).toBe('REPORT');
     });
 
-    // getRootEtag and isRemoteDirEmpty were already safe on an unreadable body (they read it via
-    // their own try/catch into null / false). The point here is that they now go through the SAME
-    // validated reader as everything else, so their safety is legible in the code, not incidental —
-    // and still produces the unchanged result.
+    // getRootEtag and isRemoteDirEmpty were already safe on an unreadable body; they now go through the SAME validated
+    // reader as everything else, so their safety is legible in the code, not incidental, and the result is unchanged.
     it.each(UNREADABLE_BODIES)('getRootEtag still resolves to null for %s (unchanged, root-cause visible)', async (_label, body) => {
       mockRequestUrl.mockReturnValueOnce(res(207, body));
       await expect(nc().getRootEtag()).resolves.toBeNull();

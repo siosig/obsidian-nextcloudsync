@@ -1,10 +1,7 @@
-// Direct tests for TransferService (feature 074, addendum).
-//
-// No [SPEC:...] tags: URE-*, WSF-* and DSG-* stay with the engine-level suites.
-//
-// One file crossing, in each direction. The interesting parts are the guards on either side of the
-// transfer rather than the transfer itself: a lock that is held by someone else must not be treated
-// as a failure, and a body the server contradicts must never reach the disk.
+// Direct tests for TransferService; no [SPEC:...] tags (URE-*, WSF-* and DSG-* stay with the engine-level
+// suites). One file crossing in each direction; the interesting parts are the guards on either side: a lock
+// held by someone else must not be treated as a failure, and a body the server contradicts must never reach
+// the disk.
 import { TransferService, TransferDeps } from '../../../../src/sync/transfer/TransferService';
 import { SyncJournal } from '../../../../src/sync/session/SyncJournal';
 import { MergeBaseRecorder } from '../../../../src/sync/session/MergeBaseRecorder';
@@ -31,7 +28,7 @@ interface Opts {
   localContent?: string | null;
   remoteBody?: ArrayBuffer;
   upload?: 'uploaded' | 'skipped';
-  /** What lockFile does: a token, or an error class to throw. */
+  // What lockFile does: a token, or an error class to throw.
   lock?: 'token' | 'none' | 'locked' | 'unsupported' | 'network' | 'other';
   hasLocking?: boolean;
   oversize?: boolean;
@@ -102,8 +99,8 @@ function build(o: Opts = {}, over: Partial<TransferDeps> = {}) {
     } as unknown as MergeBaseRecorder,
     maxFileSizeMB: () => (o.oversize ? 0.000001 : 100),
     hasFilesLocking: () => o.hasLocking === true,
-    // Feature 080: this suite models a Nextcloud server (checksums come back from PROPFIND), which is
-    // the branch that keeps recording the local hash and makes no extra request after an upload.
+    // This suite models a Nextcloud server (checksums come back from PROPFIND), which is the branch that keeps
+    // recording the local hash and makes no extra request after an upload.
     clientReportsChecksums: () => true,
     queueRetry: (p: string) => { calls.retries.push(p); },
     notify: (m: string) => { calls.notices.push(m); },
@@ -138,8 +135,8 @@ describe('TransferService.uploadFile', () => {
   });
 
   it('records the hash of what the server now holds, not what it held before', async () => {
-    // Feature 064 (C-4): keeping the PRE-upload remote id made every following sync read "remote
-    // changed" and download the file we had just uploaded, forever.
+    // Keeping the PRE-upload remote id made every following sync read "remote changed" and download the file
+    // we had just uploaded, forever.
     const { transfer, client, uploadStrategy, calls } = build();
     const s = summary();
     await transfer.uploadFile(client, uploadStrategy, 'note.md', 'local-hash', 'OLD-REMOTE', 'etag', remote(), s);
@@ -178,11 +175,10 @@ describe('TransferService.uploadFile', () => {
 });
 
 describe('TransferService — locking is fixed OFF, and that is the point', () => {
-  // Feature 033 pinned file locking off for every user: lost-update safety is the always-on If-Match
-  // precondition, without the LOCK/UNLOCK round-trips. The mechanism below is retained but never
-  // engaged from the sync path, so these tests pin the ABSENCE of lock traffic rather than pretending
-  // the retry-and-backoff code runs. If the fixed flag is ever turned back on, they fail — which is
-  // the signal to write the tests that path would then need.
+  // File locking is pinned off for every user: lost-update safety is the always-on If-Match precondition,
+  // without LOCK/UNLOCK round-trips. The lock mechanism is retained but never engaged from the sync path, so
+  // these tests pin the ABSENCE of lock traffic. If the fixed flag is turned back on they fail, which is the
+  // signal to write the tests that path would then need.
 
   it('issues no lock request even when the server advertises the capability', async () => {
     const { transfer, client, uploadStrategy, calls } = build({ hasLocking: true });
@@ -257,8 +253,8 @@ describe('TransferService.downloadFile', () => {
   });
 
   it('ACCEPTS a non-zero length that disagrees with the advertised size', async () => {
-    // Spec 025: Obsidian's requestUrl on iOS reports a byte count that drifts from content-length on
-    // multi-byte text. Flagging any mismatch refused legitimate downloads outright (0.7.7).
+    // Obsidian's requestUrl on iOS reports a byte count that drifts from content-length on multi-byte text;
+    // flagging any mismatch refused legitimate downloads outright.
     const body = new TextEncoder().encode('x').buffer;
     const { transfer, client, calls } = build({ remoteBody: body });
     const s = summary();

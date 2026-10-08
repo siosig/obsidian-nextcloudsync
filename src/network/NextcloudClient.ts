@@ -44,7 +44,7 @@ const PROPFIND_BODY = `<?xml version="1.0" encoding="utf-8" ?>
   </d:prop>
 </d:propfind>`;
 
-/** Depth:0 PROPFIND for `D:lockdiscovery` only, sent once after a 423 (feature 090, contracts/lockdiscovery-propfind.md). */
+// Depth:0 PROPFIND for D:lockdiscovery only, sent once after a 423.
 const LOCKDISCOVERY_BODY = `<?xml version="1.0"?><D:propfind xmlns:D="DAV:"><D:prop><D:lockdiscovery/></D:prop></D:propfind>`;
 
 const REPORT_BODY = (syncToken: string) => `<?xml version="1.0" encoding="utf-8" ?>
@@ -63,15 +63,13 @@ const REPORT_BODY = (syncToken: string) => `<?xml version="1.0" encoding="utf-8"
 
 export class NextcloudClient implements IWebDAVClient {
   private features: NextcloudFeatures | null = null;
-  /** Remote directories already created via MKCOL (in-session cache). */
   private readonly createdDirs = new RemoteDirCache();
 
   constructor(
     private readonly settings: DavSyncSettings,
     private readonly appPassword: string,
-    /** Base folder for the remote sync target (usually the Vault name). Empty string means directly under the files root. */
+    // Remote base folder (usually the Vault name); '' = directly under the files root.
     private readonly remoteBase: string = '',
-    /** Optional diagnostic sink (wired to the Debug-mode file log) for network-level troubleshooting. */
     private readonly diag?: (msg: string) => void,
   ) {}
 
@@ -81,17 +79,16 @@ export class NextcloudClient implements IWebDAVClient {
     return encodeServerUrl(this.settings.serverUrl.replace(/\/$/, ''));
   }
 
-  /** The server's base URL, derived by stripping `/remote.php/...` and everything after it from the WebDAV endpoint URL. */
+  // Derived by stripping /remote.php/... and everything after it from the WebDAV endpoint URL.
   private serverBaseUrl(): string {
     return encodeServerUrl(this.settings.serverUrl.replace(/\/remote\.php.*$/, '').replace(/\/$/, ''));
   }
 
-  /** Returns the base URL for non-files DAV namespaces such as versions / uploads. */
+  // Base URL for non-files DAV namespaces (versions, uploads).
   private davBase(namespace: 'versions' | 'uploads'): string {
     return `${this.serverBaseUrl()}/remote.php/dav/${namespace}/${encodeURIComponent(this.settings.username)}`;
   }
 
-  /** Converts a Vault-relative path into a WebDAV URL under the base folder. */
   private remoteUrl(rel: string): string {
     return encodeRemoteUrl(this.baseUrl, toRemotePath(this.remoteBase, rel));
   }
@@ -104,24 +101,17 @@ export class NextcloudClient implements IWebDAVClient {
     return `Basic ${btoa(binary)}`;
   }
 
-  /** Configured WebDAV request timeout in ms (0 = unbounded). Read live so a settings change applies next request. */
+  // ms; 0 = unbounded. Read live so a settings change applies on the next request.
   private get timeoutMs(): number {
     return (this.settings.networkTimeoutSeconds ?? 0) * 1000;
   }
 
-  /** All WebDAV requests route through here so the configured Network timeout is always applied. */
   private req(params: RequestUrlParam): Promise<RequestUrlResponse> {
     return requestUrlWithTimeout(params, this.timeoutMs);
   }
 
-  /** Read-only requests (PROPFIND/GET) retry up to 2x on a transient req() rejection (timeout, connection
-   *  failure). req() only rejects when no HTTP response was received at all — any status code (incl.
-   *  401/404/415) resolves normally and is handled by the caller, so every rejection reaching here is
-   *  transient by construction; no error-type check is needed. Logs a single debug line per retry via
-   *  the existing diag sink so a captured debug log shows when this kicked in. Write requests (PUT/
-   *  DELETE/MOVE/MKCOL/PATCH/LOCK/UNLOCK) and the REPORT-based sync-token/getChanges calls stay on the
-   *  plain req() (never retried here) — see the T004/T006 task notes for the rationale.
-   */
+  // Read-only requests (PROPFIND/GET) retry up to 2x: req() rejects only when no HTTP response arrived, so every rejection here is
+  // transient. Logs one debug line per retry. Writes and the REPORT-based sync-token/getChanges calls stay on plain req() (docs/spec.md §5.6a).
   private reqReadonly(params: RequestUrlParam): Promise<RequestUrlResponse> {
     return withRetry(() => this.req(params), 2, 1000, (err) => {
       this.diag?.(`reqReadonly retry: ${params.method ?? 'GET'} ${params.url} (${err instanceof Error ? err.message : String(err)})`);
@@ -130,12 +120,10 @@ export class NextcloudClient implements IWebDAVClient {
   }
 
   async connect(): Promise<NextcloudFeatures> {
-    // Check /status.php for maintenance mode
     const statusUrl = this.settings.serverUrl.replace(/\/remote\.php.*$/, '') + '/status.php';
     const statusRes = await this.reqReadonly({ url: statusUrl, method: 'GET', headers: { ...NO_CACHE_HEADERS }, throw: false });
-    // `productname` is the second witness for detection below. It is read here because /status.php is
-    // already being parsed for maintenance, and because it needs no authentication — which is exactly
-    // what makes it useful when a genuine Nextcloud has its OCS endpoint closed off (feature 073, D-2).
+    // productname (from /status.php, already parsed here and needing no authentication) is the second detection witness,
+    // useful when a genuine Nextcloud has its OCS endpoint closed off.
     let statusProductName = '';
     if (statusRes.status === 200) {
       const status = statusRes.json as Record<string, unknown>;
@@ -145,7 +133,6 @@ export class NextcloudClient implements IWebDAVClient {
       statusProductName = typeof status.productname === 'string' ? status.productname : '';
     }
 
-    // Get capabilities
     const capUrl = this.settings.serverUrl.replace(/\/remote\.php.*$/, '') + '/ocs/v1.php/cloud/capabilities?format=json';
     const capRes = await this.reqReadonly({
       url: capUrl,
@@ -158,7 +145,7 @@ export class NextcloudClient implements IWebDAVClient {
     let hasChecksums = false;
     let hasFilesLocking = false;
     let hasBulkUpload = false;
-    /** Whether OCS actually yielded capabilities — the primary detection witness (feature 073). */
+    // Whether OCS actually yielded capabilities: the primary detection witness.
     let ocsAnswered = false;
 
     if (capRes.status === 200) {
@@ -172,22 +159,16 @@ export class NextcloudClient implements IWebDAVClient {
       // When the files_lock app is enabled, capabilities.files.locking contains a version string.
       const files = caps?.files as Record<string, unknown> | undefined;
       hasFilesLocking = files?.locking != null && files.locking !== false;
-      // The bulk-upload endpoint is advertised under capabilities.dav.bulkupload (a version string)
-      // on servers that support it. Absent ⇒ fall back to per-file PUT (feature-gated by the engine).
+      // capabilities.dav.bulkupload (a version string) when supported; absent => per-file PUT.
       const dav = caps?.dav as Record<string, unknown> | undefined;
       hasBulkUpload = dav?.bulkupload != null && dav.bulkupload !== false;
     }
 
-    // Get current sync-token
     const syncToken = await this.getSyncToken();
 
-    // Detection is taken from what the probes ANSWERED, never from this class being the one asking
-    // (feature 073, GitHub-adjacent report). Capabilities is the primary witness because every other
-    // flag above is derived from it: a connection that cannot read it has nothing to back an
-    // `isNextcloud: true` with, and the engine would then gate Nextcloud-only work on a value with no
-    // substance behind it. /status.php is the second witness so a genuine Nextcloud whose OCS is
-    // closed off (401/403) is not misfiled as plain WebDAV. Neither witness answering means the
-    // caller should be using StandardWebDAVClient instead — WebDAVFactory acts on that.
+    // Detection comes from what the probes ANSWERED. Capabilities is the primary witness (every flag above derives from it);
+    // /status.php is the second, so a genuine Nextcloud with OCS closed off (401/403) is not misfiled as plain WebDAV.
+    // Neither answering means WebDAVFactory should use StandardWebDAVClient.
     const isNextcloud = ocsAnswered || /nextcloud/i.test(statusProductName);
 
     this.features = {
@@ -214,11 +195,8 @@ export class NextcloudClient implements IWebDAVClient {
       body: PROPFIND_BODY,
       throw: false,
     });
-    // A 404 on the vault folder itself is NOT an empty listing (feature 083 / issue #50). Collapsing
-    // the two hid a whole missing vault behind "the server has no files", which the full scan then
-    // read as "everything was deleted remotely". They are different facts and the engine acts on them
-    // differently: an empty listing drives absence-based deletion, a missing folder drives a re-seed.
-    // Subpaths keep the old meaning — nothing depends on telling an absent subfolder from an empty one.
+    // A 404 on the vault folder itself is NOT an empty listing (issue #50, docs/spec.md §5.2): an empty listing drives absence-based
+    // deletion, a missing folder drives a re-seed. Subpaths keep the empty meaning.
     if (res.status === 404) {
       if (path === '') throw new RemoteRootMissingError();
       return [];
@@ -227,15 +205,9 @@ export class NextcloudClient implements IWebDAVClient {
     return await this.parsePropfindResponse(res.text, { op: 'getFiles', path, status: res.status, method: 'PROPFIND' });
   }
 
-  /**
-   * Feature 064 (C-0): remote state of ONE file via a Depth:0 PROPFIND, so the watch-mode single-file
-   * path can classify against the real remote instead of uploading blind. The response is parsed by
-   * the SAME {@link parsePropfindResponse} the full scan uses, so every field (checksum/etag/size/
-   * mtime/fileId) carries identical semantics — that is what lets the caller reuse processRemoteFile.
-   * A collection yields no entry there (it is skipped as non-file), hence null. Unlike getFiles, a
-   * non-207 other than 404 THROWS: silently reading an ambiguous failure as "absent" would send the
-   * caller down the create path and blind-overwrite the very file it could not read.
-   */
+  // Depth:0 state of ONE file (docs/spec.md §5.7), parsed by the SAME parsePropfindResponse as the full scan so processRemoteFile
+  // can be reused. A collection yields no entry, hence null. Unlike getFiles, a non-207 other than 404 THROWS: reading an
+  // ambiguous failure as "absent" would send the caller down the create path and blind-overwrite the file.
   async statFile(remotePath: string): Promise<RemoteFileInfo | null> {
     const res = await this.reqReadonly({
       url: this.remoteUrl(remotePath),
@@ -256,13 +228,8 @@ export class NextcloudClient implements IWebDAVClient {
   }
 
   async getRootEtag(): Promise<string | null> {
-    // Root-ETag short-circuit (spec 023): a single Depth:0 PROPFIND on the vault root. Nextcloud
-    // propagates any descendant change up to the root collection's ETag, so a matching value means
-    // the remote tree is unchanged since the last full scan. Never throws — any non-207 (incl. 404
-    // before the folder exists), unreadable body, or other error yields null so the caller falls
-    // back to a real full scan (feature 087: the fall-back was always correct here, this just makes
-    // an unreadable body go through the same validated reader as every other call instead of its own
-    // unchecked DOMParser).
+    // One Depth:0 PROPFIND on the vault root (docs/spec.md §8a.5): Nextcloud propagates descendant changes to the root ETag.
+    // Never throws; any non-207, unreadable body or other error yields null so the caller full-scans.
     try {
       const res = await this.reqReadonly({
         url: this.remoteUrl(''),
@@ -300,11 +267,8 @@ export class NextcloudClient implements IWebDAVClient {
   }
 
   async isRemoteDirEmpty(path: string): Promise<boolean> {
-    // Depth:1 lists the collection itself plus its immediate children. "Empty" (rmdir
-    // semantics) ⇔ the only response is the collection itself. Conservative on any
-    // ambiguity: never report "empty" unless the server clearly says so, so a recursive
-    // DELETE is never issued against a directory that might still hold data. An unreadable body is
-    // exactly that kind of ambiguity (feature 087) — caught below, same as any other failure here.
+    // Depth:1 lists the collection plus its children; "empty" (rmdir semantics) iff the only response is the collection itself.
+    // Conservative on any ambiguity, including an unreadable body, so a recursive DELETE never targets a dir that might hold data.
     const res = await this.reqReadonly({
       url: this.remoteUrl(path),
       method: 'PROPFIND',
@@ -329,15 +293,8 @@ export class NextcloudClient implements IWebDAVClient {
     return children === 0;
   }
 
-  /**
-   * Create `path` (and its ancestors) on the server, FAILING if any level could not be created.
-   *
-   * The failure used to be swallowed: the MKCOL loop ignored its own status codes, so this resolved
-   * whether or not the folder was made. Watch mode records the folder as tracked immediately after
-   * this returns, which meant a folder that was never created could enter the tracking index — and a
-   * tracked folder the server does not have is precisely the shape that drove issue #46's
-   * delete-propagation. A folder that could not be created must say so (feature 088).
-   */
+  // Fails if any level could not be created: watch mode tracks the folder right after this returns, and a tracked folder
+  // the server lacks drives delete propagation (issue #46).
   async createDirectory(path: string): Promise<void> {
     // ensureRemoteDir MKCOLs every segment of the path it is given EXCEPT the last (it assumes a
     // trailing file name), so append a dummy segment to have `path` itself (and its ancestors) created.
@@ -353,19 +310,12 @@ export class NextcloudClient implements IWebDAVClient {
     // keeps the caller on its no-destructive-action path rather than inventing a re-seed.
     if (!this.remoteBase) return 'exists';
     const ctx = { baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs };
-    // Ancestors are best-effort, exactly as the first upload creates them: they are not the question
-    // being asked. Only the vault folder itself is judged strictly, because its 201-vs-405 is the
-    // proof that decides whether the caller may reset tracking and re-seed (contract C-2). Since
-    // feature 088 ensureRemoteDir reports a level it could not create, so the swallow is now explicit
-    // — a transient 423 on an ancestor must not stop mkcolStrict from asking the real question.
+    // Ancestors are best-effort (as in the first upload); only the vault folder is judged strictly, since its 201-vs-405 decides
+    // whether the caller may reset tracking and re-seed. The swallow is explicit: a transient 423 on an ancestor must not stop mkcolStrict.
     await ensureRemoteDir(ctx, this.remoteBase, this.createdDirs).catch(() => undefined);
     const outcome = await mkcolStrict(ctx, this.remoteBase);
-    // A 201 means the vault folder was genuinely absent, which makes every "already created" entry
-    // under it a lie: those directories went away with it. Without this, a folder this client created
-    // earlier in the session is silently skipped when the re-seed tries to put it back — files
-    // survive (a PUT into a missing parent 404s and re-drives MKCOL) but an EMPTY directory has no
-    // write to fail, so it just never reappears. Caught by INV-14 against a live server; no mock can
-    // see it, because the cache is inside the client.
+    // A 201 means the vault folder was absent, so every cached "already created" entry under it is stale; otherwise an EMPTY
+    // directory (no write to fail and re-drive MKCOL) never reappears after the re-seed.
     if (outcome === 'created') this.createdDirs.clear();
     return outcome;
   }
@@ -403,17 +353,8 @@ export class NextcloudClient implements IWebDAVClient {
     return res.arrayBuffer;
   }
 
-  /**
-   * A PUT or DELETE just came back 423. Always throws — never resolves — either a
-   * {@link ServerLockedError} naming the lock owner, or the same plain {@link NetworkError} the
-   * caller would have thrown before this feature existed.
-   *
-   * One extra Depth:0 PROPFIND asks the server who holds the lock (feature 090, contract
-   * lockdiscovery-propfind.md). That lookup is best-effort only: any failure of it — a non-207
-   * status, an unreadable body, no owner in it — falls back to the plain NetworkError exactly as
-   * before, because the lookup exists to add information to the original 423, never to replace or
-   * hide it (FR-004).
-   */
+  // A PUT or DELETE just came back 423. Always throws: ServerLockedError naming the lock owner, or the plain NetworkError.
+  // The owner lookup is best-effort and must never replace or hide the original 423 (docs/spec.md §6.5a).
   private async errorFor423(path: string, method: 'PUT' | 'DELETE', originalText: string): Promise<never> {
     try {
       const res = await this.reqReadonly({
@@ -439,9 +380,7 @@ export class NextcloudClient implements IWebDAVClient {
     remotePath: string, data: ArrayBuffer, mtime?: number,
     opts?: { precomputedSha256?: string; ifMatchEtag?: string | null },
   ): Promise<void> {
-    // Reactive directory creation (P1-B): try the PUT first and only MKCOL the parents if the server
-    // reports a missing parent (409), then retry once. This drops the per-upload directory probe on
-    // the common path (the directory almost always already exists).
+    // PUT first and MKCOL the parents only on a missing parent, then retry once: drops the per-upload directory probe on the common path.
     const checksum = `SHA256:${opts?.precomputedSha256 ?? await sha256(data)}`;
     const headers: Record<string, string> = {
       Authorization: this.authHeader,
@@ -454,9 +393,7 @@ export class NextcloudClient implements IWebDAVClient {
     if (opts?.ifMatchEtag) headers['If-Match'] = `"${opts.ifMatchEtag.replace(/^"|"$/g, '')}"`;
 
     let res = await this.req({ url: this.remoteUrl(remotePath), method: 'PUT', headers, body: data, throw: false });
-    // Missing parent collection → create ancestors, then retry the PUT once. Standard WebDAV
-    // returns 409, but Nextcloud's files DAV returns 404 for a missing parent — handle both
-    // so the first upload into a not-yet-created folder (e.g. a fresh device) succeeds.
+    // Missing parent: create the ancestors, then retry the PUT once. Standard WebDAV answers 409, Nextcloud 404; handle both.
     let dirError: RemoteDirCreateError | null = null;
     if (res.status === 409 || res.status === 404) {
       dirError = await prepareMissingParentRetry({ baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
@@ -465,12 +402,11 @@ export class NextcloudClient implements IWebDAVClient {
     }
     if (res.status === 412) throw new PreconditionFailedError(remotePath); // remote changed (If-Match)
     if (res.status === 423) {
-      // A server-side lock explains the failure on its own; dirError (from a MISSING-parent retry,
-      // an unrelated cause) never applies here. errorFor423 always throws (feature 090).
+      // A server-side lock explains the failure on its own; dirError (from a MISSING-parent retry, an unrelated cause)
+      // never applies here. errorFor423 always throws.
       await this.errorFor423(remotePath, 'PUT', res.text);
     }
-    // A parent we could not create explains the failure far better than the PUT's own status does,
-    // so it wins — but only once the retry has had its chance (feature 088, contract C-4).
+    // A parent we could not create explains the failure better than the PUT's own status, so it wins, but only after the retry had its chance.
     if (res.status < 200 || res.status >= 300) throw dirError ?? new NetworkError(res.status, res.text, 'PUT');
   }
 
@@ -490,9 +426,8 @@ export class NextcloudClient implements IWebDAVClient {
   }
 
   async moveFile(oldPath: string, newPath: string): Promise<void> {
-    // Ensure the destination parent exists before MOVE. This deliberately does NOT drop stale cache
-    // entries: if the folder went away after we created it, the MKCOL here is skipped, the MOVE 404s,
-    // and the recovery below is what puts it back (feature 088, contract C-4).
+    // Ensure the destination parent exists before MOVE. This deliberately does NOT drop stale cache entries: if the folder went away
+    // after we created it, the MKCOL is skipped, the MOVE 404s, and the recovery below puts it back.
     const ctx = { baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs };
     const target = toRemotePath(this.remoteBase, newPath);
     // A failure here is DISCARDED on purpose. This call is speculative — it runs before the MOVE has
@@ -509,9 +444,8 @@ export class NextcloudClient implements IWebDAVClient {
     });
     let res = await move();
     let dirError: RemoteDirCreateError | null = null;
-    // Same missing-parent recovery the upload path has always had: a destination folder another
-    // device deleted leaves a stale "already created" entry that makes the MKCOL above a no-op.
-    // Neither client used to do this for MOVE, so a rename into such a folder failed for good.
+    // Same missing-parent recovery as uploadFile: a destination folder another device deleted leaves a stale "already created" entry
+    // that makes the MKCOL above a no-op.
     if (res.status === 409 || res.status === 404) {
       dirError = await prepareMissingParentRetry(ctx, target, this.createdDirs);
       if (isTransportFailure(dirError)) throw dirError;
@@ -525,29 +459,16 @@ export class NextcloudClient implements IWebDAVClient {
     const res = await this.req({
       url: this.remoteUrl(path), method: 'DELETE', headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS }, throw: false,
     });
-    // Blind delete (P1-B): a 404 means the file is already gone — exactly the desired end state, so
-    // treat it as success rather than an error (no pre-deletion existence probe is needed).
+    // Blind delete: a 404 means already gone, the desired end state; no pre-deletion existence probe is needed.
     if (res.status === 404) return;
-    // A server-side lock explains the failure on its own — errorFor423 always throws (feature 090).
+    // A server-side lock explains the failure on its own; errorFor423 always throws.
     if (res.status === 423) await this.errorFor423(path, 'DELETE', res.text);
     if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text, 'DELETE');
   }
 
-  /**
-   * Always null: this client never issues the RFC 6578 sync-collection REPORT.
-   *
-   * Nextcloud's files DAV does not implement it — Sabre answers with ReportNotSupported, i.e.
-   * HTTP 415 — so the request can only ever fail, and the engine already treats "no token" as its
-   * normal path here (full scan, narrowed by the root-ETag short-circuit). Issuing it anyway cost
-   * one guaranteed-415 round-trip per client, and, because Nextcloud logs the rejection at ERROR
-   * level, wrote a stack trace into the administrator's server log every time the plugin loaded
-   * (issue #37). A latch used to suppress the retries after the first 415; not sending the request
-   * at all removes the log noise entirely instead of merely rationing it.
-   *
-   * `getChanges()` is deliberately left in place. It is unreachable while this returns null, but it
-   * is the code that would drive an incremental sync if a token ever did arrive, and deleting it
-   * would throw away the only implementation of that path.
-   */
+  // Always null: Nextcloud's files DAV does not implement the sync-collection REPORT (Sabre answers 415), so sending it cost a
+  // guaranteed-415 round-trip and wrote a server-side ERROR stack trace on every plugin load (issue #37, docs/spec.md §18).
+  // getChanges() is kept: it is the only implementation of the incremental path should a token ever arrive.
   async getSyncToken(): Promise<string | null> {
     return null;
   }
@@ -568,7 +489,6 @@ export class NextcloudClient implements IWebDAVClient {
     }
   }
 
-  // ── US2: Version history ────────────────────────────────────────────────────
 
   async listVersions(fileId: string): Promise<FileVersion[]> {
     if (!fileId) throw new FeatureUnsupportedError('versions');
@@ -614,7 +534,6 @@ export class NextcloudClient implements IWebDAVClient {
     if (res.status < 200 || res.status >= 300) throw new NetworkError(res.status, res.text, 'MOVE');
   }
 
-  /** Builds the URL used for GET/MOVE on a version. */
   private versionUrl(version: FileVersion, fileId: string): string {
     return `${this.davBase('versions')}/versions/${encodeURIComponent(fileId)}/${encodeURIComponent(version.versionId)}`;
   }
@@ -644,7 +563,6 @@ export class NextcloudClient implements IWebDAVClient {
     return versions;
   }
 
-  // ── US3: Chunked upload ──────────────────────────────────────────────
 
   async uploadChunked(
     remotePath: string, data: ArrayBuffer, chunkSizeBytes: number,
@@ -660,11 +578,10 @@ export class NextcloudClient implements IWebDAVClient {
     const sum = await sha256(data);
 
     try {
-      // 1. Create the upload session.
       const mk = await this.req({ url: sessionUrl, method: 'MKCOL', headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS }, throw: false });
       if (mk.status < 200 || mk.status >= 300) throw new NetworkError(mk.status, mk.text, 'MKCOL');
 
-      // 2. PUT each chunk named by its start byte offset (15-digit zero-padded) so lexical order = assembly order.
+      // PUT each chunk named by its start byte offset (15-digit zero-padded) so lexical order = assembly order.
       for (let offset = 0; offset < total; offset += chunkSizeBytes) {
         const end = Math.min(offset + chunkSizeBytes, total);
         const chunk = data.slice(offset, end);
@@ -679,11 +596,8 @@ export class NextcloudClient implements IWebDAVClient {
         if (put.status < 200 || put.status >= 300) throw new NetworkError(put.status, put.text, 'PUT');
       }
 
-      // 3. Ensure the parent directory of the final file exists, then assemble by MOVE-ing .file.
-      // Drop any stale "already created" cache entries first so a folder another device deleted is
-      // genuinely re-created (spec 024) — otherwise the assembling MOVE would target a missing parent.
-      // The failure is kept but not yet acted on: the assembling MOVE fails for plenty of reasons
-      // that have nothing to do with the parent, and only its own answer can tell them apart.
+      // Ensure the final file's parent exists, then assemble by MOVE-ing .file. Drop stale "already created" entries first so a folder
+      // another device deleted is re-created. The failure is kept but not acted on yet: the MOVE fails for many reasons unrelated to the parent.
       const dirError = await prepareMissingParentRetry({ baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
       const moveHeaders: Record<string, string> = {
         Authorization: this.authHeader,
@@ -703,16 +617,14 @@ export class NextcloudClient implements IWebDAVClient {
         throw: false,
       });
       if (move.status === 412) throw new PreconditionFailedError(remotePath); // remote changed (If-Match)
-      // The assembling MOVE has no retry of its own (the upload session is single-use), so when the
-      // server says the parent is missing, the level we could not create IS the explanation — say so
-      // instead of "HTTP 404 (MOVE)". Any other failure is reported as itself (feature 088).
+      // The assembling MOVE has no retry (the upload session is single-use), so when the server says the parent is missing, the level
+      // we could not create IS the explanation, instead of "HTTP 404 (MOVE)". Any other failure is reported as itself.
       const parentMissing = move.status === 404 || move.status === 409;
       if (move.status < 200 || move.status >= 300) {
         throw (parentMissing && dirError) ? dirError : new NetworkError(move.status, move.text, 'MOVE');
       }
 
-      // 4. Verify the checksum after assembly (FR-012). Pass the precomputed hash to avoid
-      //    hashing the full buffer a second time.
+      // Verify the checksum after assembly (FR-012), passing the precomputed hash to avoid hashing the buffer twice.
       await this.verifyRemoteChecksum(remotePath, data, sum);
     } catch (err) {
       // On abort, discard the session so no incomplete file is left at the final path (FR-011).
@@ -721,9 +633,8 @@ export class NextcloudClient implements IWebDAVClient {
     }
   }
 
-  /** After upload, fetches the remote checksum and compares it with the local SHA-256.
-   *  Skips verification if unavailable. Accepts an optional precomputed hash to avoid
-   *  redundant hashing of the same buffer (used by uploadChunked). */
+  // Fetches the remote checksum after upload and compares it with the local SHA-256; skipped if unavailable.
+  // A precomputed hash avoids rehashing the same buffer (uploadChunked).
   private async verifyRemoteChecksum(remotePath: string, data: ArrayBuffer, precomputed?: string): Promise<void> {
     const res = await this.reqReadonly({
       url: this.remoteUrl(remotePath),
@@ -742,7 +653,6 @@ export class NextcloudClient implements IWebDAVClient {
     }
   }
 
-  // ── US4: Files Locking ─────────────────────────────────────────────────────
 
   async lockFile(remotePath: string): Promise<string> {
     const res = await this.req({
@@ -787,8 +697,7 @@ export class NextcloudClient implements IWebDAVClient {
     const results: RemoteFileInfo[] = [];
     const responses = readMultistatus(xml, ctx);
     for (let i = 0; i < responses.length; i++) {
-      // Yield to the event loop periodically so parsing a large Depth:infinity listing does not
-      // freeze the UI / trigger an Android ANR (FR-027 / P2-B).
+      // Yield periodically so parsing a large Depth:infinity listing does not freeze the UI or trigger an Android ANR (FR-027).
       if (i > 0 && i % PARSE_YIELD_EVERY === 0) await new Promise((r) => window.setTimeout(r, 0));
       const resp = responses[i];
       const prop = readProp(resp);
@@ -830,8 +739,7 @@ export class NextcloudClient implements IWebDAVClient {
   ): Promise<SyncChanges> {
     const modified: RemoteFileInfo[] = [];
     const deleted: string[] = [];
-    // Validate FIRST: an unreadable body must never resolve to "no changes, empty token" — that
-    // reads as "in sync" and stalls the vault exactly like an unreadable getFiles would (feature 087).
+    // Validate FIRST: an unreadable body must never resolve to "no changes, empty token", which reads as "in sync" and stalls the vault.
     const responses = readMultistatus(xml, ctx);
     const newSyncToken = readSyncToken(xml);
 

@@ -48,9 +48,8 @@ function makeClient(over: {
     createDirectory: jest.fn(async () => undefined),
     deleteCollection: jest.fn(async (p: string) => { if (over.deleteImpl) await over.deleteImpl(p); }),
     isRemoteDirEmpty: jest.fn(async (p: string) => (over.emptyOf ? over.emptyOf(p) : true)),
-    // Feature 081: trashLocal now confirms absence with a Depth 0 probe first. This harness models
-    // a listing that is right about absence, so the probe agrees; verifyBeforeTrash.test.ts covers
-    // the case where the listing is wrong.
+    // trashLocal confirms absence with a Depth 0 probe first. This harness models a listing that is right
+    // about absence, so the probe agrees; verifyBeforeTrash.test.ts covers the case where it is wrong.
     remoteExists: jest.fn(async () => false),
     lockFile: jest.fn(async () => 'files_lock/tok'),
     unlockFile: jest.fn(async () => undefined),
@@ -71,8 +70,7 @@ function makeEngine(opts: {
     stat: jest.fn(async () => null),
     exists: jest.fn(async () => false),
     mkdir,
-    // Feature 086: the engine registers a trashed subtree here so watch mode does not read the
-    // plugin's own vault delete events as user deletions.
+    // The engine registers a trashed subtree here so watch mode does not read the plugin's own vault delete events as user deletions.
     ignore: jest.fn(),
   };
   const localPaths = opts.localDirs ?? [];
@@ -215,15 +213,14 @@ describe('SyncEngine.reconcileDirectories — directory create/delete propagatio
 
     const breakerError = summary.errors.find((e) => e.path === '(dir mass-delete breaker)');
     expect(breakerError).toBeDefined();
-    expect(breakerError!.skippedPaths).toBeUndefined(); // dir breaker no longer uses the capped field
+    expect(breakerError!.skippedPaths).toBeUndefined(); // dir breaker does not use the capped field
     expect(breakerError!.dirBreakerSkipped).toBeDefined();
     // Full, UNCAPPED lists (no 10-item truncation) — every candidate present, split by category.
     expect(breakerError!.dirBreakerSkipped!.deleteRemote.sort()).toEqual(deleteRemoteDirs.map((d) => d.path).sort());
     expect(breakerError!.dirBreakerSkipped!.trashLocal.sort()).toEqual(trashLocalDirs.map((d) => d.path).sort());
   });
 
-  // DP-12 (lock ON wraps the remote delete) was removed in feature 033: file locking is always off,
-  // so the remote delete is never lock-wrapped. DP-13 below is now the only behaviour.
+  // The remote delete is never lock-wrapped (file locking is always off); DP-13 below is the only behaviour.
 
   it('[SPEC:DP-13] lock OFF (always, feature 033): issues no lock but still deletes', async () => {
     const client = makeClient({ remoteDirs: ['gone'] });
@@ -246,7 +243,7 @@ describe('SyncEngine.reconcileDirectories — directory create/delete propagatio
     await reconcile(engine, summary);
     expect(client.deleteCollection).toHaveBeenCalledWith('ok');
     expect(summary.errorCount).toBe(1);
-    // Feature 033: no locking, so no unlock either — the self-healing continuation is the assertion.
+    // No locking, so no unlock either — the self-healing continuation is the assertion.
     expect(client.lockFile).not.toHaveBeenCalled();
   });
 
@@ -280,8 +277,8 @@ describe('SyncEngine.resolveSkippedDir — per-path force resolution for a mass-
   it('[SPEC:MDV-8] trashLocal + choice=remote → confirm the deletion locally (trash it)', async () => {
     const client = makeClient({ remoteDirs: [] });
     // Tracked, because that is the only way a path reaches the breaker's trashLocal list: the
-    // classification that produced it needs local-present + remote-absent + TRACKED. Feature 086
-    // drops the row by enumerating the tracked subtree, so the world has to say it is tracked.
+    // classification that produced it needs local-present + remote-absent + TRACKED. The sink drops rows
+    // by enumerating the tracked subtree, so the world has to say it is tracked.
     const { engine, trashFile, deleteDir } = makeEngine({
       client, localDirs: ['stillhere'], tracked: [dirState('stillhere')],
     });

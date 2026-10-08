@@ -1,49 +1,33 @@
-// b-3 (real Android UI) env guard. b-3 needs two live things: the test Nextcloud
-// (NEXTCLOUD_*, exactly like b-1/b-2) and the Redroid Android device. Both are
-// described ONLY by process.env, which `bash tests/docker/run.sh b3` exports; no
-// file is read and nothing is derived. When something is absent the suite must skip
-// cleanly instead of throwing, so nothing here parses eagerly.
+// b-3 (real Android UI) env guard. Needs the test Nextcloud (NEXTCLOUD_*) and the Redroid Android device, both
+// described only by process.env as exported by `bash tests/docker/run.sh b3`. When something is absent the suite
+// must skip instead of throwing, so nothing here parses eagerly.
 
 const NEXTCLOUD_REQUIRED = ['NEXTCLOUD_SERVER_URL', 'NEXTCLOUD_USER', 'NEXTCLOUD_PASSWORD'] as const;
 
-/** CA injection into the system trust store only works up to this API level (research.md R-5). */
+// CA injection into the system trust store only works up to this API level.
 export const EXPECTED_ANDROID_API_LEVEL = 33;
 
-/** The Android device (adb serial) the run targets, as exported by the runner. */
 export interface AndroidDevice {
-  /** `ANDROID_SERIAL`: the adb serial of the device under test. */
+  // `ANDROID_SERIAL`: the adb serial of the device under test.
   serial: string;
-  /** `ANDROID_API_LEVEL`: must equal EXPECTED_ANDROID_API_LEVEL for CA injection to hold. */
+  // `ANDROID_API_LEVEL`: must equal EXPECTED_ANDROID_API_LEVEL for CA injection to hold.
   apiLevel: number;
-  /** `ANDROID_CA_INJECTED`: whether the test Nextcloud CA is in the device's trust store. */
+  // `ANDROID_CA_INJECTED`: whether the test Nextcloud CA is in the device's trust store.
   caInjected: boolean;
 }
 
 export interface AndroidEnvResult {
-  /** True only when nothing is missing and nothing blocks execution. */
   ok: boolean;
-  /**
-   * Required keys that are not set. A non-empty `missing` means "cannot run because it is
-   * not set up" -- an explicit SKIP.
-   */
+  // Required keys that are not set: "cannot run because it is not set up", an explicit SKIP.
   missing: string[];
-  /**
-   * Everything needed was set, but its value makes the run impossible (wrong API level,
-   * CA not injected). Kept apart from `missing` on purpose: "cannot execute" must never
-   * be read as "not configured".
-   */
+  // Everything was set but its value makes the run impossible (wrong API level, CA not injected). Kept apart
+  // from `missing` so "cannot execute" is never read as "not configured".
   blocked: string[];
-  /** Resolved values, shaped like env vars so a runner can export them verbatim. */
   values: Record<string, string>;
-  /** Parsed device facts; undefined when any of the device keys is missing or malformed. */
   device?: AndroidDevice;
 }
 
-/**
- * Resolves everything b-3 needs from process.env. Never throws: absent keys are reported
- * through `missing` so the caller can decide to SKIP, while values that rule out a run are
- * reported through `blocked`.
- */
+// Never throws: absent keys go to `missing` (caller SKIPs), values that rule out a run go to `blocked`.
 export function requireAndroidEnv(): AndroidEnvResult {
   const values: Record<string, string> = {};
   const missing: string[] = [];
@@ -96,14 +80,8 @@ export function requireAndroidEnv(): AndroidEnvResult {
   return { ok: missing.length === 0 && blocked.length === 0, missing, blocked, values, device };
 }
 
-/**
- * Gate for a scenario's `before` hook.
- *
- * Locally an unusable environment is a skip. On a real run it is NOT: run.sh sets
- * SUITE_REQUIRE_ENV=1, and then a scenario that cannot assert anything must FAIL rather than skip,
- * because wdio exits 0 on an all-skipped run and the release gate would read that as a pass. A green
- * run that asserted nothing is the exact failure mode this layer exists to prevent.
- */
+// Locally an unusable environment is a skip. With SUITE_REQUIRE_ENV=1 (set by run.sh) it must FAIL instead:
+// wdio exits 0 on an all-skipped run and the release gate would read that as a pass.
 export function requireEnvOrSkip(ctx: { skip: () => void }): AndroidEnvResult {
   const env = requireAndroidEnv();
   if (env.ok) return env;

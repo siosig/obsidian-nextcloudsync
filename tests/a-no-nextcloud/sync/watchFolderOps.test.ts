@@ -1,6 +1,6 @@
-// [SPEC:WF-1] specs/046-watch-folder-propagation — watch-mode single-folder ops: create (MKCOL,
-// idempotent), delete (tracked-only, trashbin), rename (MOVE). Exclusions honored; status bar shows
-// activity. Mirrors the file-side syncSingleFile/deleteSingleFile/renameSingleFile behavior.
+// [SPEC:WF-1] Watch-mode single-folder ops: create (MKCOL, idempotent), delete (tracked-only, trashbin),
+// rename (MOVE). Exclusions honored; status bar shows activity. Mirrors the file-side
+// syncSingleFile/deleteSingleFile/renameSingleFile behavior.
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { DavSyncSettings, DirState } from '../../../src/types';
 

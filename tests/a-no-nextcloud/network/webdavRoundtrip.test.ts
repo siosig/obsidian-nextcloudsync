@@ -82,21 +82,18 @@ describe('NextcloudClient.deleteFile — blind delete (P1-B)', () => {
   });
 });
 
-// [SPEC:URE-2]: feature 065 (issue #25). Every remote URL NextcloudClient builds goes through the
-// one encoding scheme — including the MOVE Destination HEADER, which the request layer never
-// touches on any platform, so a raw value there is unrecoverable. The pure function is covered in
-// remotePath.test.ts; what these assert is the WIRING: that no call site bypasses it, and that no
-// platform check can change the result. Platform.isIosApp is forced ON for the whole block: under
-// feature 061 that flipped every expectation below, so if a platform branch is ever reintroduced
-// these fail rather than silently pass on the desktop path.
+// [SPEC:URE-2]: issue #25. Every remote URL NextcloudClient builds goes through the one encoding scheme, including
+// the MOVE Destination HEADER, which the request layer never touches, so a raw value there is unrecoverable. The pure
+// function is covered in remotePath.test.ts; these assert the WIRING: no call site bypasses it and no platform check
+// can change the result. Platform.isIosApp is forced ON for the whole block.
 describe('NextcloudClient — remote URL encoding is platform-independent (feature 065)', () => {
   const originalIsIosApp = Platform.isIosApp;
   const ENCODED = 'https://nc/remote.php/dav/files/alice/Vault/00%20%E6%94%B6%E4%BB%B6%E7%AE%B1/%E6%9C%AA%E5%91%BD%E5%90%8D.md';
-  const RAW_PATH = '00 收件箱/未命名.md';
+  const RAW_PATH = '00 \u6536\u4ef6\u7bb1/\u672a\u547d\u540d.md';
 
   beforeEach(() => {
     mockRequestUrl.mockReset();
-    Platform.isIosApp = true; // the platform 061 special-cased; must make no difference now
+    Platform.isIosApp = true; // must make no difference
   });
   afterEach(() => { Platform.isIosApp = originalIsIosApp; });
 
@@ -133,7 +130,7 @@ describe('NextcloudClient — remote URL encoding is platform-independent (featu
     await client().uploadFile(RAW_PATH, new ArrayBuffer(2));
     const mkcols = calls('MKCOL').map((c) => c.url);
     expect(mkcols).toContain('https://nc/remote.php/dav/files/alice/Vault/00%20%E6%94%B6%E4%BB%B6%E7%AE%B1');
-    expect(mkcols.some((u) => u.includes('00 收件箱'))).toBe(false);
+    expect(mkcols.some((u) => u.includes('00 \u6536\u4ef6\u7bb1'))).toBe(false);
   });
 
   it('MOVE percent-encodes BOTH the request url and the Destination header', async () => {
@@ -176,8 +173,8 @@ describe('NextcloudClient — Server URL normalization (feature 065)', () => {
   });
 });
 
-// [SPEC:URE-5]: a bare "HTTP 404" cannot tell a failed download from a failed upload or PROPFIND —
-// issue #25 produced 162 of them and the operation stayed unknown. The verb rides on the error.
+// [SPEC:URE-5]: a bare "HTTP 404" cannot tell a failed download from a failed upload or PROPFIND (issue #25); the verb
+// rides on the error.
 describe('NextcloudClient — NetworkError carries the HTTP method (feature 065)', () => {
   beforeEach(() => mockRequestUrl.mockReset());
 
@@ -193,7 +190,7 @@ describe('NextcloudClient — NetworkError carries the HTTP method (feature 065)
     expect(err).toBeInstanceOf(NetworkError);
     expect((err as NetworkError).method).toBe(method);
     expect((err as NetworkError).message).toBe(`HTTP ${status} (${method})`);
-    // The pre-065 shape stays a prefix, so anything matching on it keeps working.
+    // The bare "HTTP <status>" shape stays a prefix, so anything matching on it keeps working.
     expect((err as NetworkError).message.startsWith(`HTTP ${status}`)).toBe(true);
   });
 

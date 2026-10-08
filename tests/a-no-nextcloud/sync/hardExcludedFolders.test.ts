@@ -2,21 +2,11 @@ import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { DavSyncSettings } from '../../../src/types';
 import { DIR_BREAKER_REPORT_FILENAME, FILE_BREAKER_REPORT_FILENAME } from '../../../src/ui/breakerReport';
 
-/**
- * [SPEC:EXCL-HARD-1] Machine-managed vault-root folders (.git, .trash) are PERMANENTLY excluded
- * from sync, regardless of the user's excludedFolders list.
- *
- * Motivation:
- *  - `.trash` is Obsidian's device-local trash (deletions land here when "Deleted files" =
- *    "Move to Obsidian trash"). Syncing it clutters every device's trash and churns against the
- *    plugin's own trashFile-based deletion (remote delete → local .trash move → re-upload).
- *  - `.git` is a machine-managed repository whose piecewise file sync corrupts the repo
- *    (discussion #6). The settings UI already DOCUMENTS these dotfolders as excluded; this makes
- *    the implementation match that promised contract.
- *
- * Scope guard: the exclusion is a TARGETED list, not a blanket "all dotfolders" rule. Non-machine
- * dotfolders/files at the vault root (e.g. .archive/, .env) must still sync (Task 7 / dotPaths).
- */
+// [SPEC:EXCL-HARD-1] Machine-managed vault-root folders (.git, .trash) are PERMANENTLY excluded from sync,
+// regardless of the user's excludedFolders list. `.trash` is Obsidian's device-local trash (syncing it churns
+// against the plugin's own trashFile-based deletion); `.git` is a repository whose piecewise sync corrupts it
+// (discussion #6). The exclusion is a TARGETED list, not "all dotfolders": .archive/, .env etc. must still sync.
+// (docs/spec.md §9.3a)
 
 function isSystemExcluded(path: string): boolean {
   const settings = {
@@ -66,10 +56,9 @@ describe('[SPEC:EXCL-HARD-1] hard-excluded machine folders (.git / .trash)', () 
   });
 });
 
-// Feature 056: the mass-delete breaker report notes (fixed vault-root filenames, regenerated and
-// overwritten on demand — see src/ui/breakerReport.ts) are device-local diagnostic snapshots, not
-// vault content worth syncing. Same rationale as the per-device debug log exclusion
-// (isActiveLogFile): syncing a snapshot that's about to be overwritten again just churns.
+// The mass-delete breaker report notes (fixed vault-root filenames, regenerated on demand: src/ui/breakerReport.ts)
+// are device-local diagnostic snapshots, not vault content. Like the per-device debug log (isActiveLogFile),
+// syncing a snapshot that is about to be overwritten just churns.
 describe('[SPEC:MDV-5] breaker report notes are excluded from sync (feature 056)', () => {
   it('excludes both fixed report filenames at the vault root', () => {
     expect(isSystemExcluded(DIR_BREAKER_REPORT_FILENAME)).toBe(true);

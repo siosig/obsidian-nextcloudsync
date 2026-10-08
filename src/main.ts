@@ -23,55 +23,38 @@ import { autoNetworkConcurrency } from './util/platformDefaults';
 
 const MIN_OBSIDIAN_VERSION = '1.13.0';
 
-/**
- * How long after a keystroke a file still counts as "being edited".
- *
- * Shared by the upload debounce and the write-deferral guard, and it must stay one number: the
- * guard exists to hold remote->local writes back until the debounce has fired and the edit has
- * left, so a shorter guard would open exactly the window it was added to close.
- */
+// How long after a keystroke a file counts as "being edited". Shared by the upload debounce and the
+// write-deferral guard and must stay one number: a shorter guard would reopen the window the guard
+// exists to close (docs/spec.md §5.7b).
 const EDIT_WINDOW_MS = 2000;
 
 export default class ObsidianNextcloudsync extends Plugin {
   settings!: DavSyncSettings;
   syncEngine?: SyncEngine;
 
-  /** True while a Pull-mirror (feature 045) is running, to guard against double-invocation. */
+  // Guards against double-invocation of the Pull-mirror.
   private mirrorInProgress = false;
-  /** Shared with SyncEngine; its ignore list marks the plugin's own writes for the watchers. */
+  // Shared with SyncEngine; its ignore list marks the plugin's own writes for the watchers.
   localAdapter?: LocalAdapter;
-  /** The desktop status-bar DOM element handed to the current engine's StatusBarItem (undefined on
-   *  mobile, where NoticeStatusBar is used instead). Tracked so `initSyncEngine` can remove it on
-   *  re-init (G7-1) instead of leaking a duplicate status-bar item into the DOM on every re-login. */
+  // Desktop status-bar element (undefined on mobile). Tracked so `initSyncEngine` can remove it on
+  // re-init instead of leaking a duplicate item on every re-login.
   private statusBarEl?: HTMLElement;
-  /** In-flight `initSyncEngine` promise (G7-3). Concurrent callers (onLayoutReady's auto-init and an
-   *  early `runSyncNow`) await this same promise instead of each starting their own initialization
-   *  while `this.syncEngine` is still unset. Cleared once initialization settles, so a later explicit
-   *  call (e.g. re-login) still starts a fresh init. */
+  // In-flight `initSyncEngine`: concurrent callers (onLayoutReady and an early `runSyncNow`) await
+  // it instead of each initializing. Cleared on settle so a later call (re-login) starts fresh.
   private initializingEngine?: Promise<void>;
-  /** Merge base store (feature 038); flushed on unload so a debounced base write is not lost. */
+  // Flushed on unload so a debounced base write is not lost.
   baseStore?: MergeBaseStore;
-  /** Clean-side snapshot store (feature 044); flushed on unload so a debounced write is not lost. */
+  // Flushed on unload so a debounced write is not lost.
   cleanSideStore?: import('./data/CleanSideStore').CleanSideStore;
-  /** Diagnostic file logger: writes this device's single log file while logging is enabled. */
   logger!: FileLogger;
-  /**
-   * Status filter for the Sync Status dialog. Held here (not on the modal, which is recreated per
-   * open) so the selection persists across reopens. Hydrated from settings on load and saved on every
-   * change, so it now survives an Obsidian restart too.
-   */
+  // Held here, not on the modal (recreated per open), so the selection survives reopens; also
+  // hydrated from and saved to settings so it survives a restart.
   private readonly statusFilterState: StatusFilterState = makeDefaultFilterState();
-  /**
-   * Last time the user changed each path, used to keep sync from writing under the cursor.
-   *
-   * Deliberately NOT the debounce's own pending set: that set is cleared the moment the debounce
-   * fires, which is precisely when the sync it triggers begins — so asking it "is this being
-   * edited?" always answers no, exactly when the answer matters. Timestamps outlive the flush.
-   */
+  // Last user edit time per path, to keep sync from writing under the cursor. Not the debounce's
+  // pending set: that is cleared when the debounce fires, exactly when the triggered sync begins.
   private readonly lastLocalEdit = new Map<string, number>();
 
   async onload(): Promise<void> {
-    // Obsidian version check
     const currentVersion = (this.app as App & { appVersion?: string }).appVersion ?? '';
     if (currentVersion && this.compareVersions(currentVersion, MIN_OBSIDIAN_VERSION) < 0) {
       new Notice(
@@ -83,17 +66,13 @@ export default class ObsidianNextcloudsync extends Plugin {
 
     await this.loadSettings();
 
-    // Restore the persisted Sync Status filter selection (all-on when nothing was saved).
     this.statusFilterState.checked = deserializeFilter(this.settings.statusFilter).checked;
 
-    // Generate deviceId if not set (also used to label diagnostic-log lines per device).
     if (!this.settings.deviceId) {
       this.settings.deviceId = uuidv4();
       await this.saveSettings();
     }
 
-    // Diagnostic logger: appends to this device's single log file while logging is enabled (all
-    // platforms). Logging still performs a real sync — identical behavior on desktop and mobile.
     // The file is named with this device's host token so multiple devices never collide. A failed
     // write surfaces as a Notice (never a thrown error) so "logging on yet no file" is not silent.
     this.logger = new FileLogger(
@@ -106,7 +85,6 @@ export default class ObsidianNextcloudsync extends Plugin {
       (err) => new Notice(`Nextcloud Sync: could not write the log file — ${(err as Error)?.message ?? String(err)}`, 8000),
     );
     void this.logger.log(`plugin loaded (obsidian=${currentVersion})`);
-    // Record a full settings snapshot at the top of each debug-log session.
     void this.logSettingsSnapshot();
 
     this.addSettingTab(new NextcloudSyncSettingTab(this.app, this));
@@ -119,17 +97,12 @@ export default class ObsidianNextcloudsync extends Plugin {
       },
     });
 
-    // Ribbon entry point for the same manual sync (feature 060 / issue #19). One click on desktop,
-    // two taps on mobile: the ribbon BAR is hidden there, but Obsidian republishes ribbon actions in
-    // the navigation bar's "Open menu". Shares runSyncNow with the command above — no new setting,
-    // no platform branch.
+    // Ribbon entry point for the same manual sync (issue #19). On mobile the ribbon bar is hidden, but
+    // Obsidian republishes ribbon actions in the navigation bar's "Open menu".
     registerSyncRibbon(this);
 
-    // Feature 076: the mirror gets the same treatment, so both of the plugin's manual actions are
-    // two taps on mobile instead of a six-tap trip through the settings tab (there is no status bar
-    // to click). The commands cover the Sync Status dialog and give either action a toolbar pin or a
-    // hotkey. See src/ui/statusEntryPoints.ts for why the mirror gets its own icon rather than one
-    // that opens the dialog.
+    // Both manual actions are two taps on mobile (no status bar to click); the commands cover the
+    // Sync Status dialog and allow a toolbar pin or hotkey. See src/ui/statusEntryPoints.ts.
     registerMirrorRibbon(this);
     registerStatusCommands(this);
 
@@ -145,21 +118,17 @@ export default class ObsidianNextcloudsync extends Plugin {
       },
     });
 
-    // Explorer "Compare with remote" context-menu item. Always available when a single file is
-    // selected and the sync engine is configured.
     this.registerEvent(this.app.workspace.on('file-menu', (menu, file) => {
-      // Available on mobile too (long-press menu). The diff is a pure Modal + LCS with no Electron
-      // deps, and the layout collapses to a single column on narrow screens.
-      if (!(file instanceof TFile)) return; // single file only
-      if (!this.syncEngine) return;          // engine must be configured
+      // Also on mobile (long-press menu): the diff is a pure Modal + LCS with no Electron deps.
+      if (!(file instanceof TFile)) return;
+      if (!this.syncEngine) return;
       menu.addItem(item => item
         .setTitle('Compare with remote')
         .setIcon('git-compare')
         .onClick(() => { new CompareModal(this.app, file.path, this.syncEngine!).open(); }));
     }));
 
-    // Command-palette entry — the reliable entry point on mobile (works on desktop too). Active only
-    // when a file is open and the engine is configured.
+    // Command-palette entry: the reliable entry point on mobile.
     this.addCommand({
       id: 'compare-with-remote',
       name: 'Compare with remote',
@@ -171,33 +140,26 @@ export default class ObsidianNextcloudsync extends Plugin {
       },
     });
 
-    // Defer the heavy work to layout-ready. Registering vault listeners during `onload` is a
-    // documented pitfall: the `create` event fires once per file while the vault initializes, so
-    // a fresh start would flood the watcher. onLayoutReady runs after that initial pass. The
-    // SyncEngine (and its lazy startup sync) is also initialized here to keep `onload` lightweight.
+    // Vault listeners must not be registered in `onload`: `create` fires once per file while the vault
+    // initializes and would flood the watcher. onLayoutReady runs after that initial pass.
     this.app.workspace.onLayoutReady(() => {
-      // Initialize SyncEngine (lazy — only when settings are complete).
       if (this.settings.serverUrl && this.settings.username) {
         void this.initSyncEngine();
       }
 
-      // Watch mode: react to individual file events with lightweight single-file operations.
-      // Full vault sync is reserved for manual Sync Now and the periodic interval.
-      // Watch mode runs on every platform (feature 091). On mobile it only ever fires while the app is
-      // in the foreground — which is exactly when the user is editing — and whatever it misses is found
-      // by the next full sync. "Wi-Fi only" is enforced inside each operation (WatchOperations).
+      // Watch mode: single-file operations; full sync is left to manual Sync Now and the interval.
+      // Runs on every platform: on mobile it only fires in the foreground, and whatever it misses is
+      // found by the next full sync. "Wi-Fi only" is enforced inside each operation (docs/spec.md §5.7c).
       const guard = (file: TAbstractFile): file is TFile =>
         this.settings.watchOnChangeEnabled && file instanceof TFile;
 
-      // Vault events caused by the plugin itself (downloads / conflict writes use atomic
-      // tmp-write → rename) must not be propagated back to the server, or every download
-      // turns into a spurious upload/MOVE/DELETE storm. SyncEngine marks its own writes in
-      // the LocalAdapter ignore list; tmp paths are filtered unconditionally.
+      // The plugin's own writes (atomic tmp-write -> rename) must not propagate back, or every download
+      // becomes a spurious upload/MOVE/DELETE storm. SyncEngine marks them in the LocalAdapter
+      // ignore list; tmp paths are always filtered.
       const isOwnSyncEvent = (path: string): boolean =>
         isSyncTmpPath(path) || (this.localAdapter?.shouldIgnore(path) ?? false);
 
-      // Accumulate paths changed during rapid editing and flush them together after the
-      // debounce window so each keystroke does not trigger a separate network request.
+      // Batches paths over the debounce window so each keystroke does not cost a request.
       const pendingUploads = new Set<string>();
       const debouncedUpload = debounce(() => {
         const paths = [...pendingUploads];
@@ -213,8 +175,7 @@ export default class ObsidianNextcloudsync extends Plugin {
         pendingUploads.add(file.path);
         debouncedUpload();
       }));
-      // Feature 046: folders (TFolder) propagate immediately via single-folder ops; files keep the
-      // debounced upload path. watchOn() is the master gate.
+      // Folders propagate immediately via single-folder ops; files use the debounced upload.
       const watchOn = (): boolean => this.settings.watchOnChangeEnabled;
       this.registerEvent(this.app.vault.on('create', (file: TAbstractFile) => {
         if (!watchOn() || isOwnSyncEvent(file.path)) return;
@@ -225,7 +186,7 @@ export default class ObsidianNextcloudsync extends Plugin {
       }));
       this.registerEvent(this.app.vault.on('delete', (file: TAbstractFile) => {
         if (!watchOn()) return;
-        pendingUploads.delete(file.path); // cancel any pending upload for this path
+        pendingUploads.delete(file.path);
         if (isOwnSyncEvent(file.path)) return; // e.g. atomic write replacing the old copy
         if (file instanceof TFolder) { void this.syncEngine?.deleteSingleFolder(file.path); return; }
         void this.syncEngine?.deleteSingleFile(file.path);
@@ -233,39 +194,27 @@ export default class ObsidianNextcloudsync extends Plugin {
       this.registerEvent(this.app.vault.on('rename', (file: TAbstractFile, oldPath: string) => {
         if (!watchOn()) return;
         pendingUploads.delete(oldPath);
-        // tmp → target renames are the tail of the plugin's own atomic writes.
+        // tmp -> target renames are the tail of the plugin's own atomic writes.
         if (isOwnSyncEvent(oldPath) || isOwnSyncEvent(file.path)) return;
         if (file instanceof TFolder) { void this.syncEngine?.renameSingleFolder(oldPath, file.path); return; }
         void this.syncEngine?.renameSingleFile(oldPath, file.path);
       }));
 
-      // Feature 079 (discussion #44): sync when the app comes back to the foreground.
-      //
-      // On mobile this is the only trigger that fires once the app has been left running in the
-      // background — periodic sync is off there because the OS suspends background timers, and watch
-      // mode only reacts to edits made while the app is open.
-      // Registered on every platform rather than only on mobile: a desktop that slept has the same
-      // hole, since its interval timer did not tick while it was asleep, and not branching is
-      // simpler than branching. The cooldown inside the handler is what keeps a burst of app
-      // switches from turning into a burst of syncs.
+      // Sync on foreground resume, on every platform (docs/spec.md §5.8). The cooldown inside the
+      // handler keeps a burst of app switches from becoming a burst of syncs.
       this.register(onAppResume(makeResumeSyncHandler({
         getEngine: () => this.syncEngine,
         getLastSyncTime: () => this.syncEngine?.getLastSyncTime() ?? 0,
         log: (message) => { void this.logger.log(message); },
-        // Feature 082 (issue #49): startup sync off means "no automatic sync at all", not just "not
-        // at launch". Read at call time, so toggling the slider takes effect on the very next resume.
+        // Startup sync off means no automatic sync at all (issue #49); read at call time.
         startupSyncEnabled: () => this.settings.startupSyncDelaySeconds > 0,
       })));
     });
   }
 
-  /**
-   * Run "Sync Now". On the very first sync (no recorded state), the engine performs a full scan and
-   * applies the initial plan directly. Shared by the command and the settings button.
-   */
   async runSyncNow(): Promise<void> {
     void this.logger.log('sync: "Sync now" clicked');
-    // Initialize lazily if credentials were entered after startup (e.g. first-time setup).
+    // Credentials may have been entered after startup (first-time setup).
     if (!this.syncEngine && this.settings.serverUrl && this.settings.username) {
       await this.initSyncEngine();
     }
@@ -277,12 +226,7 @@ export default class ObsidianNextcloudsync extends Plugin {
     await this.syncEngine.syncManual({ manual: true });
   }
 
-  /**
-   * (Re)start or stop periodic auto-sync to match the current settings. Called at engine init
-   * and whenever the "Sync interval" setting changes, so a new interval takes effect immediately
-   * without a plugin reload. Desktop-only — on mobile the OS suspends background timers, so this
-   * always stops the timer there.
-   */
+  // Desktop-only: on mobile the OS suspends background timers, so the timer is always stopped there.
   applyAutoSyncInterval(): void {
     if (!this.syncEngine) return;
     if (!Platform.isMobile && this.settings.syncIntervalMinutes > 0) {
@@ -292,13 +236,8 @@ export default class ObsidianNextcloudsync extends Plugin {
     }
   }
 
-  /**
-   * True while the user has typed into `path` within the edit window — the editor may still be
-   * ahead of what is on disk, so a remote->local write would land under the cursor.
-   *
-   * Prunes as it reads: a path that has gone quiet drops out, so the map stays the size of what is
-   * actually being edited rather than everything ever touched.
-   */
+  // The editor may be ahead of what is on disk, so a remote->local write would land under the cursor.
+  // Prunes as it reads, so the map stays the size of what is actually being edited.
   isBeingEdited(path: string): boolean {
     const at = this.lastLocalEdit.get(path);
     if (at === undefined) return false;
@@ -307,11 +246,6 @@ export default class ObsidianNextcloudsync extends Plugin {
     return false;
   }
 
-  /**
-   * Open the Sync Status dialog. Reachable from the desktop status-bar click AND the settings
-   * "Last session summary" button, on both desktop and mobile (the dialog itself is platform-agnostic).
-   * The filter selection is persisted: every toggle saves it to settings so it survives a restart.
-   */
   openSyncStatus(): void {
     if (!this.syncEngine) {
       new Notice('Configure the server settings first.');
@@ -326,8 +260,8 @@ export default class ObsidianNextcloudsync extends Plugin {
         this.settings.statusFilter = serializeFilter(this.statusFilterState);
         void this.saveSettings();
       },
-      // Feature 041: force-resolve one conflicted file now. Failures surface as a Notice and leave the
-      // file conflicted (the modal re-renders either way); a tie (equal mtime/size) is a silent no-op.
+      // Force-resolve one conflicted file. Failures surface as a Notice and leave it conflicted; a tie
+      // (equal mtime/size) is a silent no-op.
       async (path: string, choice: ForceChoice) => {
         try {
           await applyForceResolution(this.syncEngine!, path, choice);
@@ -335,9 +269,8 @@ export default class ObsidianNextcloudsync extends Plugin {
           new Notice(`Could not resolve "${path}": ${(err as Error).message}`);
         }
       },
-      // Feature 042: force-resolve every currently-listed conflict with one chosen action. The
-      // host owns the confirmation (destructive, irreversible) and the single aggregate result
-      // Notice; applyBulkForceResolution itself never rejects (per-file failures are tallied).
+      // Bulk force-resolve. The host owns the confirmation and the aggregate Notice;
+      // applyBulkForceResolution never rejects (per-file failures are tallied).
       async (choice: ForceChoice, paths: string[]) => {
         const n = paths.length;
         const label = FORCE_CHOICES.find(c => c.id === choice)?.label ?? choice;
@@ -353,9 +286,8 @@ export default class ObsidianNextcloudsync extends Plugin {
         new Notice(`Resolved ${resolved} of ${n} conflicts`
           + (noop ? `; ${noop} unchanged` : '') + (failed ? `; ${failed} failed` : ''));
       },
-      // Feature 056: bulk-resolve every path the dir mass-delete breaker skipped, with one chosen
-      // action. Same confirmation/Notice split as the conflict bulk-resolve above; resolveAllSkippedDirs
-      // itself never rejects (per-path failures are tallied and left for the next attempt).
+      // Bulk-resolve the paths the dir mass-delete breaker skipped; resolveAllSkippedDirs never
+      // rejects (per-path failures are tallied and left for the next attempt).
       async (choice: 'remote' | 'local') => {
         const label = choice === 'remote' ? 'Use remote' : 'Use local';
         const ok = await confirmModal(this.app, {
@@ -370,20 +302,13 @@ export default class ObsidianNextcloudsync extends Plugin {
         const { resolved, failed } = await this.syncEngine!.resolveAllSkippedDirs(choice);
         new Notice(`Resolved ${resolved} skipped directories` + (failed ? `; ${failed} failed` : ''));
       },
-      // Feature 059: second entry point to Mirror from remote, on the Sync status dialog's top action
-      // row. Delegates to the same runRemoteMirror() the Settings-tab button uses (single source of
-      // truth) — it owns the confirmation modal, Notice, and mirrorInProgress guard, so nothing is
-      // duplicated here.
+      // Second entry point to Mirror from remote; runRemoteMirror owns the confirmation, Notice and guard.
       () => this.runRemoteMirror(),
     ).open();
   }
 
-  /**
-   * Maintenance action: reset this device's sync tracking index ("Vault index") to the first-install
-   * empty state after an explicit confirmation. No vault or remote files are deleted; the next sync
-   * performs a full re-scan. Works whether or not the sync engine is configured: with an engine it
-   * aborts any in-flight sync first; without one it resets the on-disk state file directly.
-   */
+  // Works without a configured engine: then the on-disk state file is reset directly. With an engine,
+  // any in-flight sync is aborted first. No vault or remote files are deleted.
   async resetVaultIndex(): Promise<void> {
     const confirmed = await confirmModal(this.app, {
       title: 'Reset vault index',
@@ -411,26 +336,20 @@ export default class ObsidianNextcloudsync extends Plugin {
     }
   }
 
-  /**
-   * Maintenance action (feature 045): mirror this device from the remote — overwrite the local vault
-   * to exactly match the remote (download everything the remote has, delete local files/folders the
-   * remote lacks via the Obsidian trash setting). Shows the download/delete counts for confirmation
-   * before applying; cancelling is a no-op. Bypasses the mass-delete breaker but aborts if the remote
-   * listing cannot be obtained (zero deletions). Works only when the sync engine is configured.
-   */
+  // Overwrites the local vault to match the remote, deleting extras via the Obsidian trash setting.
+  // Bypasses the mass-delete breaker but aborts if the remote listing cannot be obtained.
   async runRemoteMirror(): Promise<void> {
     const engine = this.syncEngine;
     if (!engine) {
       new Notice('Sign in to Nextcloud before mirroring from the remote.', 6000);
       return;
     }
-    if (this.mirrorInProgress) return; // guard against double-invocation
+    if (this.mirrorInProgress) return;
     this.mirrorInProgress = true;
     try {
-      // Feature 049: open the dialog IMMEDIATELY, then plan/confirm/apply INSIDE it so the (network-heavy)
-      // planning stage shows live phase labels instead of a frozen-looking UI. The status-bar surface
-      // still updates in parallel (desktop bar / mobile toast). The promise resolves at the terminal
-      // state (result / error / cancel), or once an in-flight apply finishes if dismissed mid-apply.
+      // The dialog opens immediately and plans/confirms/applies inside it, so the network-heavy planning
+      // shows live phase labels. Resolves at the terminal state, or when an in-flight apply finishes
+      // if dismissed mid-apply.
       await openMirrorFromRemoteModal(this.app, {
         plan: async (onPhase) => {
           onPhase('Stopping the current sync…');
@@ -446,7 +365,6 @@ export default class ObsidianNextcloudsync extends Plugin {
     }
   }
 
-  /** Fetch the server-side version history of the active note and show the modal (US2). */
   private async showVersionHistory(file: TFile): Promise<void> {
     const engine = this.syncEngine;
     if (!engine) return;
@@ -467,29 +385,20 @@ export default class ObsidianNextcloudsync extends Plugin {
     }
   }
 
-  /** The platform bucket used in the default host token and log labels. */
   private logPlatform(): LogPlatform {
     return Platform.isIosApp ? 'ios' : Platform.isAndroidApp ? 'android' : 'desktop';
   }
 
-  /**
-   * Stable, filename-safe per-device host token used to name the log file and label debug-log
-   * lines. Derived from the user-facing Device name, defaulting to `<platform>-<deviceId6>`.
-   */
   private hostToken(): string {
     return hostToken(this.settings.deviceName, this.logPlatform(), this.settings.deviceId);
   }
 
-  /** Vault-relative path of this device's log file (shown to the user when logging is enabled). */
   logFilePath(): string {
     return debugLogPath(this.settings.logsFolder, this.hostToken());
   }
 
-  /**
-   * Write a snapshot of every setting value to the debug log (US4 request). Logged at `error`
-   * level so it always appears while the debug log is enabled, regardless of the verbosity level.
-   * The actual app password is never stored here — `passwordSecretId` is only a SecretStorage key.
-   */
+  // Logged at `error` level so it appears regardless of verbosity. The app password is never in
+  // settings: `passwordSecretId` is only a SecretStorage key.
   async logSettingsSnapshot(): Promise<void> {
     const snapshot = JSON.stringify(this.settings);
     await this.logger.log(`settings snapshot: ${snapshot}`, 'error');
@@ -499,18 +408,12 @@ export default class ObsidianNextcloudsync extends Plugin {
     this.teardownSyncEngine();
   }
 
-  /**
-   * Tear down the current sync engine (if any) so it can be safely replaced or the plugin can
-   * safely unload. Shared by `onunload` and `initSyncEngine` (G7-1): re-login/account-switch calls
-   * `initSyncEngine()` again to build a fresh engine, and without this teardown the OLD engine's
-   * auto-sync timer keeps running (orphaned/unreachable), its status-bar item is never removed
-   * (duplicate items pile up in the status bar), and two engines end up reading/writing the same
-   * StateDB concurrently.
-   */
+  // Without this on re-login/account switch, the old engine's auto-sync timer keeps running, its
+  // status-bar item is never removed, and two engines read/write the same StateDB concurrently.
   private teardownSyncEngine(): void {
     this.syncEngine?.stopAutoSync();
-    // Two-Phase Termination: signal an in-flight sync to stop pulling new work (phase 1), then flush
-    // any pending debounced state save so a coalesced watch-mode update is not lost on teardown (phase 2).
+    // Order matters: signal an in-flight sync to stop pulling new work, then flush pending debounced
+    // saves so a coalesced watch-mode update is not lost.
     this.syncEngine?.requestStop();
     void this.syncEngine?.flushState();
     void this.baseStore?.flush();
@@ -524,47 +427,29 @@ export default class ObsidianNextcloudsync extends Plugin {
     const saved = (await this.loadData() ?? {}) as Partial<DavSyncSettings>;
     this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
 
-    // Start from the two-key defaults, then fold any persisted configSync into the new model:
-    // migrateConfigSyncCategories collapses the old five-key shape into {bookmarks, others}
-    // (feature 029); migrateBookmarksToConfigSync handles the even older standalone syncBookmarks.
+    // Migrations below must run before pruneObsoleteSettings drops the keys they read.
     this.settings.configSync = { ...DEFAULT_SETTINGS.configSync };
     migrateConfigSyncCategories(saved, this.settings);
     migrateBookmarksToConfigSync(saved, this.settings);
-    // Mobile first-run defaults: override before pruning so they are persisted immediately.
     if (Platform.isMobile) {
       applyMobileFirstRunDefaults(saved, this.settings);
     }
-    // networkConcurrency: derived from device RAM on first run (the persisted value is kept as-is).
     if (saved.networkConcurrency === undefined) {
       this.settings.networkConcurrency = autoNetworkConcurrency();
     }
 
-    // Feature 034 (rev): the "Sync on startup" toggle was folded into the startup-delay slider
-    // (0 = no startup sync). Convert any persisted toggle state before it is pruned below.
     migrateStartupToggleToDelay(saved, this.settings);
 
-    // Feature 037: fold the three removed conflict settings (autoMergeEnabled / conflictFailurePolicy
-    // / frontmatterConflictStrategy + mergeableExtensions) into the per-type strategy model before the
-    // obsolete keys are pruned below.
     migrateConflictSettingsToStrategies(saved, this.settings);
 
-    // Feature 047: fold the removed experimental `frontmatterScalarConflictPolicy` into the new
-    // dedicated `frontmatterStrategy` (every migrating user → `merge`, preserving semantic merge)
-    // before the obsolete key is pruned below.
     migrateFrontmatterScalarPolicyToStrategy(saved, this.settings);
 
-    // Feature 048: markdown is always special-cased, so `md` must not sit in autoMergeFileTypes; strip
-    // it from any persisted list. conflictStrategy's default comes from DEFAULT_SETTINGS.
     migrateMarkdownAutoMergeType(this.settings);
 
-    // Feature 032: the Debug section no longer exposes a device name or a log folder. Force both back
-    // to their auto/fixed sentinels so every user converges onto the single path (device name derived,
-    // logs at the vault root), discarding any custom value an older version persisted.
+    // Device name and log folder are no longer user-settable: force both back to their sentinels.
     const debugReset = resetDebugIdentityFields(saved, this.settings);
 
-    // Drop obsolete persisted keys (e.g. the removed `debugMode` and the leftover
-    // `logLevel` / `syncResults*` fields from an earlier 0.3.0-beta), then persist the cleaned
-    // settings so data.json no longer carries them (or no longer carries a stale Debug identity).
+    // Persist the cleaned settings so data.json no longer carries obsolete keys or a stale Debug identity.
     const removed = pruneObsoleteSettings(this.settings as unknown as Record<string, unknown>);
     if (removed.length > 0 || debugReset) {
       await this.saveSettings();
@@ -575,17 +460,8 @@ export default class ObsidianNextcloudsync extends Plugin {
     await this.saveData(this.settings);
   }
 
-  /**
-   * (Re)build the sync engine. Idempotent and re-entrant-safe:
-   *  - G7-3: initialization is memoized in `initializingEngine` — a call that arrives while a
-   *    previous call is still awaiting store loads (e.g. onLayoutReady's auto-init racing an early
-   *    `runSyncNow`) awaits that SAME in-flight promise instead of starting a second, redundant
-   *    initialization. The memo is cleared once the promise settles, so a later explicit call (e.g.
-   *    re-login) still performs a genuinely fresh init.
-   *  - G7-1: a fresh init first tears down any existing engine (see `teardownSyncEngine`), so
-   *    re-login/account-switch cleanly replaces the old engine instead of leaking its status-bar
-   *    item and leaving its auto-sync timer running orphaned.
-   */
+  // Re-entrant-safe: a call arriving during an in-flight init awaits that same promise. A fresh init
+  // first tears down any existing engine (see teardownSyncEngine).
   async initSyncEngine(): Promise<void> {
     if (this.initializingEngine) return this.initializingEngine;
     const promise = this.doInitSyncEngine().finally(() => {
@@ -611,12 +487,12 @@ export default class ObsidianNextcloudsync extends Plugin {
     const pluginDir = `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
     const stateDB = new StateDB(this.app.vault.adapter, pluginDir, this.settings.deviceId);
     await stateDB.load();
-    // Feature 038: last-synced bodies (merge base) for true 3-way conflict merges. Separate file.
+    // Last-synced bodies (merge base) for 3-way conflict merges; a separate file.
     const baseStore = new MergeBaseStore(this.app.vault.adapter, pluginDir, this.settings.deviceId);
     await baseStore.load();
     this.baseStore = baseStore;
-    // Feature 044: captured clean sides of marker-conflicted notes so force-resolution recovers a real
-    // clean version rather than the marker content. Separate per-device file (like the merge base).
+    // Clean sides of marker-conflicted notes, so force-resolution recovers a real clean version
+    // rather than the marker content; a separate per-device file.
     const { CleanSideStore } = await import('./data/CleanSideStore');
     const cleanSideStore = new CleanSideStore(this.app.vault.adapter, pluginDir, this.settings.deviceId);
     await cleanSideStore.load();
@@ -624,12 +500,8 @@ export default class ObsidianNextcloudsync extends Plugin {
     const historyStore = new SyncHistoryStore(this.app.vault.adapter, pluginDir);
     await historyStore.load();
 
-    // Mobile has no visible status bar (addStatusBarItem is unavailable there), so feedback is
-    // surfaced as a single reused Notice toast via NoticeStatusBar. Both implement IStatusBar, so
-    // the sync engine needs no platform branching.
-    // On desktop, clicking the status bar opens the sync-status dialog (conflicts / retries).
-    // The raw element is kept on `this.statusBarEl` (G7-1) so a later re-init can remove it instead
-    // of leaking a second status-bar item into the DOM alongside this one.
+    // Mobile has no status bar (addStatusBarItem is unavailable), so NoticeStatusBar shows a reused
+    // Notice toast. The raw element is kept on `this.statusBarEl` so a re-init can remove it.
     let statusBarEl: HTMLElement | undefined;
     const statusBar = Platform.isMobile
       ? new NoticeStatusBar()
@@ -650,9 +522,8 @@ export default class ObsidianNextcloudsync extends Plugin {
       webdavFactory,
       pluginDir,
       configDir: this.app.vault.configDir,
-      // Keep this device's own log file out of sync while logging is on (it is being appended to
-      // during the sync). Evaluated live, from the same settings + host token the logger uses, so
-      // it follows the logging toggle.
+      // Evaluated live from the same settings and host token as the logger, so it follows the logging
+      // toggle (docs/spec.md §9.1).
       isBeingEdited: (path) => this.isBeingEdited(path),
       isActiveLogFile: (path) => isActiveOwnLog(path, {
         logsFolder: this.settings.logsFolder,
@@ -661,8 +532,7 @@ export default class ObsidianNextcloudsync extends Plugin {
       }),
       logger: this.logger,
       onFeatures: (features) => {
-        // Record the server version so the settings screen can recommend an upgrade
-        // when it is below the supported minimum. Persist only on change.
+        // Lets the settings screen recommend an upgrade; persisted only on change.
         if (features.version && features.version !== this.settings.lastKnownServerVersion) {
           this.settings.lastKnownServerVersion = features.version;
           void this.saveSettings();
@@ -670,11 +540,9 @@ export default class ObsidianNextcloudsync extends Plugin {
       },
     });
 
-    // Periodic auto-sync is desktop-only (mobile OS suspends background timers).
     this.applyAutoSyncInterval();
 
-    // Startup sync: user-configurable via the startup-delay slider (the toggle was folded in).
-    // 0 = no startup sync; 1–10 = seconds to wait before it. Default 1 (enabled, 1 s).
+    // 0 = no startup sync; 1-10 = seconds to wait.
     if (this.settings.startupSyncDelaySeconds > 0) {
       const delayMs = this.settings.startupSyncDelaySeconds * 1000;
       window.setTimeout(() => { void this.syncEngine?.syncManual(); }, delayMs);

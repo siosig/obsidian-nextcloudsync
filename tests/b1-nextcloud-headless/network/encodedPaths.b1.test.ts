@@ -1,23 +1,19 @@
-// Layer b-1 — [SPEC:URE-2] feature 065 (GitHub issue #25): paths whose names need percent-encoding
-// survive a full round-trip against a REAL Nextcloud.
-//
-// Why this exists at b-1 and not only at layer a: the unit tests assert the URL string we build.
-// They cannot tell whether the SERVER agrees — and every failure in this bug's history was exactly
-// that disagreement (0.7.30/0.7.32 produced folders literally named `00%20收件箱`; 0.7.33 sent a raw
-// space and got HTTP 404). Upload+download alone would still not catch it, since both go through the
-// same encoder: a wrong-but-consistent scheme round-trips happily against the wrong remote name.
-// So each case also asserts the name the server reports back via PROPFIND (decoded by
-// hrefToRelative, an independent code path) and that NO entry carries a literal `%` in its name.
+// Layer b-1 — [SPEC:URE-2] (GitHub issue #25): paths whose names need percent-encoding survive a full round-trip
+// against a REAL Nextcloud. Unit tests assert only the URL string we build, not whether the SERVER agrees, and every
+// failure in this bug's history was that disagreement (0.7.30/0.7.32 produced folders literally named `00%20<name>`;
+// 0.7.33 sent a raw space and got 404). Upload+download alone would not catch it (both use the same encoder), so each
+// case also asserts the name the server reports via PROPFIND (decoded by the independent hrefToRelative) and that NO
+// entry carries a literal `%`.
 import { NextcloudClient } from '../../../src/network/NextcloudClient';
 import { describeLive } from '../support/env';
 import { cleanupWorkspace, IsolatedWorkspace } from '../support/isolation';
 import { setupWorkspace } from '../support/workspace';
 import { textBuf, buffersEqual } from '../support/helpers';
 
-/** The shapes issue #25 and PR #17 actually failed on, plus the reporter's control case. */
+// The shapes issue #25 and PR #17 failed on, plus the reporter's control case.
 const SPACE_IN_DIR = 'Directory Name/FileName.md';
 const SPACE_IN_FILE = 'This Is A Note.md';
-const SPACE_PLUS_CJK = '00 收件箱/未命名.md';
+const SPACE_PLUS_CJK = '00 \u6536\u4ef6\u7bb1/\u672a\u547d\u540d.md';
 const AMPERSAND = 'Test&Note.md'; // synced fine on the reporter's device — must not regress
 const HASH_AND_PERCENT = 'a#b 50% done.md';
 const EMOJI = '📁 folder/note 🎉.md';
@@ -57,9 +53,8 @@ describeLive('Layer b-1 — percent-encoded remote paths round-trip (feature 065
   });
 
   it('URE-2 no remote entry is created with a literal percent-encoded name', async () => {
-    // The 0.7.30/0.7.32 failure mode: a second, wrongly-named folder appears alongside the intended
-    // one (`00 收件箱` AND `00%20收件箱`), and the divergence never self-heals. `%` cannot appear in
-    // any name here because none of the fixtures above contains a literal `%` in a directory name.
+    // The 0.7.30/0.7.32 failure mode: a second, wrongly-named folder (`00 <name>` AND `00%20<name>`) appears and the
+    // divergence never self-heals. `%` cannot appear in any name here because no fixture directory name contains one.
     for (const p of [SPACE_IN_DIR, SPACE_PLUS_CJK, EMOJI]) {
       await client.uploadFile(p, textBuf('x'));
     }
@@ -74,7 +69,7 @@ describeLive('Layer b-1 — percent-encoded remote paths round-trip (feature 065
     // The Destination header is never touched by the request layer on any platform, so an
     // unencoded value there fails even where the request URL would have been repaired.
     const src = 'move me/from here.md';
-    const dst = '00 收件箱/移動先 file.md';
+    const dst = '00 \u6536\u4ef6\u7bb1/\u79fb\u52d5\u5148 file.md';
     const data = textBuf('moved');
     await client.uploadFile(src, data);
     await client.moveFile(src, dst);

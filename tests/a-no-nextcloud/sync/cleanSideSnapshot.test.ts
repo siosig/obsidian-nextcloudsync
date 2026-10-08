@@ -1,6 +1,5 @@
-// specs/044-conflict-clean-snapshot — capture, recovery, and self-heal of the clean-side snapshot.
-// The real reconcile-text + node-diff3 run (no mocks), so a same-line text conflict genuinely produces
-// markers (clean:false) — the path that overwrites both clean sides and must capture them first.
+// Capture, recovery and self-heal of the clean-side snapshot. The real reconcile-text + node-diff3 run (no mocks),
+// so a same-line conflict produces markers (clean:false) and both clean sides must be captured first. (docs/spec.md §6.4)
 import { DataAdapter } from 'obsidian';
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { CleanSideStore } from '../../../src/data/CleanSideStore';
@@ -31,7 +30,7 @@ const PATH = 'note.md';
 
 interface HarnessOpts {
   settings?: Partial<DavSyncSettings>;
-  base?: string;          // merge base (feature 038) returned by baseStore.get
+  base?: string;          // merge base returned by baseStore.get
   local: string;
   remote: string;
   stateFile?: FileState;  // stateDB.getFile(PATH) result (for the sweep/recovery)

@@ -25,13 +25,12 @@ import { readMultistatus, readHref, readProp, readIsCollection, readDavProps, re
 import { NO_CACHE_HEADERS } from './noCacheHeaders';
 
 export class StandardWebDAVClient implements IWebDAVClient {
-  /** Remote directories already created via MKCOL (in-session cache). */
   private readonly createdDirs = new RemoteDirCache();
 
   constructor(
     private readonly settings: DavSyncSettings,
     private readonly appPassword: string,
-    /** Base folder for the remote sync target (usually the Vault name). Empty string means directly under the files root. */
+    // Remote base folder (usually the Vault name); '' = directly under the files root.
     private readonly remoteBase: string = '',
   ) {}
 
@@ -41,7 +40,6 @@ export class StandardWebDAVClient implements IWebDAVClient {
     return encodeServerUrl(this.settings.serverUrl.replace(/\/$/, ''));
   }
 
-  /** Converts a Vault-relative path into a WebDAV URL under the base folder. */
   private remoteUrl(rel: string): string {
     return encodeRemoteUrl(this.baseUrl, toRemotePath(this.remoteBase, rel));
   }
@@ -54,26 +52,21 @@ export class StandardWebDAVClient implements IWebDAVClient {
     return `Basic ${btoa(binary)}`;
   }
 
-  /** Configured WebDAV request timeout in ms (0 = unbounded). Read live so a settings change applies next request. */
+  // ms; 0 = unbounded. Read live so a settings change applies on the next request.
   private get timeoutMs(): number {
     return (this.settings.networkTimeoutSeconds ?? 0) * 1000;
   }
 
-  /** All WebDAV requests route through here so the configured Network timeout is always applied. */
   private req(params: RequestUrlParam): Promise<RequestUrlResponse> {
     return requestUrlWithTimeout(params, this.timeoutMs);
   }
 
-  /** Read-only requests (PROPFIND/GET) retry up to 2x on a transient req() rejection (timeout, connection
-   *  failure). req() only rejects when no HTTP response was received at all — any status code (incl.
-   *  401/404) resolves normally and is handled by the caller, so every rejection reaching here is
-   *  transient by construction; no error-type check is needed. */
+  // Read-only requests retry up to 2x: req() rejects only when no HTTP response arrived, so every rejection here is transient by construction.
   private reqReadonly(params: RequestUrlParam): Promise<RequestUrlResponse> {
     return withRetry(() => this.req(params), 2, 1000, () => true);
   }
 
   async connect(): Promise<NextcloudFeatures> {
-    // Standard WebDAV: just verify connectivity
     const res = await this.reqReadonly({
       url: this.baseUrl,
       method: 'PROPFIND',
@@ -91,12 +84,8 @@ export class StandardWebDAVClient implements IWebDAVClient {
     return results;
   }
 
-  /**
-   * Feature 064 (C-0): remote state of ONE file via Depth:0, reusing {@link parseListing} so the
-   * fields match what getFiles produces. `requestRel` is passed as '' ON PURPOSE: parseListing drops
-   * the entry equal to it (the "self" collection when listing a folder), and here the self entry IS
-   * the file we want. A collection lands in `folders`, never in `files`, so it yields null.
-   */
+  // Depth:0 state of ONE file (docs/spec.md §5.7), reusing parseListing. requestRel is '' ON PURPOSE: parseListing drops the entry
+  // equal to it, and here the self entry IS the file. A collection lands in `folders`, so it yields null.
   async statFile(remotePath: string): Promise<RemoteFileInfo | null> {
     const res = await this.reqReadonly({
       url: this.remoteUrl(remotePath),
@@ -112,13 +101,10 @@ export class StandardWebDAVClient implements IWebDAVClient {
   }
 
   async getRootEtag(): Promise<string | null> {
-    // Root-ETag short-circuit is Nextcloud-only: plain WebDAV does not guarantee that a child change
-    // propagates to the parent/root collection's ETag, so returning null makes the engine always
-    // perform a real full scan here (safe default — never a missed remote change).
+    // Nextcloud-only: plain WebDAV does not guarantee a child change propagates to the root ETag, so null forces a real full scan.
     return null;
   }
 
-  /** Fetches a single collection with Depth:1, collecting files while recursing into subcollections. */
   private async propfindRecursive(rel: string, out: RemoteFileInfo[], visited: Set<string>): Promise<void> {
     if (visited.has(rel)) return; // Guard against self-reference and cycles
     visited.add(rel);
@@ -129,18 +115,14 @@ export class StandardWebDAVClient implements IWebDAVClient {
       body: `<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:getetag/><d:getcontentlength/><d:getlastmodified/><d:resourcetype/></d:prop></d:propfind>`,
       throw: false,
     });
-    // Only the ROOT of the walk turns a 404 into an error (feature 083): that means the vault folder
-    // itself is gone, which must never reach the engine as "the server has no files". Deeper in the
-    // walk a 404 is a subfolder that vanished between its parent's listing and its own — a normal
-    // race whose correct reading is an empty subtree, not a failed listing of the whole vault.
+    // Only the ROOT of the walk turns a 404 into an error: the vault folder itself is gone, which must never read as "no files".
+    // Deeper, a 404 is a subfolder that vanished mid-walk: an empty subtree, not a failed listing.
     if (res.status === 404) {
       if (rel === '') throw new RemoteRootMissingError();
       return;
     }
     if (res.status !== 207) throw new NetworkError(res.status, res.text, 'PROPFIND');
-    // op stays 'getFiles' at every recursion depth: a subfolder's body failing to parse must abort
-    // the whole call, not be silently dropped as an empty subtree (feature 087, INV-A) — an unreadable
-    // response says nothing about what that subfolder actually holds.
+    // op stays 'getFiles' at every depth: a subfolder body that fails to parse must abort the whole call, not be dropped as an empty subtree.
     const { files, folders } = this.parseListing(res.text, rel, { op: 'getFiles', path: rel, status: res.status });
     out.push(...files);
     for (const folder of folders) {
@@ -154,7 +136,6 @@ export class StandardWebDAVClient implements IWebDAVClient {
     return out;
   }
 
-  /** Recurse with Depth:1, collecting subcollections (plain WebDAV may reject Depth:infinity). */
   private async dirsRecursive(rel: string, out: RemoteDirInfo[], visited: Set<string>): Promise<void> {
     if (visited.has(rel)) return;
     visited.add(rel);
@@ -191,7 +172,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
     }
   }
 
-  /** @see NextcloudClient.createDirectory — a level that could not be created fails the call (feature 088). */
+  // A level that could not be created fails the call (see NextcloudClient.createDirectory).
   async createDirectory(path: string): Promise<void> {
     await ensureRemoteDir(
       { baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs },
@@ -200,7 +181,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
     );
   }
 
-  /** @see IWebDAVClient.createVaultRoot — identical contract to the Nextcloud client (MKCOL is plain WebDAV). */
+  // Same contract as NextcloudClient.createVaultRoot (MKCOL is plain WebDAV).
   async createVaultRoot(): Promise<VaultRootOutcome> {
     if (!this.remoteBase) return 'exists';
     const ctx = { baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs };
@@ -235,13 +216,8 @@ export class StandardWebDAVClient implements IWebDAVClient {
     return null;
   }
 
-  /**
-   * Best-effort lock owner lookup for a 423 response (feature 090, contracts/lockdiscovery-propfind.md).
-   * Issues ONE extra Depth:0 lockdiscovery PROPFIND and reads the owner from it. Never throws and never
-   * replaces the caller's 423: a failure anywhere in this step (a non-207 answer, an unreadable body, a
-   * rejected request) is indistinguishable from "owner unknown" — both fall back to null, and the caller
-   * throws the plain NetworkError it already would have.
-   */
+  // Best-effort lock owner for a 423 (docs/spec.md §6.5a): one extra Depth:0 lockdiscovery PROPFIND. Never throws; any failure
+  // means "owner unknown" (null) and the caller throws the plain NetworkError it would have thrown anyway.
   private async readLockOwnerOn423(remotePath: string): Promise<string | null> {
     try {
       const res = await this.reqReadonly({
@@ -265,14 +241,12 @@ export class StandardWebDAVClient implements IWebDAVClient {
     const headers: Record<string, string> = { Authorization: this.authHeader, ...NO_CACHE_HEADERS };
     if (mtime) headers['X-OC-MTime'] = String(Math.floor(mtime / 1000));
     if (opts?.ifMatchEtag) headers['If-Match'] = `"${opts.ifMatchEtag.replace(/^"|"$/g, '')}"`;
-    // Reactive directory creation (P1-B): PUT first; MKCOL ancestors on a missing-parent, retry once.
-    // Standard WebDAV returns 409; Nextcloud's files DAV returns 404 for a missing parent — handle both.
+    // PUT first; on a missing parent MKCOL the ancestors and retry once. Standard WebDAV answers 409, Nextcloud 404.
     let res = await this.req({ url: this.remoteUrl(remotePath), method: 'PUT', headers, body: data, throw: false });
     let dirError: RemoteDirCreateError | null = null;
     if (res.status === 409 || res.status === 404) {
-      // Forgetting the stale ancestors first is what this client used to be missing: spec 024 fixed
-      // it for the Nextcloud client only, so here a folder another device deleted stayed cached as
-      // "already created", the MKCOL was skipped, and the retried PUT 404'd for good (feature 088).
+      // Forget the stale ancestors first: a folder another device deleted would stay cached as "already created",
+      // the MKCOL would be skipped and the retried PUT would 404 for good.
       dirError = await prepareMissingParentRetry({ baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs }, toRemotePath(this.remoteBase, remotePath), this.createdDirs);
       if (isTransportFailure(dirError)) throw dirError;
       res = await this.req({ url: this.remoteUrl(remotePath), method: 'PUT', headers, body: data, throw: false });
@@ -288,7 +262,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
   }
 
   async moveFile(oldPath: string, newPath: string): Promise<void> {
-    // @see NextcloudClient.moveFile — identical missing-parent recovery (feature 088, contract C-4).
+    // Same missing-parent recovery as NextcloudClient.moveFile.
     const ctx = { baseUrl: this.baseUrl, authHeader: this.authHeader, timeoutMs: this.timeoutMs };
     const target = toRemotePath(this.remoteBase, newPath);
     // A failure here is DISCARDED on purpose. This call is speculative — it runs before the MOVE has
@@ -311,7 +285,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
 
   async deleteFile(path: string, _expectedRemoteId: string): Promise<void> {
     const res = await this.req({ url: this.remoteUrl(path), method: 'DELETE', headers: { Authorization: this.authHeader, ...NO_CACHE_HEADERS }, throw: false });
-    if (res.status === 404) return; // blind delete (P1-B): already gone = success
+    if (res.status === 404) return; // blind delete: already gone = success
     if (res.status < 200 || res.status >= 300) {
       if (res.status === 423) {
         const owner = await this.readLockOwnerOn423(path);
@@ -340,7 +314,6 @@ export class StandardWebDAVClient implements IWebDAVClient {
     }
   }
 
-  // ── Nextcloud-specific features are not supported on standard WebDAV ──
 
   async listVersions(_fileId: string): Promise<FileVersion[]> {
     throw new FeatureUnsupportedError('versions');
@@ -369,11 +342,8 @@ export class StandardWebDAVClient implements IWebDAVClient {
     throw new FeatureUnsupportedError('file-locking');
   }
 
-  /**
-   * Parses a Depth:1 PROPFIND response and classifies entries into files and subfolders (both as Vault-relative paths).
-   * Excludes the requested collection itself and any entries outside the base folder.
-   * @param requestRel The Vault-relative path this PROPFIND was issued for (used to exclude the self entry)
-   */
+  // Classifies a Depth:1 PROPFIND response into files and subfolders (Vault-relative paths), excluding the requested
+  // collection itself (requestRel) and entries outside the base folder.
   private parseListing(
     xml: string, requestRel: string, ctx: { op: string; path: string; status: number },
   ): { files: RemoteFileInfo[]; folders: string[] } {
@@ -396,7 +366,6 @@ export class StandardWebDAVClient implements IWebDAVClient {
     return { files, folders };
   }
 
-  /** Converts an href from a PROPFIND response into a Vault-relative path (see {@link hrefToRelative}). */
   private hrefToRel(href: string): string | null {
     return hrefToRelative(this.baseUrl, this.remoteBase, href);
   }

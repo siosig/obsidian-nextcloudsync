@@ -1,7 +1,7 @@
 import { ReconcileTextStrategy } from '../../../src/sync/merge/ReconcileTextStrategy';
 
-// reconcile-text's reconcile() returns a TextWithCursors object ({ text, cursors }).
-// Regression: the strategy previously stored the whole object, corrupting merged content to "[object Object]".
+// reconcile-text's reconcile() returns a TextWithCursors object ({ text, cursors }); the strategy must use `.text`,
+// not stringify the object ("[object Object]").
 jest.mock('reconcile-text', () => ({
   reconcile: (_b: string, local: string, _r: string) => ({ text: `MERGED:${local}`, cursors: [] }),
 }));

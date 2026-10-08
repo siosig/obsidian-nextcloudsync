@@ -5,8 +5,7 @@ import { IMergeStrategy } from './IMergeStrategy';
 export class ReconcileTextStrategy implements IMergeStrategy {
   merge(base: string, local: string, remote: string): MergeResult {
     try {
-      // reconcile() returns a TextWithCursors object ({ text, cursors }), not a string.
-      // The merged document is in `.text`; using the object directly corrupts content to "[object Object]".
+      // reconcile() returns { text, cursors }, not a string; using the object directly yields "[object Object]".
       const result = reconcile(base, local, remote);
       const merged = typeof result === 'string' ? result : result?.text;
       if (typeof merged !== 'string') {

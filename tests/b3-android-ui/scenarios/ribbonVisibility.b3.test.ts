@@ -1,38 +1,18 @@
 // [SPEC:RIB-3] [SPEC:SEP-4] How a mobile user actually reaches a ribbon action.
-//
-// This file exists because the same question was answered wrongly twice.
-//
-// Feature 060 added a sync ribbon icon for MOBILE users (issue #19) and clause RIB-3 waived the
-// mobile claim to a manual check that was never performed. Feature 076 then built on it, a
-// screenshot showed no icons, and a probe of this suite measured `.side-dock-ribbon` as
-// `display: none` — true, and taken as proof that no ribbon action is reachable on mobile. The
-// second ribbon was deleted on that basis.
-//
-// It was a container measurement generalized into a reachability claim. Obsidian's own docs say what
-// actually happens: "The mobile app has no Ribbon. Instead, the ribbon actions will be available
-// when you tap Open menu", the last option on the navigation bar. That menu is built on tap, so it
-// is invisible to any probe taken while it is closed — which is every probe the earlier version took.
-//
-// So this test opens the menu and asserts what is inside it. The hidden container is still asserted,
-// because it is the reason the menu matters; but it is no longer the end of the measurement.
-//
-// Two mechanics are deliberate. The tap goes through WebDriver, not `element.click()`: Obsidian's
-// mobile navigation bar responds to pointer input, and a synthetic JS click reaches the handler
-// without opening anything (observed — the menu stayed shut). JS still CHOOSES the element, by
-// marking it with a data attribute, so the selection logic can be as forgiving as it needs to be
-// while the tap itself stays real. And every assertion carries the probe with it, so a failure
-// reports the DOM it saw instead of a bare `0`.
+// Obsidian's mobile app has no ribbon: its actions are reached via the navigation bar's "Open menu", which is
+// built on tap. So `.side-dock-ribbon` being `display: none` does not make the actions unreachable; this test
+// opens the menu and asserts what is inside it.
+// The tap goes through WebDriver because a synthetic JS click does not open the menu; JS only chooses the element
+// (marked with a data attribute). Every assertion carries the probe so a failure reports the DOM it saw.
 import { browser, expect } from '@wdio/globals';
 import { requireAndroidEnv, requireEnvOrSkip } from '../support/env';
 
 requireAndroidEnv();
 
-// Duplicated from src/ui/ rather than imported: the runner ships only `tests/` to the Android host,
-// so `../../../src/...` does not resolve there. Layer a pins the real constants (RIB-1, SEP-3).
+// Duplicated from src/ui/ because the runner ships only `tests/` to the Android host. Layer a pins the real constants (RIB-1, SEP-3).
 const SYNC_RIBBON_LABEL = 'Sync with Nextcloud';
 const MIRROR_RIBBON_LABEL = 'Mirror from remote';
 
-/** Attribute used to hand a JS-chosen element to WebDriver for a real tap. */
 const TAP_MARK = 'data-b3-open-menu';
 
 interface Box { w: number; h: number; display: string; visibility: string }
@@ -44,7 +24,7 @@ interface ClosedProbe {
   ribbonContainers: Box[];
   allRibbonActions: (string | null)[];
   ourCommands: string[];
-  /** Every candidate for the navigation bar's "Open menu", so a miss is diagnosable from the report. */
+  // Every candidate for the navigation bar's "Open menu", so a miss is diagnosable from the report.
   candidates: Candidate[];
   chosen: Candidate | null;
   viewport: { w: number; h: number };
@@ -53,7 +33,7 @@ interface ClosedProbe {
 interface OpenProbe {
   tapped: boolean;
   menuCount: number;
-  /** Titles of whatever menu Obsidian opened; `.menu-item-title` first, else the item's text. */
+  // Titles of whatever menu Obsidian opened; `.menu-item-title` first, else the item's text.
   menuItems: string[];
 }
 
@@ -75,8 +55,7 @@ describe('[SPEC:RIB-3] [SPEC:SEP-4] b-3 — ribbon actions reach mobile through 
         return { w: Math.round(r.width), h: Math.round(r.height), display: cs.display, visibility: cs.visibility };
       };
 
-      // Anything that could be a navigation-bar button. Deliberately broad: the exact class is
-      // Obsidian's to change, and a miss here should show up as a listing to read, not a silence.
+      // Deliberately broad: Obsidian owns the exact class, and a miss should show up as a listing to read.
       const seen = new Set<Element>();
       const els: HTMLElement[] = [];
       const candidates: { label: string | null; cls: string; x: number; y: number; w: number; h: number }[] = [];
@@ -95,8 +74,7 @@ describe('[SPEC:RIB-3] [SPEC:SEP-4] b-3 — ribbon actions reach mobile through 
         }
       }
 
-      // "the last option on the navigation bar" — prefer an explicit label, else the rightmost
-      // element sitting on the lowest row of candidates.
+      // Prefer an explicit "menu" label, else the rightmost element on the lowest row of candidates.
       let idx = els.findIndex((e) => /menu/i.test(e.getAttribute('aria-label') ?? ''));
       if (idx < 0 && els.length > 0) {
         const lowest = Math.max(...candidates.map((c) => c.y));
@@ -156,18 +134,14 @@ describe('[SPEC:RIB-3] [SPEC:SEP-4] b-3 — ribbon actions reach mobile through 
   it('registers both ribbon actions, which Obsidian then declines to draw in a ribbon bar', async () => {
     expect(closed.isMobile).toBe(true);
     expect(closed.pluginEnabled).toBe(true);
-    // Both actions exist. This is registration, and it is platform-independent.
     expect(closed.allRibbonActions).toContain(SYNC_RIBBON_LABEL);
     expect(closed.allRibbonActions).toContain(MIRROR_RIBBON_LABEL);
-    // ...and the ribbon BAR is not drawn: Obsidian's own actions are hidden here too. This is why
-    // the menu below is the route, and why measuring only this container was misleading.
+    // The ribbon bar itself is not drawn (Obsidian's own actions are hidden too), which is why the menu is the route.
     expect(rendered(closed.ribbonContainers)).toBe(false);
   });
 
   it('lists both of them in the navigation bar menu, so each action is two taps', async () => {
-    // Asserted as one object so a failure prints the navigation bar it actually saw. A bare
-    // `expect(menuCount).toBeGreaterThan(0)` reports "expected > 0, received 0" and nothing about
-    // WHICH element was tapped — which is the only fact that makes the failure actionable.
+    // Asserted as one object so a failure prints the navigation bar it saw, not a bare "received 0".
     expect({
       tapped: open.tapped,
       menuCount: open.menuCount,

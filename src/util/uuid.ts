@@ -1,4 +1,3 @@
-/** Simple UUID v4 generator using crypto.getRandomValues */
 export function v4(): string {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);

@@ -1,17 +1,11 @@
-// [SPEC:WOV-2] Never write to a file the user is typing into (feature 078, GitHub issue #42).
-//
-// Serializing watch cycles removes the conflicts that should never have been raised, but it does
-// not make writing under the cursor safe. A GENUINE conflict — another device really did change the
-// file — still resolves by writing a merged body to disk, and if that lands mid-sentence the user
-// watches their own text rearrange. The merge can be flawless and the experience still be a bug.
-//
-// So remote -> local writes are held back while a path is being edited, and only those: an upload
-// reads the file and leaves it alone, so deferring uploads would break "Sync on file change"
-// without protecting anything.
-//
-// The deferral covers the whole decision, not just the write. Writing is the last step of a
-// sequence that also records a new baseline; skipping only the write would leave the state DB
-// claiming a body the file does not have — the failure feature 063 already paid for.
+// [SPEC:WOV-2] Never write to a file the user is typing into (GitHub issue #42; docs/spec.md §5.7b).
+// Serializing watch cycles removes spurious conflicts but does not make writing under the cursor safe: a
+// GENUINE conflict still resolves by writing a merged body to disk, and if that lands mid-sentence the user
+// watches their own text rearrange.
+// So remote -> local writes are held back while a path is being edited, and only those: an upload only reads
+// the file, so deferring uploads would break "Sync on file change" without protecting anything.
+// The deferral covers the whole decision, not just the write: skipping only the write would leave the state
+// DB claiming a body the file does not have.
 import { DataAdapter } from 'obsidian';
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { StateDB } from '../../../src/data/StateDB';
@@ -35,10 +29,8 @@ const summary = (): SyncSessionSummary => ({
   mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], errors: [],
 });
 
-/**
- * An engine whose download and conflict paths are replaced by counters, so the test observes the
- * DECISION rather than the machinery underneath it.
- */
+// An engine whose download and conflict paths are replaced by counters, so the test observes the DECISION
+// rather than the machinery underneath it.
 async function makeEngine(editing: Set<string>) {
   const stateDB = new StateDB(makeStateAdapter(), PLUGIN_DIR, 'dev-1');
   await stateDB.load();
@@ -72,7 +64,6 @@ const remote = (etag: string): RemoteFileInfo => ({
   path: 'note.md', fileId: 'f', checksum: null, etag, size: 10, lastModified: 0,
 });
 
-/** Drive the four-quadrant classifier directly. */
 const classify = (engine: unknown, r: RemoteFileInfo) =>
   (engine as { processRemoteFile: (r: RemoteFileInfo, s: SyncSessionSummary) => Promise<void> })
     .processRemoteFile(r, summary());

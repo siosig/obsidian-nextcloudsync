@@ -1,9 +1,6 @@
 import { ensureParentFolder } from '../../../src/util/ensureParentFolder';
 
-/**
- * Adapter that models Obsidian's real constraint: `write` to a path inside a folder that
- * does not yet exist throws (ENOENT), and folders only come into being via `mkdir`.
- */
+// Models Obsidian's constraint: write into a missing folder throws (ENOENT); folders only come from mkdir.
 function realisticAdapter() {
   const folders = new Set<string>(['']); // vault root always exists
   return {

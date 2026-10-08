@@ -1,14 +1,7 @@
-// [SPEC:RSY-1] Coming back to the app syncs, on a real Android device (feature 079, discussion #44).
-//
-// Why this cannot live in another layer: on mobile this trigger is the ONLY one that fires once the
-// app has been left running. Periodic sync and watch mode are both switched off there because Android
-// suspends background timers — which is also why a desktop test proves nothing here. The a-layer
-// tests cover the decision with injected seams; what they cannot cover is whether Android actually
-// delivers the foreground signal to Obsidian's WebView, which is the entire premise.
-//
-// The 5-minute cooldown is real and would make an honest test wait five minutes, so the recorded
-// last-sync time is pushed into the past first. That is the same value production reads; nothing
-// about the trigger itself is stubbed.
+// [SPEC:RSY-1] Coming back to the app syncs, on a real Android device (discussion #44).
+// On mobile this is the only trigger that fires while the app stays open (periodic sync and watch mode are off
+// because Android suspends background timers). Only a real device shows that Android delivers the foreground
+// signal to Obsidian's WebView. The 5-minute cooldown is bypassed by pushing the recorded last-sync time into the past.
 import { browser, expect } from '@wdio/globals';
 import { requireAndroidEnv, requireEnvOrSkip } from '../support/env';
 import { seedConnection } from '../support/plugin';
@@ -22,15 +15,8 @@ describe('[SPEC:RSY-1] b-3 — returning to the app runs a sync', function () {
   });
 
   it('delivers a foreground-resume signal that the plugin is listening for', async function () {
-    // Narrower than the AND-1 probe next door: that one checks the platform emits the event at all,
-    // this one checks the plugin's own subscription survived to receive it. A listener registered in
-    // onLayoutReady and then torn down by something would fail here and nowhere else.
-    //
-    // Subscribe to BOTH events, because that is what onAppResume does (src/util/appResume.ts) and
-    // the point of this probe is that the plugin's subscription still receives a resume — not that
-    // one particular event carries it. Watching only visibilitychange made this fail on 2026-09-08
-    // while the two behavioural tests below passed, which is the signature of a resume arriving as
-    // `focus` instead: the plugin syncs, and a probe that has picked one event sees nothing.
+    // Narrower than the AND-1 probe: this checks the plugin's own subscription still receives a resume.
+    // Subscribe to both events, as onAppResume does (src/util/appResume.ts); a resume can arrive as `focus` instead of visibilitychange.
     await browser.executeObsidian(() => {
       (window as unknown as Record<string, unknown>).__b3ResumeSync = 0;
       const bump = (): void => {
@@ -55,8 +41,7 @@ describe('[SPEC:RSY-1] b-3 — returning to the app runs a sync', function () {
     const v = env.values;
     await seedConnection(v.NEXTCLOUD_SERVER_URL, v.NEXTCLOUD_USER, v.NEXTCLOUD_PASSWORD);
 
-    // Bring the engine up and put the recorded last-sync time well outside the cooldown, so the
-    // resume has something to do. Six minutes against a five-minute window.
+    // Put the recorded last-sync time six minutes back, outside the five-minute cooldown.
     const before = await browser.executeObsidian(async ({ app }) => {
       const plugin = (app as never as { plugins: { plugins: Record<string, {
         initSyncEngine?: () => Promise<unknown>;
@@ -74,8 +59,7 @@ describe('[SPEC:RSY-1] b-3 — returning to the app runs a sync', function () {
 
     await suspend();
 
-    // A sync stamps the last-sync time in its finally block, whatever started it. The stamp moving
-    // forward is therefore the evidence that a sync actually ran — not that an event was received.
+    // A sync stamps the last-sync time in its finally block, so the stamp moving forward is the evidence a sync ran.
     const advanced = await browser.waitUntil(
       async () => {
         const now = await browser.executeObsidian(({ app }) => {
@@ -92,9 +76,7 @@ describe('[SPEC:RSY-1] b-3 — returning to the app runs a sync', function () {
   });
 
   it('does not sync again on a second return inside the cooldown', async function () {
-    // The half that decides whether this feature is welcome. On a phone, stepping out to another app
-    // and back is a normal thing to do several times a minute; a sync each time would be paid for in
-    // data and battery. The previous scenario has just synced, so the clock is fresh.
+    // Stepping out to another app and back is frequent on a phone; a sync each time would cost data and battery.
     const before = await browser.executeObsidian(({ app }) => {
       const plugin = (app as never as { plugins: { plugins: Record<string, {
         syncEngine?: { getLastSyncTime(): number };

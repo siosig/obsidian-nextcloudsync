@@ -1,8 +1,5 @@
-// In-memory Obsidian App/Vault/DataAdapter for SyncEngine conformance tests.
-// Backs LocalAdapter (adapter surface) and scanLocalFiles (vault.getFiles index).
-// Models directories (folders) so empty-directory pruning (DP) can be driven end to end:
-// folders exist implicitly as ancestors of files and explicitly via mkdir/seedFolder, and
-// trashing a folder removes its whole subtree.
+// In-memory Obsidian App/Vault/DataAdapter for SyncEngine tests. Folders exist implicitly as ancestors of files
+// and explicitly via mkdir/seedFolder; trashing a folder removes its whole subtree.
 import { App, DataAdapter, TFile, TFolder, Vault } from 'obsidian';
 
 interface Entry { data: ArrayBuffer; mtime: number; }
@@ -16,7 +13,6 @@ const dec = (a: ArrayBuffer): string => new TextDecoder().decode(a);
 const TFolderCtor = TFolder as unknown as { new (path: string): TFolder };
 const mkFolder = (path: string): TFolder => new TFolderCtor(path);
 
-/** Every ancestor directory path of a vault-relative file/folder path (excluding '' root). */
 function ancestorsOf(path: string): string[] {
   const out: string[] = [];
   let i = path.indexOf('/');
@@ -113,7 +109,6 @@ export class FakeVault {
         async trashFile(file: TFile | TFolder): Promise<void> {
           const p = file.path;
           if (store.has(p)) { trashed.add(p); store.delete(p); return; }
-          // Folder: trash the entire subtree (files + nested folders).
           const prefix = `${p}/`;
           for (const f of [...store.keys()]) if (f === p || f.startsWith(prefix)) { trashed.add(f); store.delete(f); }
           for (const d of [...explicitFolders]) if (d === p || d.startsWith(prefix)) explicitFolders.delete(d);
@@ -126,7 +121,7 @@ export class FakeVault {
     } as unknown as App;
   }
 
-  /** All folder paths: explicit (mkdir/seedFolder) ∪ every ancestor of every file. */
+  // Explicit folders (mkdir/seedFolder) plus every ancestor of every file.
   private allFolderPaths(): Set<string> {
     const set = new Set<string>(this.explicitFolders);
     for (const f of this.store.keys()) for (const a of ancestorsOf(f)) set.add(a);
@@ -136,17 +131,14 @@ export class FakeVault {
 
   folderExists(path: string): boolean { return this.allFolderPaths().has(path); }
 
-  /** Seed a local file as if the user created it (visible to vault.getFiles); ancestors auto-created. */
   seedLocal(path: string, content: string): void {
     for (const a of ancestorsOf(path)) this.explicitFolders.add(a);
     this.store.set(path, { data: enc(content), mtime: Date.now() });
   }
-  /** Seed an explicit (possibly empty) folder. */
   seedFolder(path: string): void { this.explicitFolders.add(path); for (const a of ancestorsOf(path)) this.explicitFolders.add(a); }
   readLocal(path: string): string | null { const e = this.store.get(path); return e ? dec(e.data) : null; }
   localExists(path: string): boolean { return this.store.has(path); }
   isTrashed(path: string): boolean { return this.trashed.has(path); }
-  /** Simulate the user deleting a folder in the file explorer (removes its subtree + the folder). */
   deleteLocalTree(path: string): void {
     const prefix = `${path}/`;
     for (const f of [...this.store.keys()]) if (f === path || f.startsWith(prefix)) this.store.delete(f);

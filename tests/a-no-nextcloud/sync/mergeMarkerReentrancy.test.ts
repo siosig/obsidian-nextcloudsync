@@ -1,10 +1,8 @@
-// Feature 039 (MM-*): stop the conflict-marker RE-ENTRANCY loop and improve merge accuracy.
-// The REAL reconcile-text + node-diff3 run here (no mocks), so this validates true end-to-end
-// ConflictResolver/MergeEngine behaviour. Builds on feature 038 (real merge base).
+// (MM-*) Stop the conflict-marker RE-ENTRANCY loop and improve merge accuracy. The REAL reconcile-text + node-diff3
+// run here (no mocks), so this validates true end-to-end ConflictResolver/MergeEngine behaviour.
 //
-// Root bug reproduced: a file already containing this plugin's conflict markers was fed back into the
-// merge, which wrapped the existing markers in NEW markers and duplicated shared blocks — geometric
-// growth (a real 62KB / 3-deep-marker / 12x-duplication casualty drove this feature).
+// Re-entrancy: a file already containing this plugin's conflict markers was fed back into the merge, which wrapped the
+// existing markers in NEW markers and duplicated shared blocks, growing geometrically. (docs/spec.md §6.2)
 import { ConflictResolver, MergeConfig } from '../../../src/sync/ConflictResolver';
 import { hasNestedConflictMarkers } from '../../../src/sync/merge/MergeEngine';
 import { SyncStrategy } from '../../../src/types';
@@ -130,11 +128,9 @@ describe('[SPEC:MM-8..MM-10] base-aware 3-way merge (feature 039, P3)', () => {
   });
 });
 
-// Feature 041 (OM-*): a LONE half-marker left by an incomplete manual resolution must NOT be treated
-// as re-entrant. Feature 039 dropped such files to a permanent safe-hold that never pushes, so the
-// orphan line survived on the server and the file re-conflicted every sync forever (a real deadlock:
-// a daily note ending in a bare `>>>>>>> REMOTE (…)` line). It must fall through to the normal merge,
-// which converges to single-level output and (once pushed) removes the orphan — self-heal.
+// (OM-*) A LONE half-marker left by an incomplete manual resolution must NOT be treated as re-entrant: a permanent
+// safe-hold never pushes, so the orphan line would survive on the server and the file re-conflict every sync.
+// It must fall through to the normal merge, which converges and (once pushed) removes the orphan.
 describe('[SPEC:OM-1..OM-4] orphan-marker self-heal (feature 041)', () => {
   const ORPHAN_CLOSE = 'shared body\nmore text\n>>>>>>> REMOTE (2026-06-30)\n';
   const ORPHAN_OPEN = '<<<<<<< LOCAL (abcd, 2026-06-30)\nshared body\nmore text\n';

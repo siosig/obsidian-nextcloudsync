@@ -1,16 +1,10 @@
-// Seeds the plugin with working credentials inside the Android session.
-//
-// Every spec file gets its own Obsidian session, so this has to run in each one — settings applied in
-// the smoke suite do not carry over. Getting this wrong is silent: the plugin simply has no
-// credentials, every sync fails auth, and the symptom is "the file never arrived", which reads like a
-// path-encoding bug.
-//
-// The password is NOT a settings field. `SettingTab.saveAppPassword` puts it in Obsidian's
-// secretStorage under `settings.passwordSecretId`, and `loadAppPassword` reads it back from there.
-// Writing `settings.appPassword` (which does not exist) leaves the plugin unauthenticated.
+// Seeds the plugin with working credentials inside the Android session. Every spec file gets its own Obsidian
+// session, so this runs in each one; missing credentials fail silently as "the file never arrived".
+// The password is not a settings field: `SettingTab.saveAppPassword` stores it in Obsidian's secretStorage under
+// `settings.passwordSecretId`, and `loadAppPassword` reads it back from there.
 import { browser } from '@wdio/globals';
 
-/** Must match DEFAULT_PASSWORD_SECRET_ID in src/settings/SettingTab.ts. */
+// Must match DEFAULT_PASSWORD_SECRET_ID in src/settings/SettingTab.ts.
 export const PASSWORD_SECRET_ID = 'obsidian-nextcloudsync-password';
 
 export async function seedConnection(
@@ -26,8 +20,7 @@ export async function seedConnection(
       plugin.settings.serverUrl = server;
       plugin.settings.username = username;
       plugin.settings.passwordSecretId = secretId;
-      // Without this a failed sync is silent and the only symptom is "the file never
-      // arrived", which is indistinguishable from a path-encoding bug.
+      // Without this a failed sync is silent and looks like a path-encoding bug.
       plugin.settings.loggingEnabled = true;
       await plugin.saveSettings?.();
       // Rebuild the client so it picks up the credentials we just stored.
@@ -40,12 +33,7 @@ export async function seedConnection(
   );
 }
 
-/**
- * Reads the tail of the plugin's own debug log from inside the vault.
- *
- * Used to turn "the file never arrived" into an actual reason. Returns a short marker instead of
- * throwing when the log is absent — this is a diagnostic aid and must never become the failure.
- */
+// Turns "the file never arrived" into a reason. Returns a marker instead of throwing when the log is absent.
 export async function pluginLogTail(lines = 40): Promise<string> {
   try {
     const text = await browser.executeObsidian(async ({ app }) => {

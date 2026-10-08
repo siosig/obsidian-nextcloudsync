@@ -1,14 +1,7 @@
-// Feature 086 (issue #46): when the plugin itself moves a folder to `.trash`, the tracking for
-// everything under it has to go too.
-//
-// Why this is the whole bug in miniature: the old code dropped the FOLDER's row and left the child
-// FILE rows behind. A leftover row says "this file was synced and is now gone locally", which the
-// next sync reads as "the user deleted it" and propagates to the server. So a listing glitch that
-// only ever removed files locally got amplified into real, server-side deletions — exactly what the
-// reporter saw in their Nextcloud trashbin.
-//
-// The two properties that matter here are (a) ALL THREE stores are dropped for every path, never a
-// subset, and (b) the prefix match requires a real separator, so a sibling named `F2` is untouched.
+// When the plugin itself moves a folder to `.trash`, the tracking for everything under it must go too:
+// a leftover file row reads as "synced, now gone locally" and the next sync would propagate it as a server deletion.
+// Two properties: (a) ALL THREE stores are dropped for every path, never a subset; (b) the prefix match
+// requires a real separator, so a sibling named `F2` is untouched. (docs/spec.md §8)
 import {
   collectSubtreePaths, dropSubtreeTracking, SubtreeTrackingDeps,
 } from '../../../../src/sync/deletion/subtreeTracking';

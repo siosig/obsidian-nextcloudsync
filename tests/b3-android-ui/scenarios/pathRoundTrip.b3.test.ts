@@ -1,17 +1,7 @@
 // [SPEC:AND-3] Paths and bodies must survive a round trip through the mobile HTTP implementation.
-//
-// Regression origin: two separate shipped bugs, both in the mobile `requestUrl` implementation and
-// neither reproducible on desktop.
-//   - Paths containing a space came back 404 because they were encoded twice.
-//   - A downloaded body's byteLength did not match the server's content-length, so a correct download
-//     was rejected as corrupt.
-//
-// Why this cannot live in another layer: on desktop, `requestUrl` is backed by Electron's net stack.
-// On Android it is a different implementation inside Capacitor. b-1 exercises the server, b-2
-// exercises Electron; neither one runs the code that broke.
-//
-// Assertions compare BYTES, never decoded strings — a length mismatch that a string comparison would
-// hide is exactly the second bug.
+// Two shipped bugs in Android's Capacitor `requestUrl` (desktop uses Electron's net stack): paths with a space
+// were encoded twice (404), and a downloaded body's byteLength differed from content-length (rejected as corrupt).
+// Assertions compare BYTES, never decoded strings, which would hide a length mismatch.
 import { browser, expect } from '@wdio/globals';
 import { requireAndroidEnv, requireEnvOrSkip } from '../support/env';
 import { seedConnection } from '../support/plugin';
@@ -20,15 +10,9 @@ import { RemoteProbe } from '../support/webdav';
 const env = requireAndroidEnv();
 const stamp = `b3-path-${process.pid}`;
 
-/**
- * Names that have historically broken encoding, one property each.
- *
- * `name` is what the test PUTs; `arrivesAs` is the name the vault must end up with. They differ only
- * for the combining diacritic: Nextcloud (with PHP intl) stores and lists file names in Unicode
- * normalization form C, so a decomposed `e` + U+0301 PUT to the server comes back as the precomposed
- * U+00E9. The plugin must carry that name through the mobile HTTP stack unchanged, which is what the
- * test checks; expecting the decomposed form would test the server's normalization, not the plugin.
- */
+// Names that have historically broken encoding. `name` is what the test PUTs; `arrivesAs` is what the vault must
+// end up with. They differ only for the combining diacritic: Nextcloud stores names in NFC, so a decomposed
+// `e` + U+0301 comes back as U+00E9.
 const TRICKY_NAMES = [
   { label: 'ASCII space', name: `${stamp} with space.md` },
   { label: 'Japanese', name: `${stamp}-\u30e1\u30e2.md` },
@@ -83,7 +67,7 @@ describe('[SPEC:AND-3] b-3 — path and body round trip through the mobile HTTP 
   }
 
   it('uploads a binary attachment without altering a single byte', async function () {
-    // Every byte value 0..255, so any transcoding or truncation in the mobile stack shows up.
+    // Every byte value 0..255, so any transcoding or truncation shows up.
     const name = `${stamp}-\u30d0\u30a4\u30ca\u30ea \u6dfb\u4ed8.bin`;
     created.push(name);
     const bytes = Buffer.from(Array.from({ length: 256 }, (_, i) => i));

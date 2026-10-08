@@ -1,17 +1,11 @@
-// Layer B — the two states a shared workspace can never reproduce: a vault whose remote listing is
-// EMPTY, and a vault whose remote FOLDER is gone (feature 083 / GitHub issue #50).
-//
-// Both need a remote that holds nothing but this test's own files, so this file takes its own
-// isolated workspace instead of joining syncInvariants.b1.test.ts — every test there accumulates
-// files in one shared folder, and INV-4's `anchor.md` exists precisely to keep the listing non-empty.
-//
-// What is being proved:
-//   INV-13 — deleting the LAST tracked file on one device reaches the other. Before 083 the empty
-//            listing was skipped wholesale, so the file stayed on disk and in State, and the next
-//            sync's root-ETag short-circuit rebuilt it from State as "still on the server" — the
-//            vault never converged on its own.
-//   INV-14 — deleting the vault FOLDER on the server is repaired, not obeyed. The folder comes back
-//            and the vault is re-uploaded from local; nothing is trashed locally.
+// Layer B — the two states a shared workspace can never reproduce: a vault whose remote listing is EMPTY, and a vault
+// whose remote FOLDER is gone (GitHub issue #50). Both need a remote holding only this test's own files, so this file
+// takes its own workspace instead of joining syncInvariants.b1.test.ts (where files accumulate in one folder and INV-4's
+// `anchor.md` keeps the listing non-empty).
+// INV-13: deleting the LAST tracked file on one device reaches the other (an empty listing must not be skipped
+// wholesale, or the root-ETag short-circuit rebuilds the file from State).
+// INV-14: deleting the vault FOLDER on the server is repaired, not obeyed: the folder comes back and the vault is
+// re-uploaded from local; nothing is trashed locally.
 import { describeLive } from '../support/env';
 import { setupWorkspace } from '../support/workspace';
 import { cleanupWorkspace, IsolatedWorkspace } from '../support/isolation';

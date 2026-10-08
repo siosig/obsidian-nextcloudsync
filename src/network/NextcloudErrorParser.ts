@@ -6,7 +6,6 @@ const EXCEPTION_MESSAGES: Record<string, string> = {
   'Sabre\\DAV\\Exception\\Locked': '🔒 File is locked by another client. Will retry.',
 };
 
-/** Parse Nextcloud/SabreDAV XML error body and show an appropriate Notice. */
 export function parseAndNotifyNextcloudError(xmlBody: string, path = ''): void {
   try {
     const parser = new DOMParser();

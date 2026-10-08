@@ -1,14 +1,6 @@
 // [SPEC:AND-2] Atomic writes must stay inside the platform's NAME_MAX on a real Android filesystem.
-//
-// Regression origin: a note whose final name was already close to the 255-byte limit failed to sync on
-// Android with FILE_NOTCREATED. The final name fit; the temporary name the atomic write used did not,
-// because the suffix pushed it over. The fix moved to a short hash-based temp name in the same
-// directory.
-//
-// Why this cannot live in another layer: the limit is enforced by the Android filesystem itself. On
-// the desktop layers the write simply succeeds, so the bug is invisible there — layer a can only
-// assert the naming function in isolation, which is what let the real boundary slip through the first
-// time.
+// A near-255-byte note failed with FILE_NOTCREATED because the atomic write's temp name exceeded the limit.
+// Only the Android filesystem enforces this, so desktop layers cannot reproduce it.
 import { browser, expect } from '@wdio/globals';
 import { requireAndroidEnv, requireEnvOrSkip } from '../support/env';
 import { seedConnection } from '../support/plugin';
@@ -33,14 +25,10 @@ describe('[SPEC:AND-2] b-3 — long filenames survive the atomic write', functio
     for (const p of created) await probe.removeQuietly(p);
   });
 
-  // 237 bytes was the empirically established boundary for the original bug: the final name fit, and
-  // the old temp suffix (+18 bytes) did not. Anything at or above it reproduces the failure.
+  // Empirical boundary: the final name fit but the old temp suffix (+18 bytes) did not; at or above 237 reproduces it.
   const BOUNDARY_BYTES = 237;
 
-  // The platform's NAME_MAX is 255, but the SERVER refuses earlier: measured against the test
-  // instance, 250 bytes is accepted and 251 is rejected with HTTP 400. Testing above that asserts
-  // Nextcloud's own validator, not this plugin's temp-name handling, so the upper case sits at the
-  // largest name the server can actually hold.
+  // NAME_MAX is 255 but the server rejects names above 250 bytes (HTTP 400), so the upper case stops there.
   const SERVER_MAX_BYTES = 250;
 
   for (const bytes of [BOUNDARY_BYTES, SERVER_MAX_BYTES]) {
@@ -49,8 +37,7 @@ describe('[SPEC:AND-2] b-3 — long filenames survive the atomic write', functio
       const content = `long name ${bytes}\n`;
       created.push(name);
 
-      // Server-first, so the download path performs the atomic write on the device — that is the
-      // direction that actually creates a temp file next to the target.
+      // Server-first, so the download path performs the atomic write (and creates a temp file) on the device.
       const put = await probe!.put(name, content);
       expect([201, 204]).toContain(put.status);
 
@@ -73,7 +60,7 @@ describe('[SPEC:AND-2] b-3 — long filenames survive the atomic write', functio
       );
       expect(local).toBe(content);
 
-      // No temp file may be left behind: a failed atomic write used to strand one.
+      // A failed atomic write must not strand a temp file.
       const strays = await browser.executeObsidian(async ({ app }) => {
         const listing = await app.vault.adapter.list('');
         return listing.files.filter((f: string) => /\.tmp$|~$/.test(f));

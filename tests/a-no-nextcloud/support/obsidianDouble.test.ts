@@ -5,10 +5,8 @@ import {
   parseFrontMatterStringArray,
 } from './obsidian';
 
-// [SPEC:HFM-14] These tests verify the layer-a Obsidian test double itself
-// (getFrontMatterInfo / parseYaml / stringifyYaml / parseFrontMatterStringArray),
-// which production merge code will start delegating to. If the double drifts from
-// Obsidian's semantics, every merge test built on it becomes meaningless.
+// [SPEC:HFM-14] Verifies the layer-a Obsidian test double itself: merge tests built on it are
+// meaningless if it drifts from Obsidian's semantics.
 describe('[SPEC:HFM-14] Obsidian test double: frontmatter primitives', () => {
   describe('[SPEC:HFM-14] getFrontMatterInfo', () => {
     it('[SPEC:HFM-14] treats only the leading fence as frontmatter, not a body --- (thematic break)', () => {
@@ -25,11 +23,11 @@ describe('[SPEC:HFM-14] Obsidian test double: frontmatter primitives', () => {
     });
 
     it('[SPEC:HFM-14] recognizes CRLF fences', () => {
-      const content = '---\r\ntags: [a]\r\n---\r\n本文';
+      const content = '---\r\ntags: [a]\r\n---\r\n\u672c\u6587';
       const info = getFrontMatterInfo(content);
       expect(info.exists).toBe(true);
       expect(info.frontmatter).toBe('tags: [a]');
-      expect(content.slice(info.contentStart)).toBe('本文');
+      expect(content.slice(info.contentStart)).toBe('\u672c\u6587');
     });
 
     it('[SPEC:HFM-14] reports exists=false when the content does not open with a fence', () => {

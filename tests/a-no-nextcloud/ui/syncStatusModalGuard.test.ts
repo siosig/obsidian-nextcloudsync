@@ -1,12 +1,7 @@
-// Regression test for bug G6-1: the force-resolve "Apply" (per-file) and "Apply to all" (bulk)
-// buttons in SyncStatusModal must be guarded against double-execution by an INSTANCE FIELD that
-// survives `render()`, not by the transient DOM `disabled` attribute on a button that gets
-// re-created every render. jest's testEnvironment is 'node' (no `document`), so — consistent with
-// the existing layer-a limitation already documented for this modal in
-// tests/a-no-nextcloud/spec-coverage/clauses.ts (BRC_DOM waiver) — full Modal/DOM instantiation is
-// impractical here. This test instead imports and exercises the extracted `KeyedBusyGate` guard
-// directly (no Modal construction, so no `document` dependency) and wires it exactly the way
-// SyncStatusModal's click handlers do, to prove the concurrency guard itself is correct.
+// The force-resolve "Apply" (per-file) and "Apply to all" (bulk) buttons must be guarded against
+// double-execution by an INSTANCE FIELD that survives `render()`, not by the transient DOM `disabled`
+// attribute of a button re-created every render. jest runs under `node` (no `document`), so the extracted
+// `KeyedBusyGate` is exercised directly, wired the way SyncStatusModal's click handlers use it.
 import { KeyedBusyGate } from '../../../src/ui/SyncStatusModal';
 
 describe('SyncStatusModal force-resolve guard ([SPEC:G6-1])', () => {

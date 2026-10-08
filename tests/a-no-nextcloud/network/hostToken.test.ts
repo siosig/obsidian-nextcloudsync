@@ -12,7 +12,7 @@ describe('sanitizeHost', () => {
   });
 
   it('preserves non-ASCII characters', () => {
-    expect(sanitizeHost('母艦')).toBe('母艦');
+    expect(sanitizeHost('\u6bcd\u8266')).toBe('\u6bcd\u8266');
   });
 
   it('returns empty string when nothing usable remains', () => {

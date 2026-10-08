@@ -2,15 +2,13 @@ import { DEFAULT_SETTINGS } from '../../../src/types';
 import { hostToken } from '../../../src/util/hostToken';
 import { debugLogPath } from '../../../src/util/logPaths';
 
-// Feature 032 restored these as user-editable DavSyncSettings fields. Feature 033 then re-fixed five
-// of them (fileLocking, chunkedUpload, chunkThreshold, maxConflictRegions, explorerCompare) — those
-// now live in src/util/fixedSyncConfig.ts (see fixedSyncConfig.test.ts). The defaults asserted here
-// are the ones that remain user-editable settings.
+// Five settings (fileLocking, chunkedUpload, chunkThreshold, maxConflictRegions, explorerCompare) live in
+// src/util/fixedSyncConfig.ts (see fixedSyncConfig.test.ts); the defaults asserted here are the ones that
+// remain user-editable.
 describe('DEFAULT_SETTINGS — remaining default contract (C2)', () => {
   it('matches the settings contract (C2)', () => {
     expect(DEFAULT_SETTINGS.startupSyncDelaySeconds).toBe(1);
     expect(DEFAULT_SETTINGS.networkTimeoutSeconds).toBe(30);
-    // Feature 037: the autoMergeEnabled toggle was replaced by per-type strategies.
     expect(DEFAULT_SETTINGS.autoMergeFileStrategy).toBe('merge');
     expect(DEFAULT_SETTINGS.otherFileStrategy).toBe('latest-mtime');
     expect(DEFAULT_SETTINGS.logsFolder).toBe('');
@@ -18,8 +16,8 @@ describe('DEFAULT_SETTINGS — remaining default contract (C2)', () => {
   });
 });
 
-// Feature 032: with the Device name / Log folder inputs removed, the fixed values must produce a
-// derived device token and vault-root log paths from the empty sentinels — no user input involved.
+// With the Device name / Log folder inputs gone, the fixed values must derive the device token and
+// vault-root log paths from the empty sentinels, with no user input.
 describe('[SPEC:DBG-2] fixed Debug identity: auto-derived device name + vault-root logs', () => {
   const deviceId = 'a1b2c3d4-5e6f-7890-abcd-ef1234567890';
 

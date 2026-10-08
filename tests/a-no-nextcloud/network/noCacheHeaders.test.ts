@@ -46,17 +46,14 @@ describe('downloadFile requestUrl headers (no-cache)', () => {
   });
 });
 
-// ── T008 / T009: every remaining requestUrl call (all methods except downloadFile, already
-// covered above) must also carry NO_CACHE_HEADERS. RED until the clients are patched (later task). ──
+// Every remaining requestUrl call (all methods except downloadFile, covered above) must also carry NO_CACHE_HEADERS.
 
 const EMPTY_MULTISTATUS = '<?xml version="1.0" encoding="utf-8"?><d:multistatus xmlns:d="DAV:"></d:multistatus>';
 
-/** All requestUrl calls recorded so far in the current test. */
 function allCalls(): Array<{ method?: string; headers?: Record<string, string> }> {
   return mockRequestUrl.mock.calls.map((c) => c[0]);
 }
 
-/** Asserts at least one call was recorded and every one of them carries NO_CACHE_HEADERS. */
 function expectAllCallsNoCache(): void {
   const calls = allCalls();
   expect(calls.length).toBeGreaterThan(0);
@@ -170,9 +167,8 @@ describe('T008: NextcloudClient remaining methods send NO_CACHE_HEADERS', () => 
     expectAllCallsNoCache();
   });
 
-  // getSyncToken() no longer issues a REPORT (issue #37), so there is no request to carry the
-  // no-cache headers. Kept as an explicit assertion so a future change that reintroduces the
-  // request has to come back through this file and add the headers. Covered by SCR-1.
+  // getSyncToken() issues no REPORT (issue #37), so there is no request to carry the no-cache headers. Kept as an
+  // explicit assertion so reintroducing the request forces the headers to be added. Covered by SCR-1.
   it('getSyncToken() makes no request, so there are no headers to check', async () => {
     mockRequestUrl.mockReturnValueOnce(res(207, { text: EMPTY_MULTISTATUS }));
     await expect(makeClient().getSyncToken()).resolves.toBeNull();
@@ -233,8 +229,7 @@ describe('T008: NextcloudClient remaining methods send NO_CACHE_HEADERS', () => 
 });
 
 describe('T009: StandardWebDAVClient remaining methods send NO_CACHE_HEADERS', () => {
-  // See the T008 describe block above: StandardWebDAVClient's PROPFIND parsing also needs a
-  // DOMParser polyfill in the a-layer `node` test env.
+  // StandardWebDAVClient's PROPFIND parsing also needs a DOMParser polyfill in the a-layer `node` test env.
   let prevDOMParser: unknown;
   beforeAll(() => {
     prevDOMParser = (globalThis as unknown as { DOMParser?: unknown }).DOMParser;
@@ -322,14 +317,13 @@ describe('T009: StandardWebDAVClient remaining methods send NO_CACHE_HEADERS', (
   });
 });
 
-// [SPEC:URE-2] [SPEC:URE-5]: feature 065 (issue #25). The generic WebDAV client must use the SAME
-// single encoding scheme as NextcloudClient — a fix applied to only one of the two clients would
-// leave half the users broken. Platform.isIosApp is forced ON throughout: it is the platform
-// feature 061 special-cased, and under 061 every expectation below was inverted.
+// [SPEC:URE-2] [SPEC:URE-5]: issue #25. The generic WebDAV client must use the SAME single encoding scheme as
+// NextcloudClient; a fix applied to only one of the two would leave half the users broken. Platform.isIosApp is
+// forced ON throughout.
 describe('StandardWebDAVClient — remote URL encoding is platform-independent (feature 065)', () => {
   const originalIsIosApp = Platform.isIosApp;
   const ENCODED = 'https://nc/remote.php/dav/files/alice/Vault/00%20%E6%94%B6%E4%BB%B6%E7%AE%B1/%E6%9C%AA%E5%91%BD%E5%90%8D.md';
-  const RAW_PATH = '00 收件箱/未命名.md';
+  const RAW_PATH = '00 \u6536\u4ef6\u7bb1/\u672a\u547d\u540d.md';
 
   beforeEach(() => {
     mockRequestUrl.mockReset();

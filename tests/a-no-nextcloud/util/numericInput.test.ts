@@ -1,4 +1,4 @@
-// [SPEC:SNI-1..SNI-4] specs/036-slider-numeric-input — editable numeric input normalization.
+// [SPEC:SNI-1..SNI-4] Editable numeric input normalization.
 // normalizeNumericInput clamps to the slider range, rounds to an integer, and reverts invalid input
 // (empty / NaN / non-numeric) to the last valid value so a bad keystroke never corrupts the setting.
 import { normalizeNumericInput } from '../../../src/util/numericInput';

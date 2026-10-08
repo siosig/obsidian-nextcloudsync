@@ -1,10 +1,6 @@
 import { App, FuzzySuggestModal, TFolder } from 'obsidian';
 
-/**
- * Templater-style fuzzy folder picker. Lists every folder in the vault (plus the vault root)
- * and reports the chosen folder's vault-relative path via the callback. Choosing the root
- * yields an empty string (logs then live at the vault root).
- */
+// Choosing the vault root yields an empty string (logs then live at the vault root).
 export class FolderSuggestModal extends FuzzySuggestModal<TFolder> {
   constructor(app: App, private readonly onChoose: (path: string) => void) {
     super(app);

@@ -1,8 +1,7 @@
-// Direct tests for DirectoryReconciler (feature 074, addendum).
+// Direct tests for DirectoryReconciler.
 //
 // No [SPEC:...] tags: the clauses this code serves are already claimed by the SyncEngine-level
-// suites. What this file adds is reach — this is the highest-complexity function in the codebase
-// (CC 39) and, until now, nothing exercised it without standing up an engine.
+// suites. This file exercises the highest-complexity function directly, without standing up an engine.
 //
 // The subject is the three-way local/remote/tracked classification and the circuit breaker guarding
 // its destructive half. The breaker exists because a PARTIAL remote listing is indistinguishable
@@ -26,13 +25,13 @@ const dir = (path: string, fileId: string | null = null): RemoteDirInfo => ({
 });
 
 interface World {
-  /** Folders the remote reports. */
+  // Folders the remote reports.
   remote: RemoteDirInfo[];
-  /** Folders the vault reports. */
+  // Folders the vault reports.
   local: string[];
-  /** Folders the state DB tracks. */
+  // Folders the state DB tracks.
   tracked: DirState[];
-  /** File paths the state DB tracks (feature 086: a trashed folder drops its subtree's tracking). */
+  // File paths the state DB tracks (a trashed folder drops its subtree's tracking).
   trackedFiles: string[];
 }
 
@@ -51,7 +50,7 @@ function build(world: Partial<World> = {}, over: Partial<DirectoryDeps> = {}) {
     dropMergeBase: [] as string[],
     dropCleanSnapshot: [] as string[],
     markOwnEvent: [] as string[],
-    /** Ordered log, so "ignore registered BEFORE trashFile" is checkable (feature 086, FR-005). */
+    // Ordered log, so "ignore registered BEFORE trashFile" is checkable (FR-005).
     order: [] as string[],
     logs: [] as string[],
   };
@@ -66,9 +65,8 @@ function build(world: Partial<World> = {}, over: Partial<DirectoryDeps> = {}) {
     createDirectory: async (p: string) => { calls.createDirectory.push(p); },
     deleteCollection: async (p: string) => { calls.deleteCollection.push(p); },
     isRemoteDirEmpty: async () => dirsEmpty,
-    // Feature 081: the L !R T branch now asks the server before trashing. This harness models a
-    // listing that is RIGHT about absence, so the probe agrees; verifyBeforeTrash.test.ts covers the
-    // case where it does not.
+    // The L !R T branch asks the server before trashing. This harness models a listing that is RIGHT about
+    // absence, so the probe agrees; verifyBeforeTrash.test.ts covers the case where it does not.
     remoteExists: async () => false,
   } as unknown as IWebDAVClient;
 
@@ -194,7 +192,7 @@ describe('DirectoryReconciler.reconcileDirectories — the three-way classificat
 });
 
 describe('DirectoryReconciler.reconcileDirectories — the mass-delete breaker', () => {
-  /** `tracked` folders, all present remotely but gone locally ⇒ all are deleteRemote candidates. */
+  // `tracked` folders, all present remotely but gone locally ⇒ all are deleteRemote candidates.
   function allGoneLocally(n: number) {
     const paths = Array.from({ length: n }, (_, i) => `d${i}`);
     return {
@@ -348,7 +346,7 @@ describe('DirectoryReconciler.resolveSkippedDir — settling what the breaker re
 
   it('trashLocal + remote: lets the local deletion proceed', async () => {
     // Tracked, because a breaker candidate is by definition tracked (local-present, remote-absent,
-    // tracked). Feature 086 drops the row by enumerating the tracked subtree, not by path alone.
+    // tracked). The sink drops the row by enumerating the tracked subtree, not by path alone.
     const { reconciler, client, calls } = build({ local: ['D'], tracked: [{ path: 'D', remoteFileId: null }] });
     await reconciler.resolveSkippedDir(client, 'D', 'trashLocal', 'remote');
     expect(calls.trash).toEqual(['D']);
@@ -396,12 +394,8 @@ describe('DirectoryReconciler.resolveAllSkippedDirs', () => {
   });
 });
 
-// Feature 086 (issue #46). The reporter lost files from BOTH sides: the folder went to their local
-// `.trash`, and its contents turned up in Nextcloud's trashbin too. The second half is this code's
-// doing. Trashing a folder took its children with it but left their StateDB rows behind, and a row
-// that says "synced, now absent locally" is indistinguishable from a user deletion — so the next
-// sync propagated it to the server. Feature 081 stopped one WAY of getting here (asking the server
-// before trashing); this is the amplifier itself.
+// Trashing a folder must also drop its children's StateDB rows: a row saying "synced, now absent locally" is
+// indistinguishable from a user deletion, so the next sync would propagate it to the server (issue #46).
 describe('[SPEC:DTV-3] DirectoryReconciler.reconcileDirectories — a plugin trash is not a user deletion', () => {
   it('[SPEC:GDP-4] forgets the whole subtree, not just the folder row', async () => {
     const { reconciler, client, calls } = build({
@@ -437,7 +431,7 @@ describe('[SPEC:DTV-3] DirectoryReconciler.reconcileDirectories — a plugin tra
     expect(calls.deleteFile).toEqual(['F/a.md']);
   });
 
-  // G1-2: a failed operation keeps its tracking so the next sync retries. Dropping the rows here
+  // A failed operation keeps its tracking so the next sync retries. Dropping the rows here
   // would strand files that are still sitting on disk, and the sync after would re-upload them as
   // brand-new — the user's folder would silently come back.
   it('[SPEC:GDP-5] drops nothing when the trash itself fails', async () => {
@@ -485,7 +479,7 @@ describe('[SPEC:DTV-3] DirectoryReconciler.reconcileDirectories — a plugin tra
     );
   });
 
-  // Feature 081 is the gate in front of all of this and must stay shut: absence from the listing is
+  // The verify-before-trash gate in front of all of this must stay shut: absence from the listing is
   // a reason to ask the server, not a reason to delete.
   it('[SPEC:GDP-7] neither trashes nor forgets anything when the server still has the folder', async () => {
     const { reconciler, client, calls } = build({

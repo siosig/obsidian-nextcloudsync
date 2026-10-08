@@ -1,9 +1,7 @@
-// Feature 051 — normal (propagation) matrix: a create / modify / delete by any one of the three
-// actors (Desktop device D, Mobile device M, Nextcloud server FS N) propagates to the other two and
-// all three converge. Strategy-independent (no conflict), so this runs once with defaults.
-// Cluster-only: N needs SSH + occ. describeCluster() SKIPS the whole suite (visible in the report,
-// never a silent pass) when the cluster env is absent, so the default `pnpm test:b1` stays green.
-// Run the matrix via `bash tests/docker/run.sh b1` (which exports the N-actor env).
+// Normal (propagation) matrix: a create / modify / delete by any one of the three actors (Desktop device D, Mobile
+// device M, Nextcloud server FS N) propagates to the other two and all three converge. Strategy-independent, so it runs
+// once with defaults. Cluster-only: describeCluster() skips the suite visibly when the N-actor env is absent, so
+// `pnpm test:b1` stays green; run the matrix via `bash tests/docker/run.sh b1`.
 import { describeCluster } from '../support/env';
 import { setupWorkspace } from '../support/workspace';
 import { cleanupWorkspace, IsolatedWorkspace } from '../support/isolation';
@@ -27,7 +25,6 @@ describeCluster('Layer B — 3-actor propagation matrix (feature 051)', (getEnv)
 
   const actorsFor = (suffix: string): ThreeActors => makeThreeActors(getEnv(), ws.remoteBase, suffix);
 
-  // ── create ────────────────────────────────────────────────────────────────
   it.each(ORIGINS)('create by %s propagates to the other two actors', async (origin) => {
     const a = actorsFor(`create-${origin}`);
     const path = `create-${origin}.txt`;
@@ -40,7 +37,6 @@ describeCluster('Layer B — 3-actor propagation matrix (feature 051)', (getEnv)
     expect(v.N).toBe(content);
   }, 120_000);
 
-  // ── modify (baseline everywhere, then one actor edits) ──────────────────────
   it.each(ORIGINS)('modify by %s propagates to the other two actors', async (origin) => {
     const a = actorsFor(`modify-${origin}`);
     const path = `modify-${origin}.txt`;
@@ -55,7 +51,6 @@ describeCluster('Layer B — 3-actor propagation matrix (feature 051)', (getEnv)
     expect(v.N).toBe(edited);
   }, 120_000);
 
-  // ── delete (baseline everywhere, then one actor deletes) ────────────────────
   it.each(ORIGINS)('delete by %s propagates to the other two actors', async (origin) => {
     const a = actorsFor(`delete-${origin}`);
     const path = `delete-${origin}.txt`;

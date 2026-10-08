@@ -1,5 +1,5 @@
-// Feature 037 contract tests (CSF-*). Integration-style: the REAL reconcile-text + node-diff3 run
-// (no mocks), so this validates true end-to-end ConflictResolver behaviour, not a stubbed merge.
+// Contract tests (CSF-*), integration-style: the REAL reconcile-text + node-diff3 run (no mocks),
+// so true end-to-end ConflictResolver behaviour is validated, not a stubbed merge.
 import { ConflictResolver, MergeConfig, ConflictContext } from '../../../src/sync/ConflictResolver';
 import { DEFAULT_SETTINGS, SyncStrategy, ConflictResolution } from '../../../src/types';
 import type { App } from 'obsidian';
@@ -50,7 +50,7 @@ describe('[SPEC:CSF-2] merge clean → merged (real reconcile)', () => {
 
 describe('[SPEC:CSF-3] merge text conflict → markers', () => {
   it('[SPEC:CSF-3] diverging scalar frontmatter → semantic merge, clean resolution (feature 040)', () => {
-    // Feature 040: scalar frontmatter conflicts are resolved by policy (default: remote-win).
+    // Scalar frontmatter conflicts are resolved by policy (default: remote-win).
     // k:1 vs k:2 with no ctx → remote wins → k:2. Body reconcile-merged. Result: clean.
     const r = resolver(makeConfig('merge'));
     const d = r.decide('note.md', '', '---\nk: 1\n---\nbody A', '---\nk: 2\n---\nbody B');
@@ -99,7 +99,7 @@ describe('[SPEC:CSF-10] defaults', () => {
     expect(DEFAULT_SETTINGS.autoMergeFileStrategy).toBe('merge');
     expect(DEFAULT_SETTINGS.otherFileStrategy).toBe('latest-mtime');
     expect(DEFAULT_SETTINGS.conflictStrategy).toBe('conflict-markers');
-    // Feature 048: md is special-cased and NOT listed; the list only classifies non-markdown text.
+    // md is special-cased and NOT listed; the list only classifies non-markdown text.
     expect(DEFAULT_SETTINGS.autoMergeFileTypes).toEqual(
       expect.arrayContaining(['txt']),
     );

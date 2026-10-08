@@ -1,10 +1,7 @@
-// In-memory DataAdapter for conformance tests of StateDB / SyncHistoryStore etc.
-// Implements only the surface those modules use (read/write/exists/remove/rename
-// + the rest of DataAdapter as no-ops/throws).
+// In-memory DataAdapter for StateDB / SyncHistoryStore tests; implements only the surface those modules use.
 import { DataAdapter } from 'obsidian';
 
 export interface FakeAdapter extends DataAdapter {
-  /** Underlying text store (path → content), exposed for assertions. */
   _files: Map<string, string>;
 }
 

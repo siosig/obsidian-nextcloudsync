@@ -1,11 +1,10 @@
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { NetworkError, RemoteFileInfo, SyncSessionSummary } from '../../../src/types';
 
-// [SPEC:RT-1] specs/main/spec.md §6.3 retryQueue — a transient (network) failure on a remote file does not
-// abort the session: the path is queued for retry and the error is recorded, while a non-transient
-// local I/O error is recorded but NOT queued (retrying it would just fail again). The queue is an
-// in-memory array drained each run (never persisted). This exercises the real processFileWithRetry
-// wiring; previously the retryQueue mechanism had no test at any layer.
+// [SPEC:RT-1] retryQueue: a transient (network) failure on a remote file does not abort the session; the
+// path is queued for retry and the error recorded. A non-transient local I/O error is recorded but NOT
+// queued (retrying would just fail again). The queue is an in-memory array drained each run, never
+// persisted. This exercises the real processFileWithRetry wiring.
 
 const remote: RemoteFileInfo = {
   path: 'note.md', fileId: 'fid-1', checksum: 'c', etag: 'e', size: 1, lastModified: 0,

@@ -1,4 +1,4 @@
-// Direct tests for MirrorService (feature 074, addendum).
+// Direct tests for MirrorService.
 //
 // No [SPEC:...] tags: MIR-* stays with the engine-level suites.
 //
@@ -133,9 +133,8 @@ describe('MirrorService.applyRemoteMirror — applying the plan', () => {
     }));
     expect(calls.downloaded).toEqual(['a.md']);
     expect(calls.deleted).toEqual(['old.md', 'OldDir']);
-    // Feature 086: dropping the directory's tracking moved INTO processRemoteDeletion (which also
-    // forgets the subtree under it — Mirror used to leave those child rows behind, and the next
-    // sync read them as local deletions). It is stubbed here, so nothing lands on deleteDir.
+    // Dropping the directory's tracking lives in processRemoteDeletion (which also forgets the subtree under it);
+    // it is stubbed here, so nothing lands on deleteDir.
     expect(calls.deleteDir).toEqual([]);
     expect(result).toMatchObject({ downloaded: 1, deleted: 2 });
   });

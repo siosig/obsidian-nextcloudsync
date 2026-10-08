@@ -2,17 +2,11 @@ import { App, Modal, Notice, Setting } from 'obsidian';
 import { FileVersion } from '../types';
 import { confirmModal } from './ConfirmModal';
 
-/**
- * Tracks whether a restore is currently in flight, as an instance field (not a DOM attribute), so it
- * survives independently of any one Restore button. Without this, clicking Restore on version A and
- * then, while it's still pending, clicking Restore on version B would run two `onRestore` calls
- * concurrently against the same file with an undefined final result (last-write-wins). Mirrors
- * CompareModal's instance-field `busy` pattern (see `runStrategy`). (G6-2)
- */
+// Instance field, not a DOM attribute: restoring version A then B while A is pending would run two onRestore calls
+// on the same file concurrently (last-write-wins).
 export class BusyGate {
   private busy = false;
 
-  /** Marks busy and returns true, unless already busy (then a no-op false). */
   tryEnter(): boolean {
     if (this.busy) return false;
     this.busy = true;
@@ -24,12 +18,7 @@ export class BusyGate {
   }
 }
 
-/**
- * Modal that lists the server-side versions of the active note and restores the selected one (US2).
- * The actual restore work is delegated to the onRestore callback (SRP).
- */
 export class VersionHistoryModal extends Modal {
-  /** Modal-level in-flight guard (G6-2): only one restore (across all version rows) runs at a time. */
   private readonly restoreGate = new BusyGate();
 
   constructor(
@@ -62,9 +51,7 @@ export class VersionHistoryModal extends Modal {
           .setButtonText('Restore')
           .setClass('mod-warning')
           .onClick(async () => {
-            // Guarded by a modal-level instance field (G6-2): while one restore is in flight
-            // (including its confirmation dialog), a click on any other version's Restore button
-            // (this one or another row) is ignored until the first settles.
+            // Guarded at modal level: while one restore (including its confirmation) is in flight, clicks on any Restore button are ignored.
             if (!this.restoreGate.tryEnter()) return;
             try {
               const confirmed = await confirmModal(this.app, {

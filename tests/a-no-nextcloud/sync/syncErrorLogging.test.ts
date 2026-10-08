@@ -1,17 +1,10 @@
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { NetworkError, SyncErrorDetail, SyncSessionSummary } from '../../../src/types';
 
-/**
- * [SPEC:URE-5] feature 065 (GitHub issue #25).
- *
- * The reporter's debug log ended at `sync: done ... err=162` and named none of the 162 failing
- * paths, so the one artefact they could hand over located nothing — the investigation stalled on
- * missing diagnostics rather than on the bug itself. The per-file failures were already being
- * collected for the status dialog; they just never reached the log.
- *
- * These tests drive the real `logSessionErrors` (the method `sync()`'s finally block calls) against
- * a recording logger.
- */
+// [SPEC:URE-5] Per-file sync failures must reach the log (GitHub issue #25). A debug log ending at
+// `sync: done ... err=162` without naming the failing paths locates nothing; the failures were already
+// collected for the status dialog but never reached the log. These tests drive the real `logSessionErrors`
+// (the method `sync()`'s finally block calls) against a recording logger.
 
 const err = (path: string, message: string): SyncErrorDetail => ({ path, message });
 

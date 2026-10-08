@@ -1,4 +1,4 @@
-// [SPEC:MWM-2] specs/091-mobile-watch-mode/contracts/watch-wifi-gate.md C-2 — while "Wi-Fi only" blocks on cellular, every watch operation ends with zero side effects and one log line.
+// [SPEC:MWM-2] While "Wi-Fi only" blocks on cellular, every watch operation ends with zero side effects and one log line (docs/spec.md §5.7c).
 import { WatchOperations, WatchDeps } from '../../../../src/sync/watch/WatchOperations';
 import { SyncJournal } from '../../../../src/sync/session/SyncJournal';
 import type { FileState } from '../../../../src/types';

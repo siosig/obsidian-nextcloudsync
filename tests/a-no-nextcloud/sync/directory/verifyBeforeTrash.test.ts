@@ -1,20 +1,9 @@
-// [SPEC:DTV-1] [SPEC:DTV-2] A local folder is never trashed on the strength of a listing alone
-// (feature 081, GitHub issue #46).
+// [SPEC:DTV-1] [SPEC:DTV-2] A local folder is never trashed on the strength of a listing alone (GitHub issue #46).
 //
-// The report: create a subfolder in Obsidian, watch it reach the server, and moments later watch it
-// and everything in it move to `.trash`. The path that does this is short. Watch mode records the
-// folder as "on the server" the instant its MKCOL returns; the next full sync then reads a folder
-// that is on disk, recorded, and absent from the remote listing as "deleted remotely" and trashes it
-// with its contents. One folder is one deletion, so the mass-delete breaker — built to catch a
-// listing that is wrong about MANY folders — does not fire.
-//
-// File deletions already refuse to act without proof: applyLocalDeletion needs the server checksum
-// to match the base before it deletes anything. Folders had no such guard. This adds one: before a
-// tracked local folder is trashed, the server is asked directly (PROPFIND Depth 0) whether it is
-// really gone. A listing that omits a folder is a reason to look, not a reason to delete.
-//
-// Why the listing was wrong in the reporter's case is not yet known and is deliberately not part of
-// this fix: whatever the cause, "absent from the listing → delete" is the step that destroys data.
+// Watch mode records a folder as "on the server" the instant its MKCOL returns; a folder that is on disk,
+// recorded and absent from the next listing then reads as "deleted remotely" and is trashed with its contents.
+// One folder is one deletion, so the mass-delete breaker does not fire. Before a tracked local folder is
+// trashed, the server is asked directly (PROPFIND Depth 0) whether it is really gone. (docs/spec.md §8a.1)
 import { DirectoryReconciler, DirectoryDeps } from '../../../../src/sync/directory/DirectoryReconciler';
 import { SyncJournal } from '../../../../src/sync/session/SyncJournal';
 import { TransferService } from '../../../../src/sync/transfer/TransferService';
@@ -27,10 +16,7 @@ const summary = (): SyncSessionSummary => ({
   mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], errors: [],
 });
 
-/**
- * A vault with one tracked folder that the remote listing does NOT mention — the exact state issue
- * #46 arrives in. `exists` is what the server says when asked directly.
- */
+// A vault with one tracked folder that the remote listing does NOT mention; `exists` is what the server says when asked directly.
 function build(exists: boolean | (() => Promise<boolean>)) {
   const calls = { trash: [] as string[], deleteDir: [] as string[], remoteExists: [] as string[] };
   const logs: string[] = [];
@@ -109,8 +95,7 @@ describe('[SPEC:DTV-2] the guard does not silence genuine remote deletions', () 
 
     expect(calls.trash).toEqual(['Projects/New']);
     expect(calls.deleteDir).toEqual(['Projects/New']);
-    // deletedCount is not asserted: the local-trash branch has never counted itself there (only the
-    // remote-delete branch does), and changing that is not this fix's business.
+    // deletedCount is not asserted: the local-trash branch does not count itself there (only the remote-delete branch does).
   });
 
   it('asks the server once per candidate, and not at all when there is nothing to trash', async () => {

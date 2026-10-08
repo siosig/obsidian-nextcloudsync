@@ -1,18 +1,12 @@
-// [SPEC:WSF-6] specs/064-watch-single-file-conflict/contracts/watch-single-file-sync.md (C-4)
-//
-// C-4: after a successful upload, the FileState must satisfy
+// [SPEC:WSF-6] After a successful upload the FileState must satisfy
 //   localHash === remoteId && idType === 'sha256' && isConflicted === false
 // so that the immediately-following sync is a pure no-op (no download, no upload).
-//
-// Bug being guarded against: uploadFile used to record the PRE-upload remoteId (the value observed
-// before the PUT) instead of the hash of what was just uploaded. Nextcloud returns the uploaded
-// content's SHA-256 as the checksum on the next listing (both upload strategies send an
-// `OC-Checksum: SHA256:<hash>` header, which the server persists and echoes back). Recording the
-// stale pre-upload id therefore made every subsequent sync see "remote changed" and re-download the
-// very file this device had just uploaded — an infinite thrash loop (SC-005 regression).
-//
-// This test drives the REAL SyncEngine.processRemoteFile (the same classifier full sync and watch
-// mode both call) rather than re-implementing the classification/upload logic locally.
+// Recording the PRE-upload remoteId instead of the hash of what was just uploaded would make every later
+// sync see "remote changed" and re-download the file it just uploaded (an infinite thrash loop). Nextcloud
+// returns the uploaded content's SHA-256 as the checksum on the next listing (both upload strategies send
+// an `OC-Checksum: SHA256:<hash>` header).
+// This test drives the REAL SyncEngine.processRemoteFile (the classifier full sync and watch mode both call)
+// rather than re-implementing the classification/upload logic.
 import { DataAdapter } from 'obsidian';
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { StateDB } from '../../../src/data/StateDB';
@@ -42,7 +36,7 @@ function makeSummary(): SyncSessionSummary {
   };
 }
 
-/** In-memory local vault, matching the pattern used by untrackedBothSides.test.ts. */
+// In-memory local vault, matching the pattern used by untrackedBothSides.test.ts.
 function makeLocalAdapter(files: Record<string, string>, mtimes: Record<string, number> = {}) {
   const mtimeOf = (p: string): number => mtimes[p] ?? 1_000;
   return {
@@ -119,8 +113,7 @@ describe('[SPEC:WSF-6] uploaded FileState converges instead of re-downloading (C
 
     const state = stateDB.getFile('note.md');
     expect(state).toBeDefined();
-    // C-4: the state records what the server now holds (the just-uploaded content's hash), not the
-    // pre-upload remoteId — this is the exact assertion the pre-fix code violated.
+    // The state records what the server now holds (the just-uploaded content's hash), not the pre-upload remoteId.
     expect(state!.localHash).toBe(newHash);
     expect(state!.remoteId).toBe(newHash);
     expect(state!.localHash).toBe(state!.remoteId);
