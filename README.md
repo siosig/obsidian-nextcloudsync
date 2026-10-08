@@ -31,10 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (1.0.9)
+## What's new in this release (1.0.10-beta.1)
 
-- **New: "Sync on file change" now works on mobile (1.0.9)** — the watch mode can be turned on in Android and iOS (it stays off by default there). It runs only while Obsidian is open, and anything it misses is sent on the next sync. When "Sync on Wi-Fi only" is on, it pauses on a cellular connection.
-- **Maintenance (1.0.9)** — no change in behavior. Source comments were trimmed and now point to the public `docs/spec.md` and `docs/plan.md`, which are published as the specification and design reference.
+- **Clearer error when the Server URL subfolder is missing (1.0.10-beta.1)** — if the Server URL ends in a subfolder that does not exist in Nextcloud, the sync used to fail with a bare `HTTP 409 (MKCOL)`. The notice and the Sync Status listing now say that a parent folder is missing and that the subfolder must be created in Nextcloud first (the plugin does not create it). The README explains this too. Sync behavior is unchanged.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
