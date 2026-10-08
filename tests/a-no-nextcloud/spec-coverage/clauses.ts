@@ -547,7 +547,7 @@ export const CLAUSES: Clause[] = [
   { id: 'SWC-1', source: 'specs/062-source-warning-cleanup/contracts/lint-gate-contract.md (C1: eslint-plugin-obsidianmd pinned to reviewer-equivalent ^0.4.1)', layer: 'a' },
   { id: 'SWC-2', source: 'specs/062-source-warning-cleanup/contracts/lint-gate-contract.md (C2: no createEl(\'div\'/\'span\') call sites remain in src/**, prefer-create-el promoted to error)', layer: 'a' },
   { id: 'SWC-3', source: 'specs/062-source-warning-cleanup/contracts/lint-gate-contract.md (C2/C3: eslint.config.mjs pins prefer-create-el=error and prefer-setting-definitions=off with the spec-062 deferral reason)', layer: 'a' },
-  { id: 'SWC-4', source: 'specs/062-source-warning-cleanup/contracts/lint-gate-contract.md (C4: js-yaml is a devDependency only, not a production dependency)', layer: 'a' },
+  { id: 'SWC-4', source: 'specs/096-replace-js-yaml/contracts/yaml-double-contract.md (C5: package.json declares neither js-yaml nor @types/js-yaml as a direct dependency; test doubles use yaml; the transitive js-yaml override stays)', layer: 'a' },
   { id: 'SWC-5', source: 'specs/062-source-warning-cleanup/contracts/lint-gate-contract.md (C5: end-user-visible settings/UI/sync behaviour is unchanged)', layer: 'a', waiver: 'regression meta-clause; guaranteed by the pre-existing settings/UI/sync test corpus staying green under this change, not by a dedicated new test' },
 
   // Sync classification rows 8/9: a file present on BOTH sides with NO StateDB record (issue #23). Without a

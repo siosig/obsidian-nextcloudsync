@@ -32,13 +32,37 @@ describe('[SPEC:SWC-2] src/**/*.ts contains no createEl(\'div\'|\'span\', ...) c
   });
 });
 
-// js-yaml is unused in production code (parseYaml/stringifyYaml cover it) and only consumed by test
-// doubles, so it belongs in devDependencies.
-describe('[SPEC:SWC-4] js-yaml is classified as a devDependency, not a production dependency', () => {
-  it('[SPEC:SWC-4] package.json keeps js-yaml out of dependencies and in devDependencies', () => {
+// The community-directory reviewer flags js-yaml as a package to replace, so it must not be a direct
+// dependency at all; it still arrives transitively, which the pnpm override keeps on a patched floor.
+describe('[SPEC:SWC-4] js-yaml is not a direct dependency; test doubles use yaml', () => {
+  it('[SPEC:SWC-4] package.json declares neither js-yaml nor @types/js-yaml, and has yaml in devDependencies', () => {
     const pkg = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8'));
-    expect(pkg.dependencies).not.toHaveProperty('js-yaml');
-    expect(pkg.devDependencies).toHaveProperty('js-yaml');
+    for (const section of [pkg.dependencies ?? {}, pkg.devDependencies ?? {}]) {
+      expect(section).not.toHaveProperty('js-yaml');
+      expect(section).not.toHaveProperty('@types/js-yaml');
+    }
+    const range: string = pkg.devDependencies.yaml;
+    const match = /^\^2\.(\d+)\.(\d+)$/.exec(range);
+    expect(match).not.toBeNull();
+    expect(Number(match![1])).toBeGreaterThanOrEqual(9);
+  });
+
+  it('[SPEC:SWC-4] the three Obsidian test doubles import yaml, not js-yaml', () => {
+    const doubles = [
+      'tests/a-no-nextcloud/support/obsidian.ts',
+      'tests/b1-nextcloud-headless/__mocks__/obsidian.ts',
+      'tests/b4-plain-webdav/__mocks__/obsidian.ts',
+    ];
+    for (const rel of doubles) {
+      const src = readFileSync(join(REPO_ROOT, rel), 'utf8');
+      expect(/from\s+['"]yaml['"]/.test(src)).toBe(true);
+      expect(/from\s+['"]js-yaml['"]|require\(\s*['"]js-yaml['"]/.test(src)).toBe(false);
+    }
+  });
+
+  it('[SPEC:SWC-4] pnpm-workspace.yaml keeps the transitive js-yaml >=5.2.2 override', () => {
+    const ws = readFileSync(join(REPO_ROOT, 'pnpm-workspace.yaml'), 'utf8');
+    expect(/^\s*js-yaml:\s*'>=5\.2\.2'\s*$/m.test(ws)).toBe(true);
   });
 });
 
