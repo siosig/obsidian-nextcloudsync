@@ -1,4 +1,4 @@
-import { load, dump } from 'js-yaml';
+import { parse as parseYamlText, stringify as stringifyYamlText } from 'yaml';
 
 export class Plugin {
   app: App;
@@ -224,17 +224,18 @@ export function normalizePath(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+/g, '/');
 }
 
-// Obsidian returns null for empty / whitespace-only input but this js-yaml build throws, so that case
-// is short-circuited.
+// Obsidian returns null for empty / whitespace-only input; short-circuit it before the YAML library.
 export function parseYaml(s: string): any {
   if (s == null) return null;
   if (s.trim() === '') return null;
-  return load(s);
+  return parseYamlText(s);
 }
 
-// `lineWidth: -1` disables folding so output is deterministic and round-trips losslessly.
+// version '1.1' quotes scalars a YAML 1.1 reader would retype (yes, n, dates), matching the output the
+// merge tests were written against; parse stays 1.2 core. lineWidth 0 disables folding.
+const YAML_STRINGIFY_OPTIONS = { version: '1.1', singleQuote: true, lineWidth: 0 } as const;
 export function stringifyYaml(obj: any): string {
-  return dump(obj, { lineWidth: -1 });
+  return stringifyYamlText(obj, YAML_STRINGIFY_OPTIONS);
 }
 
 export interface FrontMatterInfo {

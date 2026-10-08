@@ -61,6 +61,39 @@ describe('[SPEC:HFM-14] Obsidian test double: frontmatter primitives', () => {
       expect(parseYaml('')).toBeNull();
       expect(parseYaml('   \n  ')).toBeNull();
     });
+
+    it('[SPEC:HFM-14] stringifyYaml output is pinned (YAML-1.1-ambiguous scalars quoted, no folding)', () => {
+      const obj = {
+        n: 1,
+        yes: 'yes',
+        empty: '',
+        quote: "it's",
+        colon: 'a: b',
+        tag: '#tag',
+        num: '123',
+        bool: 'true',
+        date: '2024-01-01',
+        list: [],
+        map: {},
+        tags: ['a', 'b'],
+        long: Array(30).fill('word').join(' '),
+        multi: 'line1\nline2',
+      };
+      const text = stringifyYaml(obj);
+      expect(text).toBe(
+        "'n': 1\n'yes': 'yes'\nempty: ''\nquote: it's\ncolon: 'a: b'\ntag: '#tag'\nnum: '123'\nbool: 'true'\ndate: '2024-01-01'\nlist: []\nmap: {}\ntags:\n  - a\n  - b\nlong: word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word\nmulti: |-\n  line1\n  line2\n",
+      );
+      expect(parseYaml(text)).toEqual(obj);
+    });
+
+    // Doubles must parse as YAML 1.2 core (like Obsidian); only stringify opts into 1.1-safe quoting.
+    it('[SPEC:HFM-14] parseYaml keeps YAML-1.1 booleans (yes/on) as strings', () => {
+      expect(parseYaml('a: yes\nb: on\nc: 2024-01-01')).toEqual({ a: 'yes', b: 'on', c: '2024-01-01' });
+    });
+
+    it('[SPEC:HFM-14] parseYaml throws on malformed YAML', () => {
+      expect(() => parseYaml('{ unclosed')).toThrow();
+    });
   });
 
   describe('[SPEC:HFM-14] parseFrontMatterStringArray', () => {
