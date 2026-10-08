@@ -11,6 +11,15 @@
 
 > 英語版（原文）は [`CHANGELOG.md`](CHANGELOG.md) を参照してください。
 
+## [1.0.9] - 2026-10-08
+
+### 追加
+- **モバイルでも「Sync on file change」が使えるようになりました。** Android / iOS でウォッチモードを ON にできます（既定は OFF のままです）。Obsidian を開いている間だけ動作し、取りこぼした変更（アプリがバックグラウンドに回った、接続が切れた等）は次の同期で送られるため、失われることはありません。**Sync on Wi-Fi only** が ON のときは、フル同期と同じくセルラー回線でウォッチが一時停止し、スキップされた変更（編集・削除・リネーム・フォルダ操作）は次のフル同期で回収されます。設定項目は増えておらず、Wi-Fi のみの判定方法も変わりません。
+
+### 変更
+- **仕様書と設計資料を公開しました。** `docs/spec.md` に現在の挙動を 1 つの文書として、`docs/plan.md` に内部設計をまとめました。ソース内のコメントは開発履歴ではなくこれらを参照します。
+- **テストスイートがすべて Docker で動くようになりました。** 1 つのコマンドで、実際の Nextcloud、プレーンな WebDAV サーバー、Android 実行環境を含む全層を実行し、終了時に後始末します。不安定だった E2E テスト 1 件を確定的にしました。配布されるプラグインの動作は変わりません。
+
 ## [1.0.8] - 2026-09-23
 
 ### 修正
@@ -469,6 +478,7 @@ Nextcloud 特化同期エンジンの初回公開リリース（0.2.0 〜 0.2.1�
 - **Dry-run でのコンフリクト結果の明確化** — 初回同期プレビューがコンフリクト解決の結果を説明し、各コンフリクトファイルをクリックするとマージ後の内容（変更前後）をプレビューできます。
 - **汎用 WebDAV より高速な同期** — 内容ハッシュと Nextcloud の `sync-token` を突き合わせ、毎回リモートツリー全体を再帰的に走査するのではなく、実際に変更された分だけを転送します。更新日時ベースの WebDAV プラグインより同期が明確に速くなります。
 
+[1.0.9]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.9
 [1.0.8]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.8
 [1.0.7]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.7
 [1.0.6]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.6

@@ -11,6 +11,15 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [1.0.9] - 2026-10-08
+
+### Added
+- **"Sync on file change" now works on mobile.** The watch mode can be turned on in Android and iOS; it stays off by default there. It runs only while Obsidian is open, and any change it misses (the app was backgrounded, the connection dropped) is sent by the next sync, so nothing is lost. When **Sync on Wi-Fi only** is on, the watch pauses on a cellular connection exactly as a full sync does, and the skipped changes — edits, deletions, renames and folder operations alike — are picked up by the next full sync. No new setting was added, and the way Wi-Fi only is judged is unchanged.
+
+### Changed
+- **The specification and the design notes are now public.** `docs/spec.md` describes the current behavior in one document and `docs/plan.md` describes the internal design. Comments in the source point to them instead of to the development history.
+- **The test suite runs entirely in Docker.** One command runs every layer, including a live Nextcloud, a plain WebDAV server and an Android runtime, and cleans up after itself. One flaky end-to-end test was made deterministic. None of this changes the packaged plugin's behavior.
+
 ## [1.0.8] - 2026-09-23
 
 ### Fixed
@@ -469,6 +478,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[1.0.9]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.9
 [1.0.8]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.8
 [1.0.7]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.7
 [1.0.6]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.6

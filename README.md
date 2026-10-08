@@ -31,10 +31,10 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (1.0.9-beta.2)
+## What's new in this release (1.0.9)
 
-- **New: "Sync on file change" now works on mobile (1.0.9-beta.2)** — the watch mode can be turned on in Android and iOS (it stays off by default there). It runs only while Obsidian is open, and anything it misses is sent on the next sync. When "Sync on Wi-Fi only" is on, it pauses on a cellular connection.
-- **Maintenance (1.0.9-beta.2)** — no change in behavior. Source comments were trimmed and now point to the public `docs/spec.md` and `docs/plan.md`, which are published as the specification and design reference.
+- **New: "Sync on file change" now works on mobile (1.0.9)** — the watch mode can be turned on in Android and iOS (it stays off by default there). It runs only while Obsidian is open, and anything it misses is sent on the next sync. When "Sync on Wi-Fi only" is on, it pauses on a cellular connection.
+- **Maintenance (1.0.9)** — no change in behavior. Source comments were trimmed and now point to the public `docs/spec.md` and `docs/plan.md`, which are published as the specification and design reference.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
