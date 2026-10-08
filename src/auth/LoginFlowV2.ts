@@ -2,54 +2,24 @@ import { requestUrl } from 'obsidian';
 import { LoginFlowInit, LoginFlowResult, LoginFlowError } from '../types';
 import { onAppResume } from '../util/appResume';
 
-/**
- * Nextcloud Login Flow v2 client.
- *
- * Official flow that issues an app password using browser approval alone.
- * 1. start(): POST /index.php/login/v2 → {@link LoginFlowInit}
- * 2. The user opens loginUrl in a browser and approves
- * 3. poll(): polls until approval completes and returns {@link LoginFlowResult}
- *
- * Everything goes through Obsidian's requestUrl (no fetch). No `any`; JSON is validated with type guards.
- */
-/**
- * Default "the app came back to the foreground" signal (issue #34). Mobile suspends the webview's
- * timers while the browser holds the foreground, so the poll loop needs a second way to be woken.
- *
- * The implementation moved to `util/appResume` in feature 079, where the same signal now also drives
- * a sync on resume. Behaviour is unchanged — same two events, same environment guard — so the
- * real-device coverage this path already has (`loginFlowResume.b3.test.ts`) still applies.
- */
+// Nextcloud Login Flow v2: start() POSTs /index.php/login/v2, the user approves in a browser, poll() collects the app password.
+// All requests go through Obsidian's requestUrl (no fetch).
+
+// Default app-resume signal (issue #34): mobile suspends the webview's timers while the browser holds the foreground,
+// so the poll loop needs a second way to be woken.
 const defaultOnResume = onAppResume;
 
-/** Injection seams for {@link LoginFlowV2.poll}; all default to the real clock / DOM. */
 export interface PollDeps {
-  /** Current wall-clock time in ms. */
   now?: () => number;
-  /** Subscribe to app-resume; returns an unsubscribe function. */
   onResume?: (cb: () => void) => () => void;
 }
 
 export class LoginFlowV2 {
-  /** Polling interval (milliseconds). */
   static readonly POLL_INTERVAL_MS = 2000;
-  /**
-   * Wall-clock budget for the whole flow.
-   *
-   * Matched to Nextcloud's own token lifetime — `LoginFlowV2Mapper::lifetime` is 1200 seconds — so the
-   * client stops looking at the same moment the server stops honouring the token, and never earlier.
-   * This replaces a fixed 90-iteration cap: because the loop only advanced when its timer fired, that
-   * cap measured "time spent polling in the foreground" rather than elapsed time, which is not a
-   * budget anyone can reason about once the OS starts suspending timers mid-flow.
-   */
+  // Wall-clock budget for the whole flow, matched to Nextcloud's token lifetime (LoginFlowV2Mapper::lifetime = 1200s)
+  // so the client never stops earlier than the server honours the token.
   static readonly POLL_DEADLINE_MS = 20 * 60 * 1000;
 
-  /**
-   * Starts the Login Flow.
-   * @param serverBaseUrl Server base URL without `/remote.php/...`
-   * @returns Start info (browser URL and polling endpoint)
-   * @throws {LoginFlowError} If the start POST fails
-   */
   static async start(serverBaseUrl: string): Promise<LoginFlowInit> {
     const base = serverBaseUrl.replace(/\/$/, '');
     const res = await requestUrl({
@@ -69,10 +39,6 @@ export class LoginFlowV2 {
     return init;
   }
 
-  /**
-   * Checks for approval completion exactly once. Returns `pending` before approval, `success` once done.
-   * @returns Polling result (discriminated union)
-   */
   static async pollOnce(init: LoginFlowInit): Promise<LoginFlowResult> {
     const res = await requestUrl({
       url: init.pollEndpoint,
@@ -88,19 +54,8 @@ export class LoginFlowV2 {
     return { status: 'success', ...ok };
   }
 
-  /**
-   * Polls until approval completes or {@link POLL_DEADLINE_MS} of wall-clock time has passed.
-   *
-   * Between polls it waits on whichever comes first: the interval timer, or the app returning to the
-   * foreground. Waiting on the timer alone is what broke sign-in on Android (issue #34) — opening the
-   * browser to approve suspends Obsidian's webview, the pending `setTimeout` never fires, and the loop
-   * stays parked on that one `await` even after the user comes back, so the app password sitting ready
-   * on the server is never collected. Racing the resume signal both unsticks the loop and makes the
-   * first poll after the user returns immediate, which is exactly the moment approval has just landed.
-   *
-   * @param sleep Wait function injectable for testing (defaults to a setTimeout-based one)
-   * @param deps Clock and resume-signal seams, injectable for testing
-   */
+  // Waits between polls on whichever comes first: the interval timer or the app returning to the foreground. The timer alone
+  // broke Android sign-in (issue #34): the suspended webview never fires setTimeout, so the ready app password was never collected.
   static async poll(
     init: LoginFlowInit,
     sleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => window.setTimeout(r, ms)),
@@ -136,7 +91,6 @@ export class LoginFlowV2 {
     }
   }
 
-  /** Validates the start response JSON with type guards and converts it to LoginFlowInit. */
   private static parseInit(json: unknown): LoginFlowInit | null {
     if (typeof json !== 'object' || json === null) return null;
     const obj = json as Record<string, unknown>;
@@ -151,7 +105,6 @@ export class LoginFlowV2 {
     return { pollToken: token, pollEndpoint: endpoint, loginUrl: login };
   }
 
-  /** Validates the successful polling JSON with type guards. */
   private static parseSuccess(
     json: unknown,
   ): { server: string; loginName: string; appPassword: string } | null {

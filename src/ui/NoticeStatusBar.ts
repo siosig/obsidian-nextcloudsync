@@ -6,16 +6,9 @@ import { IStatusBar } from './StatusBarItem';
 const DISMISS_SUCCESS_MS = 4000;
 const DISMISS_PROBLEM_MS = 10000;
 
-/**
- * Mobile implementation of {@link IStatusBar}. Obsidian has no visible status bar on mobile
- * (`addStatusBarItem` is unavailable there), so sync feedback is surfaced as a single, reused
- * `Notice` toast: persistent (`timeout = 0`) while syncing, then updated in place to a result
- * summary that auto-dismisses. This keeps the sync engine free of platform branching — it just
- * drives the IStatusBar port, and the mobile wiring swaps this in for NullStatusBar.
- *
- * Single-toast invariant: at most one Notice is ever live; progress updates reuse it via
- * `setMessage`, and a new sync reclaims a still-visible completion toast instead of stacking.
- */
+// Mobile has no status bar (addStatusBarItem is unavailable), so feedback is one reused Notice:
+// persistent while syncing, then updated in place to an auto-dismissing summary.
+// Invariant: at most one Notice is live; a new sync reclaims a still-visible completion toast.
 export class NoticeStatusBar implements IStatusBar {
   private notice: Notice | null = null;
   private conflictCount = 0;
@@ -28,7 +21,6 @@ export class NoticeStatusBar implements IStatusBar {
     this.ensureNotice('🔄 Syncing…');
   }
 
-  /** Show per-file progress, reusing the single toast: "🔄 12/150". */
   setProgress(processed: number, total: number): void {
     this.clearDismiss();
     this.ensureNotice('🔄 Syncing…');
@@ -68,7 +60,6 @@ export class NoticeStatusBar implements IStatusBar {
     return { text: `🟢 Synced ${tail}`, dismissMs: DISMISS_SUCCESS_MS };
   }
 
-  /** Create the persistent toast if absent, otherwise reuse it (single-toast invariant). */
   private ensureNotice(initialText: string): void {
     if (!this.notice) this.notice = new Notice(initialText, 0);
   }
@@ -81,7 +72,6 @@ export class NoticeStatusBar implements IStatusBar {
   }
 }
 
-/** "1 error" / "2 errors" — simple English pluralization. */
 function count(n: number, noun: string): string {
   return `${n} ${noun}${n === 1 ? '' : 's'}`;
 }

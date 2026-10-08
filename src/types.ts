@@ -1,94 +1,64 @@
-// Shared type definitions for nextcloud-sync
-
-/**
- * Opt-in flags for `.obsidian` config-folder sync (issue #1). Each flag is only consulted when the
- * master `syncConfigFolder` setting is on. Community plugins and the plugin's own sync-state DB are
- * intentionally NOT representable here — they are permanent hard exclusions.
- *
- * Feature 029 collapsed the former five categories into two: Bookmarks stays on its own, and
- * everything else (appearance, themes & snippets, hotkeys, core-plugin settings) is grouped under
- * `others`. The detailed file mapping lives in `ConfigSyncResolver.CONFIG_SYNC_CATEGORIES`.
- */
+/** Opt-in categories for config-folder sync; only consulted when `syncConfigFolder` is on (docs/spec.md §7). */
 export interface ConfigSyncCategories {
-  /** bookmarks.json (migrated from the former standalone `syncBookmarks` setting) */
+  /** bookmarks.json. */
   bookmarks: boolean;
-  /**
-   * appearance.json / app.json, themes/** and snippets/**, hotkeys.json, and the core-plugin
-   * config files (the fixed allowlist). Grouped from the former appearance/themesSnippets/
-   * hotkeys/corePlugins categories (feature 029).
-   */
+  /** Appearance, themes, snippets, hotkeys and core-plugin config; the file mapping is in `ConfigSyncResolver.CONFIG_SYNC_CATEGORIES`. */
   others: boolean;
 }
 
 /**
- * Conflict-resolution strategy for one file type (feature 037). A single per-type choice replaces the
- * former three conflict settings (autoMergeEnabled / conflictFailurePolicy / frontmatterConflictStrategy).
- *   merge        — 3-way merge: clean → merged, text conflict → markers, non-text → safe-hold (FR-005a)
- *   biggest-size — keep the larger side, overwrite the smaller (size tie → no-op success, FR-009)
- *   latest-mtime — keep the newer side, overwrite the older (mtime tie → no-op success, FR-009)
- *   local-win    — always keep the local side, overwrite remote
- *   remote-win   — always keep the remote side, overwrite local
+ * Conflict-resolution strategy for one file type (docs/spec.md §6.1).
+ *   merge        — 3-way merge: clean → merged, text conflict → markers, non-text → safe-hold
+ *   biggest-size — keep the larger side (size tie → no-op success)
+ *   latest-mtime — keep the newer side (mtime tie → no-op success)
+ *   local-win / remote-win — always keep that side, overwrite the other
  * `merge` is valid only for Auto Merge File types; Other File types use the four deterministic ones.
  */
 export type SyncStrategy = 'merge' | 'biggest-size' | 'latest-mtime' | 'local-win' | 'remote-win';
 
 /**
- * Feature 048: the SECOND-level fallback applied ONLY to a part that a primary `merge` strategy could
- * not auto-resolve (a body diff3 conflict region, or a frontmatter scalar/object both-changed clash).
- *   conflict-markers — body keeps both sides as `<<<<<<< / >>>>>>>` markers (flagged conflicted);
- *                      frontmatter cannot hold markers, so it falls back to latest-mtime; binary body
- *                      cannot hold markers either, so it safe-holds (both sides untouched).
- *   latest-mtime / local-win / remote-win / biggest-size — resolve the conflicting part deterministically
- *                      (per body region / per frontmatter field). A biggest-size tie falls to latest-mtime.
- * A primary strategy other than `merge` is already deterministic, so it never reaches this fallback.
+ * Second-level fallback for a part a primary `merge` could not auto-resolve (a body diff3 region or a
+ * frontmatter scalar/object clash). Never reached by a primary strategy other than `merge`.
+ *   conflict-markers — body keeps both sides as markers (flagged conflicted); frontmatter falls back to
+ *                      latest-mtime; a binary body safe-holds.
+ *   others           — resolve the part deterministically (a biggest-size tie falls to latest-mtime).
  */
 export type ConflictStrategy = 'conflict-markers' | 'biggest-size' | 'latest-mtime' | 'local-win' | 'remote-win';
 
-/**
- * Runtime inputs for the merge, threaded from ConflictContext. The two mtimes drive latest-mtime
- * tiebreaks; `conflictStrategy` (feature 048) resolves a frontmatter scalar clash or a body diff3
- * conflict region that a primary `merge` could not auto-resolve. Absent when no ConflictContext is
- * available (e.g. unit tests): mtimes default to 0 (remote wins the tie) and conflictStrategy defaults
- * to 'conflict-markers'.
- */
+/** Runtime inputs for the merge. When absent, mtimes default to 0 (remote wins the tie) and `conflictStrategy` to 'conflict-markers'. */
 export interface MergeContext {
   /** Local file modification time in milliseconds since epoch. */
   localMtime: number;
   /** Remote file modification time in milliseconds since epoch. */
   remoteMtime: number;
-  /** Feature 048: how to resolve a part a primary `merge` could not auto-resolve. */
+  /** How to resolve a part a primary `merge` could not auto-resolve. */
   conflictStrategy?: ConflictStrategy;
 }
 
 /**
- * Feature 044: the two CLEAN versions of a note captured at the moment a marker conflict is detected,
- * before `resolveByWrite` overwrites either side with conflict-marker content. Stored per-path in
- * CleanSideStore so force-resolution ("Use remote" / "Use local" / "Latest" / "Biggest") recovers a
- * real clean version instead of the marker-corrupted current content. Distinct from the feature-038
- * merge base (which holds ONE last-converged body, i.e. neither current side).
+ * The two clean versions of a note captured when a marker conflict is detected, before either side is
+ * overwritten with markers, so force-resolution recovers a real clean version. Distinct from the merge
+ * base, which holds one last-converged body.
  */
 export interface CleanSideSnapshot {
-  /** Clean LOCAL body (the user's pre-merge edit), captured before markers overwrote it. */
+  /** Clean local body. */
   local: string;
-  /** Clean REMOTE body (downloaded during conflict handling), before markers were uploaded. */
+  /** Clean remote body. */
   remote: string;
-  /** Local file mtime at conflict time (ms) — discriminator for the "Latest modified" choice. */
+  /** Local mtime at conflict time (ms). */
   localMtime: number;
-  /** Remote lastModified at conflict time (ms) — discriminator for "Latest modified". */
+  /** Remote lastModified at conflict time (ms). */
   remoteMtime: number;
-  /** Clean local body size in bytes — discriminator for the "Biggest size" choice. */
+  /** Clean local body size (bytes). */
   localSize: number;
-  /** Clean remote body size in bytes — discriminator for "Biggest size". */
+  /** Clean remote body size (bytes). */
   remoteSize: number;
 }
 
 export interface DavSyncSettings {
   serverUrl: string;
   username: string;
-  /**
-   * Reference ID for the app password stored in Obsidian SecretStorage.
-   * The actual password value is never saved in data.json; secretStorage manages it encrypted.
-   */
+  /** SecretStorage key of the app password; the password itself is never saved in data.json. */
   passwordSecretId: string;
   /** Auto-sync period in minutes. 0 = manual only. Disabled on mobile (the OS suspends timers). */
   syncIntervalMinutes: number;
@@ -97,103 +67,46 @@ export interface DavSyncSettings {
   deviceId: string;
   /** Absolute file-size cap (MB). Files exceeding this are skipped with a warning. 0 = unlimited. */
   maxFileSizeMB: number;
-  /** Detect local Markdown edits and sync immediately (watch mode). Disabled on mobile. */
+  /** Watch mode: sync local edits immediately. */
   watchOnChangeEnabled: boolean;
-  /**
-   * Startup sync delay in seconds, 0–10. 0 = no startup sync; 1–10 = wait that long after startup
-   * before syncing. Default 1 (enabled). Folds the former `syncOnStartupEnabled` toggle (feature 034
-   * rev): default ON on all platforms, mobile included (feature 030).
-   */
+  /** Startup sync delay in seconds, 0-10; 0 = no startup sync. */
   startupSyncDelaySeconds: number;
   /** Number of concurrent WebDAV requests. Derived from device RAM on first run if not persisted. */
   networkConcurrency: number;
-  /**
-   * Sync only on Wi-Fi (non-cellular). Not supported on iOS (no network-type API);
-   * the toggle is disabled there and the setting is ignored.
-   */
+  /** Sync only on Wi-Fi; ignored on iOS (no network-type API). */
   syncOnWifiOnly: boolean;
-  // Feature 033: chunkedUploadEnabled and fileLockingEnabled were removed (chunked upload is always
-  // on, file locking always off). Both are now fixed in src/util/fixedSyncConfig.ts.
   /**
-   * Feature 049: mass-delete circuit-breaker limit (Advanced / caution). Caps how many local files or
-   * folders a single sync may delete via absence-based remote-deletion detection — the guard that
-   * prevents a partial/failed remote listing from wiping the vault.
-   *   -1 (default) = AUTOMATIC — the built-in dynamic limit max(20, 20% of tracked files) (safe).
-   *    0           = UNLIMITED — the breaker never fires (RISKY: a partial listing can delete everything).
-   *    N > 0       = a fixed absolute limit — the breaker fires when a sync would delete more than N.
+   * Mass-delete circuit-breaker limit on absence-based local deletions per sync (docs/spec.md §8).
+   * -1 = automatic max(20, 20% of tracked files); 0 = unlimited (risky); N > 0 = fixed limit.
    */
   massDeleteLimit: number;
-  /**
-   * Master opt-in for syncing parts of the Obsidian config folder (Vault#configDir, e.g. `.obsidian`).
-   * Default OFF. While off, nothing under the config folder is synced (notes-only behaviour).
-   * When on, the individual `configSync` categories below decide what is included.
-   * Community plugins (`<configDir>/plugins/`) and this plugin's own state DB are NEVER synced,
-   * regardless of these flags.
-   */
+  /** Master opt-in for syncing the Obsidian config folder; community plugins and this plugin's state DB are never synced. */
   syncConfigFolder: boolean;
-  /** Per-category opt-in for config-folder sync. Only consulted when `syncConfigFolder` is true. */
   configSync: ConfigSyncCategories;
-  /** User-facing device label. Empty ⇒ derive "<platform>-<deviceId6>". Sanitized for filenames at use sites. */
+  /** Device label; empty derives `<platform>-<deviceId6>`. */
   deviceName: string;
-  /** Vault-relative folder holding both log files. Blank ⇒ vault root. */
+  /** Vault-relative log folder; blank = vault root. */
   logsFolder: string;
-  /** Master on/off for all log output (sync log + debug log). */
+  /** Master switch for log output. */
   loggingEnabled: boolean;
-  // Feature 033: maxConflictRegions was removed (always unlimited; fixed in fixedSyncConfig.ts).
-  /**
-   * File extensions classified as "Auto Merge File" (feature 037; continues the role of the former
-   * `mergeableExtensions`). Lowercase, no leading dot. A conflict on a file whose extension is in
-   * this list is resolved with `autoMergeFileStrategy`; every other file (including extensionless
-   * files) uses `otherFileStrategy`. An empty list routes ALL files through `otherFileStrategy`.
-   */
+  /** "Auto Merge File" extensions, lowercase without dot; every other file uses `otherFileStrategy` (an empty list routes all files there). */
   autoMergeFileTypes: string[];
-  /**
-   * Conflict strategy for Auto Merge File types (feature 037). Default `merge`. All five strategies
-   * are valid here. When `merge`: clean 3-way → merged, text conflict → markers, non-text → safe-hold.
-   */
+  /** Conflict strategy for Auto Merge File types; all five are valid. */
   autoMergeFileStrategy: SyncStrategy;
-  /**
-   * Conflict strategy for every other file type (feature 037). Default `latest-mtime`. `merge` is not
-   * offered here — only the four deterministic strategies (biggest-size / latest-mtime / local/remote-win).
-   */
+  /** Conflict strategy for every other file type; `merge` is not offered. */
   otherFileStrategy: Exclude<SyncStrategy, 'merge'>;
-  // Feature 033: explorerCompareEnabled was removed. The "Compare with remote" explorer menu item and
-  // command are registered unconditionally in main.ts, so no setting gates them.
-  /**
-   * User-managed list of vault-relative folder paths that are never synced (feature 027).
-   * Folder-prefix match at a folder boundary; entries are normalized and unique. This is an
-   * additive layer on top of the permanent hard exclusions (dotfolders, community plugins,
-   * the plugin's own state DB), which always apply regardless of this list.
-   */
+  /** Vault-relative folders that are never synced (folder-boundary prefix match); the permanent hard exclusions apply regardless. */
   excludedFolders: string[];
   /**
-   * How to resolve a conflict on a markdown file's frontmatter block, INDEPENDENTLY of the body
-   * (feature 047). Same five strategies as `autoMergeFileStrategy`. `merge` = semantic merge (arrays
-   * base-aware set-merge, scalars/objects/parse-failure tie-broken by latest-mtime); the other four
-   * adopt one whole side's frontmatter block. Applies to every `.md` regardless of body classification.
-   * Default: 'merge'. Replaces the former experimental `frontmatterScalarConflictPolicy`.
+   * Conflict strategy for a markdown file's frontmatter block, independent of the body. `merge` is a
+   * semantic merge (arrays set-merged, scalars tie-broken by latest-mtime); the others adopt one whole side.
    */
   frontmatterStrategy: SyncStrategy;
-  /**
-   * Feature 048: second-level fallback applied ONLY to a part a primary `merge` could not auto-resolve
-   * (a body diff3 conflict region, or a frontmatter scalar/object both-changed clash). Lets the user
-   * keep attempting a merge but choose the outcome on a real conflict instead of always writing markers.
-   * Default 'conflict-markers' reproduces the feature-047 behaviour (both sides kept as markers, no data
-   * loss). A deterministic primary strategy (biggest-size / latest-mtime / local/remote-win) never
-   * conflicts, so this setting is inert for it.
-   */
+  /** Fallback for a part a primary `merge` could not resolve; inert for a deterministic primary strategy. */
   conflictStrategy: ConflictStrategy;
-  /**
-   * Persisted Sync Status dialog filter selection: the checked status keys, serialized as an array.
-   * Absent ⇒ all statuses shown (default). Restored on load and saved on every toggle, so the
-   * selection survives an Obsidian restart. Unknown keys are ignored on load.
-   */
+  /** Checked Sync Status filter keys; absent = all shown. Unknown keys are ignored on load. */
   statusFilter?: SyncFileOp[];
-  /**
-   * Last Nextcloud server version observed at connect time. Used only to show a
-   * recommendation banner in settings when it is below the recommended minimum.
-   * Empty/undefined until the first successful connection.
-   */
+  /** Last server version seen at connect time; drives the upgrade-recommendation banner. */
   lastKnownServerVersion?: string;
 }
 
@@ -204,18 +117,14 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   syncIntervalMinutes: 15,
   networkTimeoutSeconds: 30,
   deviceId: '',
-  maxFileSizeMB: 0, // 0 = unlimited (desktop default). Mobile gets a safe cap in loadSettings().
-  watchOnChangeEnabled: true, // Mobile first-run: false (applied in loadSettings()).
-  startupSyncDelaySeconds: 1, // 0 = no startup sync; default 1 = enabled with a 1 s delay.
-  networkConcurrency: 16, // First-run: overridden by autoNetworkConcurrency() in loadSettings(); persisted value is kept on subsequent loads.
-  // Desktop default OFF; mobile's first run flips it ON in loadSettings() (metered data).
+  maxFileSizeMB: 0, // desktop default; mobile gets a cap in loadSettings()
+  watchOnChangeEnabled: true,
+  startupSyncDelaySeconds: 1,
+  networkConcurrency: 16, // overridden on first run by autoNetworkConcurrency()
+  // Mobile's first run flips this ON (metered data).
   syncOnWifiOnly: false,
-  // Feature 049: -1 = automatic dynamic breaker (safe default). 0 = unlimited (opt-in, risky). N = fixed.
   massDeleteLimit: -1,
-  // Config-folder sync is opt-in: master defaults OFF, so a fresh install syncs notes only.
-  // These category defaults take effect only once the user turns the master on.
-  // Migrated `syncBookmarks: true` users get bookmarks-only instead
-  // (see migrateBookmarksToConfigSync); `syncBookmarks` itself is removed and pruned.
+  // Master OFF: a fresh install syncs notes only. Category defaults apply once the master is on.
   syncConfigFolder: false,
   configSync: {
     bookmarks: true,
@@ -224,20 +133,15 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   deviceName: '',
   logsFolder: '',
   loggingEnabled: false,
-  // Conflict strategies (feature 037): a single per-type choice. Defaults reproduce the prior felt
-  // behaviour — Auto Merge File types attempt a 3-way merge, everything else takes the newer side.
-  // Clearing autoMergeFileTypes routes every file through otherFileStrategy (no merge attempted).
-  // Feature 048: `md` is NOT listed — markdown is always special-cased (frontmatter → frontmatterStrategy,
-  // body → autoMergeFileStrategy) regardless of this list, which now only classifies NON-markdown text.
+  // `md` is not listed: markdown is always special-cased (frontmatter -> frontmatterStrategy, body ->
+  // autoMergeFileStrategy), so this list only classifies non-markdown text.
   autoMergeFileTypes: ['txt', 'cpp', 'py', 'c', 'h', 'hpp', 'rs', 'go', 'ts', 'js', 'java', 'sh'],
   autoMergeFileStrategy: 'merge',
   otherFileStrategy: 'latest-mtime',
   excludedFolders: [],
   frontmatterStrategy: 'merge',
-  // Feature 048: default keeps the 047 behaviour — a real merge conflict writes both-side markers.
   conflictStrategy: 'conflict-markers',
-  // Explicit `undefined` keeps the key in the allowlist used by pruneObsoleteSettings (so a saved
-  // selection is never pruned) while meaning "no saved selection → all statuses shown".
+  // Explicit `undefined` keeps the key in pruneObsoleteSettings' allowlist, so a saved selection is never pruned.
   statusFilter: undefined,
   lastKnownServerVersion: '',
 };
@@ -254,28 +158,18 @@ export interface FileState {
   remoteFileId: string | null;
   isConflicted: boolean;
   /**
-   * Local stat signature captured by re-stat IMMEDIATELY AFTER the plugin's own write/download.
-   * This is the change-detection fast-path key that works on mobile, where `setMtime()` is a no-op
-   * (Node fs.utimes is desktop-only) so the on-disk mtime never matches the remote mtime. Optional
-   * for backward compatibility: a state file without these triggers exactly one reconciling hash,
-   * after which the fields are populated. See data-model.md §1.
+   * Local mtime re-statted right after the plugin's own write/download: the change-detection fast-path
+   * key on mobile, where `setMtime()` is a no-op. Absent in older state files, which cost one
+   * reconciling hash (docs/spec.md §4.2).
    */
   localMtime?: number;
-  /** Local size observed at the same moment as `localMtime` (see above). */
+  /** Local size observed with `localMtime`. */
   localSize?: number;
-  /**
-   * Server `lastModified` for the last converged state, kept separate from `localMtime` so remote
-   * change detection is unaffected by the local write timestamp.
-   */
+  /** Server `lastModified` at the last converged state, separate from `localMtime`. */
   remoteMtime?: number;
 }
 
-/**
- * A tracked directory (WebDAV collection). Directories are first-class, contentless entities,
- * symmetric with files: a directory present on one side and absent on the other is a creation or
- * a deletion to propagate — NOT something derived from whether it holds files. `remoteFileId`
- * (oc:fileid) is stable across MOVE for rename detection.
- */
+/** A tracked directory; `remoteFileId` (oc:fileid) is stable across MOVE for rename detection (docs/spec.md §8a.1). */
 export interface DirState {
   path: string;
   remoteFileId: string | null;
@@ -286,16 +180,14 @@ export interface SyncState {
   lastSyncTime: number;
   syncToken: string | null;
   files: Record<string, FileState>;
-  /** Tracked directories (optional for back-compat with pre-DP v1 state files → defaults to {}). */
+  /** Absent in older state files; treated as {}. */
   directories?: Record<string, DirState>;
   /**
-   * Root-ETag short-circuit (spec 023): the vault root collection's ETag captured at the end of the
-   * last REAL full scan. Optional for back-compat (absent ⇒ next sync does a real full scan). A
-   * matching current root ETag means the remote tree is unchanged since that scan, so the remote
-   * listing can be rebuilt from `files`/`directories` instead of a Depth:infinity PROPFIND.
+   * Vault root ETag at the end of the last real full scan; a match lets the remote listing be rebuilt
+   * from state instead of a Depth:infinity PROPFIND. Absent = next sync does a real scan (docs/spec.md §8a.5).
    */
   remoteRootEtag?: string | null;
-  /** Consecutive short-circuited full-scans since the last real scan (FORCE_FULL_SCAN_EVERY bounds it). */
+  /** Consecutive short-circuited scans since the last real one (bounded by FORCE_FULL_SCAN_EVERY). */
   fullScanSkipCount?: number;
 }
 
@@ -304,7 +196,7 @@ export interface NextcloudFeatures {
   version: string;
   hasChecksums: boolean;
   hasFilesLocking: boolean;
-  /** Server advertises (or feature-probed positive for) the bulk-upload endpoint `/remote.php/dav/bulk`. */
+  /** Bulk-upload endpoint `/remote.php/dav/bulk` is advertised or probed positive. */
   hasBulkUpload: boolean;
   syncToken: string | null;
 }
@@ -318,12 +210,7 @@ export interface RemoteFileInfo {
   lastModified: number;
 }
 
-/**
- * A remote directory (WebDAV collection). Directories carry no content hash/size;
- * `fileId` (oc:fileid) is stable across MOVE and identifies the collection for
- * rename detection. Surfaced separately from files so empty-directory pruning can
- * derive "which collections hold no descendant file" from a full listing.
- */
+/** A remote directory; `fileId` (oc:fileid) is stable across MOVE and identifies it for rename detection. */
 export interface RemoteDirInfo {
   path: string;
   fileId: string | null;
@@ -342,27 +229,20 @@ export interface MergeResult {
   mergedContent: string;
   hadConflicts: boolean;
   conflictRegions: number;
-  /**
-   * Feature 039 (FR-039-5): the merged output contains NESTED/stacked plugin conflict markers — the
-   * fingerprint of marker re-entrancy that the upstream guard somehow missed. The caller must
-   * safe-hold (write nothing, push nothing) instead of persisting the corrupt body. Optional/additive.
-   */
+  /** The output contains nested plugin conflict markers; the caller must safe-hold (write and push nothing). */
   hold?: boolean;
 }
 
 /**
- * The action a ConflictResolver decides on for a conflicting file (feature 037). The decision is pure
- * (no I/O); SyncEngine.handleConflict executes the corresponding network/disk operations. Every
- * conflict is decided — there is no user-selectable "hold/error" strategy (FR-010).
- *   write         — write `content` locally (clean merge or marker-embedded text), then converge to server
+ * The action ConflictResolver decides for a conflicting file; SyncEngine.handleConflict executes it
+ * (docs/spec.md §6.2).
+ *   write         — write `content` locally (clean merge or markers), then converge to the server
  *   prefer-local  — overwrite the remote with the local copy
  *   prefer-remote — overwrite the local with the remote copy
- *   safe-hold     — non-text / unmergeable under `merge`: leave BOTH sides untouched and flag the file
- *                   conflicted, writing NO markers (binary-safe, FR-005a). Not an error; resolves on a
- *                   later sync once a side changes or the user resolves it.
- *   no-op         — deterministic-strategy tie (equal size for biggest-size / equal mtime for
- *                   latest-mtime): leave BOTH sides untouched, NOT conflicted, success (FR-009).
- *                   Re-evaluated on the next sync.
+ *   safe-hold     — leave both sides untouched and flag the file conflicted, without markers; not an
+ *                   error, resolves once a side changes or the user resolves it
+ *   no-op         — deterministic-strategy tie: both sides untouched, not conflicted, success;
+ *                   re-evaluated on the next sync
  */
 export type ConflictResolution =
   | { action: 'write'; content: string; clean: boolean }
@@ -371,23 +251,18 @@ export type ConflictResolution =
   | { action: 'safe-hold' }
   | { action: 'no-op' };
 
-/** One recorded sync error: the file it happened on (empty for session-level errors) and why. */
+/** One recorded sync error; `path` is empty for session-level errors. */
 export interface SyncErrorDetail {
   path: string;
   message: string;
-  /**
-   * Skipped deletion candidate paths (full, uncapped), set only when the FILE (absence-deletion)
-   * mass-delete breaker fires. The modal derives a capped inline preview from `all` at render time;
-   * the full list also backs the "open report note" action (feature 056).
-   */
+  /** Full list of skipped deletion candidates; set only when the file-side mass-delete breaker fires. */
   skippedPaths?: {
     all: string[];
   };
   /**
-   * Full, uncapped, category-split candidate paths, set only when the DIR mass-delete breaker
-   * fires (mutually exclusive with `skippedPaths`, which the file-side breaker uses instead).
-   * `deleteRemote`/`trashLocal` mirror reconcileDirectories' own candidate categories, so a bulk
-   * resolution (`SyncEngine.resolveAllSkippedDirs`) knows which primitive to apply per path.
+   * Full candidate paths split by category; set only when the directory mass-delete breaker fires
+   * (exclusive with `skippedPaths`). The categories tell `SyncEngine.resolveAllSkippedDirs` which
+   * primitive to apply per path.
    */
   dirBreakerSkipped?: {
     deleteRemote: string[];
@@ -422,12 +297,7 @@ export interface SyncHistoryEntry extends SyncHistoryDetail {
   at: number;
   /** Failure reason — present only for `op: 'error'`. */
   message?: string;
-  /**
-   * Start time (epoch ms) of the sync run that produced this entry — the run's `summary.startedAt`
-   * for a full sync, or the op's own time for a watch-mode single-file op. Used to group the Sync
-   * Status dialog's recent activity by sync run. Optional for backward compatibility: entries
-   * recorded before this field existed are grouped by their own `at` (best-effort).
-   */
+  /** Start time (epoch ms) of the producing sync run, used to group recent activity; absent entries group by `at`. */
   runStartedAt?: number;
 }
 
@@ -464,12 +334,7 @@ export interface MergePreview {
   clean: boolean;
 }
 
-/**
- * Read-only comparison of one file against its remote counterpart, for the explorer
- * "Compare with remote" popup. Produced by SyncEngine.compareWithRemote — it never mutates.
- * `state` distinguishes a successful comparison from a missing remote or a fetch failure;
- * the UI shows a separate (non-result) loading state while the promise is pending.
- */
+/** Read-only comparison of one file against its remote counterpart (SyncEngine.compareWithRemote); never mutates. */
 export interface RemoteCompareResult {
   path: string;
   state: 'ok' | 'remote-missing' | 'error';
@@ -495,8 +360,6 @@ export interface RemoteCompareResult {
   remoteSize: number | null;
 }
 
-// ── US1: Login Flow v2 ──────────────────────────────────────────────────────
-
 /** Login Flow v2 init response (POST /index.php/login/v2). */
 export interface LoginFlowInit {
   /** Token used for polling. */
@@ -514,8 +377,6 @@ export type LoginFlowResult =
   | { status: 'timeout' }
   | { status: 'unsupported' };
 
-// ── US2: File Versions ──────────────────────────────────────────────────────
-
 /** A past version of a single file held on the server. */
 export interface FileVersion {
   /** Trailing identifier of versions/{fileId}/{versionId}. */
@@ -528,7 +389,6 @@ export interface FileVersion {
   size: number;
 }
 
-// Custom errors
 export class SyncTokenExpiredError extends Error {
   constructor() { super('sync-token expired (HTTP 410)'); this.name = 'SyncTokenExpiredError'; }
 }
@@ -538,14 +398,9 @@ export class ConflictError extends Error {
   }
 }
 /**
- * A remote request that came back with an unusable status.
- *
- * `method` (feature 065) names the HTTP verb that failed, so a sync error reads "HTTP 404 (GET)"
- * instead of a bare "HTTP 404" — without it, a 404 could equally be a download, an upload, or a
- * PROPFIND, and issue #25 showed that ambiguity alone can stall a diagnosis. It is optional so the
- * body-only call form still compiles, and the message keeps `HTTP <status>` as its PREFIX so
- * anything matching on that shape is unaffected. The response body is deliberately NOT part of the
- * message: it is server-controlled text that ends up in logs users paste into public issues.
+ * A remote request that came back with an unusable status. `method` names the failed verb so the
+ * message reads "HTTP 404 (GET)" (issue #25); the message keeps `HTTP <status>` as its prefix. The
+ * response body is deliberately not in the message: it is server text that ends up in public logs.
  */
 export class NetworkError extends Error {
   constructor(
@@ -558,17 +413,10 @@ export class NetworkError extends Error {
   }
 }
 /**
- * The vault folder itself is absent from the server: a Depth:infinity PROPFIND of the sync root came
- * back 404 (feature 083, GitHub issue #50).
- *
- * This is deliberately NOT the same signal as "the vault folder is there and holds no files". An
- * empty listing is the server's truth about its contents and drives absence-based deletion; a
- * missing folder says nothing about any individual file, and the plugin — not the user — chose that
- * folder's remote path from the vault name, so the user cannot be expected to recreate it. The
- * engine answers this by creating the folder and re-seeding it from local, never by deleting.
- *
- * Extends NetworkError (status 404) so every existing `instanceof NetworkError` branch — the retry
- * queue, error reporting — keeps classifying it exactly as it did before.
+ * The vault folder itself is absent from the server (Depth:infinity PROPFIND of the root returned
+ * 404, issue #50). Unlike an empty listing it says nothing about individual files, so the engine
+ * re-creates the folder and re-seeds from local instead of deleting. Extends NetworkError (404) so
+ * existing `instanceof NetworkError` handling still applies.
  */
 export class RemoteRootMissingError extends NetworkError {
   constructor() {
@@ -577,19 +425,11 @@ export class RemoteRootMissingError extends NetworkError {
   }
 }
 /**
- * The server answered a listing request with 207, but the body is not something a listing can be
- * read from (feature 087, GitHub issue #51): empty, truncated, an HTML error page passed through a
- * proxy, or well-formed XML that is not a DAV:multistatus at all.
- *
- * This is deliberately NOT an empty listing. An empty listing is the server's statement that the
- * folder holds nothing, and the full scan acts on that statement by treating every tracked file as
- * deleted remotely. A body that could not be read says nothing about any file, and the only safe
- * reading of it is "this sync learned nothing" — which is what a thrown NetworkError produces.
- *
- * The message is the whole diagnostic: the clients have no logger, and every caller that catches a
- * failed listing already logs `err.message` and records it in the session summary. So it names the
- * call, the path, the status, the body length and the reason, plus the first characters of the body
- * — enough to tell a truncated multistatus from a proxy's HTML page, never the body itself.
+ * A 207 listing response whose body cannot be read as a listing (empty, truncated, a proxy's HTML
+ * page, or XML that is not a multistatus; issue #51). Not an empty listing: that would make the scan
+ * treat every tracked file as deleted, so this throws and the sync learns nothing. The message
+ * carries the whole diagnostic (call, path, status, body length, reason, first characters) because
+ * the clients have no logger.
  */
 export class RemoteListingUnreadableError extends NetworkError {
   readonly op: string;
@@ -602,9 +442,8 @@ export class RemoteListingUnreadableError extends NetworkError {
     xml: string,
     reason: string,
   ) {
-    // `body` stays empty on purpose: NetworkError.body carries the raw response for other errors,
-    // but this one can reach the Sync status dialog and a user's debug log, and a multi-megabyte
-    // listing — or a proxy page — has no business there.
+    // `body` stays empty: this error reaches the Sync status dialog and debug log, where a huge
+    // listing or proxy page does not belong.
     super(ctx.status, '', ctx.method);
     this.name = 'RemoteListingUnreadableError';
     this.op = ctx.op;
@@ -618,26 +457,15 @@ export class RemoteListingUnreadableError extends NetworkError {
   }
 }
 /**
- * A parent collection could not be created, so the write that needed it has nowhere to land
- * (feature 088).
- *
- * WebDAV's PUT does not create parent collections, so an upload into a folder the server has never
- * seen MKCOLs the ancestors first. Until now a MKCOL that failed was indistinguishable from one that
- * succeeded: the loop ignored the status entirely, and the only thing the user ever saw was the
- * retried PUT coming back as `HTTP 404 (PUT)` — a message that names neither the folder that could
- * not be created nor the reason. This error carries both.
- *
- * `dirPath` is the ANCESTOR that failed, not the file being written: with `F/sub/note.md` the
- * interesting fact is that `F` could not be created, and `F/sub` was never even attempted.
- *
- * Extends NetworkError so the existing "a network failure fails this one file and is retried on the
- * next sync" handling applies unchanged — the same reasoning as RemoteListingUnreadableError.
+ * A parent collection could not be created (PUT does not create parents, so ancestors are MKCOLed
+ * first). Carries the folder and reason that a retried `HTTP 404 (PUT)` would hide. `dirPath` is the
+ * ancestor that failed, not the file being written. Extends NetworkError so the file fails this sync
+ * and is retried on the next.
  */
 export class RemoteDirCreateError extends NetworkError {
   readonly dirPath: string;
   constructor(dirPath: string, status: number, detail?: string) {
-    // `body` stays empty: this message can reach the Sync status dialog, and a server's error page
-    // has no business there. `status` 0 means the request threw rather than answering.
+    // `body` stays empty: the message reaches the Sync status dialog. `status` 0 = the request threw.
     super(status, '', 'MKCOL');
     this.name = 'RemoteDirCreateError';
     this.dirPath = dirPath;
@@ -647,20 +475,11 @@ export class RemoteDirCreateError extends NetworkError {
   }
 }
 /**
- * A PUT or DELETE came back 423 because another WebDAV client (or the server itself) holds a lock on
- * the remote path (feature 090).
- *
- * This is deliberately NOT the same signal as `FileLockedError`, which is this plugin's own
- * cooperative lock (`LOCK` method, `TransferService.acquireLock`). A `ServerLockedError` names a lock
- * this plugin did not take and cannot release, so the only safe response is to skip the file for this
- * cycle and retry it on the next one — never to force through it.
- *
- * `lockOwner` comes from a best-effort PROPFIND lockdiscovery read: when that read succeeds it names
- * who holds the lock, and when it fails or cannot be parsed the caller throws a plain `NetworkError`
- * instead of this class (see specs/090-server-lock-force-resolve/data-model.md).
- *
- * Extends NetworkError (status 423) so every existing `instanceof NetworkError` branch — the retry
- * queue, error recording, Notice generation — keeps classifying it exactly as it did before.
+ * A PUT or DELETE returned 423 because another client or the server holds a lock on the path
+ * (issue #58). Unlike `FileLockedError` (this plugin's own lock), the lock cannot be released here,
+ * so the file is skipped this cycle and retried on the next. `lockOwner` comes from a best-effort
+ * PROPFIND lockdiscovery read; when that fails a plain NetworkError is thrown instead
+ * (docs/spec.md §6.5a). Extends NetworkError (423).
  */
 export class ServerLockedError extends NetworkError {
   constructor(
@@ -675,11 +494,7 @@ export class ServerLockedError extends NetworkError {
       : `HTTP 423 (${method}) — locked on the server (owner unknown)`;
   }
 }
-/**
- * Result of {@link IWebDAVClient.createVaultRoot}: whether the MKCOL actually created the vault
- * folder (201) or found it already present (405). The distinction is the PROOF that decides whether
- * a re-seed may proceed — see specs/083-empty-listing-absence-delete/contracts/vault-root.md.
- */
+/** Result of {@link IWebDAVClient.createVaultRoot}: MKCOL created the folder (201) or found it present (405). The distinction decides whether a re-seed may proceed. */
 export type VaultRootOutcome = 'created' | 'exists';
 export class MaintenanceModeError extends Error {
   constructor() { super('Nextcloud is in maintenance mode'); this.name = 'MaintenanceModeError'; }
@@ -708,11 +523,7 @@ export class FileLockedError extends Error {
     this.name = 'FileLockedError';
   }
 }
-/**
- * An `If-Match` / `If-None-Match` precondition failed (HTTP 412): the remote file changed since the
- * validator (etag) we sent, so the upload was refused to prevent a lost update. The engine converts
- * this into a conflict (download remote + resolve) instead of overwriting.
- */
+/** An `If-Match` / `If-None-Match` precondition failed (HTTP 412): the upload was refused to prevent a lost update and the engine turns it into a conflict. */
 export class PreconditionFailedError extends Error {
   constructor(public readonly path: string) {
     super(`Precondition failed (remote changed): ${path}`);

@@ -1,14 +1,7 @@
-/**
- * Nextcloud server version handling.
- *
- * The plugin's Nextcloud-specific features target Nextcloud 33 (Hub 26 "Winter") and
- * later. Older servers are no longer hard-blocked: the plugin still connects and syncs
- * (features degrade via capability detection), but the settings screen surfaces a
- * recommendation banner. This is therefore a *recommended* minimum, not a hard gate.
- */
+// A recommended minimum, not a hard gate: older servers still connect and sync (features degrade via
+// capability detection) and the settings screen shows a recommendation banner.
 export const MIN_NEXTCLOUD_VERSION = '33';
 
-/** Compare dotted version strings. Returns <0, 0, or >0 like a numeric comparator. */
 export function compareVersions(a: string, b: string): number {
   const pa = a.split('.').map(Number);
   const pb = b.split('.').map(Number);
@@ -19,10 +12,7 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-/**
- * Whether a detected Nextcloud version meets the recommended minimum.
- * An empty/unknown version is treated as supported (we don't warn on missing data).
- */
+// An empty/unknown version counts as supported: no warning on missing data.
 export function isSupportedNextcloudVersion(version: string): boolean {
   if (!version) return true;
   return compareVersions(version, MIN_NEXTCLOUD_VERSION) >= 0;

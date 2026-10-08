@@ -3,27 +3,16 @@ import { DirState, FileState, SyncState } from '../types';
 import { AsyncMutex } from '../util/AsyncMutex';
 
 const STATEDB_TMP_SUFFIX = '.tmp';
-/** Trailing-debounce window for watch-mode coalesced saves (P0-B). */
 const SAVE_DEBOUNCE_MS = 2000;
 
 export class StateDB {
   private state: SyncState;
   private readonly statePath: string;
   private readonly tmpPath: string;
-  /**
-   * Single-Threaded Execution pattern: serialize the persist critical section so concurrent callers
-   * (watch-mode single-file ops + full syncs under bounded parallelism) never interleave the
-   * non-atomic exists→remove→rename sequence (which used to race into ENOENT). The mutex is the named,
-   * separately-tested primitive replacing the former bespoke promise-chain.
-   */
+  // Serializes the persist critical section: the non-atomic exists -> remove -> rename sequence must not interleave across callers.
   private readonly saveMutex = new AsyncMutex();
-  /**
-   * O(1) reverse index: remoteFileId → path. Replaces the former Object.values().find() linear scan
-   * in getFileByRemoteId (which became O(m²) during full-scan rename detection). Kept in sync by
-   * setFile/deleteFile and rebuilt on load.
-   */
+  // remoteFileId -> path reverse index (O(1) rename detection); kept in sync by setFile/deleteFile, rebuilt on load.
   private fileIdIndex = new Map<string, string>();
-  /** Pending trailing-debounce timer handle for watch-mode saves (P0-B); window.setTimeout returns a number. */
   private saveTimer: number | null = null;
 
   constructor(
@@ -41,10 +30,8 @@ export class StateDB {
       let readPath = this.statePath;
       let recoveredFromTmp = false;
       if (!(await this.adapter.exists(readPath))) {
-        // G4-2: a crash (power loss / mobile OS kill) between remove(statePath) and
-        // rename(tmpPath, statePath) in doSave leaves statePath absent while tmpPath still holds the
-        // fully-written new state. Without this check that surviving tmp goes unnoticed and load()
-        // treats a crash mid-save as "first run", silently discarding the persisted state.
+        // A crash between remove(statePath) and rename(tmpPath, statePath) leaves only tmp; without this
+        // check load() would read it as a first run and discard the persisted state.
         if (!(await this.adapter.exists(this.tmpPath))) return;
         readPath = this.tmpPath;
         recoveredFromTmp = true;
@@ -53,26 +40,20 @@ export class StateDB {
       const parsed = JSON.parse(raw) as SyncState;
       this.state = parsed;
       if (!this.state.directories) this.state.directories = {}; // pre-DP v1 state file
-      // Root-ETag short-circuit (spec 023): pre-023 state has neither field. Absent remoteRootEtag
-      // ⇒ next sync does a real full scan; skip count defaults to 0.
+      // Absent remoteRootEtag => the next sync does a real full scan (docs/spec.md §8a.5); skip count defaults to 0.
       if (this.state.fullScanSkipCount == null) this.state.fullScanSkipCount = 0;
       if (recoveredFromTmp) {
-        // Adopt the recovered tmp as the primary file so the on-disk layout is normal again.
-        // Best-effort: if this rename also fails, the next save() still recreates statePath from
-        // the now-recovered in-memory state.
+        // Adopt the recovered tmp; best-effort, the next save() recreates statePath from memory.
         await this.adapter.rename(this.tmpPath, this.statePath).catch(() => undefined);
       }
     } catch {
       // Corrupted DB — start fresh (recovery handled externally)
       console.warn('[StateDB] Failed to parse state DB; starting with empty state');
     }
-    // A v1 state file simply lacks the optional signature fields (localMtime/localSize/remoteMtime);
-    // it parses fine and the change-detection fast-path treats "signature missing" as "hash once,
-    // then populate" — no migration step or version bump required.
+    // A v1 state file lacks the optional signature fields; the fast-path hashes once and populates them, so no migration is needed.
     this.rebuildIndex();
   }
 
-  /** Rebuild the remoteFileId → path index from the current state (called on load). */
   private rebuildIndex(): void {
     this.fileIdIndex.clear();
     for (const [path, fs] of Object.entries(this.state.files)) {
@@ -80,22 +61,13 @@ export class StateDB {
     }
   }
 
-  /**
-   * Atomically persist state to disk (tmp → rename). Concurrent callers are serialized:
-   * the exists → remove → rename sequence is not atomic, so two interleaved saves used to
-   * race each other into ENOENT on the unlink step.
-   */
+  // Concurrent callers are serialized: exists -> remove -> rename is not atomic, so interleaved saves would race into ENOENT.
   save(): Promise<void> {
     return this.saveMutex.run(() => this.doSave());
   }
 
-  /**
-   * Coalesce frequent watch-mode single-file saves into one write via a trailing debounce. Many
-   * rapid create/modify events therefore produce a single state write instead of one per file.
-   * Crash-window: at most SAVE_DEBOUNCE_MS of un-persisted watch ops; the worst case is a bounded
-   * re-check on the next sync (no corruption). Full syncs still call save() directly at session end
-   * (after flush()), so a completed sync is always persisted immediately.
-   */
+  // Coalesces watch-mode saves into one write. Crash window: at most SAVE_DEBOUNCE_MS of un-persisted watch ops,
+  // re-checked on the next sync; full syncs call save() directly after flush().
   requestSave(): void {
     if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
     this.saveTimer = window.setTimeout(() => {
@@ -104,10 +76,7 @@ export class StateDB {
     }, SAVE_DEBOUNCE_MS);
   }
 
-  /**
-   * Force any pending debounced save to run now and await it (plus any in-flight save). Call before
-   * a full-sync save and from the plugin's onunload so a coalesced update can never be lost.
-   */
+  // Runs any pending debounced save now and awaits it; call before a full-sync save and on unload so no update is lost.
   async flush(): Promise<void> {
     if (this.saveTimer !== null) {
       window.clearTimeout(this.saveTimer);
@@ -120,8 +89,7 @@ export class StateDB {
   }
 
   private async doSave(): Promise<void> {
-    // Compact serialization (no pretty-print): smaller payload + far less stringify CPU on large
-    // vaults / mobile. The state file is machine-only, so human readability is not needed.
+    // Compact serialization: smaller payload and less stringify CPU on mobile; the file is machine-only.
     const json = JSON.stringify(this.state);
     await this.adapter.write(this.tmpPath, json);
     if (await this.adapter.exists(this.statePath)) {
@@ -134,7 +102,6 @@ export class StateDB {
     return this.state.files[path];
   }
 
-  /** O(1) lookup by Nextcloud remoteFileId (oc:fileid), backed by {@link fileIdIndex}. */
   getFileByRemoteId(remoteFileId: string): FileState | undefined {
     const path = this.fileIdIndex.get(remoteFileId);
     return path ? this.state.files[path] : undefined;
@@ -160,7 +127,6 @@ export class StateDB {
     return Object.values(this.state.files);
   }
 
-  // ── Tracked directories (DP): first-class, contentless entities symmetric with files ──
   getDir(path: string): DirState | undefined {
     return this.state.directories?.[path];
   }
@@ -186,18 +152,16 @@ export class StateDB {
     this.state.syncToken = token;
   }
 
-  // ── Root-ETag short-circuit (spec 023) ──
-  /** Vault root ETag from the last REAL full scan, or null when unrecorded (⇒ next sync full-scans). */
+  // null => the next sync full-scans (docs/spec.md §8a.5).
   getRemoteRootEtag(): string | null {
     return this.state.remoteRootEtag ?? null;
   }
 
-  /** Persist the vault root ETag. Set ONLY after a real full scan completes (never on a short-circuit). */
+  // Set ONLY after a real full scan completes, never on a short-circuit.
   setRemoteRootEtag(etag: string | null): void {
     this.state.remoteRootEtag = etag;
   }
 
-  /** Consecutive short-circuited full-scans since the last real scan (defaults to 0). */
   getFullScanSkipCount(): number {
     return this.state.fullScanSkipCount ?? 0;
   }
@@ -218,22 +182,15 @@ export class StateDB {
     return this.state.deviceId;
   }
 
-  /** Count files with isConflicted = true */
   countConflicted(): number {
     return Object.values(this.state.files).filter(f => f.isConflicted).length;
   }
 
-  /** Full snapshot for testing / debug */
   snapshot(): SyncState {
     return JSON.parse(JSON.stringify(this.state)) as SyncState;
   }
 
-  /**
-   * Reset the tracking index ("Vault index") to its first-install empty state and persist it.
-   * Clears every tracked file and the sync token so the next sync runs as a first-run sync. The
-   * deviceId is preserved; no vault or remote file is touched (only this state file). Any pending
-   * debounced save is cancelled first so it cannot resurrect the old state after the reset write.
-   */
+  // Keeps deviceId; cancels any pending debounced save first so it cannot resurrect the old state.
   async reset(): Promise<void> {
     if (this.saveTimer !== null) {
       window.clearTimeout(this.saveTimer);
@@ -244,11 +201,7 @@ export class StateDB {
     await this.save();
   }
 
-  /**
-   * Reset the on-disk tracking index without a live {@link StateDB} instance (used when the plugin
-   * is unconfigured and no engine/StateDB has been constructed). Writes the canonical empty state
-   * for the given device using the same atomic tmp → rename strategy as {@link doSave}.
-   */
+  // Variant for when no StateDB instance exists (plugin unconfigured); same atomic tmp -> rename as doSave.
   static async resetFile(adapter: DataAdapter, pluginDir: string, deviceId: string): Promise<void> {
     const statePath = `${pluginDir}/state-${deviceId}.json`;
     const tmpPath = statePath + STATEDB_TMP_SUFFIX;

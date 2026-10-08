@@ -1,9 +1,7 @@
-// Shared frontmatter-aware, line-level LCS diff rendering. Used by DiffModal (merge preview)
-// and CompareModal (local vs remote compare) so both render diffs identically (DRY).
+// Shared by DiffModal and CompareModal so both render diffs identically.
 
 type DiffRow = { left?: string; right?: string; type: 'same' | 'del' | 'add' };
 
-/** Line-level LCS diff between two texts. */
 function lineDiff(aText: string, bText: string): DiffRow[] {
   const a = aText.split('\n');
   const b = bText.split('\n');
@@ -26,14 +24,12 @@ function lineDiff(aText: string, bText: string): DiffRow[] {
   return rows;
 }
 
-/** Split a document into its frontmatter block and body. */
 function splitFm(text: string): { fm: string; body: string; hasFm: boolean } {
   const m = text.match(/^---\r?\n[\s\S]*?\r?\n---/);
   if (!m) return { fm: '', body: text, hasFm: false };
   return { fm: m[0], body: text.slice(m[0].length).replace(/^\n/, ''), hasFm: true };
 }
 
-/** Append a "Frontmatter ⚠ differs (N lines)" / "✓ identical" section header. */
 function addSectionHeader(scrollEl: HTMLElement, label: string, changedCount: number): void {
   const header = scrollEl.createDiv({ cls: 'ncs-diff-section-header' });
   if (changedCount > 0) header.addClass('is-changed');
@@ -42,7 +38,6 @@ function addSectionHeader(scrollEl: HTMLElement, label: string, changedCount: nu
   header.createSpan({ text: `${label}  ${icon} ${detail}` });
 }
 
-/** Render aligned diff rows into scrollEl; returns the first changed row element (or null). */
 function addRows(scrollEl: HTMLElement, rows: DiffRow[]): HTMLElement | null {
   let firstChanged: HTMLElement | null = null;
   let lNum = 0, rNum = 0;
@@ -52,14 +47,12 @@ function addRows(scrollEl: HTMLElement, rows: DiffRow[]): HTMLElement | null {
     const line = scrollEl.createDiv({ cls: 'ncs-diff-row' });
     if (row.type !== 'same' && !firstChanged) firstChanged = line;
 
-    // Left side: line-number gutter + marker + text. Wrapped in a side container so narrow screens
-    // (mobile) can stack the two sides vertically via CSS instead of squeezing them side by side.
+    // Each side sits in its own container so narrow screens (mobile) can stack the two sides via CSS.
     const leftSide = line.createDiv({ cls: 'ncs-diff-side ncs-diff-side-left' });
     leftSide.createDiv({ text: row.left !== undefined ? String(lNum) : '', cls: 'ncs-diff-gutter' });
     const lMarker = leftSide.createDiv({ text: row.type === 'del' ? '−' : ' ', cls: 'ncs-diff-marker' });
     const left = leftSide.createDiv({ text: row.left ?? '', cls: 'ncs-diff-cell ncs-diff-cell-left' });
 
-    // Right side: line-number gutter + marker + text
     const rightSide = line.createDiv({ cls: 'ncs-diff-side ncs-diff-side-right' });
     rightSide.createDiv({ text: row.right !== undefined ? String(rNum) : '', cls: 'ncs-diff-gutter' });
     const rMarker = rightSide.createDiv({ text: row.type === 'add' ? '+' : ' ', cls: 'ncs-diff-marker' });
@@ -71,11 +64,6 @@ function addRows(scrollEl: HTMLElement, rows: DiffRow[]): HTMLElement | null {
   return firstChanged;
 }
 
-/**
- * Render a frontmatter-aware diff of `beforeText` (left) vs `afterText` (right) into `scrollEl`.
- * Frontmatter and body are diffed as separate sections (each with its own header) when either
- * side has frontmatter. Returns the first changed row element so callers can auto-scroll to it.
- */
 export function renderDiffSections(scrollEl: HTMLElement, beforeText: string, afterText: string): HTMLElement | null {
   const bSplit = splitFm(beforeText);
   const aSplit = splitFm(afterText);

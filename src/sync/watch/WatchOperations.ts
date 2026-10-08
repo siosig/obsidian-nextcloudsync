@@ -1,29 +1,16 @@
-// Watch-mode single-file and single-folder operations, lifted out of SyncEngine (feature 074,
-// Phase 7).
+// Watch-mode single-file and single-folder operations: one file saved, deleted, renamed; one folder created,
+// deleted, renamed. Each touches one path and avoids the full-vault scan and remote listing (docs/spec.md §5.7).
 //
-// Everything Obsidian's vault watcher triggers: one file saved, deleted, renamed; one folder created,
-// deleted, renamed. Each touches exactly one path and avoids the full-vault scan and remote listing a
-// "Sync now" performs — that economy is the entire point of watch mode.
+// Unlike the other extracted modules this one CALLS INTO the sync loop: deciding what to do with a changed
+// file is the full sync's classifier, reached through the `processFile` port rather than an engine import.
 //
-// The direction of dependency here is the opposite of the other extracted modules, and deliberately
-// so. Policy, scan, transfer and conflict are called BY the sync loop; this module CALLS INTO it,
-// because feature 064 settled that watch mode must not decide anything itself. Deciding what to do
-// with a changed file is the full sync's classifier, and it is reached through the `processFile` port
-// below rather than by importing the engine — so the runtime hand-off exists without an import cycle.
-//
-// Two rules run through all of it:
-//
-//   Never run alongside a full sync. A multi-step resolve (stat → compare → write → push) must not
-//   interleave with the full sync writing the same file. Edits are DEFERRED (re-evaluated when the
-//   run ends), while deletions are DROPPED — the running scan already propagates a tracked path that
-//   vanished locally, so queuing one would risk a second delete.
-//
-//   Stay silent unless the user has to know. Watch mode runs unattended, so routine uploads and
-//   downloads say nothing; only a failure or a genuine divergence raises a notice.
-//
-//   Respect "Wi-Fi only" (feature 091). Each operation first asks the same question the full sync
-//   asks at its entry, and on cellular does nothing at all; the change is picked up by the next
-//   full sync's scan.
+// Rules that run through all of it:
+//   Never run alongside a full sync. A multi-step resolve must not interleave with the full sync writing the
+//   same file. Edits are DEFERRED (re-evaluated when the run ends); deletions are DROPPED, since the running
+//   scan already propagates a tracked path that vanished locally and queuing one risks a second delete.
+//   Stay silent unless the user has to know: only a failure or a genuine divergence raises a notice.
+//   Respect "Wi-Fi only": on cellular each operation does nothing, and the next full sync's scan picks the
+//   change up (docs/spec.md §5.7c).
 import { Notice } from 'obsidian';
 import { FileState, RemoteFileInfo, SyncSessionSummary, NetworkError } from '../../types';
 import { LocalAdapter } from '../../data/LocalAdapter';
@@ -43,10 +30,9 @@ import { FileLogger } from '../../util/FileLogger';
 import { sha256 } from '../../util/hash';
 import { AsyncMutex } from '../../util/AsyncMutex';
 
-/** Feature 091: the operation names used in the "skipped on cellular" log line. */
+// Operation names used in the "skipped on cellular" log line.
 type WatchOpName = 'sync' | 'delete' | 'rename' | 'folder-create' | 'folder-delete' | 'folder-rename';
 
-/** The connected server, resolved by the caller before each operation. */
 export interface Connection {
   client: IWebDAVClient;
   uploadStrategy: IUploadStrategy;
@@ -63,82 +49,45 @@ export interface WatchDeps {
   deletion: DeletionService;
   resolution: Pick<ResolutionService, 'dropCleanSnapshot'>;
   isSystemExcluded(path: string): boolean;
-
-  /** Connect (or reuse the connection) and return the client plus its upload strategy. */
   connect(): Promise<Connection>;
-  /** The rename tracker, created lazily by the engine because it needs the connected client. */
+  // Created lazily by the engine because it needs the connected client.
   renameTracker(): RenameTracker;
 
-  /**
-   * Feature 091 (FR-005): the SAME "Wi-Fi only" decision the full sync makes at its entry
-   * (SyncEngine.isBlockedByWifiOnly -> isCellularBlocked). True means: skip this watch operation
-   * entirely — no network, no local write, no StateDB change.
-   */
+  // The SAME "Wi-Fi only" decision the full sync makes at its entry. True skips the operation entirely: no
+  // network, no local write, no StateDB change.
   isBlockedByWifiOnly(): boolean;
-  /** Whether a full sync is running right now. */
   isSyncRunning(): boolean;
-  /**
-   * The full sync's per-file classifier. Injected as a port rather than imported: feature 064 (C-3)
-   * settled that watch mode and "Sync now" must reach identical results, which means watch mode runs
-   * the same decision code instead of a second copy of it.
-   */
+  // The full sync's per-file classifier, so watch mode and "Sync now" run the same decision code and reach
+  // identical results.
   processFile(remote: RemoteFileInfo, summary: SyncSessionSummary): Promise<void>;
-  /** Outbound port: this path needs another attempt on the next sync. */
+  // Outbound port: this path needs another attempt on the next sync.
   queueRetry(path: string): void;
-  /** How many conflicts the engine has encountered so far (see notifyWatchOutcome). */
+  // How many conflicts the engine has encountered so far (see notifyWatchOutcome).
   conflictEncounters(): number;
   logger?: Pick<FileLogger, 'log'>;
-  /** User-facing notice; injected so the outcome rules can be exercised without an Obsidian runtime. */
+  // Injected so the outcome rules can be exercised without an Obsidian runtime.
   notify?(message: string, timeout?: number): void;
 }
 
 export class WatchOperations {
-  /**
-   * Feature 046: number of watch-mode single-file/folder ops currently propagating to the remote.
-   * Drives the status bar so the user can see immediate (watch) propagation happening. Owned here
-   * because nothing outside these operations reads it.
-   */
+  // Watch-mode ops currently propagating to the remote; drives the status bar.
   private inFlight = 0;
 
-  /**
-   * One mutex per path, so two watch cycles for the SAME file never interleave.
-   *
-   * A cycle is stat -> PROPFIND -> classify -> upload -> record baseline, and until this existed
-   * nothing stopped a second cycle from starting inside the first. `inFlight` above is a status-bar
-   * counter, not exclusion, and the caller does not await either (`void syncSingleFile(path)` in
-   * main.ts). The damage is specific: a cycle that PROPFINDs after its predecessor's upload but
-   * before its predecessor's baseline write sees a remote that moved against a baseline that did
-   * not, calls that "the remote changed", and — with the user still typing — resolves a conflict
-   * that never existed by writing a merged body over the file being edited (GitHub issue #42).
-   *
-   * Keyed by path rather than global on purpose: syncing a vault is mostly waiting on the network,
-   * and one shared lock would serialize every file behind every other. The tests pin both halves —
-   * same path must queue, different paths must not.
-   *
-   * Entries are not evicted. The map is bounded by the number of paths the vault has touched this
-   * session, and AsyncMutex holds only a promise; a wrong eviction predicate would silently drop
-   * exclusion, which is worse than the memory.
-   */
+  // One mutex per path so two watch cycles for the SAME file never interleave: a cycle that PROPFINDs after its
+  // predecessor's upload but before its baseline write sees a phantom remote change and would resolve a conflict
+  // over the file being edited (issue #42, docs/spec.md §5.7b). Keyed by path, not global, because syncing is
+  // mostly network wait and one lock would serialize every file. Entries are not evicted: the map is bounded by
+  // paths touched per session, and a wrong eviction predicate would silently drop exclusion.
   private readonly pathLocks = new Map<string, AsyncMutex>();
 
-  /**
-   * Feature 064 (C-5): paths whose watch-mode single-file sync arrived while a full sync was running.
-   * Drained once the run finishes — deferring rather than dropping keeps the edit from being missed
-   * when the full sync had already passed that file.
-   *
-   * Held in memory only — losing them on a plugin reload is harmless because the next full sync
-   * detects the same local change anyway (self-healing); persisting them would add a second, weaker
-   * source of truth for "what changed locally".
-   */
+  // Paths whose single-file sync arrived while a full sync was running, drained when the run finishes (deferred,
+  // not dropped, since the full sync may already have passed that file). In memory only: losing them on reload is
+  // harmless because the next full sync detects the same change, and persisting would add a second source of truth.
   private readonly pendingPaths = new Set<string>();
 
   constructor(private readonly deps: WatchDeps) {}
 
-  /**
-   * Feature 046: reflect watch-mode (immediate) propagation on the status bar. Each in-flight
-   * single-file/folder op shows "syncing"; when the last one finishes the bar returns to idle. Guarded
-   * by the running check so it never fights a concurrent full sync (which owns the status during its run).
-   */
+  // Guarded by the running check so it never fights a concurrent full sync, which owns the status during its run.
   private begin(): void {
     this.inFlight++;
     if (!this.deps.isSyncRunning()) this.deps.statusBar.setStatus('syncing');
@@ -149,62 +98,40 @@ export class WatchOperations {
     if (this.inFlight === 0 && !this.deps.isSyncRunning()) this.deps.statusBar.setStatus('idle');
   }
 
-  /**
-   * Feature 091 (FR-005/FR-006): skip a watch operation while "Wi-Fi only" is on and the
-   * connection is cellular. Decided at execution time, before any lock, StateDB read or network
-   * call, so a skip leaves nothing behind: the next full sync finds the change on its own scan
-   * (self-healing, FR-007). Silent apart from one log line — the user asked for this.
-   */
+  // Decided at execution time, before any lock, StateDB read or network call, so a skip leaves nothing behind:
+  // the next full sync finds the change on its own scan. Silent apart from one log line.
   private skippedOnCellular(op: WatchOpName, target: string): boolean {
     if (!this.deps.isBlockedByWifiOnly()) return false;
     void this.deps.logger?.log(`watch: skipped ${op} ${target} — Wi-Fi only is on and the connection is cellular`);
     return true;
   }
 
-  /** Run `fn` with exclusive access to `path`, queueing FIFO behind any cycle already holding it. */
   private withPathLock<T>(path: string, fn: () => Promise<T>): Promise<T> {
     let lock = this.pathLocks.get(path);
     if (!lock) { lock = new AsyncMutex(); this.pathLocks.set(path, lock); }
     return lock.run(fn);
   }
 
-  /**
-   * Run `fn` holding BOTH paths, taken in lexicographic order.
-   *
-   * The order is what prevents a deadlock: two renames crossing in opposite directions (a→b and
-   * b→a) would each hold what the other waits for if each simply locked its own first argument.
-   */
+  // Locks are taken in lexicographic order: renames crossing in opposite directions (a to b and b to a) would
+  // otherwise each hold what the other waits for.
   private withTwoPathLocks<T>(a: string, b: string, fn: () => Promise<T>): Promise<T> {
     if (a === b) return this.withPathLock(a, fn);
     const [first, second] = a < b ? [a, b] : [b, a];
     return this.withPathLock(first, () => this.withPathLock(second, fn));
   }
 
-  /**
-   * Sync ONE locally-changed file (watch mode). No-ops if the content is unchanged.
-   *
-   * Feature 064 (GitHub issue #23): this used to PUT the local body straight to the server —
-   * no PROPFIND, no base comparison, and (because it passed `etag: null`) no If-Match either. Any
-   * edit made on another device since our last sync was therefore overwritten silently: no conflict,
-   * no merge, no notice. Since "Sync on file change" defaults to ON on desktop, that was the DEFAULT
-   * path to losing data. The fix is not to bolt a precondition onto the blind upload but to give this
-   * path the one thing it lacked — the remote's current state — and then hand it to the SAME
-   * classifier the full sync uses (processFile). Watch mode and "Sync now" now converge on
-   * identical results (contract C-3); nothing about the decision lives here.
-   */
+  // Fetches the remote's current state, then hands it to the SAME classifier the full sync uses (processFile), so
+  // a blind PUT can never overwrite another device's edit silently (issue #23). No decision lives here.
   async syncSingleFile(path: string): Promise<void> {
     if (this.deps.isSystemExcluded(path)) return;
     if (this.skippedOnCellular('sync', path)) return;
-    // The two early exits below stay OUTSIDE the lock: neither touches shared state, and taking a
-    // lock to decide not to act would queue a no-op behind real work.
+    // The early exits stay OUTSIDE the lock: neither touches shared state and a no-op must not queue behind real work.
     return this.withPathLock(path, () => this.syncSingleFileLocked(path));
   }
 
   private async syncSingleFileLocked(path: string): Promise<void> {
-    // C-5: never run alongside a full sync. The multi-step resolve below (stat → compare → write →
-    // push) must not interleave with the full sync's writes to the same file, so defer the path and
-    // re-evaluate it once the run finishes — deferring rather than dropping keeps the edit from being
-    // missed when the full sync had already passed this file.
+    // Never run alongside a full sync: defer the path and re-evaluate it when the run finishes. Deferring, not
+    // dropping, keeps the edit from being missed if the full sync already passed this file.
     if (this.deps.isSyncRunning()) {
       this.pendingPaths.add(path);
       void this.deps.logger?.log(`watch: full sync in progress → deferred ${path}`);
@@ -213,30 +140,26 @@ export class WatchOperations {
     const stat = await this.deps.localAdapter.stat(path);
     if (!stat) return; // already deleted before the debounce fired
     const base = this.deps.stateDB.getFile(path);
-    // FR-006: decide "nothing changed" from LOCAL data only, before touching the network. The stat
-    // signature fast-path (P0-A) answers most saves without even reading the file; a signature miss
-    // falls back to hashing. Only a real content change is worth a round-trip.
+    // Decide "nothing changed" from LOCAL data only, before touching the network: the stat-signature fast path
+    // answers most saves without reading the file, and a miss falls back to hashing.
     if (base && this.locallyUnchanged(base, stat)) return;
     const data = await this.deps.localAdapter.readBinary(path);
     const localHash = await sha256(data);
     if (base && localHash === base.localHash) return; // content unchanged (e.g. mtime-only touch)
 
     const conn = await this.deps.connect();
-    // A real (not dummy) summary: its counters are what tells us whether to notify the user (C-6),
-    // and processFile/handleConflict already maintain them exactly as they do in a full sync.
+    // A real summary: its counters decide whether to notify the user, and processFile maintains them as in a full sync.
     const summary = this.deps.journal.newSummary();
     const conflictsBefore = this.deps.conflictEncounters();
     this.begin();
     try {
       const remote = await conn.client.statFile(path);
       if (remote) {
-        // The whole classification (upload / download / conflict → merge, If-Match from remote.etag,
-        // size guards, marker re-entrancy, feature-063 untracked handling) is the full sync's code.
         void this.deps.logger?.log(`watch: remote state fetched → classifying ${path}`);
         await this.deps.processFile(remote, summary);
       } else {
-        // C-1 row 4: not on the server at all → a plain create. A precondition would be wrong here
-        // (If-Match against a non-existent resource always fails), so keep the synthetic null etag.
+        // Not on the server at all: a plain create. If-Match against a non-existent resource always fails,
+        // so keep the synthetic null etag.
         void this.deps.logger?.log(`watch: not on remote → upload as new ${path}`);
         await this.deps.transfer.uploadFile(
           conn.client, conn.uploadStrategy,
@@ -245,13 +168,11 @@ export class WatchOperations {
           summary,
         );
       }
-      // Watch-mode single-file op: coalesce the state write via a trailing debounce so rapid
-      // edits don't each rewrite the whole state file (P0-B). onunload flushes any pending save.
+      // Coalesced via a trailing debounce so rapid edits do not each rewrite the state file; onunload flushes it.
       this.deps.stateDB.requestSave();
-      await this.deps.historyStore?.save(); // persist the entry recorded by the branch above
+      await this.deps.historyStore?.save();
     } catch (err) {
-      // FR-009: never lose the edit. A network failure queues the path so the next sync re-evaluates
-      // it; the local file is untouched either way.
+      // Never lose the edit: a network failure queues the path for the next sync; the local file is untouched.
       console.warn(`[SyncEngine] Single-file sync failed for ${path}:`, err);
       void this.deps.logger?.log(`watch: FAILED ${path} — ${(err as Error).message}`, 'error');
       this.deps.journal.recordError(summary, path, err);
@@ -262,30 +183,21 @@ export class WatchOperations {
     this.notifyWatchOutcome(path, summary, conflictsBefore);
   }
 
-  /**
-   * Delete a single file from the remote when it was deleted locally (watch mode).
-   *
-   * Feature 064 (C-2): this used to DELETE unconditionally. `deleteFile(path, expectedRemoteId)`
-   * reads like a guarded delete, but every client ignores that argument (blind DELETE, spec 023), so a
-   * note another device had just edited was removed anyway — the full sync's delete path has guarded
-   * against exactly that since spec 023, and this one did not. It now runs the SAME guard
-   * (applyLocalDeletion): delete only while the server's recomputed checksum still matches our base,
-   * otherwise restore the remote copy locally instead of destroying it.
-   */
+  // Runs the SAME guard as the full sync (applyLocalDeletion): delete only while the server's recomputed checksum
+  // still matches our base, else restore the remote copy. `deleteFile`'s expected-id argument is ignored by
+  // every client (blind DELETE), so it cannot serve as the guard.
   async deleteSingleFile(path: string): Promise<void> {
     if (this.deps.isSystemExcluded(path)) return;
     if (this.skippedOnCellular('delete', path)) return;
-    // Same lock as syncSingleFile: an upload and a delete crossing on one path decide between "the
-    // file comes back" and "the file is gone" by timing alone.
+    // Same lock as syncSingleFile: an upload and a delete crossing on one path would otherwise decide by timing.
     return this.withPathLock(path, () => this.deleteSingleFileLocked(path));
   }
 
   private async deleteSingleFileLocked(path: string): Promise<void> {
     const base = this.deps.stateDB.getFile(path);
-    if (!base) return; // not tracked — nothing to do on remote
-    // C-2 row 1: during a full sync, do nothing — and do NOT defer either. The running scan detects a
-    // tracked path that is gone locally and propagates the deletion itself, so queuing it here would
-    // only risk a second delete against a path the scan already handled.
+    if (!base) return; // not tracked, nothing to do on the remote
+    // During a full sync do nothing, and do NOT defer: the running scan propagates the deletion itself, so
+    // queuing it here would only risk a second delete.
     if (this.deps.isSyncRunning()) {
       void this.deps.logger?.log(`watch: full sync in progress → deletion of ${path} left to the running scan`);
       return;
@@ -295,13 +207,11 @@ export class WatchOperations {
     const conflictsBefore = this.deps.conflictEncounters();
     this.begin();
     try {
-      // Feature 086: this decision — ask the server, forget it on a 404, otherwise demand a checksum
-      // match before deleting — is the same one the full scan makes for a path missing from its
-      // listing, so both now call the one method. It owns the StateDB cleanup too, including the
-      // G1-2 rule of keeping the entry when the DELETE fails, so a failed delete is retried instead
-      // of coming back as a re-download.
+      // The same decision the full scan makes for a path missing from its listing (ask the server, forget on 404,
+      // else demand a checksum match). It owns the StateDB cleanup, keeping the entry when the DELETE fails so
+      // the delete is retried instead of coming back as a re-download.
       await this.deps.deletion.deleteLocallyMissing(conn.client, path, base, summary);
-      this.deps.stateDB.requestSave(); // coalesced watch-mode save (P0-B)
+      this.deps.stateDB.requestSave();
       await this.deps.historyStore?.save();
     } catch (err) {
       console.warn(`[SyncEngine] Single-file delete failed for ${path}:`, err);
@@ -313,12 +223,11 @@ export class WatchOperations {
     this.notifyWatchOutcome(path, summary, conflictsBefore);
   }
 
-  /** MOVE a single file on the remote when it was renamed/moved locally. */
   async renameSingleFile(oldPath: string, newPath: string): Promise<void> {
     if (this.deps.isSystemExcluded(oldPath) && this.deps.isSystemExcluded(newPath)) return;
     if (this.skippedOnCellular('rename', `${oldPath} → ${newPath}`)) return;
-    // Both ends are locked: a rename moves state between two paths, so holding only one leaves the
-    // other open to a concurrent cycle acting on a half-applied move.
+    // Both ends are locked: a rename moves state between two paths, so one lock leaves the other open to a
+    // concurrent cycle acting on a half-applied move.
     return this.withTwoPathLocks(oldPath, newPath, () => this.renameSingleFileLocked(oldPath, newPath));
   }
 
@@ -328,7 +237,7 @@ export class WatchOperations {
     this.begin();
     try {
       await rt.applyLocalRename(oldPath, newPath);
-      this.deps.stateDB.requestSave(); // coalesced watch-mode save (P0-B)
+      this.deps.stateDB.requestSave();
     } catch (err) {
       console.warn(`[SyncEngine] Single-file rename failed ${oldPath} → ${newPath}:`, err);
     } finally {
@@ -336,20 +245,16 @@ export class WatchOperations {
     }
   }
 
-  /**
-   * Feature 046 (watch-mode folder propagation): create a single folder on the remote immediately
-   * when it is created locally (MKCOL). Idempotent — a folder that already exists on the server is a
-   * no-op (405 swallowed), which also makes it safe against a stray download-created-folder event.
-   */
+  // MKCOL is idempotent (405 swallowed), which also makes it safe against a stray download-created-folder event.
   async createSingleFolder(path: string): Promise<void> {
     if (this.deps.isSystemExcluded(path)) return;
     if (this.skippedOnCellular('folder-create', path)) return;
     const conn = await this.deps.connect();
     this.begin();
     try {
-      await conn.client.createDirectory(path); // idempotent: existing folder → harmless
+      await conn.client.createDirectory(path);
       this.deps.stateDB.setDir({ path, remoteFileId: null });
-      this.deps.stateDB.requestSave(); // coalesced watch-mode save
+      this.deps.stateDB.requestSave();
       void this.deps.logger?.log(`watch: folder created → MKCOL ${path}`);
     } catch (err) {
       console.warn(`[SyncEngine] Single-folder create failed for ${path}:`, err);
@@ -358,20 +263,14 @@ export class WatchOperations {
     }
   }
 
-  /**
-   * Feature 046: delete a single folder on the remote immediately when it is deleted locally. Only a
-   * TRACKED folder (present in the StateDB directory set) is propagated — an untracked folder was
-   * never on the server, so deleting it locally is a no-op remotely (mirrors deleteSingleFile). The
-   * remote delete routes through the Nextcloud trashbin (recoverable); a 404 is the desired end state.
-   */
+  // Only a TRACKED folder is propagated; an untracked one was never on the server. The remote delete routes
+  // through the Nextcloud trashbin (recoverable) and a 404 is the desired end state.
   async deleteSingleFolder(path: string): Promise<void> {
     if (this.deps.isSystemExcluded(path)) return;
     if (this.skippedOnCellular('folder-delete', path)) return;
-    if (!this.deps.stateDB.getDir(path)) return; // untracked → nothing to do on the remote
-    // Feature 086: same rule as deleteSingleFile (C-2 row 1). This one had no such guard, and it is
-    // the loudest sink there is — a recursive collection DELETE. A running scan trashes folders
-    // itself (a listing said the server no longer has them), and those trashes fire delete events;
-    // acting on them here would send an unproven DELETE for a folder the scan is already settling.
+    if (!this.deps.stateDB.getDir(path)) return;
+    // Same rule as deleteSingleFile, and this is the loudest sink (a recursive collection DELETE): a running scan
+    // trashes folders itself and those trashes fire delete events, which must not become unproven DELETEs.
     if (this.deps.isSyncRunning()) {
       void this.deps.logger?.log(`watch: full sync in progress → folder deletion of ${path} left to the running scan`);
       return;
@@ -380,7 +279,7 @@ export class WatchOperations {
     this.begin();
     let succeeded = false;
     try {
-      await conn.client.deleteCollection(path); // trashbin; 404 handled inside as success
+      await conn.client.deleteCollection(path); // 404 is handled inside as success
       void this.deps.logger?.log(`watch: folder deleted → remote collection removed ${path}`);
       succeeded = true;
     } catch (err) {
@@ -388,26 +287,21 @@ export class WatchOperations {
     } finally {
       this.end();
     }
-    // BUG G1-2 fix: only drop the tracked directory when the remote delete actually succeeded (see
-    // deleteSingleFile for the full rationale) — otherwise the next sync would re-create it locally.
+    // Drop the tracked directory only when the remote delete succeeded; otherwise the next sync re-creates it locally.
     if (!succeeded) return;
     this.deps.stateDB.deleteDir(path);
     this.deps.stateDB.requestSave();
   }
 
-  /**
-   * Feature 046: MOVE a single folder on the remote immediately when it is renamed/moved locally.
-   * Collections are moved with the same WebDAV MOVE as files; the server moves the whole subtree.
-   * Any child-file rename events Obsidian fires alongside are handled best-effort by renameSingleFile
-   * (their 404s are harmless because the parent MOVE already relocated them) and converge next sync.
-   */
+  // The server moves the whole subtree. Child-file rename events fired alongside are handled best-effort by
+  // renameSingleFile; their 404s are harmless because the parent MOVE already relocated them.
   async renameSingleFolder(oldPath: string, newPath: string): Promise<void> {
     if (this.deps.isSystemExcluded(oldPath) && this.deps.isSystemExcluded(newPath)) return;
     if (this.skippedOnCellular('folder-rename', `${oldPath} → ${newPath}`)) return;
     const conn = await this.deps.connect();
     this.begin();
     try {
-      await conn.client.moveFile(oldPath, newPath); // MOVE works for collections too
+      await conn.client.moveFile(oldPath, newPath);
       this.deps.stateDB.deleteDir(oldPath);
       this.deps.stateDB.setDir({ path: newPath, remoteFileId: null });
       this.deps.stateDB.requestSave();
@@ -419,12 +313,8 @@ export class WatchOperations {
     }
   }
 
-  /**
-   * C-5: re-evaluate every path whose watch-mode sync was deferred by a full sync. Called once the
-   * run has finished (running === false). The set is drained into a local copy first so a path
-   * deferred again mid-drain (it cannot be — running is false — but also so re-entry is impossible)
-   * never loops. Failures are per-path and already handled inside syncSingleFile.
-   */
+  // Called once the run has finished. The set is drained into a local copy first so re-entry cannot loop.
+  // Failures are per-path and already handled inside syncSingleFile.
   async drainPending(): Promise<void> {
     if (this.pendingPaths.size === 0) return;
     const paths = [...this.pendingPaths];
@@ -435,16 +325,9 @@ export class WatchOperations {
     }
   }
 
-  /**
-   * C-6: watch mode runs unattended, so it stays silent for the routine outcomes (upload, download,
-   * nothing to do) and speaks up only when the user has to know — the sync failed, or the two sides
-   * had diverged and something had to be decided about it.
-   *
-   * `conflictsBefore` is the conflictEncounters value captured before the operation: a conflict
-   * settled by a deterministic strategy shows up in NO summary counter (it is recorded as a plain
-   * upload/download), and that is exactly the case where one side's content was dropped. Notifying
-   * only on merged/conflicted would stay silent about the most destructive resolution of all.
-   */
+  // `conflictsBefore` is conflictEncounters captured before the operation: a conflict settled by a deterministic
+  // strategy shows up in NO summary counter (it is recorded as a plain upload/download) yet drops one side's
+  // content, so notifying only on merged/conflicted would stay silent about the most destructive resolution.
   private notifyWatchOutcome(path: string, summary: SyncSessionSummary, conflictsBefore: number): void {
     if (summary.errorCount > 0) {
       this.notify(`❌ Sync failed: ${path}`, 6000);
@@ -463,7 +346,6 @@ export class WatchOperations {
     }
   }
 
-  /** Binds the ambient clock and last-sync time for the local-unchanged fast path. */
   private locallyUnchanged(base: FileState, stat: { mtime: number; size: number }): boolean {
     return isLocallyUnchanged(base, stat, {
       now: () => Date.now(),

@@ -8,10 +8,6 @@ export class RenameTracker {
     private readonly client: IWebDAVClient,
   ) {}
 
-  /**
-   * Detect remote renames by matching oc:fileid.
-   * Returns a map of oldPath → newPath for paths that were renamed on the server.
-   */
   detectRemoteRenames(remoteFiles: RemoteFileInfo[]): Map<string, string> {
     const renames = new Map<string, string>();
     for (const remote of remoteFiles) {
@@ -24,10 +20,7 @@ export class RenameTracker {
     return renames;
   }
 
-  /**
-   * Detect local renames by hash+size matching (fallback when oc:fileid unavailable).
-   * Compares files deleted from StateDB with files newly added locally.
-   */
+  // Fallback when oc:fileid is unavailable: match deleted paths to new local files by hash and size.
   detectLocalRenamesByHash(
     deletedPaths: string[],
     addedLocalFiles: Map<string, { hash: string; size: number }>,
@@ -46,7 +39,6 @@ export class RenameTracker {
     return renames;
   }
 
-  /** Apply a remote rename to local Vault and update StateDB. */
   async applyRemoteRename(oldPath: string, newPath: string): Promise<void> {
     const file = this.stateDB.getFile(oldPath);
     if (!file) return;
@@ -54,7 +46,6 @@ export class RenameTracker {
     this.stateDB.setFile({ ...file, path: newPath });
   }
 
-  /** Issue a WebDAV MOVE for a locally-renamed file. Falls back to conflict on 412. */
   async applyLocalRename(oldRemotePath: string, newRemotePath: string): Promise<void> {
     try {
       await this.client.moveFile(oldRemotePath, newRemotePath);

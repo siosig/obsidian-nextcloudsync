@@ -1,14 +1,7 @@
-// Directory reconciliation, lifted out of SyncEngine (feature 074, Phase 7).
-//
-// Directories are first-class entities here (spec 021), not a side effect of file paths: an empty
-// folder created on one device has to appear on the other, and one deleted has to disappear. That
-// makes the same three-way comparison the file path uses — local / remote / tracked — applicable to
-// folders, and this module is where it lives.
-//
-// The mass-delete breaker is the reason this is worth reading closely. A partial remote listing looks
-// exactly like "the user deleted most of their folders", so beyond a threshold the destructive half
-// of the plan is refused wholesale and recorded as a session error. The two resolve* methods below
-// are how the user then settles those refused paths without waiting for another sync.
+// Three-way comparison (local / remote / tracked) applied to folders, so an empty folder created or deleted on
+// one device propagates to the others (docs/spec.md §8a, docs/plan.md §16). A partial remote listing looks like
+// "the user deleted most folders", so beyond the mass-delete threshold the destructive half of the plan is
+// refused wholesale and recorded as a session error; the resolve* methods settle those paths on demand.
 import { TFolder, normalizePath, Vault, App } from 'obsidian';
 import { SyncSessionSummary, RemoteDirInfo } from '../../types';
 import { StateDB } from '../../data/StateDB';
@@ -27,26 +20,17 @@ export interface DirectoryDeps {
   stateDB: Pick<StateDB,
     'getAllDirs' | 'setDir' | 'deleteDir' | 'requestSave' | 'getAllFiles' | 'deleteFile'>;
   journal: SyncJournal;
-  /** Used only for the lock taken around a remote collection delete. */
+  // Used only for the lock taken around a remote collection delete.
   transfer: TransferService;
-  /** Dropped alongside the file state when a trashed folder's subtree stops being tracked. */
+  // Dropped alongside the file state when a trashed folder's subtree stops being tracked.
   mergeBase: Pick<MergeBaseRecorder, 'drop'>;
-  /** Drop the feature 044 clean-side snapshot for a path that is no longer tracked. */
   dropCleanSnapshot(path: string): void;
-  /**
-   * Register a path so the vault event this plugin is about to cause is not fed back to the watcher
-   * (the existing LocalAdapter ignore list behind `isOwnSyncEvent`). Required, not optional: a
-   * silently-unwired no-op here turns a plugin trash back into a server DELETE.
-   */
+  // Registers a path so the vault event this plugin causes is not fed back to the watcher. Required: an
+  // unwired no-op here turns a plugin trash back into a server DELETE.
   markOwnEvent(path: string): void;
-  /** The system-exclusion rules, already bound to the caller's settings. */
   isSystemExcluded(path: string): boolean;
-  /** The configured mass-delete threshold, read at call time. */
   massDeleteLimit(): number;
-  /**
-   * Whether the running sync has been asked to stop. Checked between directory operations so a
-   * cancel takes effect promptly instead of after the whole plan.
-   */
+  // Checked between directory operations so a cancel takes effect promptly.
   isCancelled(): boolean;
   logger?: Pick<FileLogger, 'log'>;
 }
@@ -59,15 +43,15 @@ export class DirectoryReconciler {
   ): Promise<void> {
     let remoteDirInfos: RemoteDirInfo[];
     if (cachedDirs) {
-      // Root-ETag short-circuit (spec 023): remote unchanged since the last real scan, so the tracked
-      // directory set IS the remote set — skip the getDirectories('') Depth:infinity PROPFIND.
+      // Root-ETag short-circuit: the remote is unchanged since the last real scan, so the tracked set IS the
+      // remote set (docs/spec.md §8a.5); skip the Depth:infinity PROPFIND.
       remoteDirInfos = cachedDirs;
     } else {
       try {
         remoteDirInfos = await client.getDirectories('');
       } catch (err) {
         void this.deps.logger?.log(`dir-sync: listing failed — skip this session: ${(err as Error).message}`);
-        return; // self-heal next sync
+        return; // self-heals next sync
       }
     }
 
@@ -82,11 +66,11 @@ export class DirectoryReconciler {
     const plan = classifyDirectories(remoteDirs, localDirs, tracked, (p) => this.deps.isSystemExcluded(p));
     const { mkcolRemote, mkdirLocal, deleteRemote, trashLocal, ensureTracked, dropTracked } = plan;
 
-    // Circuit breaker on the destructive set (a partial listing would make many dirs look deleted).
+    // Circuit breaker: a partial listing would make many dirs look deleted.
     if (shouldTripMassDeleteBreaker(plan, breakerDenominator(remoteDirs, localDirs, tracked), this.deps.massDeleteLimit())) {
       void this.deps.logger?.log(`dir-sync: SKIPPED ${deleteRemote.length + trashLocal.length} dir deletions — exceeds safety limit; likely a partial listing`);
-      // Record as an error so the root-ETag short-circuit convergence gate (spec 023 §8a.5) invalidates
-      // the stored etag and the next sync really re-scans instead of short-circuiting on stale State.
+      // Recorded as an error so the root-ETag convergence gate invalidates the stored etag and the next sync
+      // re-scans instead of short-circuiting on stale state (docs/spec.md §8a.5).
       const skippedDeleteRemote = [...deleteRemote];
       const skippedTrashLocal = [...trashLocal];
       this.deps.journal.recordError(
@@ -102,7 +86,7 @@ export class DirectoryReconciler {
     const shallowFirst = (a: string, b: string): number => a.split('/').length - b.split('/').length;
     const deepFirst = (a: string, b: string): number => b.split('/').length - a.split('/').length;
 
-    // CREATE remote (parents before children).
+    // Parents before children.
     for (const p of mkcolRemote.sort(shallowFirst)) {
       if (this.deps.isCancelled()) break;
       try {
@@ -114,7 +98,7 @@ export class DirectoryReconciler {
         summary.errors.push({ path: p, message: `dir create (remote) failed: ${(err as Error).message}` });
       }
     }
-    // CREATE local (parents before children).
+    // Parents before children.
     for (const p of mkdirLocal.sort(shallowFirst)) {
       if (this.deps.isCancelled()) break;
       try {
@@ -126,7 +110,7 @@ export class DirectoryReconciler {
         summary.errors.push({ path: p, message: `dir create (local) failed: ${(err as Error).message}` });
       }
     }
-    // DELETE remote (children before parents; probe + optional lock).
+    // Children before parents; probe emptiness first, under an optional lock.
     for (const p of deleteRemote.sort(deepFirst)) {
       if (this.deps.isCancelled()) break;
       let token: string | null = null;
@@ -134,7 +118,7 @@ export class DirectoryReconciler {
         token = await this.deps.transfer.acquireLock(client, p);
         if (!(await client.isRemoteDirEmpty(p))) {
           void this.deps.logger?.log(`dir-sync: remote dir not empty yet — keeping → ${p}`);
-          continue; // children pending — self-heal next sync
+          continue; // children pending; self-heals next sync
         }
         await client.deleteCollection(p);
         this.deps.stateDB.deleteDir(p);
@@ -147,15 +131,12 @@ export class DirectoryReconciler {
         await this.deps.transfer.releaseLock(client, p, token);
       }
     }
-    // TRASH local (children before parents).
+    // Children before parents.
     for (const p of trashLocal.sort(deepFirst)) {
       if (this.deps.isCancelled()) break;
-      // Feature 081 (issue #46): a folder absent from the listing is a reason to look, not a reason to
-      // delete. Files already refuse to delete without proof (applyLocalDeletion needs a checksum
-      // match); folders had no such guard, and one missing folder is one deletion — below anything
-      // the mass-delete breaker would notice. Ask the server directly. remoteExists resolves every
-      // answer but a definitive 404 to "present", and a rejecting client is treated the same way:
-      // no proof, no deletion. The folder stays tracked so the next real listing can settle it.
+      // A folder absent from the listing is a reason to look, not to delete (issue #46): one missing folder
+      // is below the mass-delete breaker. remoteExists treats everything but a definitive 404 as present, and
+      // a rejecting client likewise: no proof, no deletion. The folder stays tracked for the next listing.
       let confirmedGone = false;
       try { confirmedGone = !(await client.remoteExists(p)); } catch { confirmedGone = false; }
       if (!confirmedGone) {
@@ -165,9 +146,8 @@ export class DirectoryReconciler {
       const folder = this.deps.app.vault.getAbstractFileByPath(p);
       try {
         if (folder instanceof TFolder) await this.trashFolder(folder);
-        // Feature 086: the plugin moving a folder to `.trash` is NOT the user deleting its contents.
-        // Leaving the child rows tracked made the next sync read them as local deletions and push
-        // them to the server, turning a local-only disappearance into a real remote one.
+        // Our own trash is not a user deletion: leftover child rows would be read next sync as local
+        // deletions and pushed to the server.
         this.forgetSubtree(p);
         this.deps.journal.recordHistory(p, 'deleted');
       } catch (err) {
@@ -179,23 +159,18 @@ export class DirectoryReconciler {
     for (const p of dropTracked) this.deps.stateDB.deleteDir(p);
   }
 
-  /**
-   * Feature 086: trashing a folder makes Obsidian fire a vault `delete` event for the folder AND for
-   * every file under it. Watch mode reads those as user deletions and pushes them to the server, so
-   * the paths are registered as the plugin's own doing FIRST — the events can land at any point after
-   * this, and the tracking drop below is only the second line of defence.
-   */
+  // Trashing fires a vault `delete` event for the folder and every file under it, which watch mode would push
+  // as user deletions. Register the paths as our own FIRST: the events can land at any point after the trash.
   private async trashFolder(folder: TFolder): Promise<void> {
     const stale = collectSubtreePaths(this.deps.stateDB, folder.path);
-    // The folder itself is in `stale.dirs` when it is tracked, and it always needs registering, so
-    // the set is what keeps it from being registered twice.
+    // The set keeps the folder from registering twice when it is also in `stale.dirs`.
     for (const path of new Set([folder.path, ...stale.files, ...stale.dirs])) {
       this.deps.markOwnEvent(path);
     }
     await this.deps.app.fileManager.trashFile(folder);
   }
 
-  /** Stop tracking a trashed folder's whole subtree (feature 086). Only ever called after a success. */
+  // Only ever called after a successful trash.
   private forgetSubtree(path: string): void {
     const dropped = dropSubtreeTracking(this.deps, path);
     if (dropped.files + dropped.dirs > 0) {
@@ -205,17 +180,10 @@ export class DirectoryReconciler {
     }
   }
 
-  /**
-   * Feature 056: resolve one skipped mass-delete-breaker directory candidate immediately (not
-   * deferred to the next sync). `category` is which side reconcileDirectories would have deleted from
-   * (`deleteRemote`: local absent/remote present; `trashLocal`: local present/remote absent). `choice`
-   * mirrors the file-conflict force-resolution meaning: "remote" always means "make local match
-   * remote", "local" always means "make remote match local" — expressed here as directory create/
-   * delete instead of file push/pull. Recreated directories are tracked with `remoteFileId: null`
-   * (the same self-healing pattern already used by createSingleFolder/renameSingleFolder — the next
-   * full sync's real PROPFIND fills in the real id once both sides exist again). Throws on failure
-   * without touching StateDB (the caller, `resolveAllSkippedDirs`, isolates per-path failures).
-   */
+  // Resolves one breaker-skipped directory immediately. `category` is the side reconcileDirectories would have
+  // deleted from (`deleteRemote`: local absent/remote present; `trashLocal`: the reverse). `choice` "remote" makes
+  // local match remote, "local" the reverse. Recreated directories get `remoteFileId: null`; the next full sync
+  // fills in the real id. Throws without touching StateDB; resolveAllSkippedDirs isolates per-path failures.
   async resolveSkippedDir(
     client: IWebDAVClient,
     path: string,
@@ -237,7 +205,7 @@ export class DirectoryReconciler {
         // Remote absence is correct: let the deletion proceed locally.
         const folder = this.deps.app.vault.getAbstractFileByPath(path);
         if (folder instanceof TFolder) await this.trashFolder(folder);
-        this.forgetSubtree(path); // feature 086: same amplifier as the reconcile path
+        this.forgetSubtree(path);
 
       } else {
         // Local is correct: undo the apparent remote deletion by recreating it on the remote.
@@ -248,18 +216,10 @@ export class DirectoryReconciler {
     this.deps.stateDB.requestSave();
   }
 
-  /**
-   * Feature 056: bulk-apply one choice to every path in the current `(dir mass-delete breaker)`
-   * session error's `dirBreakerSkipped`, sequentially (mirrors applyBulkForceResolution's sequencing
-   * and per-path failure isolation — a per-path rejection is tallied, not thrown). On completion,
-   * mutates the caller's summary errors IN PLACE: removes the breaker entry once every path resolved,
-   * or narrows its `dirBreakerSkipped` to only the still-failed paths otherwise — so the next
-   * `getStatusReport()` (which returns the same `lastSummary` reference, not a clone) reflects the
-   * outcome immediately, without waiting for a fresh full sync.
-   *
-   * The caller is responsible for refusing to run this while a full sync is in progress: a
-   * concurrent reconcileDirectories reads and writes the same StateDB directory rows.
-   */
+  // Applies one choice to every path in the `(dir mass-delete breaker)` error's `dirBreakerSkipped`, tallying
+  // per-path failures instead of throwing. Mutates the caller's summary errors IN PLACE (removes the entry, or
+  // narrows it to the failed paths) because getStatusReport() returns the same `lastSummary` reference.
+  // The caller must refuse to run this during a full sync: reconcileDirectories uses the same StateDB rows.
   async resolveAllSkippedDirs(
     client: IWebDAVClient,
     lastSummary: SyncSessionSummary | null,

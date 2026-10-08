@@ -1,18 +1,13 @@
 import { DEFAULT_SETTINGS, DavSyncSettings } from '../types';
 
-/**
- * Migrate the former five-key configSync ({appearance, themesSnippets, hotkeys, corePlugins,
- * bookmarks}) into the two-key model ({bookmarks, others}) introduced in feature 029. The four
- * non-bookmark categories collapse into `others` (enabled if ANY of them was enabled). A profile
- * already on the two-key shape (has an `others` key) is normalized to booleans. Mutates `settings`.
- * Run before {@link migrateBookmarksToConfigSync} (which handles the even older `syncBookmarks`).
- */
+// Five-key configSync {appearance, themesSnippets, hotkeys, corePlugins, bookmarks} -> {bookmarks, others};
+// `others` is on if ANY of the four collapsed categories was. Run before migrateBookmarksToConfigSync.
 export function migrateConfigSyncCategories(
   saved: { configSync?: unknown },
   settings: DavSyncSettings,
 ): void {
   const sc = saved.configSync;
-  if (!sc || typeof sc !== 'object') return; // nothing persisted → keep defaults
+  if (!sc || typeof sc !== 'object') return;
   const obj = sc as Record<string, unknown>;
   if ('others' in obj) {
     settings.configSync = { bookmarks: Boolean(obj.bookmarks), others: Boolean(obj.others) };
@@ -24,46 +19,28 @@ export function migrateConfigSyncCategories(
   };
 }
 
-/**
- * Migrate the removed standalone `syncBookmarks` boolean into the new config-folder sync model.
- *
- * Runs once on first upgrade (detected by the new master flag never having been persisted):
- *   - `syncBookmarks === true`  → turn the master ON with ONLY the Bookmarks category enabled,
- *     so bookmarks keep syncing and nothing else under the config folder starts syncing.
- *   - `syncBookmarks` false/absent → leave the master OFF (default); nothing migrates.
- *
- * Idempotent: once `syncConfigFolder` has been persisted, this is a no-op. Mutates `settings`.
- * Run before {@link pruneObsoleteSettings} so the now-obsolete `syncBookmarks` key is then dropped.
- */
+// `syncBookmarks === true` turns the master ON with ONLY Bookmarks enabled, so bookmarks keep syncing
+// and nothing else under the config folder starts. Idempotent once `syncConfigFolder` is persisted.
+// Run before pruneObsoleteSettings.
 export function migrateBookmarksToConfigSync(
   saved: { syncBookmarks?: unknown; syncConfigFolder?: unknown },
   settings: DavSyncSettings,
 ): void {
-  if (saved.syncConfigFolder !== undefined) return; // already on the new model — don't re-migrate
+  if (saved.syncConfigFolder !== undefined) return;
   if (saved.syncBookmarks === true) {
     settings.syncConfigFolder = true;
     settings.configSync = { bookmarks: true, others: false };
   }
 }
 
-/**
- * Fold the removed `syncOnStartupEnabled` toggle into the startup-delay slider, where 0 now means
- * "no startup sync" (1–10 = seconds to wait). Runs once on upgrade, detected by the old key still
- * being present in the saved data:
- *   - `syncOnStartupEnabled === false`          → startup sync was OFF  → set delay to 0 (off).
- *   - `syncOnStartupEnabled === true` & delay 0 → was "ON, run immediately"; 0 now means OFF, so
- *     bump to 1 to keep it enabled (the smallest enabled delay).
- *   - otherwise (ON with delay > 0)             → keep the saved delay unchanged.
- *
- * Idempotent: once `syncOnStartupEnabled` has been pruned from data.json (next save), this is a
- * no-op, so a user who deliberately sets delay 0 in the new model keeps it. Mutates `settings`.
- * Run before {@link pruneObsoleteSettings} so the now-obsolete `syncOnStartupEnabled` key is dropped.
- */
+// Folds `syncOnStartupEnabled` into the startup-delay slider, where 0 means "no startup sync":
+// OFF -> 0; ON with delay 0 ("run immediately") -> 1 to stay enabled; otherwise unchanged.
+// Idempotent once the old key is pruned. Run before pruneObsoleteSettings.
 export function migrateStartupToggleToDelay(
   saved: { syncOnStartupEnabled?: unknown; startupSyncDelaySeconds?: unknown },
   settings: DavSyncSettings,
 ): void {
-  if (saved.syncOnStartupEnabled === undefined) return; // already on the new model — don't re-migrate
+  if (saved.syncOnStartupEnabled === undefined) return;
   if (saved.syncOnStartupEnabled === false) {
     settings.startupSyncDelaySeconds = 0;
   } else if (saved.startupSyncDelaySeconds === 0) {
@@ -71,22 +48,14 @@ export function migrateStartupToggleToDelay(
   }
 }
 
-/**
- * Migrate the three removed conflict settings (autoMergeEnabled / conflictFailurePolicy /
- * frontmatterConflictStrategy + mergeableExtensions) into the feature 037 per-type strategy model
- * ({autoMergeFileTypes, autoMergeFileStrategy, otherFileStrategy}). Mapping (research R3):
- *   - autoMergeFileTypes  ← mergeableExtensions (role continues; values carried over verbatim)
- *   - autoMergeFileStrategy ← autoMergeEnabled=true → 'merge'; =false → conflictFailurePolicy
- *       (local-wins→local-win / remote-wins→remote-win / conflict-markers|error → 'merge', since the
- *        new model has no hold/error and Merge still surfaces markers for manual resolution)
- *   - otherFileStrategy   ← conflictFailurePolicy (local-wins→local-win / remote-wins→remote-win /
- *        conflict-markers|error|absent → 'latest-mtime', the default; Other File has no merge/markers)
- *   - frontmatterConflictStrategy → discarded (Merge marks diverging frontmatter as a conflict, FR-005)
- *
- * Idempotent: once `autoMergeFileStrategy` has been persisted (next save), this is a no-op, so a
- * deliberate new-model choice is never overwritten. A profile with none of the old keys is a fresh
- * install and keeps DEFAULT_SETTINGS. Mutates `settings`; run before {@link pruneObsoleteSettings}.
- */
+// Old conflict settings -> per-type strategies:
+//  - autoMergeFileTypes <- mergeableExtensions (verbatim)
+//  - autoMergeFileStrategy <- autoMergeEnabled=true: 'merge'; false: conflictFailurePolicy
+//    (local-wins/remote-wins map across; conflict-markers|error -> 'merge', which still surfaces markers)
+//  - otherFileStrategy <- conflictFailurePolicy (local-wins/remote-wins map across; else 'latest-mtime')
+//  - frontmatterConflictStrategy is discarded (Merge marks diverging frontmatter as a conflict)
+// Idempotent once `autoMergeFileStrategy` is persisted; a profile with no old keys keeps DEFAULT_SETTINGS.
+// Run before pruneObsoleteSettings.
 export function migrateConflictSettingsToStrategies(
   saved: {
     autoMergeEnabled?: unknown;
@@ -96,12 +65,12 @@ export function migrateConflictSettingsToStrategies(
   },
   settings: DavSyncSettings,
 ): void {
-  if (saved.autoMergeFileStrategy !== undefined) return; // already on the new model
+  if (saved.autoMergeFileStrategy !== undefined) return;
   const hasOld =
     saved.autoMergeEnabled !== undefined ||
     saved.conflictFailurePolicy !== undefined ||
     saved.mergeableExtensions !== undefined;
-  if (!hasOld) return; // fresh install → keep DEFAULT_SETTINGS
+  if (!hasOld) return;
 
   if (Array.isArray(saved.mergeableExtensions)) {
     settings.autoMergeFileTypes = saved.mergeableExtensions.filter(
@@ -125,54 +94,32 @@ export function migrateConflictSettingsToStrategies(
         : 'latest-mtime';
 }
 
-/**
- * Feature 047: migrate the removed experimental `frontmatterScalarConflictPolicy` to the new dedicated
- * `frontmatterStrategy`.
- *
- * IMPORTANT — this is NOT a same-named value mapping. The old policy only tuned the SCALAR tiebreak
- * inside a merge that ALWAYS ran (arrays always union/set-merged, markers never written). Mapping its
- * value (default `latest-mtime`, persisted for virtually every user) to the same-named whole-side
- * strategy would make the whole frontmatter block be taken from one side and SILENTLY DROP array
- * union-merge for everyone — a broad regression of feature 040/043. So every migrating user (any old
- * value) converges to `merge`, which preserves the old always-semantic-merge behavior; the new merge's
- * scalar tiebreak is fixed to latest-mtime, matching the old default.
- *
- * Idempotent: a no-op once `frontmatterStrategy` is on the saved model, and for a fresh install (no old
- * key) where DEFAULT_SETTINGS already supplies `merge`. Mutates `settings`; run before
- * {@link pruneObsoleteSettings} so the obsolete key is then dropped.
- */
+// Not a same-named value mapping: the old policy only tuned the scalar tiebreak inside a merge that
+// always ran (arrays always set-merged). Mapping it to the same-named whole-side strategy would
+// silently drop array union-merge, so every migrating user converges to `merge`.
+// Idempotent once `frontmatterStrategy` is saved. Run before pruneObsoleteSettings.
 export function migrateFrontmatterScalarPolicyToStrategy(
   saved: { frontmatterStrategy?: unknown; frontmatterScalarConflictPolicy?: unknown },
   settings: DavSyncSettings,
 ): void {
-  if (saved.frontmatterStrategy !== undefined) return; // already on the new model
+  if (saved.frontmatterStrategy !== undefined) return;
   if (saved.frontmatterScalarConflictPolicy !== undefined) {
     settings.frontmatterStrategy = 'merge';
   }
 }
 
-/**
- * Feature 048: markdown is always special-cased (frontmatter → frontmatterStrategy, body →
- * autoMergeFileStrategy) regardless of `autoMergeFileTypes`, so `md` must not sit in that list. Strip
- * it from any persisted list (self-healing; behaviour is unchanged since md is special-cased anyway).
- * The new `conflictStrategy` needs no value mapping — DEFAULT_SETTINGS supplies its default
- * ('conflict-markers', reproducing the prior markers-on-conflict behaviour) for profiles that lack it.
- * Idempotent; mutates `settings`; run before {@link pruneObsoleteSettings}.
- */
+// Markdown is always special-cased (frontmatter -> frontmatterStrategy, body -> autoMergeFileStrategy),
+// so `md` must not sit in `autoMergeFileTypes`; strip it from any persisted list. Idempotent.
+// Run before pruneObsoleteSettings.
 export function migrateMarkdownAutoMergeType(settings: DavSyncSettings): void {
   settings.autoMergeFileTypes = (settings.autoMergeFileTypes ?? []).filter(
     (e) => typeof e === 'string' && e.trim().replace(/^\.+/, '').toLowerCase() !== 'md',
   );
 }
 
-/**
- * Force the two Debug-identity fields back to their auto/fixed sentinels (feature 032). The settings
- * UI no longer lets the user set a device name or a log folder; every user converges onto the single
- * path where the device name is derived (`deviceName=''` ⇒ `<platform>-<deviceId>`) and logs are
- * written to the vault root (`logsFolder=''`). This runs unconditionally on every load, so a value
- * persisted by an older version is overwritten. Returns true when a non-empty value was present in
- * the saved data (so the caller can persist the cleanup). Mutates `settings` in place.
- */
+// The UI no longer sets these: the device name is derived (`deviceName=''` -> `<platform>-<deviceId>`)
+// and logs go to the vault root. Runs on every load, overwriting older persisted values. Returns true
+// when a non-empty value was present so the caller can persist the cleanup.
 export function resetDebugIdentityFields(
   saved: { deviceName?: unknown; logsFolder?: unknown },
   settings: DavSyncSettings,
@@ -185,26 +132,14 @@ export function resetDebugIdentityFields(
   return hadCustom;
 }
 
-/**
- * Mobile-only first-run defaults. `loadSettings()` calls this only when `Platform.isMobile`, and it
- * touches a key only when that key is absent from the saved data.json — so an existing/user-set value
- * is preserved (first-run only, forward-compatible). Pure and platform-agnostic (the caller decides
- * whether the device is mobile), which keeps it unit-testable without a `Platform` mock. Mobile
- * diverges from `DEFAULT_SETTINGS` (desktop values) on the keys the mobile platform makes unsafe or
- * inert:
- *   - `syncOnWifiOnly`      = `true`  — cellular-cost-safe default (iOS lacks the API, so effectively
- *                                        inert there, but Android honours it).
- *   - `maxFileSizeMB`       = `20`    — OOM-safe cap; the mobile WebView holds the whole file in memory.
- *   - `watchOnChangeEnabled`= `false` — opt-in on mobile: watch mode runs only while the app is in
- *                                        the foreground and costs battery and data (feature 091
- *                                        removed the runtime mobile guard; only the default stays).
- *   - `syncIntervalMinutes` = `0`     — the mobile OS suspends background timers, so periodic sync never
- *                                        fires (see the `!Platform.isMobile` guard in
- *                                        `applyAutoSyncInterval`); defaulting to 0 (= manual only) makes
- *                                        the disabled "Sync interval" slider read honestly instead of
- *                                        showing an inert 15.
- * Mutates `settings` in place. Run before {@link pruneObsoleteSettings} so the values are persisted.
- */
+// Mobile first-run defaults; the caller decides whether the device is mobile. A key is touched only
+// when absent from the saved data, so user-set values are preserved.
+//  - syncOnWifiOnly = true: cellular-cost-safe (inert on iOS, which lacks the API; Android honours it).
+//  - maxFileSizeMB = 20: OOM-safe, the WebView holds the whole file in memory.
+//  - watchOnChangeEnabled = false: opt-in; watch mode runs only in the foreground and costs battery/data.
+//  - syncIntervalMinutes = 0: the OS suspends background timers (see applyAutoSyncInterval), so the
+//    disabled slider reads honestly instead of showing an inert 15.
+// Run before pruneObsoleteSettings so the values are persisted.
 export function applyMobileFirstRunDefaults(
   saved: {
     syncOnWifiOnly?: unknown;
@@ -220,12 +155,7 @@ export function applyMobileFirstRunDefaults(
   if (saved.syncIntervalMinutes === undefined) settings.syncIntervalMinutes = 0;
 }
 
-/**
- * Delete persisted settings keys that are no longer part of the schema (e.g. `debugMode`,
- * and the `logLevel` / `syncResultsEnabled` / `syncResultsFolder` fields left behind by an
- * earlier 0.3.0-beta implementation). Mutates `settings` in place and returns the removed keys.
- * The legacy `debugMode` key and the settings removed by feature 028 are simply dropped here.
- */
+// Drops persisted keys that are no longer in DEFAULT_SETTINGS and returns the removed keys.
 export function pruneObsoleteSettings(settings: Record<string, unknown>): string[] {
   const allowed = new Set<string>(Object.keys(DEFAULT_SETTINGS));
   const removed: string[] = [];
