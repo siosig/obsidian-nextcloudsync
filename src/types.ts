@@ -456,6 +456,18 @@ export class RemoteListingUnreadableError extends NetworkError {
       `${this.bodyLength} bytes, ${reason}; body starts: ${this.fragment}`;
   }
 }
+// Shown after a MKCOL 409; conditional because a 409 can also be an ancestor another device just deleted (docs/spec.md §11.2).
+export const MISSING_PARENT_HINT =
+  'a parent folder is missing on the server. If your Server URL ends with a subfolder, ' +
+  'create that folder in Nextcloud first (the plugin does not create it).';
+/** The vault-folder MKCOL answered 409: its parent, usually the Server URL subfolder, is missing (docs/spec.md §11.2). */
+export class MissingParentFolderError extends NetworkError {
+  constructor() {
+    super(409, '', 'MKCOL');
+    this.name = 'MissingParentFolderError';
+    this.message = `HTTP 409 (MKCOL) — ${MISSING_PARENT_HINT}`;
+  }
+}
 /**
  * A parent collection could not be created (PUT does not create parents, so ancestors are MKCOLed
  * first). Carries the folder and reason that a retried `HTTP 404 (PUT)` would hide. `dirPath` is the
@@ -471,7 +483,8 @@ export class RemoteDirCreateError extends NetworkError {
     this.dirPath = dirPath;
     this.message =
       `Could not create the remote folder '${dirPath}': MKCOL ${status === 0 ? 'failed' : `→ HTTP ${status}`}` +
-      (detail ? ` (${detail})` : '');
+      (detail ? ` (${detail})` : '') +
+      (status === 409 ? ` — ${MISSING_PARENT_HINT}` : '');
   }
 }
 /**

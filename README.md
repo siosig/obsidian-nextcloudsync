@@ -31,10 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (1.0.9)
+## What's new in this release (1.0.10-beta.1)
 
-- **New: "Sync on file change" now works on mobile (1.0.9)** — the watch mode can be turned on in Android and iOS (it stays off by default there). It runs only while Obsidian is open, and anything it misses is sent on the next sync. When "Sync on Wi-Fi only" is on, it pauses on a cellular connection.
-- **Maintenance (1.0.9)** — no change in behavior. Source comments were trimmed and now point to the public `docs/spec.md` and `docs/plan.md`, which are published as the specification and design reference.
+- **Clearer error when the Server URL subfolder is missing (1.0.10-beta.1)** — if the Server URL ends in a subfolder that does not exist in Nextcloud, the sync used to fail with a bare `HTTP 409 (MKCOL)`. The notice and the Sync Status listing now say that a parent folder is missing and that the subfolder must be created in Nextcloud first (the plugin does not create it). The README explains this too. Sync behavior is unchanged.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
@@ -134,6 +133,8 @@ Mobile is supported, with a few platform-aware differences (desktop behaviour is
    **not just the host**. Entering only `https://cloud.example.com` fails with **HTTP 405**. `<user>` is your
    Nextcloud user ID (usually not your email). You may append a subfolder (e.g. `.../<user>/Documents`) to
    sync there instead of at the account root.
+   The subfolder must already exist in Nextcloud: the plugin creates the vault folder inside it but does not create the
+   subfolder itself. If the sync fails with `HTTP 409 (MKCOL)`, check that it exists (see the FAQ).
 3. Authenticate:
    - **Recommended:** click **Login with browser** (Login Flow v2), approve in the browser, and credentials are filled in and stored automatically; **or**
    - enter your **username** and a manually issued **app password**.
@@ -181,6 +182,14 @@ A 423 means the file is locked on the Nextcloud **server** side, not by this plu
 When the server reports a lock owner, the plugin's notice and Sync Status result listing now show that owner instead of the previous bare "HTTP 423 (PUT)" message with no explanation.
 
 This plugin does not resolve the lock automatically and has no in-app "unlock" action — releasing a lock without knowing its origin risks overwriting someone else's in-progress edit. To resolve it, close the session or tab holding the lock (e.g. the Nextcloud Text editor tab), or ask a server administrator to clear it if it's genuinely leaked or stuck.
+
+---
+
+**I got `HTTP 409 (MKCOL)` after adding a subfolder to the Server URL — what does that mean?**
+
+A 409 on `MKCOL` means a parent folder is missing on the server. The usual cause is a Server URL such as `https://<host>/remote.php/dav/files/<user>/Test` where `Test` does not exist in Nextcloud yet: the plugin creates the vault folder *inside* `Test` but does not create `Test` itself, because a mistyped path would otherwise be created silently and put your vault in the wrong place. The notice and the Sync Status result listing now say this next to the error.
+
+To fix it, create the subfolder in Nextcloud (for example in the web interface) or correct the Server URL, then sync again.
 
 ---
 
