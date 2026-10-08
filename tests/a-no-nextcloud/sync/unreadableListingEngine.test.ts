@@ -1,11 +1,9 @@
-// Feature 087 (issue #51): proves the engine needs NO changes to do the right thing with an
-// unreadable listing — the fix lives entirely in the WebDAV client layer (readMultistatus), and this
-// file exists to show that a RemoteListingUnreadableError thrown from a client double already lands
-// on the SAME catch blocks that a network outage does: the session is recorded as failed, nothing is
-// deleted, nothing is uploaded, and StateDB is untouched. Modelled on
-// tests/a-no-nextcloud/sync/emptyListingAbsenceDelete.test.ts (real SyncEngine + real StateDB; only
-// the WebDAV client, LocalAdapter and Obsidian App are doubles) because re-implementing the
-// classification in a mock would prove nothing about the actual catch wiring.
+// Proves the engine needs NO changes to do the right thing with an unreadable listing (issue #51): the fix
+// lives in the WebDAV client layer (readMultistatus). A RemoteListingUnreadableError thrown from a client
+// double lands on the SAME catch blocks as a network outage: the session is recorded as failed, nothing is
+// deleted or uploaded, and StateDB is untouched. Modelled on emptyListingAbsenceDelete.test.ts (real
+// SyncEngine + real StateDB; only the WebDAV client, LocalAdapter and Obsidian App are doubles) because
+// re-implementing the classification in a mock would prove nothing about the actual catch wiring.
 import { DataAdapter } from 'obsidian';
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { StateDB } from '../../../src/data/StateDB';
@@ -156,7 +154,7 @@ beforeEach(() => {
   (globalThis as { navigator?: unknown }).navigator ??= {};
 });
 
-describe('ULG-13 an unreadable getFiles listing fails the session instead of deleting anything', () => {
+describe('[SPEC:ULG-13] an unreadable getFiles listing fails the session instead of deleting anything', () => {
   it.each([
     ['above the mass-delete breaker threshold', 30],
     ['below the mass-delete breaker threshold', 3],
@@ -180,7 +178,7 @@ describe('ULG-13 an unreadable getFiles listing fails the session instead of del
   });
 });
 
-describe('ULG-14 self-healing: a failed session does not stop the vault from converging', () => {
+describe('[SPEC:ULG-14] self-healing: a failed session does not stop the vault from converging', () => {
   it('US1-7: the following sync with a readable listing deletes nothing extra and leaves tracking intact', async () => {
     const vault = { 'a.md': 'alpha' };
     let broken = true;
@@ -216,7 +214,7 @@ describe('ULG-14 self-healing: a failed session does not stop the vault from con
   });
 });
 
-describe('ULG-15 an unreadable getDirectories listing skips directory reconciliation only', () => {
+describe('[SPEC:ULG-15] an unreadable getDirectories listing skips directory reconciliation only', () => {
   it('US2-1: no folder is trashed or deleted, dir tracking is untouched, and the skip is logged', async () => {
     const vault = { 'F/a.md': 'alpha' };
     const h = await buildEngine(vault, {
@@ -238,7 +236,7 @@ describe('ULG-15 an unreadable getDirectories listing skips directory reconcilia
   });
 });
 
-describe('ULG-16 an unreadable statFile probe keeps tracking instead of deleting', () => {
+describe('[SPEC:ULG-16] an unreadable statFile probe keeps tracking instead of deleting', () => {
   it('US2-2: a file absent locally and from the listing is neither deleted nor forgotten', async () => {
     const h = await buildEngine({}, {
       listing: [],
@@ -256,7 +254,7 @@ describe('ULG-16 an unreadable statFile probe keeps tracking instead of deleting
   });
 });
 
-describe('ULG-17 an unreadable listing on the very first sync uploads nothing', () => {
+describe('[SPEC:ULG-17] an unreadable listing on the very first sync uploads nothing', () => {
   it('leaves State empty rather than treating local files as new uploads', async () => {
     const h = await buildEngine({ 'a.md': 'alpha' }, { listing: () => { throw unreadable('getFiles'); }, rootEtag: null });
     // No track() call: StateDB starts empty, which is what routes syncManual to the initial-sync path.

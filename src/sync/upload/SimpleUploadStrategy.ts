@@ -3,7 +3,6 @@ import { IWebDAVClient } from '../../network/IWebDAVClient';
 import { IUploadStrategy, UploadConfig, UploadOutcome, UploadOptions } from './IUploadStrategy';
 import { isOverFileSizeLimit } from '../../util/limits';
 
-/** Strategy that always sends via a single PUT (standard WebDAV / default fallback). */
 export class SimpleUploadStrategy implements IUploadStrategy {
   constructor(private readonly config: UploadConfig) {}
 

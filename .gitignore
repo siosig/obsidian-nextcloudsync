@@ -37,7 +37,9 @@ refs/
 .specify/
 specs/
 report/
-docs/
+/docs/*
+!/docs/spec.md
+!/docs/plan.md
 scripts/
 
 # TypeScript incremental build info
@@ -62,3 +64,4 @@ scripts/
 /.specify/
 /.vscode/
 /specs/
+.test-output/

@@ -4,8 +4,8 @@ import { ChunkedUploadStrategy } from '../../../src/sync/upload/ChunkedUploadStr
 import { SimpleUploadStrategy } from '../../../src/sync/upload/SimpleUploadStrategy';
 import { NextcloudFeatures } from '../../../src/types';
 
-// Feature 033: chunked upload is always on (FIXED), the chunk threshold is platform-derived
-// (50 desktop / 20 mobile), and file locking is always off — none read from settings anymore.
+// Chunked upload is always on (FIXED), the chunk threshold is platform-derived (50 desktop / 20 mobile),
+// and file locking is always off; none of it is read from settings.
 
 function makeEngine(features: Partial<NextcloudFeatures>) {
   const feats: NextcloudFeatures = {

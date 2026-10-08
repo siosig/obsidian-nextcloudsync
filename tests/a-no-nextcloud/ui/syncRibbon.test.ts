@@ -5,13 +5,10 @@ import {
   SyncRibbonHost,
 } from '../../../src/ui/syncRibbon';
 
-// Feature 060 (issue #19): a ribbon button gives mobile users a one-tap sync entry point (Obsidian
-// renders ribbon icons inside the hamburger menu on mobile). The wiring is extracted into
-// registerSyncRibbon so it can be verified deterministically at layer a without instantiating the
-// whole plugin/Obsidian app — the only surface that matters is which args reach addRibbonIcon and
-// that its callback funnels into the same runSyncNow() the "Sync now" command uses.
+// The ribbon button is mobile's one-tap sync entry point (issue #19; mobile renders ribbon icons in the
+// hamburger menu). The wiring is extracted into registerSyncRibbon so layer a can check which args reach
+// addRibbonIcon and that the callback funnels into the same runSyncNow() as the "Sync now" command.
 
-/** Records addRibbonIcon calls and counts runSyncNow invocations. */
 function makeFakeHost(): {
   host: SyncRibbonHost;
   calls: { icon: string; title: string; callback: (evt: MouseEvent) => unknown }[];

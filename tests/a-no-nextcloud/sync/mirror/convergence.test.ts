@@ -1,4 +1,4 @@
-// The state convergence a mirror has to leave behind (feature 075).
+// The state convergence a mirror has to leave behind.
 //
 // No [SPEC:...] tags: MIR-* stays with the mirror service suite.
 //

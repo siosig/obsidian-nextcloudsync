@@ -2,11 +2,7 @@ import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { FileState } from '../../../src/types';
 import { SIGNATURE_SAFETY_WINDOW_MS } from '../../../src/util/limits';
 
-/**
- * Tests the P0-A local-unchanged fast-path (`isLocallyUnchanged`): the stat-signature change
- * detection that works on mobile (where setMtime is a no-op). Exercises the private method through
- * a minimal engine instance, with a stubbed stateDB.getLastSyncTime().
- */
+// Exercises the private isLocallyUnchanged stat-signature fast path (works on mobile, where setMtime is a no-op).
 function makeEngine(lastSyncTime = 0) {
   const opts = {
     app: {}, settings: {},

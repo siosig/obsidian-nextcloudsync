@@ -24,7 +24,7 @@ const client = () => new StandardWebDAVClient(settings, 'pw', 'Vault');
 
 const LOCK_OWNER = 'Alice (Text app)';
 
-// A lockdiscovery PROPFIND 207 body carrying a readable RFC 4918 owner (contracts/lockdiscovery-propfind.md).
+// A lockdiscovery PROPFIND 207 body carrying a readable RFC 4918 owner.
 const LOCKDISCOVERY_WITH_OWNER = `<?xml version="1.0"?>
 <D:multistatus xmlns:D="DAV:" xmlns:nc="http://nextcloud.org/ns">
   <D:response>
@@ -57,10 +57,9 @@ const LOCKDISCOVERY_NO_OWNER = `<?xml version="1.0"?>
   </D:response>
 </D:multistatus>`;
 
-// [SPEC:...] feature 090 (issue #58): a PUT/DELETE that comes back 423 (server-side lock, not this
-// plugin's own cooperative lock) triggers ONE extra Depth:0 lockdiscovery PROPFIND so the thrown error
-// can name who holds the lock. A failure anywhere in that extra step must fall back EXACTLY to the
-// original plain NetworkError(423, ...) — never suppress or replace the 423 the caller already has.
+// [SPEC:...] issue #58: a PUT/DELETE answered 423 (server-side lock, not this plugin's own cooperative lock) triggers
+// ONE extra Depth:0 lockdiscovery PROPFIND so the thrown error can name the lock holder. A failure in that extra step
+// must fall back EXACTLY to the original plain NetworkError(423, ...); never suppress or replace the 423.
 describe('StandardWebDAVClient — 423 lockdiscovery PROPFIND (feature 090)', () => {
   beforeEach(() => {
     mockRequestUrl.mockReset();

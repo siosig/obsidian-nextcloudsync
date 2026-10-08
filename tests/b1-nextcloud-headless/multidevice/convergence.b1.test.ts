@@ -28,7 +28,7 @@ describeLive('Layer B — multi-device & lifecycle', (getEnv) => {
 
   const deviceClient = (id: string): NextcloudClient => makeClient(getEnv(), ws.remoteBase, { deviceId: id });
 
-  it('MD-1 later-configured device (empty state) sees all files an existing device uploaded', async () => {
+  it('[SPEC:MD-1] later-configured device (empty state) sees all files an existing device uploaded', async () => {
     // "A syncs → B is configured fresh" — B starts with no tracking state.
     const a = deviceClient('deviceA');
     await a.uploadFile('md1-note1.md', textBuf('from A 1'));
@@ -40,7 +40,7 @@ describeLive('Layer B — multi-device & lifecycle', (getEnv) => {
     expect(names).toContain('md1-note2.md');
   });
 
-  it('MD-2 reinstall (state lost) re-reads remote with a STABLE fileId (basis for no re-duplication)', async () => {
+  it('[SPEC:MD-2] reinstall (state lost) re-reads remote with a STABLE fileId (basis for no re-duplication)', async () => {
     const a = deviceClient('deviceA');
     await a.uploadFile('md2-keep.md', textBuf('keep me'));
     const before = (await a.getFiles('')).find((f) => f.path.endsWith('md2-keep.md'));
@@ -54,15 +54,21 @@ describeLive('Layer B — multi-device & lifecycle', (getEnv) => {
     expect(after?.fileId).toBe(before?.fileId);
   });
 
-  it('MD-3 concurrent edit: A edits → B edits & syncs → A syncs with a STALE validator → 412 (lost-update prevented)', async () => {
+  it('[SPEC:MD-3] concurrent edit: A edits → B edits & syncs → A syncs with a STALE validator → 412 (lost-update prevented)', async () => {
+    // Distinct mtimes, as the engine always sends: Nextcloud (Local storage) keeps the cached etag
+    // when an overwrite lands in the same storage_mtime second, so two mtime-less PUTs within one
+    // second would leave the "stale" etag current and make this test flaky.
+    const now = Date.now();
     const a = deviceClient('deviceA');
-    await a.uploadFile('md3-race.md', textBuf('v1'));
+    await a.uploadFile('md3-race.md', textBuf('v1'), now - 2000);
     const staleEtag = (await a.getFiles('')).find((f) => f.path.endsWith('md3-race.md'))?.etag;
     expect(staleEtag).toBeTruthy();
 
     // Device B overwrites the file → the server etag changes.
     const b = deviceClient('deviceB');
-    await b.uploadFile('md3-race.md', textBuf('v2 from B'));
+    await b.uploadFile('md3-race.md', textBuf('v2 from B'), now);
+    const freshEtag = (await a.getFiles('')).find((f) => f.path.endsWith('md3-race.md'))?.etag;
+    expect(freshEtag).not.toBe(staleEtag); // precondition: the validator really is stale
 
     // Device A uploads with the now-stale If-Match → server refuses (412) so B's edit is not lost.
     await expect(

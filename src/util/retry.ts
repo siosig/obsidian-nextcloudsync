@@ -3,11 +3,7 @@ import { NetworkError } from '../types';
 const MAX_RETRIES = 5;
 const INITIAL_DELAY_MS = 1000;
 
-/**
- * Exponential backoff retry for network operations.
- * `shouldRetry` defaults to retrying only NetworkError instances; callers can
- * inject their own predicate (e.g. to retry on transient WebDAV timeouts).
- */
+// Exponential backoff; `shouldRetry` defaults to NetworkError only (callers may inject a predicate).
 export async function withRetry<T>(
   fn: () => Promise<T>,
   maxRetries = MAX_RETRIES,

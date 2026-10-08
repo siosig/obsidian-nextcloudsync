@@ -12,6 +12,6 @@ describe('[SPEC:FR-017] fixture file-mix distribution (md-heavy)', () => {
   });
 
   it('preserves the international (Japanese) functional fixture path', () => {
-    expect(FIXTURES.some((f) => f.path.includes('メモ'))).toBe(true);
+    expect(FIXTURES.some((f) => f.path.includes('\u30e1\u30e2'))).toBe(true);
   });
 });

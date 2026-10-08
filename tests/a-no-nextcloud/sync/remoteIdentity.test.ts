@@ -1,8 +1,5 @@
-// [SPEC:PWR-1] One definition of a file's remote identity (feature 080).
-//
-// The rule was written out by hand in three places, and a fourth, different rule decided what to
-// record after an upload. That disagreement is the defect this module was extracted to prevent, so
-// the rule itself is pinned here.
+// [SPEC:PWR-1] One definition of a file's remote identity. Pinned so the rule is never hand-written in
+// several places again, with a different rule deciding what to record after an upload.
 import { remoteIdOf } from '../../../src/sync/remoteIdentity';
 import { RemoteFileInfo } from '../../../src/types';
 
@@ -23,8 +20,7 @@ describe('[SPEC:PWR-1] remoteIdOf', () => {
   });
 
   it('falls back to the size, and says so', () => {
-    // One of the three hand-written copies labelled this branch 'etag' while using the size as the
-    // value — a byte count recorded as a validator. Merging the copies fixed it; this pins it.
+    // An earlier copy labelled this branch 'etag' while using the size as the value; pinned here.
     expect(remoteIdOf(remote({}))).toEqual({ remoteId: '42', idType: 'size' });
   });
 

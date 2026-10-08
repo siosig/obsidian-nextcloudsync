@@ -1,11 +1,6 @@
-// Direct tests for the session modules and VersionService (feature 074, addendum).
-//
-// No [SPEC:...] tags: URE-5 and the merge-base clauses stay with the engine-level suites.
-//
-// These three are small, which is why they had no tests: each looked too obvious to be worth one.
-// What they actually encode is a rule apiece that is easy to get wrong when reading quickly — how
-// history entries are grouped, which files deserve a merge base, and what "versions unsupported"
-// really means.
+// Direct tests for the session modules and VersionService; no [SPEC:...] tags (URE-5 and the merge-base
+// clauses stay with the engine-level suites). Each encodes a rule that is easy to misread: how history
+// entries are grouped, which files deserve a merge base, and what "versions unsupported" means.
 import { SyncJournal } from '../../../../src/sync/session/SyncJournal';
 import { MergeBaseRecorder } from '../../../../src/sync/session/MergeBaseRecorder';
 import { VersionService } from '../../../../src/sync/versions/VersionService';
@@ -186,8 +181,7 @@ describe('MergeBaseRecorder — which files get a base', () => {
   });
 
   it('records a base for EVERY markdown file, even when md is not an auto-merge type', () => {
-    // Feature 047: the frontmatter set-merge needs a base to detect deletions, regardless of how the
-    // body is resolved.
+    // The frontmatter set-merge needs a base to detect deletions, regardless of how the body is resolved.
     const { rec, store } = recorder(['txt']);
     rec.record('notes/a.md', 'body');
     expect(store.get('notes/a.md')).toBe('body');

@@ -1,36 +1,13 @@
 // [SPEC:DSD-6] [SPEC:DSD-7] [SPEC:DSD-8] The declarative settings tab, rendered by the real Obsidian.
-//
-// Feature 077 replaced the imperative display() with getSettingDefinitions(). Layer a proves the
-// definitions are internally consistent — keys resolve, order matches the baseline, predicates
-// answer correctly — but it renders nothing: it drives a plain fake, with no Obsidian and no DOM.
-// So a definition array can be perfectly valid at layer a and still produce a blank screen here,
-// which is exactly the failure mode of getting the new contract subtly wrong. This file is where
-// the array meets the renderer.
-//
-// Three behaviours are checked, chosen because the desktop and iPhone pass already covered the
-// visual ones (description length, settings search, the numeric input beside each slider):
-//
-//   DSD-6  the not-signed-in banner appears and disappears with sign-in state — the one row whose
-//          `visible` predicate has a real consequence, and the reason update() is called instead
-//          of refreshDomState() after credentials change
-//   DSD-7  adding and removing an excluded folder rebuilds the row set — the dynamic-row path,
-//          where getSettingDefinitions() must be re-evaluated rather than reusing a stale array
-//   DSD-8  a value edited through the declarative binding survives a plugin reload — the
-//          key-path binding actually reaching data.json, which is the hazard layer a can only
-//          approximate
+// Layer a drives a plain fake with no DOM, so a valid definition array can still render a blank screen.
 import { browser, expect } from '@wdio/globals';
 import { requireUiEnv } from '../support/env';
 
 const ui = requireUiEnv();
 
-// Two facts about the host, both probed on a real Obsidian 1.13.7 rather than assumed:
-//
-//   - plugin tabs live in `app.setting.pluginTabs`; the obvious-looking `settingTabs` is undefined
-//   - the settings modal can render into a POPOUT window, so `document.querySelectorAll` in the
-//     main window sees almost nothing (3 rows) while the tab's own containerEl holds all 40.
-//     Every query below therefore goes through the tab, not the document.
+// Probed on Obsidian 1.13.7: plugin tabs live in `app.setting.pluginTabs` (`settingTabs` is undefined), and the
+// settings modal can render into a popout window, so every query goes through the tab's containerEl, not document.
 
-/** Open the tab and read its rendered rows out of the tab's own container. */
 const readRenderedRows = () =>
   browser.executeObsidian(async ({ app }) => {
     const setting = (app as any).setting;
@@ -53,14 +30,10 @@ const closeSettings = () =>
 describe('[SPEC:DSD-6] b-2 — the settings tab renders from the definitions', function () {
   it('renders rows at all (an empty definition array would render nothing)', async function () {
     if (!ui.ok) this.skip();
-    // display() is deleted, so if getSettingDefinitions() ever returned empty the tab would be
-    // blank rather than falling back. That is the single worst outcome of this migration, and it
-    // is invisible to every layer-a assertion.
+    // An empty getSettingDefinitions() would render a blank tab with no fallback.
     const { rows, names } = await readRenderedRows();
-    // 27 settings + 5 decorations + 8 headings on a default vault.
     expect(rows).toBeGreaterThan(30);
 
-    // Spot-check one row from each end of the array, so a truncated render is caught too.
     expect(names).toContain('Server URL');
     expect(names).toContain('Last session summary');
     await closeSettings();
@@ -74,8 +47,7 @@ describe('[SPEC:DSD-6] b-2 — the settings tab renders from the definitions', f
       await p.saveData?.(p.settings);
     });
     const { text } = await readRenderedRows();
-    // Matched on the banner's body text, not its row name: renderNotice empties the row and writes
-    // the copy directly, so there is no .setting-item-name to look at.
+    // renderNotice writes the copy directly, so match the banner body text, not a .setting-item-name.
     expect(text).toContain('Syncing stays disabled until you do');
     await closeSettings();
   });
@@ -94,9 +66,7 @@ describe('[SPEC:DSD-7] b-2 — dynamic rows are rebuilt, not cached', function (
         Array.from((tab.containerEl as HTMLElement).querySelectorAll('.setting-item-name'))
           .map((e) => e.textContent ?? '');
 
-      // Drive the product's own path — the same calls the Add button and the trash button make.
-      // Poking settings and re-opening the modal would not exercise update(), which is the part
-      // that has to rebuild the definition array for a dynamic row to appear at all.
+      // Use the same calls as the Add and trash buttons so update() rebuilds the definition array.
       const before = names().length;
       await tab.addExcludedFolder('b2-excluded-probe');
       await new Promise((r) => setTimeout(r, 400));
@@ -115,8 +85,7 @@ describe('[SPEC:DSD-7] b-2 — dynamic rows are rebuilt, not cached', function (
       };
     });
 
-    // The row set is `27 + excludedFolders.length + (syncConfigFolder ? 2 : 0)`; a tab that reused
-    // its first definition array would report the same names all three times.
+    // A tab that reused its first definition array would report the same names all three times.
     expect(result.listed).toBe(true);
     expect(result.withFolder).toBe(result.before + 1);
     expect(result.after).toBe(result.before);
@@ -131,9 +100,7 @@ describe('[SPEC:DSD-8] b-2 — the key-path binding reaches storage', function (
       const plugins = (app as any).plugins;
       const tab = (app as any).setting.pluginTabs.find((t: any) => t.id === 'nextcloud-sync');
 
-      // Drive the same path a rendered control drives: setControlValue resolves the key against
-      // storage. A dotted key exercises the nested case (configSync.bookmarks), which is where a
-      // naive setter would write a top-level property nobody reads.
+      // A dotted key covers the nested case, where a naive setter would write an unread top-level property.
       await tab.setControlValue('massDeleteLimit', 4242);
       await tab.setControlValue('configSync.bookmarks', false);
 
@@ -143,12 +110,10 @@ describe('[SPEC:DSD-8] b-2 — the key-path binding reaches storage', function (
       const out = {
         massDeleteLimit: reloaded.settings.massDeleteLimit,
         bookmarks: reloaded.settings.configSync?.bookmarks,
-        // The read side must agree with the write side, or the row would show a stale value.
         readBack: (app as any).setting.pluginTabs
           .find((t: any) => t.id === 'nextcloud-sync')
           ?.getControlValue('configSync.bookmarks'),
       };
-      // Restore, so later specs see the defaults they expect.
       reloaded.settings.massDeleteLimit = -1;
       reloaded.settings.configSync.bookmarks = true;
       await reloaded.saveData?.(reloaded.settings);

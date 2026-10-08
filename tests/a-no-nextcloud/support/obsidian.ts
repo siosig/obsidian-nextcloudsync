@@ -1,4 +1,3 @@
-// Obsidian API mock for Jest
 import { load, dump } from 'js-yaml';
 
 export class Plugin {
@@ -27,12 +26,8 @@ export class PluginSettingTab {
   display(): void {}
 }
 
-/**
- * Test double for Obsidian's Notice. Captures the latest message, the construction
- * timeout, and dismissal so unit tests can assert message transitions and lifecycle.
- * `Notice.instances` records every constructed toast (newest last) to verify the
- * single-toast invariant.
- */
+// Captures the latest message, timeout and dismissal. `Notice.instances` (newest last) lets tests verify
+// the single-toast invariant.
 export class Notice {
   static instances: Notice[] = [];
   message: string;
@@ -96,8 +91,7 @@ export class TFolder {
   }
 }
 
-/** Common base for every file-backed view (markdown, image, PDF, ...). Real `instanceof` target
- *  for LocalAdapter's open-file detection, so it must be a class (not just a type). */
+// Real class so LocalAdapter's open-file detection has an `instanceof` target.
 export class FileView {
   file: TFile | null = null;
 }
@@ -168,11 +162,7 @@ export interface PluginManifest {
   minAppVersion: string;
 }
 
-/**
- * Minimal element double tracking only attributes. The `node` jest environment has
- * no `document`, so we cannot use real DOM nodes; this is enough to assert where a
- * tooltip's `aria-label` lands (name element vs. whole row).
- */
+// The `node` jest environment has no `document`, so elements only track attributes.
 export class FakeEl {
   private attrs = new Map<string, string>();
   setAttribute(key: string, value: string): void { this.attrs.set(key, value); }
@@ -181,12 +171,8 @@ export class FakeEl {
   removeAttribute(key: string): void { this.attrs.delete(key); }
 }
 
-/**
- * Faithful Setting double for Obsidian 1.12.7. Crucially, `setTooltip` labels only
- * `nameEl` (verified against the shipped obsidian.asar: `Setting.setTooltip` calls
- * the internal helper on `this.nameEl`). This lets tests prove the row-level
- * tooltip fix actually moves the label off the narrow name onto `settingEl`.
- */
+// Setting.setTooltip labels only `nameEl` (verified against Obsidian 1.12.7), so tests can prove the
+// row-level tooltip fix moves the label onto `settingEl`.
 export class Setting {
   settingEl = new FakeEl();
   infoEl = new FakeEl();
@@ -204,7 +190,6 @@ export class Setting {
   addButton(_cb: (_btn: ButtonComponent) => void): this { return this; }
 }
 
-/** Obsidian's exported tooltip helper: sets `aria-label` on the given element. */
 export function setTooltip(el: FakeEl, tooltip: string): void {
   el.setAttribute('aria-label', tooltip);
 }
@@ -239,46 +224,32 @@ export function normalizePath(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+/g, '/');
 }
 
-/**
- * Test double for Obsidian's `parseYaml`. Wraps js-yaml's `load`. Obsidian returns
- * `null` for empty / whitespace-only input; this js-yaml build throws on empty input,
- * so we short-circuit that case to preserve Obsidian's contract.
- */
+// Obsidian returns null for empty / whitespace-only input but this js-yaml build throws, so that case
+// is short-circuited.
 export function parseYaml(s: string): any {
   if (s == null) return null;
   if (s.trim() === '') return null;
   return load(s);
 }
 
-/**
- * Test double for Obsidian's `stringifyYaml`. Wraps js-yaml's `dump`. `lineWidth: -1`
- * disables line folding so arrays / long scalars serialize deterministically (matching
- * Obsidian's own stable output and keeping round-trips lossless).
- */
+// `lineWidth: -1` disables folding so output is deterministic and round-trips losslessly.
 export function stringifyYaml(obj: any): string {
   return dump(obj, { lineWidth: -1 });
 }
 
-/** Mirror of Obsidian's `FrontMatterInfo` (obsidian.d.ts). */
 export interface FrontMatterInfo {
-  /** Whether this file has a frontmatter block. */
   exists: boolean;
-  /** String representation of the frontmatter (the YAML between the `---` fences, excluding them). */
   frontmatter: string;
-  /** Start of the frontmatter contents (excluding the opening `---`). */
+  // Start of the frontmatter contents (excluding the opening `---`).
   from: number;
-  /** End of the frontmatter contents (excluding the closing `---`). */
+  // End of the frontmatter contents (excluding the closing `---`).
   to: number;
-  /** Offset where the frontmatter block ends (including the closing `---` and its newline). */
+  // Offset where the block ends (including the closing `---` and its newline).
   contentStart: number;
 }
 
-/**
- * Test double for Obsidian's `getFrontMatterInfo`. Recognizes a leading `---` fenced
- * YAML block only (a `---` appearing later in the body is a thematic break, never a
- * fence). CRLF and LF line endings are both accepted. `from`/`to` bound the inner YAML
- * text; `contentStart` is where the note body begins after the closing fence.
- */
+// Only a leading `---` fenced block counts (a later `---` is a thematic break); CRLF and LF are both
+// accepted.
 export function getFrontMatterInfo(content: string): FrontMatterInfo {
   const none: FrontMatterInfo = { exists: false, frontmatter: '', from: 0, to: 0, contentStart: 0 };
   if (content == null) return none;
@@ -300,14 +271,8 @@ export function getFrontMatterInfo(content: string): FrontMatterInfo {
   return { exists: true, frontmatter: content.slice(from, to), from, to, contentStart };
 }
 
-/**
- * Test double for Obsidian's `parseFrontMatterStringArray`. Given an already-parsed
- * frontmatter object and a key (string or RegExp), returns the value normalized to a
- * string array: a single scalar becomes a one-element array, inline (`[a, b]`) and
- * block YAML lists both arrive here as arrays, each entry is coerced to string,
- * trimmed, and a leading `#` (tag sigil) is stripped. Returns `null` when the key is
- * absent or its value is null. Duplicates are intentionally preserved (callers dedup).
- */
+// Scalars become one-element arrays; entries are string-coerced and trimmed, with a leading `#`
+// stripped. Null when absent. Duplicates are preserved (callers dedup).
 export function parseFrontMatterStringArray(frontmatter: any, key: string | RegExp): string[] | null {
   if (frontmatter == null || typeof frontmatter !== 'object') return null;
   let value: any = null;

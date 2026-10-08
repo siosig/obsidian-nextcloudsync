@@ -1,6 +1,5 @@
-// [SPEC:MB-1..MB-4] specs/038-merge-base-store — true 3-way merge with a real base (feature 038).
-// Root cause of the "duplicated block" bug: the merge base was always '' (StateDB holds only hashes).
-// With the last-synced body as base, reconcile no longer duplicates the blocks both sides share.
+// [SPEC:MB-1..MB-4] True 3-way merge with a real base (the last-synced body; StateDB holds only hashes). An empty base
+// made reconcile duplicate the blocks both sides share. (docs/spec.md §6.2)
 import { MergeEngine } from '../../../src/sync/merge/MergeEngine';
 
 const occurrences = (s: string, needle: string): number => s.split(needle).length - 1;
@@ -30,7 +29,7 @@ describe('[SPEC:MB-3] base absent → empty-base duplication is caught by the ex
   it('the same inputs with base="" do NOT produce a clean merge (037 guard)', () => {
     const engine = new MergeEngine();
     const r = engine.merge('', 'line1\nline2 LOCAL\nline3\nline4', 'line1\nline3\nline4\nREMOTE');
-    // Feature 048: downgraded to a (marker) conflict — corrupt union never written as a clean merge.
+    // Downgraded to a (marker) conflict — corrupt union never written as a clean merge.
     expect(r.hadConflicts).toBe(true);
   });
 });

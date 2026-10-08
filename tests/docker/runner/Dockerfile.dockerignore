@@ -1,0 +1,7 @@
+# Build context for tests/docker/runner/Dockerfile: exclude everything, then re-include only the
+# package manifests and this directory. Keeps .env and other local files out of the image.
+*
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!tests/docker/runner/

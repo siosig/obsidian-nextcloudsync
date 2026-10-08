@@ -1,11 +1,8 @@
-// [SPEC:WSF-5] specs/064-watch-single-file-conflict/contracts/watch-single-file-sync.md (C-2)
-//
-// Feature 064 (C-2, rows 2-6): SyncEngine.deleteSingleFile (watch-mode single-file delete) used to
-// issue an unconditional remote DELETE, so a note another device had just edited was removed anyway.
-// It now delegates to applyLocalDeletion — the SAME server-side-checksum guard the full sync uses —
-// via a Depth:0 statFile() lookup. These tests drive the REAL engine.deleteSingleFile, not a
-// reimplementation of the classification, against doubles for the WebDAV client, StateDB, and the
-// local vault.
+// [SPEC:WSF-5] SyncEngine.deleteSingleFile (watch-mode single-file delete) delegates to applyLocalDeletion,
+// the SAME server-side-checksum guard the full sync uses, via a Depth:0 statFile() lookup; an unconditional
+// remote DELETE would remove a note another device had just edited (docs/spec.md §5.7). These tests drive the
+// REAL engine.deleteSingleFile, not a reimplementation, against doubles for the WebDAV client, StateDB, and
+// the local vault.
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { DEFAULT_SETTINGS, FileState, RemoteFileInfo } from '../../../src/types';
 
@@ -18,7 +15,7 @@ const fileState = (path: string, hash: string): FileState => ({
   remoteFileId: 'f1', isConflicted: false,
 });
 
-/** Minimal StateDB double: only the surface deleteSingleFile / applyLocalDeletion touch. */
+// Minimal StateDB double: only the surface deleteSingleFile / applyLocalDeletion touch.
 function makeStateDB(seed?: FileState) {
   const files = new Map<string, FileState>();
   if (seed) files.set(seed.path, seed);
@@ -31,7 +28,7 @@ function makeStateDB(seed?: FileState) {
   };
 }
 
-/** Minimal local-vault double: only the surface applyLocalDeletion's restore (download) path touches. */
+// Minimal local-vault double: only the surface applyLocalDeletion's restore (download) path touches.
 function makeLocalAdapter(seedContent: Record<string, string> = {}) {
   const files: Record<string, string> = { ...seedContent };
   return {

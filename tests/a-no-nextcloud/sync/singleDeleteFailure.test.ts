@@ -1,22 +1,14 @@
-// [G1-2] REGRESSION: SyncEngine.deleteSingleFile / deleteSingleFolder must NOT drop the StateDB
-// tracking entry when the remote delete genuinely fails (423/500/timeout — anything other than a
-// 404, which NextcloudClient already treats as success).
-//
-// Root cause (static-analysis report G1-2): both methods called `stateDB.deleteFile` /
-// `stateDB.deleteDir` UNCONDITIONALLY after the try/catch, regardless of whether the remote delete
-// actually succeeded. Dropping the tracking entry on a real failure makes the next sync see
-// base=undefined for a file/folder that is STILL PRESENT on the server, so it is read as "new
-// remote" and re-downloaded — silently reverting the user's local deletion.
-//
-// Feature 064: deleteSingleFile now stats the remote first and delegates to the SAME guarded delete
-// the full sync uses (applyLocalDeletion), so the doubles below must answer `statFile`. The remote is
-// returned with a checksum EQUAL to the base localHash — i.e. "the server copy is still the one we
-// last synced" — which is the only case where a deletion may propagate at all. The G1-2 guarantee
-// asserted here is unchanged: a failing DELETE must keep the tracking entry.
+// REGRESSION: SyncEngine.deleteSingleFile / deleteSingleFolder must NOT drop the StateDB tracking entry when
+// the remote delete genuinely fails (423/500/timeout; a 404 is treated as success by NextcloudClient).
+// Dropping it makes the next sync see base=undefined for a file/folder STILL on the server, read it as
+// "new remote" and re-download it, silently reverting the user's local deletion.
+// deleteSingleFile stats the remote first and delegates to the same guarded delete as the full sync
+// (applyLocalDeletion), so the doubles must answer `statFile`. The remote carries a checksum EQUAL to the
+// base localHash, the only case where a deletion may propagate at all.
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { FileState, DirState, RemoteFileInfo } from '../../../src/types';
 
-/** Remote state whose checksum matches `hash`, i.e. unchanged since our base → deletion allowed. */
+// Remote state whose checksum matches `hash` (unchanged since our base), so deletion is allowed.
 const unchangedRemote = (path: string, hash: string): RemoteFileInfo => ({
   path, fileId: null, checksum: hash, etag: 'e1', size: 1, lastModified: 1,
 });
@@ -59,14 +51,14 @@ const fileState = (path: string): FileState => ({
   remoteFileId: null, isConflicted: false,
 });
 
-describe('[G1-2] SyncEngine.deleteSingleFile — remote delete failure must not drop tracking', () => {
+describe('[SPEC:G1-2] SyncEngine.deleteSingleFile — remote delete failure must not drop tracking', () => {
   it('keeps the StateDB entry when the remote DELETE fails (real failure, not 404)', async () => {
     const { engine, files, stateDB } = makeFileEngine(fileState('Notes/gone.md'));
 
     await engine.deleteSingleFile('Notes/gone.md');
 
-    // BUG guard: the tracking entry must survive so the next sync retries the delete instead of
-    // reading base=undefined and re-downloading the still-present remote file.
+    // The tracking entry must survive so the next sync retries the delete instead of reading base=undefined
+    // and re-downloading the still-present remote file.
     expect(files.has('Notes/gone.md')).toBe(true);
     expect(stateDB.deleteFile).not.toHaveBeenCalled();
   });
@@ -93,7 +85,7 @@ describe('[G1-2] SyncEngine.deleteSingleFile — remote delete failure must not 
   });
 });
 
-describe('[G1-2] SyncEngine.deleteSingleFolder — remote delete failure must not drop tracking', () => {
+describe('[SPEC:G1-2] SyncEngine.deleteSingleFolder — remote delete failure must not drop tracking', () => {
   it('keeps the tracked directory when the remote collection DELETE fails', async () => {
     const { engine, dirs, stateDB } = makeFolderEngine({ path: 'Old', remoteFileId: null });
 

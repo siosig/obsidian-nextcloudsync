@@ -61,12 +61,10 @@ describe('StateDB', () => {
     await db.load();
     db.setSyncToken('newtoken');
     await db.save();
-    // write was called for tmp file
     expect(adapter.write).toHaveBeenCalledWith(
       expect.stringContaining('.tmp'),
       expect.stringContaining('newtoken'),
     );
-    // rename was called
     expect(adapter.rename).toHaveBeenCalled();
   });
 
@@ -88,8 +86,7 @@ describe('StateDB', () => {
   });
 
   it('serializes concurrent saves (no ENOENT from the exists→remove→rename race)', async () => {
-    // Strict adapter: remove/rename throw ENOENT like the real filesystem when the
-    // target is missing — this is what interleaved saves used to trip over.
+    // Strict adapter: remove/rename throw ENOENT like the real filesystem when the target is missing.
     const store: Record<string, string> = {};
     const strictAdapter = {
       read: jest.fn(async (p: string) => store[p] ?? ''),
@@ -130,7 +127,7 @@ describe('StateDB', () => {
     expect(db.getFileByRemoteId('nonexistent')).toBeUndefined();
   });
 
-  // ── P0-B: compact persistence, debounced save, O(1) remoteFileId index, v1 load ──
+  // Compact persistence, debounced save, O(1) remoteFileId index, v1 load
 
   it('persists compact JSON (no pretty-print indentation)', async () => {
     const adapter = makeAdapter();
@@ -196,7 +193,7 @@ describe('StateDB', () => {
     expect(db2.getFileByRemoteId('fid-9')?.path).toBe('x.md');
   });
 
-  // ── 017: Vault index reset (maintenance) ──
+  // Vault index reset (maintenance)
 
   it('reset() clears all tracked files and the sync token, preserves deviceId, and persists', async () => {
     const adapter = makeAdapter();

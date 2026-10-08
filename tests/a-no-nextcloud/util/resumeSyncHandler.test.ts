@@ -1,4 +1,4 @@
-// [SPEC:RSY-1] [SPEC:RSY-2] The decision taken on every foreground resume (feature 079).
+// [SPEC:RSY-1] [SPEC:RSY-2] The decision taken on every foreground resume.
 //
 // The handler is deliberately separate from main.ts. Wiring it inline would have left the two things
 // that matter — "does it sync?" and "does it stop syncing?" — reachable only by standing up a whole
@@ -13,7 +13,7 @@ function build(opts: {
   const syncManual = jest.fn(async () => undefined);
   const logs: string[] = [];
   let now = 100_000_000;
-  let enabled = opts.startupSyncEnabled ?? true; // most tests are unrelated to feature 082; default to "on"
+  let enabled = opts.startupSyncEnabled ?? true; // default "on": most tests are unrelated to startup sync
   const handler = makeResumeSyncHandler({
     getEngine: () => (opts.engine === false ? null : { syncManual }),
     getLastSyncTime: () => opts.lastSync ?? 0,
@@ -36,7 +36,7 @@ describe('[SPEC:RSY-1] a resume triggers one incremental sync', () => {
   });
 
   it('reuses the existing sync rather than inventing a resume-specific one', () => {
-    // syncManual already carries the running-guard, the Wi-Fi-only check, and the feature-078
+    // syncManual already carries the running-guard, the Wi-Fi-only check, and the watch-mode
     // protections (per-path serialization, holding remote writes back while a file is being edited).
     // Calling anything else here would mean re-earning all of that.
     const h = build({ lastSync: 0 });
@@ -126,11 +126,10 @@ describe('[SPEC:RSY-3] a resume with nothing to sync is a no-op, not an error', 
   });
 });
 describe('[SPEC:RMO-1] a resume respects "no startup sync" as "no automatic sync at all" (feature 082, issue #49)', () => {
-  // Before this, someone who turned the startup sync off to run this plugin purely by hand — pick a
-  // moment, press "Sync now" — got an automatic sync back the instant they returned to the app. They
-  // never asked for that, and 1.0.1 had no way for them to say no to it. Startup sync and resume sync
-  // are the same question asked at two different moments ("the app just became available — sync?"),
-  // so turning the first off is read as the same answer for the second.
+  // Someone who turned startup sync off to run the plugin purely by hand (press "Sync now") must not get an
+  // automatic sync the instant they return to the app. Startup sync and resume sync are the same question
+  // asked at two moments ("the app just became available - sync?"), so turning the first off answers the
+  // second.
 
   it('does not sync when startup sync is off, even past the cooldown', () => {
     const h = build({ lastSync: 0, startupSyncEnabled: false });

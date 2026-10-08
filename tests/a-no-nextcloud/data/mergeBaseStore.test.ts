@@ -1,5 +1,4 @@
-// [SPEC:MB-12] specs/038-merge-base-store — MergeBaseStore persistence (feature 038).
-// Stores the last-synced body per Auto Merge File as the 3-way merge base, in its own file.
+// [SPEC:MB-12] MergeBaseStore persistence: stores the last-synced body per Auto Merge File as the 3-way merge base, in its own file.
 import { DataAdapter } from 'obsidian';
 import { MergeBaseStore } from '../../../src/data/MergeBaseStore';
 

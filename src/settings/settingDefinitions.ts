@@ -5,51 +5,26 @@ import { SLIDER_LIMITS } from './sliderLimits';
 import { SERVER_URL_DESC, SIGN_IN_HELP, SIGN_IN_MANUAL_DIVIDER } from './settingsCopy';
 import { isSupportedNextcloudVersion } from '../util/version';
 
-// Feature 077: the settings tab, as data.
+// The settings tab as data: Obsidian 1.13.0 builds its settings search index only from `getSettingDefinitions()`
+// (obsidian.d.ts:6570-6586), so an imperative display() would be invisible to search.
+// Kept apart from SettingTab: pure data plus predicates over a host interface, so layer a can run the key-integrity check
+// in settingDefinitions.test.ts with a plain fake. A mistyped `key` renders a working-looking row that persists nothing.
 //
-// Obsidian 1.13.0 builds the settings SEARCH INDEX only from `getSettingDefinitions()`
-// (obsidian.d.ts:6570-6586). An imperative `display()` renders fine and is invisible to search, so
-// before this feature none of this plugin's settings could be found by name — a real gap across a
-// nine-section screen. Rendering and search now come from this one array.
-//
-// Why this module is separate from SettingTab: everything here is pure data plus predicates over a
-// host interface, so layer a can exercise it with a plain fake — no App, no DOM. That is what makes
-// the key-integrity check in settingDefinitions.test.ts possible, and that check is the reason this
-// migration is safe to make at all: a mistyped `key` renders a working-looking row that persists
-// nothing, which no screenshot would ever reveal.
-//
-// Two kinds of row exist here, and the split is deliberate:
-//
-//   `control` rows carry a `key` and are bound by Obsidian to the plugin's storage. Preferred.
-//   `render` rows hand back a real `Setting` (obsidian.d.ts:6284) and draw themselves. They carry
-//       no key, so the integrity check cannot cover them.
-//
-// The rule for choosing, applied consistently (Clarifications #6 and #7):
-// **if nothing is lost by going declarative, go declarative; if something is lost, use `render`.**
-//   - Tooltips had a lossless home — `desc`, which mobile can actually read, unlike a hover
-//     tooltip — so they moved there and their rows became `control`.
-//   - The numeric input beside each slider (spec 036, added because coarse slider steps put some
-//     values out of reach on touch) has no declarative equivalent. Removing it to satisfy a lint
-//     warning would trade a real affordance for a formality, so those five rows stay `render`.
+// `control` rows carry a `key` and are bound by Obsidian to the plugin's storage (preferred). `render` rows hand back a
+// real `Setting` (obsidian.d.ts:6284) and carry no key, so the integrity check cannot cover them.
+// Go declarative unless something is lost: tooltips moved into `desc` (mobile can read it), but the numeric input beside
+// each slider has no declarative equivalent, so those five rows stay `render`.
 
-/**
- * Everything the definitions need from the plugin, and nothing more.
- *
- * `isMobile` / `isIosApp` are passed IN rather than read from `Platform` inside this module: that
- * is what lets layer a assert both sides of every platform predicate instead of only the one the
- * test runner happens to be on.
- */
+// isMobile / isIosApp are passed IN rather than read from `Platform`, so layer a can assert both sides of every platform predicate.
 export interface SettingDefinitionsHost {
-  /** Live settings object. Predicates read it on every render, so it must not be copied. */
+  // Predicates read it on every render, so it must not be copied.
   settings: DavSyncSettings;
   isMobile: boolean;
   isIosApp: boolean;
-  /** Server URL + username + a stored app password are all present. */
   isSignedIn: boolean;
-  /** Vault#configDir — the config-folder heading is built from it, never hardcoded. */
+  // The config-folder heading is built from Vault#configDir, never hardcoded.
   configDir: string;
   vaultName: string;
-  /** Effective WebDAV target (Server URL + vault folder), for the read-only row. */
   syncTargetUrl(): string;
 
   runSyncNow(): unknown;
@@ -60,17 +35,11 @@ export interface SettingDefinitionsHost {
   addExcludedFolder(path: string): unknown;
   removeExcludedFolder(path: string): unknown;
 
-  /** Draws the SecretComponent row (no declarative equivalent — see the header). */
   renderAppPassword(setting: Setting): unknown;
-  /** Draws a slider plus its numeric input (spec 036). */
   renderNumberSlider(setting: Setting, opts: NumberSliderOptions): unknown;
-  /** Draws a disabled, informational value. */
   renderReadOnly(setting: Setting, value: string, cls?: string): unknown;
-  /** Draws a banner / help paragraph / divider that is not a setting. */
   renderNotice(setting: Setting, text: string, cls?: string): unknown;
-  /** Draws the comma-separated extension field (string[] storage). */
   renderExtensionList(setting: Setting): unknown;
-  /** Draws the folder picker that appends to the excluded list. */
   renderAddExcludedFolder(setting: Setting): unknown;
 }
 
@@ -80,29 +49,21 @@ export interface NumberSliderOptions {
   step: number;
   get(): number;
   set(value: number): void;
-  /** Side effect after persisting (e.g. re-arm the auto-sync timer). */
   apply?: () => void | Promise<void>;
 }
 
-/**
- * Settings that intentionally have no row, with the reason. Stated explicitly because the
- * reverse-direction check ("every setting reaches the UI") is only as honest as this list: an
- * implicit skip would let a row be dropped during the migration and never noticed.
- */
+// Settings that intentionally have no row. Explicit so the "every setting reaches the UI" check cannot silently skip a dropped row.
 export const UI_LESS_SETTING_KEYS: readonly (keyof DavSyncSettings)[] = [
   'deviceId',            // generated once; identifies this device in logs
-  'deviceName',          // derived from platform + deviceId (feature 032 removed its input)
-  'logsFolder',          // fixed to the vault root (feature 032)
+  'deviceName',          // derived from platform + deviceId
+  'logsFolder',          // fixed to the vault root
   'statusFilter',        // persisted UI state of the Sync Status dialog, not a preference
   'lastKnownServerVersion', // observed from the server, for the version-recommendation banner
   'configSync',          // container object; its categories bind through their own rows
 ];
 
-/** Rows drawn imperatively, grouped by why they cannot be `control` rows. */
 export const RENDER_ONLY_ROWS = {
-  /** Name of the not-signed-in banner row. */
   authBanner: 'Not signed in yet',
-  /** Rows that carry no setting at all — excluded from search so results stay precise. */
   decorations: [
     'Not signed in yet',
     'Server compatibility',
@@ -111,13 +72,10 @@ export const RENDER_ONLY_ROWS = {
     'Manual sign-in',
     'Advanced warning',
   ] as string[],
-  /**
-   * Settings whose row is a `render` row, so the key-integrity check cannot reach them.
-   * Listed so the reverse-direction check does not report them as missing from the UI.
-   */
+  // Settings whose row is a `render` row, out of the key-integrity check's reach; listed so the reverse-direction check does not report them as missing.
   settingKeys: [
     'passwordSecretId',        // SecretComponent — no declarative secret control exists
-    'startupSyncDelaySeconds', // slider + numeric input (spec 036)
+    'startupSyncDelaySeconds', // slider + numeric input
     'syncIntervalMinutes',
     'networkTimeoutSeconds',
     'networkConcurrency',
@@ -134,14 +92,8 @@ const CONFLICT_STRATEGY_OPTIONS = {
   'remote-win': 'Remote wins',
 } as const;
 
-/**
- * Build the full definition array for the current state.
- *
- * Called on every render (obsidian.d.ts:6577-6583), which is what lets the row set be dynamic:
- * one row per excluded folder, and two config-category rows only while the master toggle is on.
- * The count is therefore `27 + excludedFolders.length + (syncConfigFolder ? 2 : 0)` — not a
- * constant, a fact that three separate attempts to count the old implementation got wrong.
- */
+// Called on every render (obsidian.d.ts:6577-6583), so the row set is dynamic: one row per excluded folder, and two
+// config-category rows only while the master toggle is on. The count is 27 + excludedFolders.length + (syncConfigFolder ? 2 : 0).
 export function buildSettingDefinitions(host: SettingDefinitionsHost): SettingDefinitionItem[] {
   return [
     topGroup(host),
@@ -162,7 +114,6 @@ const group = (heading: string | undefined, items: SettingGroupItem[]): SettingD
   items,
 });
 
-/** A row that is not a setting: banner, help text, divider, warning. Never searchable. */
 function notice(
   host: SettingDefinitionsHost,
   name: string,
@@ -197,7 +148,6 @@ function slider(
   } as SettingGroupItem;
 }
 
-// ── Section 0: top (no heading) ───────────────────────────────────────────────
 
 function topGroup(host: SettingDefinitionsHost): SettingDefinitionGroup {
   const s = host.settings;
@@ -210,8 +160,7 @@ function topGroup(host: SettingDefinitionsHost): SettingDefinitionGroup {
     ),
     {
       name: 'Sync now',
-      // Tooltip folded in (Clarification #6): the enabling condition used to be hover-only, so
-      // mobile users never saw why the button was greyed out.
+      // The enabling condition lives in the description because mobile users cannot see hover tooltips.
       desc: 'Sync this vault with Nextcloud now. Enabled once Server URL, username and app password are set.',
       aliases: ['sync', 'run', 'manual sync', 'push', 'pull'],
       disabled: () => !host.isSignedIn,
@@ -240,14 +189,11 @@ function serverVersionNotice(version: string): string {
   return `Connected Nextcloud server is ${version}. A newer server is recommended; some features may be unavailable or degrade on older servers.`;
 }
 
-// ── Section 1: Nextcloud ──────────────────────────────────────────────────────
 
 function nextcloudGroup(host: SettingDefinitionsHost): SettingDefinitionGroup {
   return group('Nextcloud', [
     {
       name: 'Server URL',
-      // SERVER_URL_DESC already carried the 405 warning because it had to be readable on mobile;
-      // the tooltip's extra sentence about the optional subfolder joins it here.
       desc: `${SERVER_URL_DESC} You may append a subfolder (e.g. .../<user>/Documents) to sync there.`,
       aliases: ['endpoint', 'webdav', 'host', 'address', 'url'],
       control: { type: 'text', key: 'serverUrl', placeholder: 'https://cloud.example.com/remote.php/dav/files/alice/' },
@@ -290,7 +236,6 @@ function nextcloudGroup(host: SettingDefinitionsHost): SettingDefinitionGroup {
   ]);
 }
 
-// ── Section 2: Sync ───────────────────────────────────────────────────────────
 
 function syncGroup(host: SettingDefinitionsHost): SettingDefinitionGroup {
   const s = host.settings;
@@ -343,11 +288,9 @@ function syncGroup(host: SettingDefinitionsHost): SettingDefinitionGroup {
     },
     {
       name: 'Sync on file change',
-      desc: host.isMobile
-        ? 'Disabled on mobile (the OS suspends background work). Use "Startup sync delay" or "Sync now".'
-        : 'Immediately sync a file or folder right after you create, edit, delete, or rename it (a short delay after you stop editing). Deletions and renames propagate too. Works alongside the periodic sync interval. Desktop only.',
+      desc: 'Immediately sync a file or folder right after you create, edit, delete, or rename it (a short delay after you stop editing). Deletions and renames propagate too. Works alongside the periodic sync interval. On mobile it runs only while Obsidian is open; anything it misses is sent on the next sync. Paused on cellular when "Sync on Wi-Fi only" is on.',
       aliases: ['watch', 'auto sync', 'realtime', 'live', 'on save'],
-      control: { type: 'toggle', key: 'watchOnChangeEnabled', disabled: () => host.isMobile },
+      control: { type: 'toggle', key: 'watchOnChangeEnabled' },
     },
     slider(
       host,
@@ -361,7 +304,6 @@ function syncGroup(host: SettingDefinitionsHost): SettingDefinitionGroup {
   ]);
 }
 
-// ── Section 3: Conflict resolution ────────────────────────────────────────────
 
 function conflictGroup(host: SettingDefinitionsHost): SettingDefinitionGroup {
   return group('Conflict resolution', [
@@ -412,7 +354,6 @@ function conflictGroup(host: SettingDefinitionsHost): SettingDefinitionGroup {
   ]);
 }
 
-// ── Section 4: Excluded folders ───────────────────────────────────────────────
 
 function excludedFoldersGroup(host: SettingDefinitionsHost): SettingDefinitionGroup {
   const excluded = host.settings.excludedFolders ?? [];
@@ -445,7 +386,6 @@ function excludedFoldersGroup(host: SettingDefinitionsHost): SettingDefinitionGr
   return group('Excluded folders', items);
 }
 
-// ── Section 5: Config folder ──────────────────────────────────────────────────
 
 function configFolderGroup(host: SettingDefinitionsHost): SettingDefinitionGroup {
   const items: SettingGroupItem[] = [
@@ -471,7 +411,6 @@ function configFolderGroup(host: SettingDefinitionsHost): SettingDefinitionGroup
   return group(`Config folder (${host.configDir})`, items);
 }
 
-// ── Sections 6-8: Debug / Advanced / Maintenance ──────────────────────────────
 
 function debugGroup(host: SettingDefinitionsHost): SettingDefinitionGroup {
   return group('Debug', [
@@ -524,7 +463,6 @@ function maintenanceGroup(host: SettingDefinitionsHost): SettingDefinitionGroup 
   ]);
 }
 
-/** Suggestion filter for the excluded-folder picker: hide folders already excluded. */
 export function excludableFolderFilter(host: SettingDefinitionsHost): (folder: TFolder) => boolean {
   return (folder: TFolder) => !(host.settings.excludedFolders ?? []).includes(folder.path);
 }

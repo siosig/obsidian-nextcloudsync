@@ -1,7 +1,7 @@
-// Machine-checkable spec coverage meta-test (US1).
-// Statically scans EVERY test file (a / b-1 / b-2 / b-3) for clause references — either a
-// bare clause id embedded in the test name (e.g. "CF-2", "FR-019") or an explicit
-// [SPEC:<id>] tag from specRef.ts — and cross-references the clause catalog.
+// Machine-checkable spec coverage meta-test.
+// Statically scans EVERY test file (a / b-1 / b-2 / b-3 / b-4) for clause references — an explicit
+// [SPEC:<id>] tag, in a test name or in a comment labelling an assertion inside an active test —
+// and cross-references the clause catalog. A bare id (e.g. "CF-2") does not count.
 //
 //   uncovered (in-scope, no waiver, no test)  -> FAIL  (spec clause with no test)
 //   unknown [SPEC:<id>] tag (not in catalog)  -> FAIL  (typo / missing catalog entry)
@@ -32,7 +32,7 @@ function escapeRe(s: string): string {
 
 // A skipped test verifies nothing, so a clause traced ONLY to a skipped stub must NOT count as
 // covered — it needs a real test or an explicit waiver. This codebase legitimately labels ACTIVE
-// assertions with `// CLAUSE-ID:` comments (e.g. VR-2/VR-3 inside an active it()), so we must NOT
+// assertions with `// [SPEC:<id>]` comments (e.g. VR-2/VR-3 inside an active it()), so we must NOT
 // strip all comments. Instead, blank each skipped-test declaration line AND the contiguous comment
 // block directly above it (its explanation), leaving comments that label active assertions intact.
 const SKIP_DECL = /\b(?:it|test|describe)\.skip\s*\(|\bx(?:it|describe)\s*\(/;
@@ -54,11 +54,15 @@ const testFiles = walk(TESTS_ROOT);
 const allText = testFiles.map((f) => stripSkippedTraceability(readFileSync(f, 'utf-8'))).join('\n');
 
 function isReferenced(id: string): boolean {
-  // bare id (word-bounded) OR an explicit bracketed SPEC tag for this id
-  const bare = new RegExp(`(?<![\\w-])${escapeRe(id)}(?![\\w-])`);
-  const tag = new RegExp(`\\[SPEC:${escapeRe(id)}\\]`);
-  return bare.test(allText) || tag.test(allText);
+  // Only an explicit [SPEC:<id>] tag counts: ids such as FR-006 or FR-014 recur across features with
+  // different meanings, so a bare id could make a clause look covered when no test verified it.
+  // `spec('ID', ...)` from specRef.ts renders the same tag at run time, so its arguments count too.
+  return new RegExp(`\\[SPEC:${escapeRe(id)}\\]`).test(allText) || specHelperIds.has(id);
 }
+
+const specHelperIds = new Set(
+  [...allText.matchAll(/\bspec\(([^)]*)\)/g)].flatMap((m) => [...m[1].matchAll(/'([A-Za-z0-9-]+)'/g)].map((a) => a[1])),
+);
 
 describe('[SPEC:FR-002] spec coverage map (clauses <-> tests)', () => {
   const catalogIds = new Set(CLAUSES.map((c) => c.id));
@@ -93,11 +97,13 @@ describe('[SPEC:FR-002] spec coverage map (clauses <-> tests)', () => {
   it('[SPEC:FR-002] coverage scan ignores skipped-test traceability but keeps active comment labels', () => {
     // A skipped stub (and its explanation comment) must NOT count as coverage; a comment that labels
     // a real assertion inside an active test must survive. This guards the scanner's blind spot fix.
+    // Built at run time so this file's own text never carries an unknown tag literal.
+    const T = '[SP' + 'EC:';
     const sample = [
-      '// SAMPLECLAUSE-SKIP: deferred because the server cannot be driven from a test',
-      "it.skip('SAMPLECLAUSE-SKIP deferred e2e', () => undefined);",
+      `// ${T}SAMPLECLAUSE-SKIP] deferred because the server cannot be driven from a test`,
+      `it.skip('${T}SAMPLECLAUSE-SKIP] deferred e2e', () => undefined);`,
       "it('active path', () => {",
-      '  // SAMPLECLAUSE-ACTIVE: this comment labels a real assertion',
+      `  // ${T}SAMPLECLAUSE-ACTIVE] this comment labels a real assertion`,
       '  expect(true).toBe(true);',
       '});',
     ].join('\n');
@@ -109,8 +115,8 @@ describe('[SPEC:FR-002] spec coverage map (clauses <-> tests)', () => {
   it('[SPEC:FR-003] known spec-vs-implementation deviations are surfaced as waivers, not silent', () => {
     // F1 (sync-collection 415) and F3 (owner-based lock) must remain visible.
     const waivedIds = new Set(waived.map((c) => c.id));
-    // F4 was resolved in 0.7.1 — CF-12 is no longer waived (verified at layer a by
-    // diff3Strategy.test.ts). F1/F3 server quirks remain visible.
+    // CF-12 is not waived (F4 resolved; verified at layer a by diff3Strategy.test.ts). F1/F3 server quirks
+    // remain visible.
     expect(waivedIds.has('TK-1')).toBe(true); // F1
     expect(waived.length).toBeGreaterThan(0);
   });

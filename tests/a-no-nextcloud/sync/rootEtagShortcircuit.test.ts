@@ -1,8 +1,7 @@
-// [SPEC:ES-1..ES-10] specs/main/spec.md §8a (root-ETag short-circuit, spec 023).
-// Nextcloud propagates child changes up to the vault root ETag, so a matching root ETag means the
-// remote tree is unchanged since the last REAL full scan. The full-scan path then rebuilds the remote
-// listing from State (skipping getFiles('')∞ / getDirectories('')∞). The rebuilt listing is COMPLETE,
-// so it flows through the unchanged full-scan logic (deletion safety, conflicts, uploads untouched).
+// [SPEC:ES-1..ES-10] Root-ETag short-circuit (docs/spec.md §8a.5). Nextcloud propagates child changes up
+// to the vault root ETag, so a matching root ETag means the remote tree is unchanged since the last REAL
+// full scan. The listing is then rebuilt from State (skipping the infinity-depth PROPFINDs) and flows
+// through the unchanged full-scan logic.
 import { requestUrl, DataAdapter } from 'obsidian';
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { StateDB } from '../../../src/data/StateDB';

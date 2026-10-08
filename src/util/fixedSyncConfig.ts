@@ -1,7 +1,6 @@
-// Single source of truth for the five settings deprecated in feature 033. These were user-editable
-// (restored in 032) but carry no needed per-user capability, so they are removed from the UI and
-// pinned here to converge every user onto one path. Behavior reads these constants instead of
-// `settings.<key>`; the persisted keys are dropped by pruneObsoleteSettings on next load.
+// Fixed values for settings that are not user-editable, so every user takes one path (docs/spec.md
+// §15.1.2). Behavior reads these instead of `settings.<key>`; persisted keys are dropped by
+// pruneObsoleteSettings on load.
 //
 // - fileLockingEnabled: off — lost-update safety is the always-on If-Match precondition, without the
 //   LOCK/UNLOCK round-trips.
@@ -14,12 +13,8 @@ export const FIXED = {
   maxConflictRegions: 0,
 } as const;
 
-/**
- * Upload chunk threshold in MB: files larger than this upload via the chunked API; smaller files use
- * a single PUT. Platform-derived (no user input): mobile uses a lower cutoff so large files chunk
- * earlier and reduce peak memory (a single PUT loads the whole file into memory, which is costly on
- * memory-constrained mobile, especially iOS requestUrl).
- */
+// Files larger than this upload via the chunked API. Mobile uses a lower cutoff because a single
+// PUT loads the whole file into memory (costly on iOS requestUrl).
 export function chunkThresholdMB(isMobile: boolean): number {
   return isMobile ? 20 : 50;
 }

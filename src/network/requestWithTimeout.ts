@@ -1,23 +1,9 @@
 import { requestUrl, RequestUrlParam, RequestUrlResponse } from 'obsidian';
 
-/**
- * Wrap Obsidian's {@link requestUrl} with a hard timeout.
- *
- * Obsidian's `requestUrl` has no built-in timeout and accepts no `AbortSignal`, so a server that
- * accepts the TCP/TLS connection but never sends a response (half-open socket, stalled proxy, hung
- * captive portal) would leave the request pending forever. Because a sync holds the engine's
- * `running` guard for the duration of its awaits, one such request would strand the whole engine as
- * "sync in progress" indefinitely (feature 053 clears the flag on failure — but only once the await
- * actually settles, which a hang never does).
- *
- * We race the request against a timer. On timeout the returned promise rejects; the underlying
- * `requestUrl` keeps running but its result is ignored (there is no way to cancel it). The sync's
- * guarded try/finally turns the rejection into an ordinary failure — logged, surfaced, `running`
- * cleared — so the next sync retries instead of the engine locking up.
- *
- * `timeoutMs <= 0` (or non-finite) disables the timeout and awaits unboundedly — a deliberate
- * escape hatch, never the default (the default is `networkTimeoutSeconds` = 30s).
- */
+// Obsidian's requestUrl has no timeout or AbortSignal: a half-open socket would hold the engine's
+// "running" guard forever. Race it against a timer; on timeout the promise rejects (the request keeps
+// running, its result ignored) so the sync fails normally and the next one retries.
+// timeoutMs <= 0 or non-finite disables the timeout (escape hatch; default is networkTimeoutSeconds = 30s).
 export function requestUrlWithTimeout(params: RequestUrlParam, timeoutMs: number): Promise<RequestUrlResponse> {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return requestUrl(params);
   return new Promise<RequestUrlResponse>((resolve, reject) => {

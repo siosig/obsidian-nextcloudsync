@@ -8,10 +8,8 @@ import {
 } from '../../../src/network/remotePath';
 
 describe('hrefToRelative', () => {
-  // Regression: Server URL pointing at a subfolder under the WebDAV files root.
-  // Previously the href was only stripped up to `/remote.php/dav/files/<user>/`,
-  // leaving the `Documents/obsidian/` prefix, so fromRemotePath() returned null and
-  // every remote file was filtered out → the initial sync marked everything as upload.
+  // Server URL pointing at a subfolder under the WebDAV files root: the href must be stripped past the subfolder
+  // prefix too, otherwise fromRemotePath() returns null and every remote file is filtered out.
   const baseUrl = 'https://example.com/nextcloud/remote.php/dav/files/alice/Documents/obsidian';
   const vault = 'Obsidian Vault';
 
@@ -22,7 +20,7 @@ describe('hrefToRelative', () => {
 
   it('decodes percent-encoded (multibyte) segments', () => {
     const href = '/nextcloud/remote.php/dav/files/alice/Documents/obsidian/Obsidian%20Vault/%E3%83%A1%E3%83%A2/x.md';
-    expect(hrefToRelative(baseUrl, vault, href)).toBe('メモ/x.md');
+    expect(hrefToRelative(baseUrl, vault, href)).toBe('\u30e1\u30e2/x.md');
   });
 
   it('returns "" for the base folder itself', () => {
@@ -83,13 +81,9 @@ describe('fromRemotePath (traversal hardening)', () => {
   });
 });
 
-
-// [SPEC:URE-1] [SPEC:URE-3] [SPEC:URE-4]: feature 065 (issue #25). ONE encoding scheme for every
-// platform — encodeRemoteUrl takes no platform argument at all, which is what makes "iOS behaves
-// differently here" unrepresentable rather than merely discouraged. Feature 061's iOS branch (leave
-// the path raw and let the request layer encode it) is gone: a raw space is NOT encoded there, so
-// every path containing one 404'd. The scheme below is byte-for-byte webdav-client's encodePath(),
-// which remotely-save ships to iOS users at scale.
+// [SPEC:URE-1] [SPEC:URE-3] [SPEC:URE-4]: issue #25. ONE encoding scheme for every platform: encodeRemoteUrl takes no
+// platform argument, so "iOS behaves differently" is unrepresentable. A raw space is NOT encoded by the request layer,
+// so leaving the path raw 404'd every path containing one. The scheme is byte-for-byte webdav-client's encodePath().
 describe('encodeRemoteUrl', () => {
   const baseUrl = 'https://example.com/remote.php/dav/files/alice';
 
@@ -101,12 +95,12 @@ describe('encodeRemoteUrl', () => {
   });
 
   it('percent-encodes CJK characters as UTF-8', () => {
-    expect(encodeRemoteUrl(baseUrl, '中文目录/日记.md'))
+    expect(encodeRemoteUrl(baseUrl, '\u4e2d\u6587\u76ee\u5f55/\u65e5\u8bb0.md'))
       .toBe(`${baseUrl}/%E4%B8%AD%E6%96%87%E7%9B%AE%E5%BD%95/%E6%97%A5%E8%AE%B0.md`);
   });
 
   it('percent-encodes a mixed space + CJK path (the PR #17 folder name)', () => {
-    expect(encodeRemoteUrl(baseUrl, '00 收件箱/未命名.md'))
+    expect(encodeRemoteUrl(baseUrl, '00 \u6536\u4ef6\u7bb1/\u672a\u547d\u540d.md'))
       .toBe(`${baseUrl}/00%20%E6%94%B6%E4%BB%B6%E7%AE%B1/%E6%9C%AA%E5%91%BD%E5%90%8D.md`);
   });
 
@@ -143,7 +137,7 @@ describe('encodeRemoteUrl', () => {
   // Guards the actual defect shape: encoding twice yields %25.. and the server stores the literal
   // percent sequence as the name. One pass, and only one, may ever be applied here.
   it('encodes exactly once — no %25 appears for input that contains no literal %', () => {
-    expect(encodeRemoteUrl(baseUrl, '00 收件箱/未命名.md')).not.toContain('%25');
+    expect(encodeRemoteUrl(baseUrl, '00 \u6536\u4ef6\u7bb1/\u672a\u547d\u540d.md')).not.toContain('%25');
   });
 
   // [SPEC:URE-3] send/receive symmetry: whatever we encode, hrefToRelative must decode back.
@@ -152,7 +146,7 @@ describe('encodeRemoteUrl', () => {
     const paths = [
       'Directory Name/FileName.md',
       'This Is A Note.md',
-      '00 收件箱/未命名.md',
+      '00 \u6536\u4ef6\u7bb1/\u672a\u547d\u540d.md',
       'Test&Note.md',
       'a#b?c%d.md',
       '📁folder/note.md',
@@ -165,10 +159,9 @@ describe('encodeRemoteUrl', () => {
   });
 });
 
-// [SPEC:URE-4]: the Server URL may end in a subfolder holding a space or non-ASCII characters, and
-// it is the base of every request URL — so it needs the same one-pass treatment. A value that
-// already contains `%` was pasted pre-encoded (browsers show URLs that way) and must be left alone,
-// otherwise `%20` would become `%2520` — the exact corruption this feature exists to prevent.
+// [SPEC:URE-4]: the Server URL may end in a subfolder holding a space or non-ASCII characters and is the base of every
+// request URL, so it needs the same one-pass treatment. A value already containing `%` was pasted pre-encoded and must
+// be left alone, otherwise `%20` would become `%2520`.
 describe('encodeServerUrl', () => {
   it('encodes a space in a raw Server URL', () => {
     expect(encodeServerUrl('https://example.com/dav/My Folder'))
@@ -176,7 +169,7 @@ describe('encodeServerUrl', () => {
   });
 
   it('encodes non-ASCII in a raw Server URL', () => {
-    expect(encodeServerUrl('https://example.com/dav/フォルダ'))
+    expect(encodeServerUrl('https://example.com/dav/\u30d5\u30a9\u30eb\u30c0'))
       .toBe('https://example.com/dav/%E3%83%95%E3%82%A9%E3%83%AB%E3%83%80');
   });
 

@@ -1,7 +1,5 @@
-// [SPEC:MIR-3] specs/045-remote-mirror-pull — applyRemoteMirror: delete local-only files, reconcile
-// StateDB to the remote (converge to zero diff), and bypass the mass-delete breaker (no count limit).
-// Downloads themselves route through the already-tested downloadFile path and are verified end-to-end
-// in b1; here we focus on the NEW logic: local-only deletion, StateDB convergence, and breaker bypass.
+// [SPEC:MIR-3] applyRemoteMirror: delete local-only files, reconcile StateDB to the remote (converge to
+// zero diff), and bypass the mass-delete breaker. Downloads route through downloadFile and are covered in b1.
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { MirrorPlan } from '../../../src/sync/mirrorPlan';
 import { TFile } from '../support/obsidian';
@@ -97,7 +95,7 @@ describe('[SPEC:MIR-3] SyncEngine.applyRemoteMirror — convergence & breaker by
     // a.md remains tracked (unchanged); stale.md (not on remote) is dropped → StateDB == remote.
     expect([...store.keys()].sort()).toEqual(['a.md']);
     const a = store.get('a.md')!;
-    expect(a.localHash).toBe(a.remoteId); // tracked as "unchanged" so next sync converges (FR-011)
+    expect(a.localHash).toBe(a.remoteId); // tracked as "unchanged" so next sync converges
   });
 
   it('bypasses the mass-delete breaker: deletes far more than 20% of the tracked set', async () => {

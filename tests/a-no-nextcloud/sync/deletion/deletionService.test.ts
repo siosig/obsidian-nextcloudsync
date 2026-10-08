@@ -1,4 +1,4 @@
-// Direct tests for DeletionService (feature 074, addendum).
+// Direct tests for DeletionService.
 //
 // No [SPEC:...] tags: DEL-*, SG-* and MDV-* stay with the engine-level suites.
 //
@@ -35,20 +35,20 @@ const base = (over: Partial<FileState> = {}): FileState => ({
 });
 
 interface Opts {
-  /** What recalcChecksum returns; 'throw' makes it fail. */
+  // What recalcChecksum returns; 'throw' makes it fail.
   recalc?: string | null | 'throw';
-  /** Vault-tracked abstract files, by path. */
+  // Vault-tracked abstract files, by path.
   vaultFiles?: Record<string, 'file' | 'folder'>;
-  /** Paths adapter.exists() reports. */
+  // Paths adapter.exists() reports.
   adapterPaths?: string[];
   deleteFails?: number | 'error';
   trashFails?: boolean;
   excluded?: (path: string) => boolean;
-  /** File paths the state DB tracks (feature 086: a trashed folder drops its subtree). */
+  // File paths the state DB tracks (a trashed folder drops its subtree).
   trackedFiles?: string[];
-  /** Directory paths the state DB tracks (feature 086). */
+  // Directory paths the state DB tracks.
   trackedDirs?: string[];
-  /** What statFile returns; 'throw' makes the probe fail (feature 086). */
+  // What statFile returns; 'throw' makes the probe fail.
   stat?: RemoteFileInfo | null | 'throw';
 }
 
@@ -67,7 +67,7 @@ function build(o: Opts = {}, over: Partial<DeletionDeps> = {}) {
     history: [] as string[],
     downloads: [] as string[],
     stats: [] as string[],
-    /** Ordered log, so "ignore registered BEFORE trashFile" is checkable (feature 086, FR-005). */
+    // Ordered log, so "ignore registered BEFORE trashFile" is checkable (FR-005).
     order: [] as string[],
   };
 
@@ -197,7 +197,7 @@ describe('DeletionService.applyLocalDeletion — proof before propagation', () =
   });
 
   it('propagates any other delete failure instead of dropping the entry', async () => {
-    // G1-2: keeping the state entry is what makes the next sync retry rather than re-download.
+    // Keeping the state entry is what makes the next sync retry rather than re-download.
     const { deletion, client, calls } = build({ recalc: 'BASE-HASH', deleteFails: 500 });
     await expect(
       deletion.applyLocalDeletion(client, remote(), base(), 'rid', 'etag', summary()),
@@ -283,15 +283,9 @@ describe('DeletionService.processRemoteDeletion — applying it locally', () => 
   });
 });
 
-// Feature 086 (issue #46), the up direction. A tracked file that is absent locally AND absent from
-// the remote listing used to get a bare DELETE — no question asked, 404 treated as success. That is
-// fine while the listing is complete, and this issue is the proof that it is not always complete: the
-// same glitch that made a folder vanish from the directory listing can make a file vanish from the
-// file listing, and then an unproven DELETE destroys a copy the server really had.
-//
-// So the listing stops being the evidence. One Depth 0 PROPFIND answers both questions at once —
-// whether it is there, and what its checksum is — which is exactly what the guarded path already
-// needs. Watch mode has done it this way since feature 064; this is the same code, now shared.
+// Listing absence is not proof of remote deletion: the listing can drop a file, and a bare DELETE would
+// destroy a copy the server really had. One Depth 0 PROPFIND answers both "is it there" and "what is its
+// checksum", as in the guarded path and watch mode. (docs/plan.md §7.5)
 describe('DeletionService.deleteLocallyMissing — proof before an unlisted DELETE', () => {
   // The file is tracked — that is the whole premise: a row saying "synced, now absent locally".
   const run = (o: Opts) => {
@@ -300,13 +294,13 @@ describe('DeletionService.deleteLocallyMissing — proof before an unlisted DELE
     return { h, s, go: () => h.deletion.deleteLocallyMissing(h.client, 'note.md', base(), s) };
   };
 
-  it('GDP-14 asks the server before deciding, exactly once', async () => {
+  it('[SPEC:GDP-14] asks the server before deciding, exactly once', async () => {
     const { h, go } = run({ stat: null });
     await go();
     expect(h.calls.stats).toEqual(['note.md']);
   });
 
-  it('GDP-15 a 404 means nothing to delete: no DELETE, and the tracking goes', async () => {
+  it('[SPEC:GDP-15] a 404 means nothing to delete: no DELETE, and the tracking goes', async () => {
     const { h, s, go } = run({ stat: null });
 
     expect(await go()).toBe('untracked');
@@ -315,12 +309,11 @@ describe('DeletionService.deleteLocallyMissing — proof before an unlisted DELE
     expect(h.calls.stateDeletes).toEqual(['note.md']);
     expect(h.calls.droppedBase).toEqual(['note.md']);
     expect(h.calls.droppedSnapshot).toEqual(['note.md']);
-    // Nothing was deleted on the server, so nothing is counted as deleted — same as the old code,
-    // where the DELETE threw 404 before the counter was reached.
+    // Nothing was deleted on the server, so nothing is counted as deleted.
     expect(s.deletedCount).toBe(0);
   });
 
-  it('GDP-16 present and unchanged: the deletion is real and propagates', async () => {
+  it('[SPEC:GDP-16] present and unchanged: the deletion is real and propagates', async () => {
     const { h, s, go } = run({ stat: remote({ checksum: 'BASE-HASH' }) });
 
     expect(await go()).toBe('deleted');
@@ -330,9 +323,8 @@ describe('DeletionService.deleteLocallyMissing — proof before an unlisted DELE
     expect(s.deletedCount).toBe(1);
   });
 
-  // The case the old code got wrong. The file was absent from the listing but present and EDITED on
-  // the server; a bare DELETE threw away another device's work with no way back.
-  it('GDP-17 present but diverged: the remote copy is restored, never deleted', async () => {
+  // The file was absent from the listing but present and EDITED on the server; a bare DELETE would throw away another device's work.
+  it('[SPEC:GDP-17] present but diverged: the remote copy is restored, never deleted', async () => {
     const { h, go } = run({ stat: remote({ checksum: 'THEIR-EDIT' }) });
 
     expect(await go()).toBe('restored');
@@ -342,7 +334,7 @@ describe('DeletionService.deleteLocallyMissing — proof before an unlisted DELE
     expect(h.calls.stateDeletes).toEqual([]); // still tracked — the file is back
   });
 
-  it('GDP-18 present but unprovable (no checksum): kept, because absence of proof is not proof', async () => {
+  it('[SPEC:GDP-18] present but unprovable (no checksum): kept, because absence of proof is not proof', async () => {
     const { h, go } = run({ stat: remote({ checksum: null }), recalc: null });
 
     expect(await go()).toBe('kept');
@@ -352,10 +344,10 @@ describe('DeletionService.deleteLocallyMissing — proof before an unlisted DELE
     expect(h.calls.stateDeletes).toEqual([]);
   });
 
-  // G1-2: an indeterminate answer keeps the tracking so the next sync retries. Dropping it would let
+  // An indeterminate answer keeps the tracking so the next sync retries. Dropping it would let
   // the next sync see the still-present remote file as new and download it back, quietly undoing the
   // user's deletion.
-  it('GDP-19 an unanswerable probe deletes nothing and leaves the tracking for the next sync', async () => {
+  it('[SPEC:GDP-19] an unanswerable probe deletes nothing and leaves the tracking for the next sync', async () => {
     const { h, go } = run({ stat: 'throw' });
 
     await expect(go()).rejects.toThrow();
@@ -365,7 +357,7 @@ describe('DeletionService.deleteLocallyMissing — proof before an unlisted DELE
     expect(h.calls.droppedBase).toEqual([]);
   });
 
-  it('GDP-19 a DELETE that really fails also keeps the tracking', async () => {
+  it('[SPEC:GDP-19] a DELETE that really fails also keeps the tracking', async () => {
     const { h, go } = run({ stat: remote({ checksum: 'BASE-HASH' }), deleteFails: 423 });
 
     await expect(go()).rejects.toThrow();

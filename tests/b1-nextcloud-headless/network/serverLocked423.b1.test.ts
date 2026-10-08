@@ -1,37 +1,23 @@
-// Feature 090 (issue #58): server-side lock detection on 423.
-//
-// SL-1 (423-on-PUT/DELETE from a foreign lock holder) cannot be reproduced by this harness: it uses
-// a SINGLE Nextcloud account (see support/env.ts), and LK-2/LK-4 in ./locking.b1.test.ts already
-// establish that this server permits a client to PUT over its own held lock (same owner is not
-// blocked) — the very scenario issue #58 reports (a lock held by a DIFFERENT identity, e.g. the
-// Nextcloud Text web editor) needs a second account/token this harness does not have. The client-side
-// logic that turns a 423 into a ServerLockedError is fully covered, deterministically, by the a-layer
-// suites (tests/a-no-nextcloud/network/nextcloudClient.serverLock423.test.ts and
-// standardWebDavClient.serverLock423.test.ts), which mock the 423 + lockdiscovery response instead.
-//
-// SL-2 verifies the one thing only a real server can prove: that a genuine Nextcloud lockdiscovery
-// PROPFIND round-trip is well-formed (207, readable, readLockDiscoveryOwner never throws), and that
-// IF the server reports an owner, the reader extracts it correctly.
-//
-// It does NOT assert that an owner is always present. Measured against this project's own
-// nextcloud-testinstance: taking a lock via NextcloudClient.lockFile (X-User-Lock: '1', the plugin's
-// own mechanism) and then issuing the exact PROPFIND from contracts/lockdiscovery-propfind.md comes
-// back 207 but with NO owner in <D:lockdiscovery> (neither D:owner nor nc:lock-owner). This differs
-// from issue #58's own report, where a lock held by the Nextcloud Text web editor on the reporter's
-// server (35.0.0) DID show `<d:owner>Text</d:owner>`/`<nc:lock-owner>Text</nc:lock-owner>` under the
-// same query. Whether files_lock exposes an owner via plain lockdiscovery apparently depends on the
-// server version and/or on WHO/WHAT took the lock (X-User-Lock via this plugin's own lockFile vs. the
-// Text app's own lock-taking path) — not something this harness can control or force either way.
-// This is exactly why FR-004 requires a graceful fallback to the plain, pre-existing message when no
-// owner can be read: production correctness does not depend on the owner always being present.
+// Server-side lock detection on 423 (issue #58).
+// SL-1: the admin locks a file and shares it with ncuser2, whose client then PUTs and DELETEs the shared file; both must
+// surface as ServerLockedError (a lock held by a DIFFERENT identity). The a-layer serverLock423 suites cover the
+// client-side 423 -> ServerLockedError logic with a mocked response.
+// SL-2: only a real server can prove a genuine lockdiscovery PROPFIND round-trip is well-formed (207, readable,
+// readLockDiscoveryOwner never throws) and that an owner, if reported, is extracted.
+// It does NOT assert an owner is always present: on the Docker suite's Nextcloud a lock taken via
+// NextcloudClient.lockFile (X-User-Lock: '1') answers 207 with no owner in <D:lockdiscovery>, whereas issue #58's
+// server showed the Text editor as owner. Whether an owner is exposed depends on server version and on who took the
+// lock, which this harness cannot control; hence FR-004's fallback to the plain message when no owner can be read.
 import { readLockDiscoveryOwner } from '../../../src/network/dav/propfind';
 import { encodeRemoteUrl, toRemotePath } from '../../../src/network/remotePath';
-import { describeLive } from '../support/env';
+import { ServerLockedError, DEFAULT_SETTINGS } from '../../../src/types';
+import { NextcloudClient } from '../../../src/network/NextcloudClient';
+import { describeLive, requireUser2 } from '../support/env';
+import { shareWithUser } from '../support/share';
 import { authHeaderOf, baseUrlOf } from '../support/clientFactory';
 import { cleanupWorkspace, IsolatedWorkspace } from '../support/isolation';
 import { setupWorkspace, LiveWorkspace } from '../support/workspace';
 import { textBuf } from '../support/helpers';
-import type { NextcloudClient } from '../../../src/network/NextcloudClient';
 import type { LiveEnv } from '../support/env';
 
 const LOCKDISCOVERY_BODY =
@@ -56,13 +42,41 @@ describeLive('Layer A — server lock detection on 423 (SL, feature 090)', (getE
     if (client && ws) await cleanupWorkspace(client, ws);
   });
 
-  // SL-1: reproducing a real foreign-lock 423 needs a distinct second account/token, which this
-  // single-credential harness does not have (see file header and LK-4 in locking.b1.test.ts, the
-  // same limitation for the plugin's own lockFile/unlockFile round trip).
-  it.skip('SL-1 423-on-PUT/DELETE from a foreign lock holder (needs a second account/token)', () => undefined);
+  // SL-1: a lock held by another account makes PUT and DELETE fail with ServerLockedError.
+  it('[SPEC:SL-1] 423-on-PUT/DELETE from a foreign lock holder', async () => {
+    if (!hasLocking) {
+      if (process.env.SUITE_REQUIRE_ENV === '1') throw new Error('server has no files_lock');
+      console.warn('[e2e] SL-1 skipped: server has no files_lock');
+      return;
+    }
+    const u2 = requireUser2(env);
+    const name = `sl1-${Math.random().toString(36).slice(2, 8)}.md`;
+    const client2 = new NextcloudClient(
+      { ...DEFAULT_SETTINGS, serverUrl: u2.serverUrl, username: u2.username },
+      u2.password,
+      '',
+    );
 
-  it('SL-2 lockdiscovery PROPFIND round-trip against a real server', async () => {
-    if (!hasLocking) { console.warn('[e2e] SL-2 skipped: server has no files_lock'); return; }
+    await client.uploadFile(name, textBuf('v1'));
+    const token = await client.lockFile(name);
+    try {
+      await shareWithUser(env, `${ws.remoteBase}/${name}`, u2.username);
+      // Precondition: the share is visible at the second account's root (see LK-4).
+      expect(await client2.statFile(name)).not.toBeNull();
+
+      await expect(client2.uploadFile(name, textBuf('v2'))).rejects.toBeInstanceOf(ServerLockedError);
+      await expect(client2.deleteFile(name, '')).rejects.toBeInstanceOf(ServerLockedError);
+    } finally {
+      await client.unlockFile(name, token);
+    }
+  });
+
+  it('[SPEC:SL-2] lockdiscovery PROPFIND round-trip against a real server', async () => {
+    if (!hasLocking) {
+      if (process.env.SUITE_REQUIRE_ENV === '1') throw new Error('server has no files_lock');
+      console.warn('[e2e] SL-2 skipped: server has no files_lock');
+      return;
+    }
 
     const relPath = 'sl2.md';
     await client.uploadFile(relPath, textBuf('v1'));

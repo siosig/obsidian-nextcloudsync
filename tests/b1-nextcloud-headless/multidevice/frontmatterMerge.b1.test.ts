@@ -1,16 +1,11 @@
-// Layer B — multi-device frontmatter merge hardening (feature 043), live server.
-// Reproduces the two situations the user asked to cover, end-to-end against a real Nextcloud:
-//   (1) PC-A and PC-B each edit the SAME note's frontmatter/body separately → merge.
-//   (2) PC-A edits locally + a server-side program rewrites the remote frontmatter out of band
-//       (the real reported bug: base [1,2,3] → server [2,3,4] must land at [2,3,4], not union
-//       [1,2,3,4]) → PC-A syncs.
-// Invariants asserted across every case: the resolved `---` frontmatter block NEVER contains a
-// conflict-marker line, list fields honour deletions (no union resurrection, no near-duplicate
-// growth), scalar conflicts fall to the existing policy, and a further no-edit sync converges with
-// no churn / no marker growth / no tag growth (self-healing).
-//
-// D = desktop (defaults). M = iPhone: periodic sync + watch-on-change OFF (trigger settings only;
-// the test drives every sync manually, exactly like a manual iPhone sync).
+// Layer B — multi-device frontmatter merge hardening, live server: (1) two devices edit the SAME note's
+// frontmatter/body separately -> merge; (2) device A edits locally while a server-side program rewrites the remote
+// frontmatter out of band (base [1,2,3] -> server [2,3,4] must land at [2,3,4], not the union [1,2,3,4]).
+// Asserted in every case: the resolved `---` block NEVER contains a conflict-marker line, list fields honour deletions
+// (no union resurrection, no near-duplicate growth), scalar conflicts fall to the existing policy, and a further no-edit
+// sync converges with no churn (self-healing).
+// D = desktop (defaults). M = iPhone: periodic sync and watch-on-change OFF (trigger settings only; the test drives
+// every sync manually).
 import { describeLive } from '../support/env';
 import { setupWorkspace } from '../support/workspace';
 import { cleanupWorkspace, IsolatedWorkspace } from '../support/isolation';
@@ -18,18 +13,15 @@ import { NextcloudClient } from '../../../src/network/NextcloudClient';
 import { makeDevice } from '../support/engineDevice';
 import { decodeBuf, textBuf } from '../support/helpers';
 
-/** Extract the leading `---\n…\n---` frontmatter block (empty when the note has none). */
 function fmBlock(content: string): string {
   const m = content.match(/^---\r?\n[\s\S]*?\r?\n---/);
   return m ? m[0] : '';
 }
 
-/** True when any line in `s` is a plugin conflict-marker line. */
 function hasMarkerLines(s: string): boolean {
   return /^(?:<<<<<<<|=======|>>>>>>>)/m.test(s);
 }
 
-/** The list items under a `tags:` key in a frontmatter block (block style), normalized-string form. */
 function tagsIn(content: string): string[] {
   const lines = fmBlock(content).split(/\r?\n/);
   const start = lines.findIndex((l) => /^tags:\s*$/.test(l));
@@ -60,7 +52,7 @@ describeLive('Layer B — frontmatter merge hardening (043) across D/M + server 
 
   const remote = (p: string): Promise<string> => baseClient.downloadFile(p).then(decodeBuf);
 
-  // ── FM-B1-1: both devices edit tags — deletion propagates, both additions kept, no markers ─────
+  // FM-B1-1: both devices edit tags — deletion propagates, both additions kept, no markers
   it('[SPEC:FM-B1-1] D deletes+adds a tag while M adds a tag → base-aware set merge (deletion propagates, no marker, converges)', async () => {
     const env = getEnv();
     const d = makeDevice(env, ws.remoteBase, 'D-desktop');
@@ -68,13 +60,11 @@ describeLive('Layer B — frontmatter merge hardening (043) across D/M + server 
     const F = 'fm-b1-1.md';
     d.vault.seedLocal('anchor.md', 'anchor');
 
-    // Baseline: tags [keep, dropme] on both devices.
     d.vault.seedLocal(F, '---\ntags:\n  - keep\n  - dropme\n---\nBody\n');
     await d.sync();
     await m.sync();
     expect(tagsIn(m.vault.readLocal(F)!)).toEqual(['keep', 'dropme']);
 
-    // D: delete `dropme`, add `addd` → [keep, addd]; sync → remote holds D's set.
     d.vault.seedLocal(F, '---\ntags:\n  - keep\n  - addd\n---\nBody\n');
     await d.sync();
 
@@ -90,17 +80,15 @@ describeLive('Layer B — frontmatter merge hardening (043) across D/M + server 
     expect(await remote(F)).toBe(merged);
     expect(m.stateDB.getFile(F)?.isConflicted ?? false).toBe(false);
 
-    // Convergence: another no-edit sync leaves everything byte-stable (no churn / tag growth / markers).
     await m.sync();
     expect(m.vault.readLocal(F)).toBe(merged);
     expect(tagsIn(m.vault.readLocal(F)!).sort()).toEqual(['addd', 'addm', 'keep']);
-    // D also converges onto the merged set.
     await d.sync();
     expect(tagsIn(d.vault.readLocal(F)!).sort()).toEqual(['addd', 'addm', 'keep']);
     expect(hasMarkerLines(fmBlock(d.vault.readLocal(F)!))).toBe(false);
   }, 180_000);
 
-  // ── FM-B1-2: both devices change the same scalar → existing policy decides, no markers ─────────
+  // FM-B1-2: both devices change the same scalar → existing policy decides, no markers
   it('[SPEC:FM-B1-2] D and M change the same frontmatter scalar to different values → existing policy decides, no marker', async () => {
     const env = getEnv();
     const d = makeDevice(env, ws.remoteBase, 'D-desktop');
@@ -124,20 +112,19 @@ describeLive('Layer B — frontmatter merge hardening (043) across D/M + server 
     expect(hasD !== hasM).toBe(true); // exactly one winner
     expect(await remote(F)).toBe(merged);
 
-    // Convergence.
     await m.sync();
     expect(m.vault.readLocal(F)).toBe(merged);
     await d.sync();
     expect(d.vault.readLocal(F)).toBe(merged);
   }, 180_000);
 
-  // ── FM-B1-3: server rewrites tags out of band ([1,2,3]→[2,3,4]); local drifted → set merge ─────
+  // FM-B1-3: server rewrites tags out of band ([1,2,3]→[2,3,4]); local drifted → set merge
   it('[SPEC:FM-B1-3] a server-side tag rewrite [t1,t2,t3]→[t2,t3,t4] propagates the deletion of t1 (base-aware merge, not union)', async () => {
     const env = getEnv();
     const d = makeDevice(env, ws.remoteBase, 'D-desktop');
     const F = 'fm-b1-3.md';
 
-    // D publishes the base tag set; a base is recorded on this device (feature 038).
+    // D publishes the base tag set; a base is recorded on this device.
     d.vault.seedLocal(F, '---\ntags:\n  - t1\n  - t2\n  - t3\n---\nBody\n');
     await d.sync();
     expect(tagsIn(await remote(F))).toEqual(['t1', 't2', 't3']);
@@ -157,13 +144,12 @@ describeLive('Layer B — frontmatter merge hardening (043) across D/M + server 
     expect(merged).not.toContain('t1');
     expect(hasMarkerLines(fmBlock(merged))).toBe(false);
 
-    // Convergence: re-sync is a fixed point (no resurrection, no growth, no markers).
     await d.sync();
     expect(tagsIn(d.vault.readLocal(F)!).sort()).toEqual(['t2', 't3', 't4']);
     expect(hasMarkerLines(fmBlock(d.vault.readLocal(F)!))).toBe(false);
   }, 180_000);
 
-  // ── FM-B1-4: server rewrite in a "strict regex breaks" shape (CRLF + trailing-space fences) ─────
+  // FM-B1-4: server rewrite in a "strict regex breaks" shape (CRLF + trailing-space fences)
   it('[SPEC:FM-B1-4] a server rewrite with CRLF + trailing-space fences never lands a marker inside frontmatter', async () => {
     const env = getEnv();
     const d = makeDevice(env, ws.remoteBase, 'D-desktop');
@@ -175,8 +161,8 @@ describeLive('Layer B — frontmatter merge hardening (043) across D/M + server 
     // Local drift is in the FRONTMATTER (add tag z), body untouched — so the merge path runs but the
     // body has no spurious conflict (only the frontmatter diverges structurally).
     d.vault.seedLocal(F, '---\ntags:\n  - a\n  - z\n---\nBody\n');
-    // Server rewrites with CRLF and trailing spaces after the fences — the shape the OLD greedy regex
-    // failed to parse, dropping the whole file to diff3 and burying the frontmatter inside markers.
+    // Server rewrites with CRLF and trailing spaces after the fences, a shape a strict regex fails to parse (dropping
+    // the whole file to diff3 and burying the frontmatter inside markers).
     await baseClient.uploadFile(F, textBuf('--- \r\ntags:\r\n  - a\r\n  - b\r\n--- \r\nBody\r\n'));
 
     await d.sync();
@@ -193,7 +179,7 @@ describeLive('Layer B — frontmatter merge hardening (043) across D/M + server 
     expect(tagsIn(d.vault.readLocal(F)!).sort()).toEqual(['a', 'b', 'z']);
   }, 180_000);
 
-  // ── FM-B1-5: explicit self-heal — after a set-merge, repeated syncs never churn/grow ────────────
+  // FM-B1-5: explicit self-heal — after a set-merge, repeated syncs never churn/grow
   it('[SPEC:FM-B1-5] after a frontmatter set merge, repeated no-edit syncs converge (no churn, no marker growth, no tag growth)', async () => {
     const env = getEnv();
     const d = makeDevice(env, ws.remoteBase, 'D-desktop');

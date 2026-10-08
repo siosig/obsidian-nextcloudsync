@@ -16,12 +16,9 @@ const res = (status: number, headers: Record<string, string> = {}) =>
 
 const client = () => new StandardWebDAVClient(settings, 'pw', 'Vault');
 
-// [SPEC:NET-3] feature 067: StandardWebDAVClient.reqReadonly() retries a transient req() rejection
-// (timeout / connection failure) up to 2x for read-only PROPFIND/GET requests only. Write requests
-// (PUT/DELETE/MOVE) never retry, because a timed-out write may have already succeeded server-side —
-// blindly retrying risks double-processing or a false MOVE-source-missing error. Same clause as the
-// NextcloudClient equivalent (tests/a-no-nextcloud/network/nextcloudClient.retry.test.ts) — one
-// spec clause, two client implementations.
+// [SPEC:NET-3] StandardWebDAVClient.reqReadonly() retries a transient req() rejection (timeout / connection failure)
+// up to 2x for read-only PROPFIND/GET only. Writes (PUT/DELETE/MOVE) never retry: a timed-out write may have already
+// succeeded server-side. Same clause as nextcloudClient.retry.test.ts: one clause, two client implementations.
 describe('StandardWebDAVClient — read-only retry on transient req() rejection (feature 067)', () => {
   beforeEach(() => {
     jest.useFakeTimers();
@@ -94,10 +91,8 @@ describe('StandardWebDAVClient — read-only retry on transient req() rejection 
   });
 
   it('moveFile (MOVE) does NOT retry on a transient rejection — fails after exactly 1 call', async () => {
-    // moveFile MKCOLs the destination's ancestors before the MOVE itself; make every call reject.
-    // That ancestor step is advisory (feature 088, contract C-4): a failure there does not abort the
-    // MOVE, because the destination folder may well exist while MKCOL of it fails. What this test
-    // pins down is the MOVE: it is attempted exactly ONCE and the transient rejection is not retried.
+    // moveFile MKCOLs the destination's ancestors before the MOVE; make every call reject. That ancestor step is
+    // advisory (a failure does not abort the MOVE), so this pins only that the MOVE is attempted exactly ONCE.
     mockRequestUrl.mockImplementation(() => Promise.reject(new Error('timeout')));
 
     await expect(client().moveFile('a.md', 'b.md')).rejects.toThrow('timeout');

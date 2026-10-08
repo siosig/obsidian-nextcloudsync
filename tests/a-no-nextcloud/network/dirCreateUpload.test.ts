@@ -6,22 +6,10 @@ import { StandardWebDAVClient } from '../../../src/network/StandardWebDAVClient'
 import { IWebDAVClient } from '../../../src/network/IWebDAVClient';
 import { DEFAULT_SETTINGS, DavSyncSettings, NetworkError, RemoteDirCreateError } from '../../../src/types';
 
-/**
- * Feature 088 (specs/088-mkcol-single-flight) — contracts C-3 and C-4.
- *
- * Two independent defects live on the "create the missing parent collections" path:
- *
- *   1. `ensureRemoteDir` MKCOLed every level best-effort and cached EVERY level as "created"
- *      without ever looking at the status, so a failed MKCOL was remembered as a success for the
- *      rest of the session and every later request skipped it (US2).
- *   2. `StandardWebDAVClient` never dropped the stale positives before re-issuing the MKCOLs, so
- *      the spec 024 recovery ("another device deleted the folder we created") only ever worked in
- *      `NextcloudClient` (US4).
- *
- * These tests describe the behaviour AFTER the fix, against a fake server that models the two rules
- * that actually matter: a PUT/MOVE into a missing parent is a 404, and a MKCOL under a missing
- * parent is a 409. The single-flight cache itself (C-1/C-2) is covered by remoteDirCache.test.ts.
- */
+// The "create missing parent collections" path: a failed MKCOL must not be cached as created, and
+// StandardWebDAVClient must drop stale positives before re-issuing MKCOLs (as NextcloudClient does).
+// The fake server models: PUT/MOVE into a missing parent is 404, MKCOL under a missing parent is 409.
+// The single-flight cache itself is covered by remoteDirCache.test.ts.
 
 const mockRequestUrl = requestUrl as unknown as jest.Mock;
 
@@ -56,7 +44,6 @@ interface FakeRequest {
   headers?: Record<string, string>;
 }
 
-/** Remote path of a request URL, with the base URL and the per-segment encoding removed. */
 function pathOf(url: string): string {
   const raw = url.startsWith(`${BASE}/`) ? url.slice(BASE.length + 1) : url;
   return raw.split('/').map(decodeURIComponent).join('/');
@@ -66,7 +53,6 @@ function parentOf(remotePath: string): string {
   return remotePath.split('/').slice(0, -1).join('/');
 }
 
-/** Every request the code under test made, in order. */
 function log(): { method: string; path: string }[] {
   return mockRequestUrl.mock.calls.map((c) => {
     const req = c[0] as FakeRequest;
@@ -79,11 +65,8 @@ const mkcolPaths = (): string[] => log().filter((e) => e.method === 'MKCOL').map
 const countOf = (method: string, path: string): number =>
   log().filter((e) => e.method === method && e.path === path).length;
 
-/**
- * A WebDAV server just real enough for parent-collection creation: `''` (the files root) always
- * exists, a MKCOL under a missing parent is 409, a MKCOL of an existing collection is 405, and a
- * PUT/MOVE whose parent collection is missing is 404 (what Nextcloud's files DAV actually returns).
- */
+// Minimal WebDAV server: '' (the files root) always exists; MKCOL under a missing parent is 409,
+// MKCOL of an existing collection is 405, PUT/MOVE with a missing parent is 404 (as Nextcloud returns).
 function fakeServer() {
   const dirs = new Set<string>(['']);
   const files = new Set<string>();
@@ -120,7 +103,7 @@ function fakeServer() {
     install(): void {
       mockRequestUrl.mockImplementation(handle);
     },
-    /** Another device removed a collection this client had already created (spec 024). */
+    // Another device removed a collection this client had already created.
     removeDir(path: string): void {
       dirs.delete(path);
       for (const f of [...files]) if (f.startsWith(`${path}/`)) files.delete(f);
@@ -135,12 +118,10 @@ beforeEach(() => {
   mockRequestUrl.mockReset();
 });
 
-// ---------------------------------------------------------------------------------------------
-// C-3: ensureRemoteDir
-// ---------------------------------------------------------------------------------------------
+// ensureRemoteDir
 
-describe('ensureRemoteDir — exactly one MKCOL per uncreated level (MSF-6 MSF-7)', () => {
-  it('MSF-6: issues one MKCOL per uncreated level, and none for a level already proven', async () => {
+describe('ensureRemoteDir — exactly one MKCOL per uncreated level ([SPEC:MSF-6] [SPEC:MSF-7])', () => {
+  it('[SPEC:MSF-6]: issues one MKCOL per uncreated level, and none for a level already proven', async () => {
     const server = fakeServer();
     server.install();
     const cache = new RemoteDirCache();
@@ -159,13 +140,13 @@ describe('ensureRemoteDir — exactly one MKCOL per uncreated level (MSF-6 MSF-7
     expect(mkcolPaths()).toEqual([]);
   });
 
-  it('MSF-6: a file directly under the request root has no ancestors and issues no MKCOL', async () => {
+  it('[SPEC:MSF-6]: a file directly under the request root has no ancestors and issues no MKCOL', async () => {
     fakeServer().install();
     await ensureRemoteDir(ctx, 'note.md', new RemoteDirCache());
     expect(mockRequestUrl).not.toHaveBeenCalled();
   });
 
-  it('MSF-7: stops at the level whose MKCOL failed and never descends below it', async () => {
+  it('[SPEC:MSF-7]: stops at the level whose MKCOL failed and never descends below it', async () => {
     // 'Vault' is created normally; every level below it is refused with a 423 (the file lock
     // Nextcloud returns for a concurrent MKCOL of the same collection).
     mockRequestUrl.mockImplementation((req: FakeRequest) => {
@@ -185,7 +166,7 @@ describe('ensureRemoteDir — exactly one MKCOL per uncreated level (MSF-6 MSF-7
     expect(mkcolPaths()).toEqual(['Vault', 'Vault/F']);
   });
 
-  it('MSF-6 MSF-7: a failed level is not remembered — the next call retries it, proven levels stay', async () => {
+  it('[SPEC:MSF-6] [SPEC:MSF-7]: a failed level is not remembered — the next call retries it, proven levels stay', async () => {
     let failNext = true;
     mockRequestUrl.mockImplementation((req: FakeRequest) => {
       const path = pathOf(req.url);
@@ -211,8 +192,8 @@ describe('ensureRemoteDir — exactly one MKCOL per uncreated level (MSF-6 MSF-7
   });
 });
 
-describe('ensureRemoteDir — concurrent branches share their common ancestors (MSF-6 MSF-10)', () => {
-  it('MSF-6 MSF-10: F/x/y and F/x/z in flight together issue one MKCOL for F and one for F/x', async () => {
+describe('ensureRemoteDir — concurrent branches share their common ancestors ([SPEC:MSF-6] [SPEC:MSF-10])', () => {
+  it('[SPEC:MSF-6] [SPEC:MSF-10]: F/x/y and F/x/z in flight together issue one MKCOL for F and one for F/x', async () => {
     const dirs = new Set<string>(['']);
     // Resolve on a later macrotask so the two chains genuinely overlap: without single-flight both
     // reach the "not in cache" branch for 'Vault/F' before either MKCOL has come back.
@@ -241,15 +222,13 @@ describe('ensureRemoteDir — concurrent branches share their common ancestors (
   });
 });
 
-// ---------------------------------------------------------------------------------------------
-// C-4: recovery from a missing parent — identical in both clients
-// ---------------------------------------------------------------------------------------------
+// Recovery from a missing parent: identical in both clients
 
 describe.each([
   ['NextcloudClient', nextcloud],
   ['StandardWebDAVClient', standard],
 ])('%s — missing-parent recovery (MSF-8 MSF-10 MSF-11)', (_name, makeClient) => {
-  it('MSF-11 MSF-10: uploadFile recovers from a stale positive — PUT 404, ancestors forgotten, MKCOL re-issued, retry PUT succeeds', async () => {
+  it('[SPEC:MSF-11] [SPEC:MSF-10]: uploadFile recovers from a stale positive — PUT 404, ancestors forgotten, MKCOL re-issued, retry PUT succeeds', async () => {
     const server = fakeServer();
     server.install();
     const client = makeClient();
@@ -264,7 +243,7 @@ describe.each([
 
     await expect(client.uploadFile('F/b.md', DATA)).resolves.toBeUndefined();
 
-    // C-4 order: PUT (404) -> MKCOL of the forgotten ancestors -> exactly one retry PUT.
+    // Order: PUT (404) -> MKCOL of the forgotten ancestors -> exactly one retry PUT.
     const t = trace();
     expect(t[0]).toBe('PUT Vault/F/b.md');
     expect(t[t.length - 1]).toBe('PUT Vault/F/b.md');
@@ -274,7 +253,7 @@ describe.each([
     expect(server.files.has('Vault/F/b.md')).toBe(true);
   });
 
-  it('MSF-11 MSF-10: moveFile recovers from a stale positive on the destination parent', async () => {
+  it('[SPEC:MSF-11] [SPEC:MSF-10]: moveFile recovers from a stale positive on the destination parent', async () => {
     const server = fakeServer();
     server.install();
     const client = makeClient();
@@ -293,9 +272,8 @@ describe.each([
     expect(server.files.has('Vault/F/moved.md')).toBe(true);
   });
 
-  it('MSF-8: an ancestor MKCOL that fails 403 stays invisible while the retry PUT succeeds', async () => {
-    // US2-7 — the path that works TODAY and must keep working: the collection is really there, the
-    // account simply may not MKCOL it. The ancestor failure must not become a user-visible error.
+  it('[SPEC:MSF-8]: an ancestor MKCOL that fails 403 stays invisible while the retry PUT succeeds', async () => {
+    // The collection is really there but the account may not MKCOL it; the ancestor failure must not become a user-visible error.
     let puts = 0;
     mockRequestUrl.mockImplementation((req: FakeRequest) => {
       if (req.method === 'MKCOL') return res(403, 'Forbidden');
@@ -311,8 +289,8 @@ describe.each([
     expect(mkcolPaths()[0]).toBe('Vault'); // it did try, and stopped at the first refusal (MSF-7)
   });
 
-  it('MSF-8 MSF-7: when the retry PUT fails too, the error names the failing level and its MKCOL status', async () => {
-    // US2-8 — replaces the undiagnosable "HTTP 404 (PUT)" with the level that could not be created.
+  it('[SPEC:MSF-8] [SPEC:MSF-7]: when the retry PUT fails too, the error names the failing level and its MKCOL status', async () => {
+    // Replaces the undiagnosable "HTTP 404 (PUT)" with the level that could not be created.
     mockRequestUrl.mockImplementation((req: FakeRequest) => {
       const path = pathOf(req.url);
       if (req.method === 'MKCOL') return path === 'Vault' ? res(405) : res(423, 'FileLocked');
@@ -324,7 +302,7 @@ describe.each([
       .then(() => null, (e: unknown) => e);
 
     expect(error).toBeInstanceOf(RemoteDirCreateError);
-    expect(error).toBeInstanceOf(NetworkError); // C-5: rides the existing per-file network-error handling
+    expect(error).toBeInstanceOf(NetworkError); // rides the existing per-file network-error handling
     const failure = error as RemoteDirCreateError;
     expect(failure.dirPath).toBe('Vault/F'); // the LEVEL that failed, not the file
     expect(failure.status).toBe(423);
@@ -337,19 +315,15 @@ describe.each([
   });
 });
 
-// ---------------------------------------------------------------------------------------------
-// The two callers that do NOT want the C-4 treatment (feature 088, plan.md "呼び出し元ごとの失敗の扱い")
-// ---------------------------------------------------------------------------------------------
+// Callers that do not want the parent-recovery treatment
 
 describe.each([
   ['NextcloudClient', nextcloud],
   ['StandardWebDAVClient', standard],
 ])('%s — createDirectory reports, createVaultRoot decides (MSF-9)', (_name, makeClient) => {
-  it('MSF-9: createDirectory fails when the collection could not be created', async () => {
-    // It used to resolve regardless, because the MKCOL loop never looked at its own status codes.
-    // Watch mode marks the folder as tracked the moment this returns, so a silent failure put a
-    // folder into the tracking index that the server does not have — the same shape that drove the
-    // delete propagation in issue #46. A folder that was not created has to say so.
+  it('[SPEC:MSF-9]: createDirectory fails when the collection could not be created', async () => {
+    // A MKCOL failure must be reported, not swallowed: watch mode marks the folder tracked as soon as this
+    // returns, so a silent failure would track a folder the server lacks (issue #46).
     mockRequestUrl.mockImplementation((req: FakeRequest) =>
       req.method === 'MKCOL' ? res(423, 'FileLocked') : res(200));
 
@@ -359,7 +333,7 @@ describe.each([
     expect((error as RemoteDirCreateError).status).toBe(423);
   });
 
-  it('MSF-9: createDirectory resolves when the collection already exists', async () => {
+  it('[SPEC:MSF-9]: createDirectory resolves when the collection already exists', async () => {
     const server = fakeServer();
     server.install();
     await makeClient().createDirectory('F');
@@ -367,13 +341,10 @@ describe.each([
     await expect(makeClient().createDirectory('F')).resolves.toBeUndefined(); // 405 is not a failure
   });
 
-  it('MSF-9: createVaultRoot still answers even when an ancestor MKCOL fails', async () => {
-    // The opposite call: here the ancestors are explicitly NOT the question being asked. The strict
-    // MKCOL of the vault folder itself is the proof that decides whether the caller may reset
-    // tracking and re-seed (feature 083), and a transient 423 on a level above it must not take that
-    // answer away — the caller would otherwise skip a re-seed it should have run.
-    // A nested remote base is what gives the vault folder an ancestor at all: with a single-segment
-    // base there is nothing above it and the best-effort call has no levels to attempt.
+  it('[SPEC:MSF-9]: createVaultRoot still answers even when an ancestor MKCOL fails', async () => {
+    // Ancestors are explicitly not the question: the strict MKCOL of the vault folder decides whether the caller
+    // may reset tracking and re-seed, so a transient 423 on a level above it must not take that answer away.
+    // A nested remote base gives the vault folder an ancestor; with a single-segment base there is nothing to attempt.
     const nested = _name === 'NextcloudClient'
       ? new NextcloudClient(settings, 'pw', 'Docs/Vault')
       : new StandardWebDAVClient(settings, 'pw', 'Docs/Vault');
@@ -391,19 +362,15 @@ describe.each([
   });
 });
 
-// ---------------------------------------------------------------------------------------------
-// A failure that is NOT about the parent must be reported as itself (feature 088 review, F1)
-// ---------------------------------------------------------------------------------------------
+// A failure that is not about the parent must be reported as itself
 
 describe.each([
   ['NextcloudClient', nextcloud],
   ['StandardWebDAVClient', standard],
 ])('%s — only a missing-parent answer may override the write\'s own status (MSF-8)', (_name, makeClient) => {
-  it('MSF-8: a MOVE that fails for an unrelated reason keeps its own status', async () => {
-    // The shape that made this worth pinning: a share the user can write into but not MKCOL in, so
-    // every MKCOL is 403 while the folder is perfectly real. An earlier version of this fix kept the
-    // speculative pre-MOVE failure and let it override, which turned EVERY move failure on such a
-    // share into "could not create the remote folder 'Vault'" — naming a folder the user can see.
+  it('[SPEC:MSF-8]: a MOVE that fails for an unrelated reason keeps its own status', async () => {
+    // A share the user can write to but not MKCOL in: every MKCOL is 403 while the folder is real. A move
+    // failure there must be reported as itself, not as "could not create the remote folder".
     mockRequestUrl.mockImplementation((req: FakeRequest) => {
       if (req.method === 'MKCOL') return res(403, 'Forbidden');
       if (req.method === 'MOVE') return res(423, 'FileLocked'); // nothing to do with the parent
@@ -417,7 +384,7 @@ describe.each([
     expect((error as NetworkError).status).toBe(423); // the MOVE's status, not the MKCOL's
   });
 
-  it('MSF-8: a MKCOL that never got an answer does not buy a second network timeout', async () => {
+  it('[SPEC:MSF-8]: a MKCOL that never got an answer does not buy a second network timeout', async () => {
     // A rejected request means no answer at all, so the parent is certainly still missing and the
     // retry can only be told the same 404 — after burning another full timeout. One write, not two.
     let puts = 0;

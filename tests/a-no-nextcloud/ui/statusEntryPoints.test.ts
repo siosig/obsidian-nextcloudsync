@@ -10,14 +10,11 @@ import {
 } from '../../../src/ui/statusEntryPoints';
 import { SYNC_RIBBON_ICON } from '../../../src/ui/syncRibbon';
 
-// Feature 076: "Mirror from remote" was about six taps deep on mobile, because mobile has no status
-// bar (addStatusBarItem is documented "Not available on mobile") and the settings tab was its only
-// route. A ribbon action of its own makes it two taps: mobile does not draw the ribbon bar, but
-// Obsidian republishes ribbon actions in the navigation bar's "Open menu" (asserted at b-3, with the
-// menu open — see ribbonVisibility.b3.test.ts).
-//
-// Same shape as syncRibbon.test.ts: the wiring is extracted behind a minimal host interface so it is
-// exercised for real at layer a — no `document`, no Obsidian app, just a fake recording the args.
+// Mobile has no status bar (addStatusBarItem is "Not available on mobile"). It does not draw the ribbon
+// bar either, but republishes ribbon actions in the navigation bar's "Open menu" (asserted at b-3, see
+// ribbonVisibility.b3.test.ts), so a ribbon action makes "Mirror from remote" two taps.
+// Same shape as syncRibbon.test.ts: the wiring sits behind a minimal host interface and is exercised at
+// layer a with a fake recording the args.
 
 interface RibbonCall {
   icon: IconName;

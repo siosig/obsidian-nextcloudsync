@@ -1,14 +1,10 @@
-// [SPEC:WSF-10] specs/064-watch-single-file-conflict/contracts/watch-single-file-sync.md (C-7)
-//
-// Feature 064 routed the watch-mode single-file path through the full classification, so it can now
-// WRITE locally (a download, or a merge result) where it previously only ever PUT. That write lands
-// in the vault and fires the same `modify` event the watcher listens to — if it were not recognised
-// as our own, the watcher would schedule another single-file sync, which writes again: a PUT → event
-// → PUT loop that never settles.
-//
-// main.ts suppresses it with `isOwnSyncEvent = isSyncTmpPath(path) || localAdapter.shouldIgnore(path)`.
-// That guard is only as good as the ignore registration performed by the write itself, which is what
-// these tests pin down: every local write path the watch flow can take marks the path first.
+// [SPEC:WSF-10] The watch-mode single-file path runs the full classification, so it can WRITE locally (a
+// download or a merge result) as well as PUT. That write fires the same `modify` event the watcher listens
+// to; if not recognised as our own, the watcher schedules another single-file sync, which writes again: a
+// PUT → event → PUT loop that never settles (docs/spec.md §5.7).
+// main.ts suppresses it with `isOwnSyncEvent = isSyncTmpPath(path) || localAdapter.shouldIgnore(path)`. That
+// guard is only as good as the ignore registration performed by the write itself, which these tests pin
+// down: every local write path the watch flow can take marks the path first.
 import { DataAdapter } from 'obsidian';
 import { LocalAdapter, isSyncTmpPath } from '../../../src/data/LocalAdapter';
 
@@ -35,7 +31,7 @@ function makeAdapter() {
   return { adapter, files };
 }
 
-/** The exact predicate main.ts applies to every vault event before propagating it. */
+// The exact predicate main.ts applies to every vault event before propagating it.
 const isOwnSyncEvent = (local: LocalAdapter, path: string): boolean =>
   isSyncTmpPath(path) || local.shouldIgnore(path);
 

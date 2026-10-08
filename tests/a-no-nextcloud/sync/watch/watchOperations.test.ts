@@ -1,17 +1,11 @@
-// Direct tests for WatchOperations (feature 074, addendum).
-//
-// No [SPEC:...] tags: WSF-* and the feature-046 clauses stay with the engine-level suites.
-//
-// Two properties carry most of the risk here.
-//
-// The asymmetry during a full sync: an EDIT is deferred and re-evaluated afterwards, while a DELETE
-// is dropped outright. Both are correct and for different reasons — the running scan would miss a
-// late edit, but it already propagates a tracked path that vanished locally, so queuing a delete
-// risks a second one. Getting either backwards loses data.
-//
-// The notification rule: watch mode runs unattended, so it must stay silent for routine outcomes and
-// speak up when a resolution actually discarded one side. A conflict settled deterministically shows
-// up in NO summary counter, which is exactly the most destructive case.
+// Direct tests for WatchOperations; no [SPEC:...] tags (WSF-* and the watch folder clauses stay with the
+// engine-level suites; docs/spec.md §5.7). Two properties carry most of the risk.
+// During a full sync an EDIT is deferred and re-evaluated afterwards while a DELETE is dropped outright: the
+// running scan would miss a late edit but already propagates a tracked path that vanished locally, so
+// queuing a delete risks a second one. Getting either backwards loses data.
+// Notifications: watch mode runs unattended, so it stays silent for routine outcomes and speaks up when a
+// resolution discarded one side. A conflict settled deterministically shows up in NO summary counter, which
+// is the most destructive case.
 import { WatchOperations, WatchDeps } from '../../../../src/sync/watch/WatchOperations';
 import { SyncJournal } from '../../../../src/sync/session/SyncJournal';
 import { MergeBaseRecorder } from '../../../../src/sync/session/MergeBaseRecorder';
@@ -35,12 +29,12 @@ const tracked = (over: Partial<FileState> = {}): FileState => ({
 interface Opts {
   running?: boolean;
   localContent?: string | null;
-  /** Signature recorded in the state DB, or undefined for an untracked file. */
+  // Signature recorded in the state DB, or undefined for an untracked file.
   base?: FileState;
-  /** What statFile returns; null ⇒ not on the server. */
+  // What statFile returns; null ⇒ not on the server.
   onServer?: RemoteFileInfo | null;
   trackedDirs?: string[];
-  /** Let processFile mutate the summary so the notification rules can be driven. */
+  // Let processFile mutate the summary so the notification rules can be driven.
   processFile?: (r: RemoteFileInfo, s: SyncSessionSummary) => Promise<void>;
   conflicts?: () => number;
   failRename?: boolean;
@@ -117,9 +111,8 @@ function build(o: Opts = {}, over: Partial<WatchDeps> = {}) {
       uploadFile: async (_c: unknown, _u: unknown, p: string) => { calls.uploaded.push(p); },
     } as unknown as TransferService,
     deletion: {
-      // Feature 086: watch and the full scan share one guarded deletion. What it does with the path
-      // (probe, prove, forget) is DeletionService's business and is tested there; what matters here
-      // is that watch hands the path over instead of deciding for itself.
+      // Watch and the full scan share one guarded deletion. What it does with the path (probe, prove, forget) is
+      // DeletionService's business and is tested there; here watch only hands the path over.
       deleteLocallyMissing: async (_c: unknown, p: string) => {
         calls.deleted.push(p);
         return 'deleted' as const;
@@ -136,6 +129,7 @@ function build(o: Opts = {}, over: Partial<WatchDeps> = {}) {
         calls.renames.push([a, b]);
       },
     }) as unknown as RenameTracker,
+    isBlockedByWifiOnly: () => false,
     isSyncRunning: () => o.running === true,
     processFile: async (r: RemoteFileInfo, s: SyncSessionSummary) => {
       calls.processed.push(r.path);
@@ -265,9 +259,9 @@ describe('WatchOperations.deleteSingleFile', () => {
     expect(calls.deleted).toEqual(['note.md']); // not a blind DELETE
   });
 
-  // Feature 086 moved the "already gone on the server" cleanup into DeletionService, where the full
-  // scan reaches it too (GDP-15). Watch keeps only its own concerns — the path lock, the full-sync
-  // exclusion, and the coalesced save — so that is what is left to check here.
+  // The "already gone on the server" cleanup lives in DeletionService, where the full scan reaches it too
+  // (GDP-15). Watch keeps only its own concerns (the path lock, the full-sync exclusion, the coalesced save),
+  // which is what is checked here.
   it('hands the path to the shared deletion instead of probing the server itself', async () => {
     const { watch, calls } = build({ base: tracked(), onServer: null });
     await watch.deleteSingleFile('note.md');
@@ -299,7 +293,7 @@ describe('WatchOperations — folder operations (feature 046)', () => {
   });
 
   it('KEEPS the tracking when the remote delete failed', async () => {
-    // G1-2: dropping it would make the next sync re-create the folder locally.
+    // Dropping it would make the next sync re-create the folder locally.
     const { watch, calls } = build({ trackedDirs: ['Old'], failFolderDelete: true });
     await watch.deleteSingleFolder('Old');
     expect(calls.deleteDir).toEqual([]);

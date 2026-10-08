@@ -1,9 +1,7 @@
-// Spec-conformance: 002-nextcloud-feature-extensions (defaults & pure logic).
-// LoginFlow polling/timeout (LoginFlowV2.test), versions/locking/chunked network
-// behavior (NextcloudClient.*.test + e2e) are covered elsewhere; here we assert
-// the spec's default feature gating (FR-017, FR-019).
-// Feature 033: chunked upload / file locking / chunk threshold are fixed values (no longer
-// user-editable settings). They live in src/util/fixedSyncConfig.ts; defaults asserted here.
+// Default feature gating (FR-017, FR-019). LoginFlow polling/timeout, versions/locking/chunked network
+// behavior are covered elsewhere (LoginFlowV2.test, NextcloudClient.*.test, e2e). Chunked upload / file
+// locking / chunk threshold are fixed values in src/util/fixedSyncConfig.ts, not user-editable settings;
+// their defaults are asserted here.
 import { DEFAULT_SETTINGS } from '../../../src/types';
 import { FIXED, chunkThresholdMB } from '../../../src/util/fixedSyncConfig';
 

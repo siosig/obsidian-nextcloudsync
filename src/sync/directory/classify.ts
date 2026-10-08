@@ -1,38 +1,26 @@
-// Directory difference classification (feature 075).
-//
-// Three sets — what the vault has, what the server has, what we last recorded — and six outcomes.
-// The rule is entirely a matter of which of the three a path appears in, so it needs no I/O at all;
-// it only ever lived inside reconcileDirectories because that is where it was written.
-//
-// Pulling it out is what lets the six cases be read as a table instead of traced through a loop.
-// Two of them are easy to get backwards and expensive when you do: a folder present locally and
-// absent remotely means "created here" when we never tracked it and "deleted there" when we did,
-// and confusing those either resurrects a deleted folder or deletes a new one.
+// Classifies directories by which of three sets (local, remote, tracked) they appear in. A folder present
+// locally but absent remotely is "created here" if untracked and "deleted there" if tracked; mixing the two
+// resurrects a deleted folder or deletes a new one.
 import { RemoteDirInfo, DirState } from '../../types';
 import { effectiveMassDeleteLimit } from '../../util/limits';
 
-/** What reconciliation should do, per path. Every list is disjoint from the others. */
+// Per-path outcome (L=local, R=remote, T=tracked); every list is disjoint from the others.
 export interface DirectoryPlan {
-  /** L !R !T — created here → push to remote. */
+  // L !R !T — created here → push to remote.
   mkcolRemote: string[];
-  /** !L R !T — created elsewhere → create here. */
+  // !L R !T — created elsewhere → create here.
   mkdirLocal: string[];
-  /** !L R T — deleted here → remove on remote. */
+  // !L R T — deleted here → remove on remote.
   deleteRemote: string[];
-  /** L !R T — deleted elsewhere → remove here. */
+  // L !R T — deleted elsewhere → remove here.
   trashLocal: string[];
-  /** L R — present on both sides → keep tracked, refreshing the remote id. */
+  // L R — present on both sides → keep tracked, refreshing the remote id.
   ensureTracked: DirState[];
-  /** !L !R T — gone everywhere → forget. */
+  // !L !R T — gone everywhere → forget.
   dropTracked: string[];
 }
 
-/**
- * Sort every path that appears in any of the three sets into exactly one outcome.
- *
- * Excluded paths are dropped before classification rather than after: a path the plugin must not
- * touch should not appear in a plan at all, not even as something to skip later.
- */
+// Excluded paths are dropped before classification so they never appear in a plan.
 export function classifyDirectories(
   remoteDirs: ReadonlyMap<string, RemoteDirInfo>,
   localDirs: ReadonlySet<string>,
@@ -59,17 +47,10 @@ export function classifyDirectories(
   return plan;
 }
 
-/**
- * True when the plan's destructive half is large enough to be a symptom rather than an intention.
- *
- * A partial remote listing is indistinguishable from "the user deleted most of their folders", and
- * only one of those two readings is recoverable. Beyond the limit the whole destructive half is
- * refused — not trimmed to the limit — because a listing that is wrong about many folders gives no
- * reason to trust it about any of them.
- *
- * `denominator` is the largest of the three sets, so the automatic limit scales with the size of the
- * vault rather than with whichever side happens to be reporting fewer folders.
- */
+// A partial remote listing looks like "the user deleted most folders", and only one reading is recoverable.
+// Beyond the limit the whole destructive half is refused, not trimmed: a listing wrong about many folders
+// is not trustworthy about any. `denominator` is the largest of the three sets so the automatic limit
+// scales with vault size.
 export function shouldTripMassDeleteBreaker(
   plan: DirectoryPlan, denominator: number, configuredLimit: number,
 ): boolean {
@@ -77,7 +58,6 @@ export function shouldTripMassDeleteBreaker(
     > effectiveMassDeleteLimit(configuredLimit, denominator);
 }
 
-/** The denominator {@link shouldTripMassDeleteBreaker} scales its automatic limit against. */
 export function breakerDenominator(
   remoteDirs: ReadonlyMap<string, unknown>,
   localDirs: ReadonlySet<string>,

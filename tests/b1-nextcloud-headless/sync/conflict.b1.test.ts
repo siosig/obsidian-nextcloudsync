@@ -1,5 +1,4 @@
-// Layer B — conflict resolution (CF-1..13) per report/mock_test.md §3.F.
-// Exercises ConflictResolver.decide() (pure, no I/O) across the feature-037 strategy matrix.
+// Layer B — conflict resolution (CF-1..13). Exercises ConflictResolver.decide() (pure, no I/O) across the strategy matrix.
 //
 // Implementation reality (verified against the real libraries):
 //   - ReconcileTextStrategy (primary body merge) ALWAYS returns hadConflicts:false — reconcile-text
@@ -40,45 +39,41 @@ const DIVERGED = { base: 'base\n', local: 'local edit\n', remote: 'remote edit\n
 const NUL = String.fromCharCode(0);
 
 describe('Layer B — conflict resolution (CF)', () => {
-  it('CF-1 merge + non-overlapping edits → clean write', () => {
+  it('[SPEC:CF-1] merge + non-overlapping edits → clean write', () => {
     const r = resolver({ autoMergeFileStrategy: 'merge', autoMergeFileTypes: ['md'] });
     const d = r.decide('n.md', CLEAN.base, CLEAN.local, CLEAN.remote);
     expect(d.action).toBe('write');
     if (d.action === 'write') expect(d.clean).toBe(true);
   });
 
-  it('CF-2 other file + latest-mtime → prefers the newer side', () => {
+  it('[SPEC:CF-2] other file + latest-mtime → prefers the newer side', () => {
     const r = resolver({ otherFileStrategy: 'latest-mtime', autoMergeFileTypes: ['md'] });
     expect(r.decide('n.pdf', '', '', '', ctx({ localMtime: 5000, remoteMtime: 1000 })).action).toBe('prefer-local');
   });
 
-  it('CF-3 merge + diverging frontmatter scalar → structural merge (clean, no markers)', () => {
-    // Feature 043 (HFM-6/HFM-9): a frontmatter scalar conflict is resolved by the
-    // frontmatterScalarConflictPolicy, never text-diffed — so no conflict markers land inside
-    // the `---` block and the write is clean. (Body is identical here, only the scalar diverges.)
+  it('[SPEC:CF-3] merge + diverging frontmatter scalar → structural merge (clean, no markers)', () => {
+    // HFM-6/HFM-9: a frontmatter scalar conflict is resolved by frontmatterScalarConflictPolicy, never text-diffed, so no
+    // markers land inside the `---` block (body identical, only the scalar diverges).
     const r = resolver({ autoMergeFileStrategy: 'merge', autoMergeFileTypes: ['md'] });
     const d = r.decide('n.md', '', '---\nk: 1\n---\nbody', '---\nk: 2\n---\nbody');
     expect(d.action).toBe('write');
     if (d.action === 'write') expect(d.clean).toBe(true);
   });
 
-  // Feature 048: markdown is special-cased (always a composed write), so the deterministic whole-file
-  // actions are exercised on a NON-markdown auto-merge file (txt).
-  it('CF-4 auto merge file + local-win → prefer-local', () => {
+  // Markdown is special-cased (always a composed write), so whole-file actions are exercised on a NON-markdown file (txt).
+  it('[SPEC:CF-4] auto merge file + local-win → prefer-local', () => {
     const r = resolver({ autoMergeFileStrategy: 'local-win', autoMergeFileTypes: ['txt'] });
     expect(r.decide('n.txt', DIVERGED.base, DIVERGED.local, DIVERGED.remote).action).toBe('prefer-local');
   });
 
-  it('CF-5 auto merge file + remote-win → prefer-remote', () => {
+  it('[SPEC:CF-5] auto merge file + remote-win → prefer-remote', () => {
     const r = resolver({ autoMergeFileStrategy: 'remote-win', autoMergeFileTypes: ['txt'] });
     expect(r.decide('n.txt', DIVERGED.base, DIVERGED.local, DIVERGED.remote).action).toBe('prefer-remote');
   });
 
-  it('CF-6 merge ON + SAME-line divergence with a real base → conflict markers, both sides kept (feature 039 base-aware 3-way)', () => {
-    // DIVERGED edits the only line differently on both sides. Before feature 039, reconcile-text
-    // silently force-merged this into a "clean" result (it never surfaces conflicts). With a REAL base
-    // (038) the base-aware diff3 path (039 P3) correctly detects the same-line conflict and writes
-    // single-level markers instead of a silent merge — no data loss, no false "clean".
+  it('[SPEC:CF-6] merge ON + SAME-line divergence with a real base → conflict markers, both sides kept (feature 039 base-aware 3-way)', () => {
+    // DIVERGED edits the only line differently on both sides. reconcile-text alone would force-merge this silently; with a
+    // real base the base-aware diff3 path detects the same-line conflict and writes single-level markers (no false "clean").
     const r = resolver({ autoMergeFileStrategy: 'merge', autoMergeFileTypes: ['md'] });
     const d = r.decide('n.md', DIVERGED.base, DIVERGED.local, DIVERGED.remote);
     expect(d.action).toBe('write');
@@ -90,31 +85,31 @@ describe('Layer B — conflict resolution (CF)', () => {
     }
   });
 
-  it('CF-7 merge on a non-text file → safe-hold (no markers written)', () => {
+  it('[SPEC:CF-7] merge on a non-text file → safe-hold (no markers written)', () => {
     const r = resolver({ autoMergeFileStrategy: 'merge', autoMergeFileTypes: ['png'] });
     expect(r.decide('n.png', '', `a${NUL}b`, `c${NUL}d`)).toEqual({ action: 'safe-hold' });
   });
 
-  it('CF-8 empty auto-merge types + other=local-win → prefer-local', () => {
+  it('[SPEC:CF-8] empty auto-merge types + other=local-win → prefer-local', () => {
     const r = resolver({ autoMergeFileTypes: [], otherFileStrategy: 'local-win' });
-    // Non-markdown Other File (feature 048: markdown never routes to otherFileStrategy).
+    // Non-markdown Other File (markdown never routes to otherFileStrategy).
     expect(r.decide('n.pdf', DIVERGED.base, DIVERGED.local, DIVERGED.remote).action).toBe('prefer-local');
   });
 
   // CF-9: the conflict-region cap is unit-tested in MergeEngine.test.ts with mocked strategies.
   it.skip('CF-9 conflict-region cap (covered by MergeEngine unit test with mocked strategies)', () => undefined);
 
-  it('CF-10 biggest-size → prefers the larger side', () => {
+  it('[SPEC:CF-10] biggest-size → prefers the larger side', () => {
     const r = resolver({ otherFileStrategy: 'biggest-size', autoMergeFileTypes: ['md'] });
     expect(r.decide('n.pdf', '', '', '', ctx({ localSize: 999, remoteSize: 100 })).action).toBe('prefer-local');
   });
 
-  it('CF-11 tie (equal mtime) → no-op', () => {
+  it('[SPEC:CF-11] tie (equal mtime) → no-op', () => {
     const r = resolver({ otherFileStrategy: 'latest-mtime', autoMergeFileTypes: ['md'] });
     expect(r.decide('n.pdf', '', '', '', ctx({ localMtime: 1000, remoteMtime: 1000 })).action).toBe('no-op');
   });
 
-  // CF-12: the F4 Diff3Strategy bug was fixed in 0.7.1; verified at layer a with the real node-diff3.
+  // CF-12: Diff3Strategy is verified at layer a with the real node-diff3.
   it.skip('CF-12 frontmatter conflict markers (verified at layer a; live write redundant)', () => undefined);
 
   // CF-13: the 412 / If-Match lost-update path is driven by SyncEngine.handleConflict (network-level).

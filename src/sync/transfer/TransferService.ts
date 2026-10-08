@@ -1,17 +1,6 @@
-// File transfer, lifted out of SyncEngine (feature 074, Phase 4).
-//
-// One upload, one download, and the locking and size guards that wrap them. It decides nothing about
-// WHICH files move — the engine's reconcile loop does that — only how a single file crosses.
-//
-// This extraction failed its leaf-ness gate the first time it was assessed, and the record of that is
-// worth keeping: transfer reached back into the engine for recordHistory, recordError,
-// recordMergeBase and withLocalSignature, which made it a shell that called into the middle of the
-// graph rather than a leaf. Those four now live in `sync/session` and `data/localSignature` and
-// arrive here as collaborators. What remains pointing outward are two ports — a retry queue and a
-// user notifier — and neither re-enters the sync loop.
-//
-// The WebDAV client and upload strategy are PARAMETERS, never fields: SyncEngine creates both lazily
-// and can replace them, so a captured one would go stale.
+// One upload, one download, and the locking and size guards around them. It decides nothing about WHICH files
+// move, only how a single file crosses. The WebDAV client and upload strategy are PARAMETERS, never fields:
+// SyncEngine creates both lazily and can replace them, so a captured one would go stale.
 import { Notice } from 'obsidian';
 import { FileState, RemoteFileInfo, SyncSessionSummary } from '../../types';
 import { FileLockedError, FeatureUnsupportedError, NetworkError } from '../../types';
@@ -33,38 +22,23 @@ export interface TransferDeps {
   stateDB: Pick<StateDB, 'getFile' | 'setFile'>;
   journal: SyncJournal;
   mergeBase: MergeBaseRecorder;
-  /** Read at call time — the cap is a live setting. */
+  // Read at call time: the cap is a live setting.
   maxFileSizeMB(): number;
-  /** Whether the server advertises the files-locking capability (arrives on connect). */
   hasFilesLocking(): boolean;
-  /**
-   * Whether the connected client ever reports a checksum for a file (feature 080).
-   *
-   * This asks which client is running, not what a server said about itself. `NextcloudClient` reads
-   * `oc:checksums` from PROPFIND; `StandardWebDAVClient` hardcodes `checksum: null`, so against a
-   * plain WebDAV server classification always falls through to the ETag. Recording a SHA-256 there
-   * guarantees a permanent mismatch with what the next sync reads back.
-   *
-   * Deliberately NOT the server's `hasChecksums` capability. Feature 078 measured that flag to be
-   * false on the official Docker image while PROPFIND returned checksums anyway; a fix that trusted
-   * it would have given every user of that image the exact bug it was meant to remove.
-   */
+  // Asks which client is running, not what the server said: `StandardWebDAVClient` hardcodes `checksum: null`,
+  // so recording a SHA-256 against plain WebDAV would mismatch what the next sync reads back (docs/spec.md §4.1).
+  // Deliberately NOT the server's `hasChecksums` capability, which is false on the official Docker image even
+  // though PROPFIND returns checksums.
   clientReportsChecksums(): boolean;
-  /**
-   * Ask for `path` to be retried later in this session. An outbound port, not a call back into the
-   * sync loop: transfer says a file needs another attempt and takes no view on when.
-   */
+  // An outbound port, not a call back into the sync loop: transfer says a file needs another attempt, not when.
   queueRetry(path: string): void;
   logger?: Pick<FileLogger, 'log'>;
-  /** User-facing notice. Injected so the size guard can be tested without an Obsidian runtime. */
+  // Injected so the size guard can be tested without an Obsidian runtime.
   notify?(message: string): void;
 }
 
 export class TransferService {
-  /**
-   * Locks this service currently holds, keyed by path. Owned here rather than by the engine because
-   * nothing outside acquire/release ever reads it.
-   */
+  // Held locks keyed by path; only acquire/release read it.
   private readonly heldLocks = new Map<string, string>();
 
   constructor(private readonly deps: TransferDeps) {}
@@ -80,7 +54,7 @@ export class TransferService {
 
     const data = await this.deps.localAdapter.readBinary(path);
 
-    // US4: Acquire lock (only when enabled and supported by the server). If locked by someone else, skip and queue for retry.
+    // A path locked by someone else is skipped and queued for retry.
     let token: string | null;
     try {
       token = await this.acquireLock(client, path);
@@ -94,34 +68,25 @@ export class TransferService {
 
     let outcome: 'uploaded' | 'skipped';
     try {
-      // US3: Delegate to the upload strategy (chunked/single/skip).
-      // P1-B: send If-Match using the known remote etag (when updating an existing remote file) so a
-      // remote that changed since our baseline returns 412 → PreconditionFailedError → conflict. New
-      // local files carry a null etag (synthetic remote) → no precondition.
+      // If-Match with the known remote etag makes a remote changed since our baseline return 412
+      // (PreconditionFailedError, a conflict). New local files carry a null etag, so no precondition.
       outcome = await uploadStrategy.upload(client, path, data, stat.mtime, { ifMatchEtag: remote.etag });
     } finally {
       await this.releaseLock(client, path, token);
     }
 
-    if (outcome === 'skipped') return; // Size limit exceeded. Already warned by the strategy (no retry needed).
+    if (outcome === 'skipped') return; // Over the size limit; the strategy already warned, no retry needed.
     summary.uploadedCount++;
-    // Feature 064 (C-4): record the state the server now holds, not the one it held before the PUT.
-    // Both upload strategies send `OC-Checksum: SHA256:<localHash>` (NextcloudClient.uploadFile /
-    // the chunked assembling MOVE), and Nextcloud persists it and returns it as oc:checksums — so the
-    // remote id of what we just stored IS localHash. Keeping the PRE-upload remoteId here made every
-    // following sync read "remote changed" and download the file we had just uploaded, over and over.
-    // resolveByWrite already records the merged body this way; this brings the plain upload in line.
-    // Feature 080: only true where the client can actually read a checksum back. Against a plain
-    // WebDAV server the next PROPFIND yields an ETag, so ask the server what it now holds and record
-    // that instead — the same value, by the same rule, that classification will use next time.
+    // Record the state the server holds now, not before the PUT. Both strategies send `OC-Checksum: SHA256:<localHash>`
+    // and Nextcloud returns it as oc:checksums, so the remote id IS localHash; keeping the pre-upload id would make
+    // every later sync download the file just uploaded. Only true where the client can read a checksum back: on
+    // plain WebDAV the next PROPFIND yields an ETag, so ask the server and record that instead.
     let uploadedRemoteId = localHash;
     let uploadedIdType: FileState['idType'] = 'sha256';
     if (!this.deps.clientReportsChecksums()) {
-      // A failed or empty stat leaves the pre-080 values in place on purpose. Recording nothing would
-      // strand the baseline at its pre-upload state, and the next sync would then see BOTH sides
-      // changed and resolve a conflict over the user's file — worse than the bug being fixed. Leaving
-      // the old behaviour costs one redundant download, after which the download path records the
-      // real remote id and the file converges.
+      // A failed or empty stat keeps the sha256 values on purpose: recording nothing would strand the baseline
+      // and the next sync would see BOTH sides changed (a conflict over the user's file). The cost is one
+      // redundant download, after which the real remote id is recorded.
       try {
         const fresh = await client.statFile(path);
         if (fresh) ({ remoteId: uploadedRemoteId, idType: uploadedIdType } = remoteIdOf(fresh));
@@ -139,7 +104,7 @@ export class TransferService {
       size: stat.size, mtime: stat.mtime,
       remoteFileId: remote.fileId, isConflicted: false,
     }, remote.lastModified));
-    // Feature 038: remote now equals the local body we just uploaded → it is the new merge base.
+    // The remote now equals the uploaded body, so it is the new merge base.
     this.deps.mergeBase.record(path, new TextDecoder().decode(data));
   }
 
@@ -148,20 +113,18 @@ export class TransferService {
     remote: RemoteFileInfo, remoteId: string,
     idType: FileState['idType'], summary: SyncSessionSummary,
   ): Promise<void> {
-    // Size guard (spec 035): skip oversized remote files BEFORE the GET. Covers the normal
-    // remote→local download AND the local-delete-vs-remote-edit restore path (both route here). Leave
-    // local + Base untouched and do NOT queue a retry: a permanent skip until the cap is raised (then
-    // the next reconcile re-detects remote-changed and downloads it — self-healing). Not an error.
+    // Skip oversized remote files BEFORE the GET, covering the normal download and the local-delete-vs-remote-edit
+    // restore. Local and Base stay untouched and no retry is queued: the skip is permanent until the cap is
+    // raised, then the next reconcile downloads it. Not an error (docs/spec.md §9.4).
     if (this.isRemoteOverSizeLimit(remote)) {
       this.warnDownloadSkipped(remote.path, remote.size);
       void this.deps.logger?.log(`download: SKIPPED over size limit (${remote.size}B > ${this.deps.maxFileSizeMB()}MB) → ${remote.path}`);
       return;
     }
     const data = await client.downloadFile(remote.path);
-    // Server-anomaly guard (spec 025): refuse to overwrite local with content whose byte length does
-    // not match the size the server advertised (0-byte / truncated body on a buggy/inconsistent
-    // server). Leave local + Base untouched and retry next sync; a legitimate empty file (advertised
-    // size 0) is not flagged.
+    // Refuse to overwrite local with a body whose length differs from the advertised size (0-byte or truncated
+    // body from a buggy server). Local and Base stay untouched and the file is retried; an advertised size 0
+    // is not flagged.
     if (isAnomalousRemoteContent(remote.size, data.byteLength)) {
       this.deps.journal.recordError(summary, remote.path, new Error(`Refused remote overwrite: server advertised ${remote.size} bytes but returned ${data.byteLength} (server anomaly)`));
       this.deps.queueRetry(remote.path);
@@ -173,7 +136,6 @@ export class TransferService {
     await this.deps.localAdapter.atomicWriteBinary(remote.path, data);
     summary.downloadedCount++;
 
-    // Preserve remote mtime on the local file so the two stay in sync.
     if (remote.lastModified) {
       await this.deps.localAdapter.setMtime(remote.path, remote.lastModified);
     }
@@ -189,24 +151,17 @@ export class TransferService {
       size: remote.size, mtime,
       remoteFileId: remote.fileId, isConflicted: false,
     }, remote.lastModified));
-    // Feature 038: local now equals the remote body → that body is the new merge base.
+    // Local now equals the remote body, so it is the new merge base.
     this.deps.mergeBase.record(remote.path, new TextDecoder().decode(data));
   }
 
-  /**
-   * Download-side size guard (spec 035, symmetric with the upload strategies' `isOverFileSizeLimit`).
-   * Decides — BEFORE issuing a GET — whether a remote file exceeds `maxFileSizeMB`, using the size the
-   * server advertised in PROPFIND (`RemoteFileInfo.size`, getcontentlength) as the source of truth. No
-   * body is fetched. `maxFileSizeMB` of 0 means unlimited. This is the single decision point shared by
-   * every remote-body fetch path (normal download, deletion-vs-edit restore, conflict, compare, pull):
-   * `requestUrl` buffers the whole body in memory and Android base64-encodes it, so a large remote file
-   * would OOM the app (issue #8). The threshold logic is reused from upload so both directions agree.
-   */
+  // Decided BEFORE any GET from the PROPFIND-advertised size; `maxFileSizeMB` 0 means unlimited. The single
+  // decision point for every remote-body fetch: `requestUrl` buffers the whole body (and Android base64-encodes
+  // it), so a large file would OOM the app (issue #8, docs/spec.md §9.4).
   isRemoteOverSizeLimit(remote: RemoteFileInfo): boolean {
     return isOverFileSizeLimit(remote.size, this.deps.maxFileSizeMB());
   }
 
-  /** User-facing notice for a download skipped by the size guard (mirrors the upload "too large" notice). */
   warnDownloadSkipped(path: string, sizeBytes: number): void {
     const sizeMB = sizeBytes / 1024 / 1024;
     const message = `⚠️ File too large to download: ${path} (${sizeMB.toFixed(1)} MB > ${this.deps.maxFileSizeMB()} MB)`;
@@ -214,19 +169,11 @@ export class TransferService {
     else new Notice(message);
   }
 
-  // ── US4: Lock acquire/release ──────────────────────────────────────────────
-
-  /**
-   * Acquire a file lock before updating. Returns null if locking is disabled/unsupported.
-   * If locked by someone else (423), retries with backoff and throws FileLockedError if not released.
-   *
-   * Public because the engine's conflict-resolution and clean-side write paths take the same lock
-   * around their own writes — uploadFile is not the only writer.
-   */
+  // Returns null if locking is disabled/unsupported; on 423 retries with backoff, then throws FileLockedError.
+  // Public because the conflict-resolution and clean-side write paths take the same lock around their writes.
   async acquireLock(client: IWebDAVClient, path: string): Promise<string | null> {
-    // Feature 033: file locking is always off — lost-update safety is the always-on If-Match
-    // precondition, without the LOCK/UNLOCK round-trips. The mechanism below is retained but never
-    // engaged from the normal sync path.
+    // File locking is always off: lost-update safety is the If-Match precondition, without LOCK/UNLOCK
+    // round-trips. The mechanism is retained but not engaged by the normal sync path (docs/spec.md §6.5).
     if (!FIXED.fileLockingEnabled || !this.deps.hasFilesLocking()) return null;
     const maxAttempts = 3;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -237,14 +184,13 @@ export class TransferService {
       } catch (err) {
         if (err instanceof FileLockedError) {
           if (attempt < maxAttempts - 1) {
-            await this.sleep(500 * Math.pow(2, attempt)); // exponential backoff
+            await this.sleep(500 * Math.pow(2, attempt));
             continue;
           }
           throw err;
         }
         if (err instanceof FeatureUnsupportedError) return null;
-        // NetworkError (e.g. HTTP 500 / 404 when the file does not yet exist on the server)
-        // must not abort the entire sync — proceed without a lock rather than failing.
+        // A NetworkError (e.g. 404 for a file not yet on the server) must not abort the sync; proceed without a lock.
         if (err instanceof NetworkError) return null;
         throw err;
       }
@@ -252,7 +198,6 @@ export class TransferService {
     return null;
   }
 
-  /** Release the lock after updating (best-effort). */
   async releaseLock(client: IWebDAVClient, path: string, token: string | null): Promise<void> {
     if (!token) return;
     await client.unlockFile(path, token);

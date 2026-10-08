@@ -1,14 +1,9 @@
-// [SPEC:WSF-9] specs/064-watch-single-file-conflict/contracts/watch-single-file-sync.md (C-1 row 7 / C-3)
-//
-// Layer B — feature 064 (GitHub issue #23 re-report), live server, two devices.
-//
-// watchSingleFileSync used to PUT the local body straight to the server with no PROPFIND, no base
-// comparison and no If-Match, so any edit made on another device since the last sync was silently
-// overwritten. This suite proves the watch-mode path (`engine.syncSingleFile`) now goes through the
-// SAME classifier as a full sync: a different-line edit on another device survives (merged, not
-// dropped), a same-line clash is resolved per `conflictStrategy` exactly like `syncManual` would, the
-// two entry points converge on an identical result from the same starting point (C-3), and a
-// converged FileState after an upload never triggers a redundant download/upload (C-4).
+// [SPEC:WSF-9] C-1 row 7 / C-3
+// Layer B (GitHub issue #23), live server, two devices. The watch-mode path (`engine.syncSingleFile`) must go through
+// the SAME classifier as a full sync (it once PUT the local body with no PROPFIND, base comparison or If-Match, silently
+// overwriting edits from another device): a different-line edit on another device survives (merged), a same-line clash
+// resolves per `conflictStrategy` exactly like `syncManual`, the two entry points converge on an identical result from
+// the same start (C-3), and a converged FileState after an upload never triggers a redundant download/upload (C-4).
 import { describeLive } from '../support/env';
 import { setupWorkspace } from '../support/workspace';
 import { cleanupWorkspace, IsolatedWorkspace } from '../support/isolation';

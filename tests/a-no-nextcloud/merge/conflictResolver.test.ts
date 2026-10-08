@@ -38,8 +38,8 @@ function makeAdapter(store: Record<string, string> = {}): DataAdapter {
   } as unknown as DataAdapter;
 }
 
-// Feature 037: ConflictResolver takes a per-type strategy config. The test builds it directly so
-// every classification / strategy branch stays independently exercised.
+// ConflictResolver takes a per-type strategy config; the test builds it directly so every classification / strategy
+// branch stays independently exercised.
 function makeConfig(
   autoMergeFileStrategy: SyncStrategy = 'merge',
   otherFileStrategy: Exclude<SyncStrategy, 'merge'> = 'latest-mtime',
@@ -114,18 +114,17 @@ describe('ConflictResolver.isAutoMergeFile / strategyFor (CSF-1 classification)'
 describe('ConflictResolver.decide — merge strategy', () => {
   it('CSF-2 clean text merge -> write { clean: true }', () => {
     const r = makeResolver(makeConfig('merge'));
-    // Non-conflicting empty-base union that PRESERVES line boundaries — reconcile joins 'A\n' + 'B\n'
-    // into the two clean lines 'A','B' (CSF-2 contract: both sides kept, clean). Contrast the G3-1
-    // fusion case, where 'local'+'remote' (no line break) fuse into one corrupted line → conflict.
+    // Non-conflicting empty-base union that PRESERVES line boundaries: reconcile joins 'A\n' + 'B\n' into the two clean
+    // lines 'A','B' (CSF-2: both sides kept, clean). Contrast the empty-base fusion case, where 'local'+'remote' (no line
+    // break) fuse into one corrupted line -> conflict.
     const d = r.decide('notes.md', '', 'A\n', 'B\n');
     expect(d.action).toBe('write');
     if (d.action === 'write') expect(d.clean).toBe(true);
   });
 
   it('CSF-3 diverging scalar frontmatter -> semantic merge (clean: true, feature 040)', () => {
-    // Feature 040: scalar frontmatter conflicts are now resolved by policy instead of markers.
-    // FM_LOCAL has a:1, FM_REMOTE has a:2, body is identical 'body'.
-    // Policy defaults to remote-win (no ctx) → a:2, body unchanged → clean merge.
+    // Scalar frontmatter conflicts are resolved by policy instead of markers. FM_LOCAL has a:1, FM_REMOTE has a:2, body is
+    // identical 'body'; policy defaults to remote-win (no ctx) -> a:2, body unchanged -> clean merge.
     const r = makeResolver(makeConfig('merge'));
     const d = r.decide('notes.md', '', FM_LOCAL, FM_REMOTE);
     expect(d.action).toBe('write');
@@ -141,8 +140,8 @@ describe('ConflictResolver.decide — merge strategy', () => {
   });
 });
 
-// Feature 041: only a COMPLETE plugin marker set is re-entrant; a lone half-marker (from an incomplete
-// manual resolution) must fall through to a normal merge so it self-heals instead of dead-locking.
+// Only a COMPLETE plugin marker set is re-entrant; a lone half-marker (from an incomplete manual resolution) must fall
+// through to a normal merge so it self-heals instead of dead-locking.
 describe('ConflictResolver.decide — feature 041 orphan-marker self-heal', () => {
   const COMPLETE = '<<<<<<< LOCAL (abcd, 2026-06-30)\na\n=======\nb\n>>>>>>> REMOTE (2026-06-30)\n';
   const ORPHAN_CLOSE = 'body content\n>>>>>>> REMOTE (2026-06-30)\n';

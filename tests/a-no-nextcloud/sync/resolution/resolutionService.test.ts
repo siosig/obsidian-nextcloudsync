@@ -1,11 +1,7 @@
-// Direct tests for ResolutionService (feature 074, addendum).
-//
-// No [SPEC:...] tags: CSS-*, UBC-* and the compare clauses stay with the engine-level suites.
-//
-// This is everything the USER can do to settle one file, so the tests are written from that side:
-// compare must never mutate anything, push and pull must reject rather than half-succeed, and a
-// clean-side snapshot must be dropped once it has served its purpose (it holds two full copies of a
-// note, so leaking them is a storage leak, not just untidiness).
+// Direct tests for ResolutionService; no [SPEC:...] tags (CSS-*, UBC-* and the compare clauses stay with
+// the engine-level suites). Written from the user's side: compare never mutates anything, push and pull
+// reject rather than half-succeed, and a clean-side snapshot is dropped once served (it holds two full
+// copies of a note, so leaking it is a storage leak).
 import { ResolutionService, ResolutionDeps } from '../../../../src/sync/resolution/ResolutionService';
 import { SyncJournal } from '../../../../src/sync/session/SyncJournal';
 import { MergeBaseRecorder } from '../../../../src/sync/session/MergeBaseRecorder';

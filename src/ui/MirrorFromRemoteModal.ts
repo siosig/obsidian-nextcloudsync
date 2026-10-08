@@ -2,23 +2,14 @@ import { App, Modal, Setting } from 'obsidian';
 import { MirrorPlan, MirrorResult } from '../sync/mirrorPlan';
 
 export interface MirrorModalHandlers {
-  /**
-   * Build the mirror plan. The planning stage is network-heavy (it lists the whole remote), so it
-   * reports coarse phase labels via `onPhase` to keep the dialog visibly alive instead of frozen.
-   */
+  // Planning lists the whole remote (network-heavy), so it reports coarse phase labels via onPhase to keep the dialog visibly alive.
   plan: (onPhase: (label: string) => void) => Promise<MirrorPlan>;
-  /** Apply the confirmed plan, reporting incremental progress (done/total) for the progress bar. */
   apply: (plan: MirrorPlan, onProgress: (done: number, total: number) => void) => Promise<MirrorResult>;
 }
 
-/**
- * Feature 049: the Mirror-from-remote dialog opens IMMEDIATELY on click and drives the whole flow —
- * planning (indeterminate progress + phase labels), confirmation (download/delete counts), applying
- * (a determinate progress bar), and the result — inside one modal. Previously the network-heavy
- * planning ran before any UI appeared, so the plugin looked frozen. Resolves when the operation
- * reaches a terminal state (result / error / cancelled before apply); if dismissed mid-apply it
- * resolves once the in-flight apply finishes, so the caller's in-progress guard is held correctly.
- */
+// The dialog opens immediately on click and drives planning, confirmation, applying and the result in one modal,
+// so the plugin never looks frozen during network-heavy planning. Resolves at a terminal state; if dismissed
+// mid-apply it resolves once the apply finishes, so the caller's in-progress guard stays held.
 export function openMirrorFromRemoteModal(app: App, handlers: MirrorModalHandlers): Promise<void> {
   return new Promise((resolve) => {
     new MirrorFromRemoteModal(app, handlers, resolve).open();
@@ -53,7 +44,6 @@ class MirrorFromRemoteModal extends Modal {
     if (!this.applying) this.finish();
   }
 
-  /** Resolve the completion promise exactly once. */
   private finish(): void {
     if (this.done) return;
     this.done = true;
@@ -64,7 +54,6 @@ class MirrorFromRemoteModal extends Modal {
     new Setting(this.contentEl).setName('Mirror from remote').setHeading();
   }
 
-  // ── Phase 1: planning (indeterminate) ──────────────────────────────────────
   private renderPlanning(label: string): void {
     const { contentEl } = this;
     contentEl.empty();
@@ -101,7 +90,6 @@ class MirrorFromRemoteModal extends Modal {
     }
   }
 
-  // ── Phase 2: confirmation ──────────────────────────────────────────────────
   private renderConfirm(plan: MirrorPlan): void {
     const deleteCount = plan.deleteFiles.length + plan.deleteDirs.length;
     if (plan.downloads.length === 0 && deleteCount === 0) {
@@ -124,7 +112,6 @@ class MirrorFromRemoteModal extends Modal {
       .addButton((btn) => btn.setButtonText('Mirror from remote').setClass('mod-warning').onClick(() => void this.runApply()));
   }
 
-  // ── Phase 3: applying (determinate) ────────────────────────────────────────
   private async runApply(): Promise<void> {
     const plan = this.plan;
     if (!plan) return;
@@ -156,7 +143,6 @@ class MirrorFromRemoteModal extends Modal {
     }
   }
 
-  // ── Phase 4: result / message ──────────────────────────────────────────────
   private renderResult(result: MirrorResult): void {
     const { contentEl } = this;
     contentEl.empty();

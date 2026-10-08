@@ -1,16 +1,8 @@
-// Layer B — cross-device SYNC INVARIANTS (live server, 2 devices D=desktop / M=mobile-style).
-//
-// Proves the anomalies the user asked about NEVER occur across scenarios beyond plain edit×edit
-// (which conflictPolicyMatrix already covers):
-//   (1) data loss            — neither side's content is silently dropped
-//   (2) infinite churn       — repeated no-op syncs do not keep mutating remote/local (root ETag stable)
-//   (3) remote→local gap     — a remote change always reaches local
-//   (4) local→remote gap     — a local change always reaches remote
-//   (5) other async anomalies — delete×edit, rename×edit, dir-delete×nested-edit, mass-delete breaker,
-//                               concurrent create, non-mergeable conflict, frontmatter+body merge.
-//
-// Scenario catalog reviewed from architect and devil's-advocate viewpoints.
-// Manual only (pnpm test:b1 -- syncInvariants); skips without .env NEXTCLOUD_*.
+// Layer B — cross-device SYNC INVARIANTS (live server, 2 devices D=desktop / M=mobile-style). Proves these anomalies
+// NEVER occur beyond plain edit x edit (covered by conflictPolicyMatrix): (1) data loss, (2) infinite churn (repeated
+// no-op syncs keep mutating; root ETag stable), (3) remote->local gap, (4) local->remote gap, (5) other async anomalies:
+// delete x edit, rename x edit, dir-delete x nested-edit, mass-delete breaker, concurrent create, non-mergeable conflict,
+// frontmatter+body merge. Manual only (pnpm test:b1 -- syncInvariants); skips without live env.
 import { describeLive } from '../support/env';
 import { setupWorkspace } from '../support/workspace';
 import { cleanupWorkspace, IsolatedWorkspace } from '../support/isolation';
@@ -107,8 +99,8 @@ describeLive('Layer B — cross-device sync invariants', (getEnv) => {
   }, 180_000);
 
   it('INV-7 concurrent create same-path (merge): both versions preserved, converges, no churn', async () => {
-    // Feature 037: the Auto Merge File strategy (merge) reconciles the two creates losslessly — both
-    // single-line bodies are kept (verified: reconcile('', 'D-content\n', 'M-content\n') keeps both).
+    // The Auto Merge File strategy (merge) reconciles the two creates losslessly — both
+    // single-line bodies are kept.
     const over: Partial<DavSyncSettings> = { autoMergeFileStrategy: 'merge', autoMergeFileTypes: ['md'] };
     const d = dev('inv7-D', over); const m = dev('inv7-M', over);
     d.vault.seedLocal('inv7.md', 'D-content\n');
@@ -119,11 +111,11 @@ describeLive('Layer B — cross-device sync invariants', (getEnv) => {
     expect(mLocal).toContain('D-content');
     expect(mLocal).toContain('M-content');           // no data loss: both kept
     expect(await remoteText('inv7.md')).toBe(mLocal); // pushed → converged
-    await assertNoChurn(m, 'inv7-M');                 // critic #6: merged file does not re-upload forever
+    await assertNoChurn(m, 'inv7-M');                 // merged file does not re-upload forever
   }, 120_000);
 
   it('INV-8 non-text conflict under merge: NO marker injection, file intact, flagged (FR-005a safe-hold)', async () => {
-    // Feature 037: "binary" is content-detected (NUL byte), not extension-based, so use real binary
+    // "binary" is content-detected (NUL byte), not extension-based, so use real binary
     // bytes; .bin is registered as an auto-merge type so the merge strategy runs and safe-holds it.
     const NUL = String.fromCharCode(0);
     const over: Partial<DavSyncSettings> = { autoMergeFileTypes: ['md', 'bin'], autoMergeFileStrategy: 'merge' };
@@ -139,7 +131,7 @@ describeLive('Layer B — cross-device sync invariants', (getEnv) => {
   }, 120_000);
 
   it('INV-9 auto-merge of concurrent frontmatter + body edits: both survive, no duplication, converges', async () => {
-    // Feature 037: one-sided frontmatter change merges cleanly via diff3 (no frontmatter strategy knob).
+    // One-sided frontmatter change merges cleanly via diff3 (no frontmatter strategy knob).
     const over: Partial<DavSyncSettings> = { autoMergeFileStrategy: 'merge', autoMergeFileTypes: ['md'] };
     const d = dev('inv9-D', over); const m = dev('inv9-M', over);
     const base = '---\ntitle: base\n---\n\nbody line one\nbody line two\n';
@@ -173,7 +165,7 @@ describeLive('Layer B — cross-device sync invariants', (getEnv) => {
   }, 180_000);
 
   it('INV-11 mass-delete breaker trips → records error → forces a real scan next time (no stale short-circuit)', async () => {
-    // critic #3 / spec 023 §8a.5 convergence gate: a tripped breaker must invalidate the root ETag so
+    // docs/spec.md §8a.5 convergence gate: a tripped breaker must invalidate the root ETag so
     // "re-sync to retry" actually re-evaluates, instead of short-circuiting forever on stale State.
     const d = dev('inv11-D'); const m = dev('inv11-M');
     d.vault.seedLocal('bulk/keep.md', 'keep\n'); // keeps the folder alive so this exercises the FILE
@@ -192,12 +184,9 @@ describeLive('Layer B — cross-device sync invariants', (getEnv) => {
     expect(e1).not.toBeNull();                                   // remote genuinely changed (sanity)
   }, 180_000);
 
-  // FIXED in spec 024 (was a confirmed bug found by a devil's-advocate review #1): when the
-  // remote folder was deleted by another device and this device holds UN-PUSHED edits/creates under it,
-  // the upload into the now-missing parent failed with HTTP 404 ("<Folder> could not be located") and
-  // never recovered, because NextcloudClient's in-session "createdDirs" cache held a stale positive for
-  // the (since-deleted) folder, so reactive MKCOL skipped re-creating it. Fixed by dropping the stale
-  // ancestor cache entries on a 404/409 before re-issuing MKCOL. This is now a permanent regression test.
+  // Regression: when the remote folder was deleted by another device and this device holds UN-PUSHED edits/creates
+  // under it, the upload into the missing parent must not fail with 404 forever. NextcloudClient's in-session
+  // "createdDirs" cache must drop stale ancestor entries on a 404/409 before re-issuing MKCOL.
   it('INV-12 dir-delete (remote) × nested local edit/create: nested upload survives (no data loss)', async () => {
     const d = dev('inv12-D'); const m = dev('inv12-M');
     d.vault.seedLocal('anchor.md', 'a');

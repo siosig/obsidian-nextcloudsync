@@ -1,6 +1,5 @@
 import { SyncHistoryStore } from '../../../src/data/SyncHistoryStore';
 
-/** Minimal in-memory DataAdapter covering the methods SyncHistoryStore uses. */
 function makeAdapter() {
   const files = new Map<string, string>();
   return {

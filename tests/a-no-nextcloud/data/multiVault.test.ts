@@ -1,10 +1,5 @@
-/**
- * Multi-Vault isolation integration test.
- * Verifies that settings and StateDB are independent per Vault.
- *
- * Note: Full E2E requires a real Nextcloud server.
- * These tests verify the isolation logic in isolation (no network calls).
- */
+// Multi-Vault isolation: settings and StateDB are independent per Vault. Full E2E needs a real Nextcloud server; these
+// verify the isolation logic without network calls.
 
 import { DEFAULT_SETTINGS } from '../../../src/types';
 

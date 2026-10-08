@@ -2,8 +2,7 @@ import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { DEFAULT_SETTINGS } from '../../../src/types';
 
-// SC-005: the "Settings defaults" tables in the READMEs must stay in sync with
-// actual DEFAULT_SETTINGS values, so users can trust them.
+// The "Settings defaults" tables in the READMEs must stay in sync with DEFAULT_SETTINGS.
 function readme(name: string): string {
   return readFileSync(resolve(process.cwd(), name), 'utf-8');
 }
@@ -14,12 +13,12 @@ describe('[SPEC:SC-005] README settings-defaults tables match the code', () => {
 
     describe(file, () => {
       it('has a settings-defaults section', () => {
-        expect(text).toMatch(/Settings defaults|設定の既定値/);
+        expect(text).toMatch(/Settings defaults|\u8a2d\u5b9a\u306e\u65e2\u5b9a\u5024/);
       });
 
       it('documents the default values from DEFAULT_SETTINGS', () => {
         expect(text).toContain(String(DEFAULT_SETTINGS.networkTimeoutSeconds));   // 30
-        // Feature 033: chunk threshold is no longer a documented setting (platform-derived fixed value).
+        // Chunk threshold is platform-derived, not a documented setting.
         expect(text).toContain(String(DEFAULT_SETTINGS.startupSyncDelaySeconds)); // 1
       });
 

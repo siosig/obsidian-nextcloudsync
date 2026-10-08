@@ -2,13 +2,8 @@ import { LocalAdapter } from '../../../src/data/LocalAdapter';
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { TFile, Vault, DataAdapter } from 'obsidian';
 
-/**
- * Task 7: Restore syncing of non-config dot paths (fix final-review C1).
- *
- * Vault.getFiles() excludes ALL dot-prefixed paths. The previous adapter.list() scan synced
- * non-.obsidian dot files/folders (e.g. .archive/, root .env). This test suite verifies that
- * collectDotPaths() re-enumerates those paths and both scan entry points include them.
- */
+// Non-config dot paths (e.g. .archive/, root .env) are absent from Vault.getFiles(); collectDotPaths()
+// re-enumerates them via the adapter and both scan entry points must include them.
 
 type MockTFileCtor = new (path: string, stat?: { ctime?: number; mtime?: number; size?: number }) => TFile;
 const MockTFile = TFile as unknown as MockTFileCtor;
@@ -19,17 +14,8 @@ const SETTINGS = {
   networkConcurrency: 8,
 };
 
-/**
- * Build a DataAdapter mock where adapter.list('') returns:
- *   files: ['.env']
- *   folders: ['.archive', '.obsidian']
- *
- * And adapter.list('.archive') returns:
- *   files: ['.archive/note.md']
- *   folders: []
- *
- * adapter.stat() returns a minimal stat for known paths.
- */
+// DataAdapter mock: list('') -> files ['.env'], folders ['.archive', '.obsidian']; list('.archive') ->
+// ['.archive/note.md']; stat() returns a minimal stat for known paths.
 function makeDataAdapterWithDotPaths(): DataAdapter {
   const statMap: Record<string, { size: number; mtime: number }> = {
     '.env': { size: 42, mtime: 1001 },
@@ -100,7 +86,6 @@ describe('dot-paths: collectDotPaths supplements Vault-enumerated files (Task 7)
       scanLocalFiles(): Promise<Map<string, { size: number; mtime: number }>>;
     }).scanLocalFiles();
 
-    // Dot paths from adapter must appear.
     expect(result.has('.env')).toBe(true);
     expect(result.get('.env')).toEqual({ size: 42, mtime: 1001 });
     expect(result.has('.archive/note.md')).toBe(true);
@@ -121,7 +106,6 @@ describe('dot-paths: collectDotPaths supplements Vault-enumerated files (Task 7)
     // filters them out — the whole tree is skipped, so no file under them is synced.
     expect(result.has('.git/config')).toBe(false);
     expect(result.has('.trash/deleted.md')).toBe(false);
-    // Regression: non-machine root dot content is still present.
     expect(result.has('.env')).toBe(true);
     expect(result.has('.archive/note.md')).toBe(true);
   });
@@ -166,7 +150,6 @@ describe('dot-paths: collectDotPaths supplements Vault-enumerated files (Task 7)
       collectLocalStats(dir: string, out: Map<string, { size: number; mtime: number }>): Promise<void>;
     }).collectLocalStats('', out);
 
-    // Dot paths from adapter must appear.
     expect(out.has('.env')).toBe(true);
     expect(out.get('.env')).toEqual({ size: 42, mtime: 1001 });
     expect(out.has('.archive/note.md')).toBe(true);

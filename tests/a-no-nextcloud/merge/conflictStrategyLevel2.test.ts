@@ -1,6 +1,6 @@
-// Feature 048: two-level conflict resolution. A primary `merge` strategy that hits a genuine conflict
-// (body diff3 region, or frontmatter scalar clash) defers THAT part to conflictStrategy. Deterministic
-// primaries never conflict, so conflictStrategy is inert for them. Real reconcile/diff3 (no merge mocks).
+// Two-level conflict resolution: a primary `merge` strategy that hits a genuine conflict (body diff3 region, or
+// frontmatter scalar clash) defers THAT part to conflictStrategy. Deterministic primaries never conflict, so
+// conflictStrategy is inert for them. Real reconcile/diff3 (no merge mocks).
 import { ConflictResolver, MergeConfig, ConflictContext } from '../../../src/sync/ConflictResolver';
 import { SyncStrategy, ConflictStrategy } from '../../../src/types';
 import type { App } from 'obsidian';

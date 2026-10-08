@@ -1,47 +1,33 @@
-// b-3 (real Android UI) failure-diagnostics collector.
-//
-// Called from the wdio `afterTest` hook of `wdio.android.conf.mts`. It gathers the
-// DiagnosticBundle described in specs/072-b3-android-e2e-layer/data-model.md E-6
-// BEFORE the Android runtime is torn down, so a failure can be diagnosed from the
-// harvested files alone (SC-007).
-//
-// Hard rules baked into this module:
-//   * FR-008b — collect ONLY on failure. A passing test creates no file and no
-//     directory; the function returns null before touching the filesystem.
-//   * FR-008c — collection must never throw. Every item is collected independently
-//     inside its own try/catch, and the whole entry point is wrapped as well, so a
-//     broken device connection can never keep the runner from stopping the
-//     environment.
-//   * All device interaction goes through the WebdriverIO / Appium protocol
-//     (`mobile: shell`, `takeScreenshot`, `pullFile`). A local `adb` binary is never
-//     spawned — the emulator lives on a remote AVD host, not on this machine.
+// b-3 (real Android UI) failure-diagnostics collector, called from the wdio `afterTest` hook of
+// `wdio.android.conf.mts`. It gathers the bundle before the Android runtime is torn down, so a failure can be
+// diagnosed from the harvested files alone.
+//   * Collect only on failure: a passing test creates no file or directory (returns null first).
+//   * Never throw: each item has its own try/catch and the entry point is wrapped, so a broken device
+//     connection cannot keep the runner from stopping the environment.
+//   * All device interaction goes through WebdriverIO / Appium (`mobile: shell`, `takeScreenshot`, `pullFile`);
+//     no local `adb` is spawned because the device is a Redroid container reached over the network.
 import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-/** Output root for diagnostic bundles. Gitignored (see `.gitignore`). */
+// Gitignored (see `.gitignore`).
 export const DIAGNOSTICS_ROOT = '.b3-diagnostics';
 
-/** File name the plugin writes its per-device debug log to (see `src/util/logPaths.ts`). */
+// The plugin writes its per-device debug log under this name (src/util/logPaths.ts).
 const PLUGIN_LOG_PATTERN = /^nextcloud-debug_.*\.txt$/;
 
-/** Default number of trailing logcat lines to keep, so a huge ring buffer cannot blow up the bundle. */
+// Caps logcat so a huge ring buffer cannot blow up the bundle.
 const DEFAULT_LOGCAT_LINES = 5000;
 
-/**
- * Minimal structural view of the WebdriverIO browser this module needs. Declared
- * locally instead of importing `@wdio/globals` so the module stays resolvable and
- * type-checkable outside a wdio run, and so it can be exercised with a stub.
- */
+// Declared locally instead of importing `@wdio/globals` so the module resolves outside a wdio run and takes a stub.
 export interface DiagnosticsBrowser {
   execute(script: string, ...args: unknown[]): Promise<unknown>;
   takeScreenshot(): Promise<string>;
-  /** Appium file-transfer command; returns base64. Absent on non-mobile sessions. */
+  // Appium file-transfer command; returns base64. Absent on non-mobile sessions.
   pullFile?(path: string): Promise<string>;
-  /** wdio-obsidian-service command; resolves the (temporary) vault copy path. */
+  // wdio-obsidian-service command; resolves the temporary vault copy path.
   getObsidianPage?(): Promise<{ getVaultPath(): string | Promise<string> }>;
 }
 
-/** Mocha test descriptor as handed to the wdio `afterTest` hook. */
 export interface DiagnosticsTestInfo {
   title?: string;
   parent?: string;
@@ -49,7 +35,6 @@ export interface DiagnosticsTestInfo {
   file?: string;
 }
 
-/** Result payload as handed to the wdio `afterTest` hook. */
 export interface DiagnosticsTestResult {
   passed?: boolean;
   error?: { name?: string; message?: string; stack?: string } | null;
@@ -58,34 +43,31 @@ export interface DiagnosticsTestResult {
 }
 
 export interface CollectDiagnosticsOptions {
-  /** Browser to drive. Defaults to the wdio `browser` global. */
+  // Browser to drive. Defaults to the wdio `browser` global.
   browser?: DiagnosticsBrowser;
-  /** Bundle root. Defaults to `DIAGNOSTICS_ROOT` (or `$B3_DIAGNOSTICS_DIR`). */
+  // Bundle root. Defaults to `DIAGNOSTICS_ROOT` (or `$B3_DIAGNOSTICS_DIR`).
   outputRoot?: string;
-  /** On-device vault path. Defaults to `$B3_VAULT_PATH`, else `getObsidianPage().getVaultPath()`. */
+  // On-device vault path. Defaults to `$B3_VAULT_PATH`, else `getObsidianPage().getVaultPath()`.
   vaultPath?: string;
-  /** Plugin `logsFolder` setting; blank means the vault root (the default). */
+  // Plugin `logsFolder` setting; blank means the vault root (the default).
   logsFolder?: string;
-  /** Trailing logcat line count. */
   logcatLines?: number;
-  /** Free-form note about environment-preparation retries (FR-005d). Defaults to `$B3_RETRY_RECORD`. */
+  // Note about environment-preparation retries. Defaults to `$B3_RETRY_RECORD`.
   retryRecord?: string;
 }
 
-/** One collected (or attempted) artifact. */
 export interface DiagnosticItemResult {
   item: 'system_log' | 'screenshot' | 'plugin_debug_log';
   ok: boolean;
-  /** Bundle-relative file names actually written. */
+  // Bundle-relative file names actually written.
   files: string[];
-  /** Why the item could not be collected, when `ok` is false. */
+  // Why the item could not be collected, when `ok` is false.
   reason?: string;
 }
 
-/** What `collectDiagnosticsOnFailure` produced. Mirrors data-model.md E-6. */
 export interface DiagnosticBundle {
   scenarioId: string;
-  /** Absolute path of the bundle directory. */
+  // Absolute path of the bundle directory.
   directory: string;
   testTitle: string;
   testFile?: string;
@@ -96,26 +78,15 @@ export interface DiagnosticBundle {
   items: DiagnosticItemResult[];
 }
 
-/**
- * Collect the failure diagnostics for one test.
- *
- * Wire it up in `wdio.android.conf.mts`:
- * ```ts
- * afterTest: async function (test, _context, result) {
- *   await collectDiagnosticsOnFailure(test, result);
- * },
- * ```
- *
- * @returns the bundle that was written, or `null` when the test passed (FR-008b) or
- *          when nothing at all could be collected. Never throws (FR-008c).
- */
+// Returns null when the test passed or nothing could be collected; never throws.
+// Wire it up as `afterTest: (test, _ctx, result) => collectDiagnosticsOnFailure(test, result)` in `wdio.android.conf.mts`.
 export async function collectDiagnosticsOnFailure(
   test: DiagnosticsTestInfo,
   result: DiagnosticsTestResult,
   options: CollectDiagnosticsOptions = {},
 ): Promise<DiagnosticBundle | null> {
   try {
-    if (!isFailure(result)) return null; // FR-008b: nothing is generated on success.
+    if (!isFailure(result)) return null; // Nothing is generated on success.
 
     const scenarioId = deriveScenarioId(test);
     const root = options.outputRoot ?? process.env.B3_DIAGNOSTICS_DIR ?? DIAGNOSTICS_ROOT;
@@ -139,7 +110,7 @@ export async function collectDiagnosticsOnFailure(
         bundle.items.push({ item, ok: false, files: [], reason: 'no WebdriverIO browser available' });
       }
     } else {
-      // Each collector is independent: one failure must not cost us the others.
+      // Each collector is independent: one failure must not cost the others.
       bundle.items.push(await collectSystemLog(browser, directory, options.logcatLines));
       bundle.items.push(await collectScreenshot(browser, directory));
       bundle.items.push(await collectPluginDebugLog(browser, directory, options));
@@ -148,14 +119,11 @@ export async function collectDiagnosticsOnFailure(
     writeSummary(directory, bundle);
     return bundle;
   } catch {
-    // FR-008c: diagnostics collection must never propagate — teardown depends on it.
+    // Never propagate: teardown depends on this returning.
     return null;
   }
 }
 
-// --- collectors -------------------------------------------------------------
-
-/** Android system log via `mobile: shell logcat`, bounded to the trailing N lines. */
 async function collectSystemLog(
   browser: DiagnosticsBrowser,
   directory: string,
@@ -176,7 +144,6 @@ async function collectSystemLog(
   }
 }
 
-/** Screen capture at the moment of failure. */
 async function collectScreenshot(
   browser: DiagnosticsBrowser,
   directory: string,
@@ -192,11 +159,7 @@ async function collectScreenshot(
   }
 }
 
-/**
- * The plugin's own debug log, written inside the vault as
- * `<logsFolder>/nextcloud-debug_<host>.txt`. The host token is derived on the device,
- * so the exact name is unknown here: list the folder and pull every matching file.
- */
+// The host token in `<logsFolder>/nextcloud-debug_<host>.txt` is derived on the device, so list the folder and pull every match.
 async function collectPluginDebugLog(
   browser: DiagnosticsBrowser,
   directory: string,
@@ -261,13 +224,7 @@ async function resolveVaultPath(
   }
 }
 
-// --- summary ----------------------------------------------------------------
-
-/**
- * Persist what was and was not collected. Written last so it reflects every
- * collector, and written even when all collectors failed — knowing that nothing
- * could be harvested is itself the diagnosis (SC-007).
- */
+// Written last and even when all collectors failed: knowing nothing could be harvested is itself the diagnosis.
 function writeSummary(directory: string, bundle: DiagnosticBundle): void {
   const json = { ...bundle };
   try {
@@ -306,7 +263,6 @@ function renderSummary(b: DiagnosticBundle): string {
   return lines.join('\n');
 }
 
-// --- helpers ----------------------------------------------------------------
 
 function isFailure(result: DiagnosticsTestResult): boolean {
   if (result.passed === false) return true;
@@ -314,11 +270,7 @@ function isFailure(result: DiagnosticsTestResult): boolean {
   return !!result.error;
 }
 
-/**
- * Bundle directory name. Prefers the clause tag carried in the test title
- * (`[SPEC:AND-1]` or a bare `AND-1`) so the bundle is traceable back to the
- * registered scenario; otherwise falls back to a slug of the full title.
- */
+// Prefers the clause tag in the test title (`[SPEC:AND-1]` or a bare `AND-1`), else a slug of the full title.
 export function deriveScenarioId(test: DiagnosticsTestInfo): string {
   const title = fullTitleOf(test);
   const tagged = /\[SPEC:([^\]]+)\]/.exec(title);
@@ -349,7 +301,7 @@ function slugify(text: string): string {
     .slice(0, 80);
 }
 
-/** Create `<root>/<scenarioId>`, suffixing `-2`, `-3`, … so a re-run never overwrites a bundle. */
+// Suffixes -2, -3, ... so a re-run never overwrites a bundle.
 function makeBundleDir(root: string, scenarioId: string): string {
   let candidate = join(root, scenarioId);
   for (let n = 2; existsSync(candidate) && n < 1000; n++) {
@@ -380,7 +332,6 @@ function trimTrailingSlash(p: string): string {
   return p.replace(/\/+$/, '');
 }
 
-/** The wdio `browser` global, when this module runs inside a wdio worker. */
 function globalBrowser(): DiagnosticsBrowser | undefined {
   return (globalThis as { browser?: DiagnosticsBrowser }).browser;
 }

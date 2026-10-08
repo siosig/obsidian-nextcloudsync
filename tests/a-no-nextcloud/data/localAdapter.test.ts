@@ -3,7 +3,7 @@ import { DataAdapter, TFile, Vault } from 'obsidian';
 
 function makeAdapter(files: Record<string, string> = {}): DataAdapter {
   const store = { ...files };
-  const sizes = new Map<string, number>(); // byte length per path (for atomicWriteBinary read-back, spec 025)
+  const sizes = new Map<string, number>(); // byte length per path (for atomicWriteBinary read-back)
   return {
     read: jest.fn(async (p: string) => store[p] ?? ''),
     write: jest.fn(async (p: string, d: string) => { store[p] = d; }),
@@ -72,8 +72,8 @@ describe('LocalAdapter', () => {
       const raw = makeAdapter();
       const adapter = new LocalAdapter(raw);
       await adapter.atomicWrite('Notes/hello.md', 'content');
-      // Temp file is a short hashed name in the target's OWN directory (spec 026): its length does
-      // not depend on the target name, so a long final name can't overflow NAME_MAX via the suffix.
+      // Temp file is a short hashed name in the target's OWN directory: its length does not depend on the target name,
+      // so a long final name can't overflow NAME_MAX via the suffix.
       expect(raw.write).toHaveBeenCalledWith(
         expect.stringMatching(/^Notes\/\.[0-9a-z]+\.ncs\.tmp$/),
         'content',
@@ -115,13 +115,13 @@ describe('LocalAdapter', () => {
     it('returns path/size/mtime from the Vault cache without touching the adapter', () => {
       const vault = makeVault([
         new MockTFile('Notes/a.md', { mtime: 111, size: 10 }),
-        new MockTFile('メモ/b.md', { mtime: 222, size: 20 }),
+        new MockTFile('\u30e1\u30e2/b.md', { mtime: 222, size: 20 }),
       ]);
       const la = new LocalAdapter(vault.adapter, vault);
       const entries = la.listVaultFiles();
       expect(entries).toEqual([
         { path: 'Notes/a.md', size: 10, mtime: 111 },
-        { path: 'メモ/b.md', size: 20, mtime: 222 },
+        { path: '\u30e1\u30e2/b.md', size: 20, mtime: 222 },
       ]);
       expect(vault.getFiles).toHaveBeenCalledTimes(1);
     });

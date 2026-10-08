@@ -1,20 +1,17 @@
-// [SPEC:VRR-7] specs/083-empty-listing-absence-delete/contracts/vault-root.md (C-1 / C-2)
+// [SPEC:VRR-7] Both IWebDAVClient implementations must agree on what "the vault folder is not there" means, because
+// the engine branches on that answer alone and never on which client it holds.
 //
-// The two IWebDAVClient implementations must agree on what "the vault folder is not there" means,
-// because the engine branches on that answer alone and never on which client it holds.
+// A root 404 must not be flattened into an empty listing: an empty listing is the server's truth about the folder's
+// CONTENTS and legitimately drives absence-based deletion, while a 404 says nothing about any individual file.
+// Collapsing the two made a missing vault folder look like an emptied one, so the engine would trash the whole vault
+// locally (issue #50). The distinction is drawn only at the ROOT: a 404 on a sub-path (NextcloudClient) or on a folder
+// met while recursing (StandardWebDAVClient) still means "empty subtree", since a folder vanishing mid-scan is ordinary
+// concurrency.
 //
-// C-1 — why a root 404 can no longer be flattened into an empty listing: an empty listing is the
-// server's truth about the folder's CONTENTS and legitimately drives absence-based deletion, while a
-// 404 says nothing about any individual file. Collapsing the two made a missing vault folder look
-// exactly like an emptied one, so the engine would happily trash the whole vault locally (issue #50).
-// The distinction is drawn only at the ROOT: a 404 on a sub-path (NextcloudClient) or on a folder met
-// while recursing (StandardWebDAVClient) still means "empty subtree" — that folder disappearing
-// mid-scan is ordinary concurrency, not a broken sync target.
-//
-// C-2 — why createVaultRoot() reports 201 vs 405 instead of just "ok": a 404 from a listing cannot be
-// trusted on its own (a broken listing looks identical), and re-seeding on a lie resets the tracking
-// index for nothing. Only MKCOL has a side effect that succeeds exclusively when the folder really
-// was absent, so 201 is the PROOF that licenses the re-seed and 405 is the proof the listing lied.
+// createVaultRoot() reports 201 vs 405 instead of just "ok": a 404 from a listing cannot be trusted on its own (a
+// broken listing looks identical), and re-seeding on a lie resets the tracking index for nothing. Only MKCOL succeeds
+// exclusively when the folder really was absent, so 201 is the PROOF that licenses the re-seed and 405 is the proof
+// the listing lied.
 import { requestUrl } from 'obsidian';
 import { NextcloudClient } from '../../../src/network/NextcloudClient';
 import { StandardWebDAVClient } from '../../../src/network/StandardWebDAVClient';
@@ -34,16 +31,13 @@ const settings: DavSyncSettings = {
   deviceId: 'device-abcd1234',
 };
 
-/** Request URL prefix produced by the settings above (the Server URL minus its trailing slash). */
 const URL_BASE = 'https://nc/remote.php/dav/files/alice';
 
-/** Shape of the single argument every client hands to `requestUrl`; enough to assert method + URL. */
 interface CapturedRequest {
   url: string;
   method?: string;
 }
 
-/** Requests issued with the given method, in call order (MKCOL ordering is part of the C-2 contract). */
 function requestsOfMethod(method: string): CapturedRequest[] {
   const calls = mockRequestUrl.mock.calls as unknown as ReadonlyArray<readonly [CapturedRequest]>;
   return calls.map(([params]) => params).filter((params) => params.method === method);
@@ -150,8 +144,7 @@ describe('vault root: listing (C-1) and creation (C-2)', () => {
     });
 
     it(`${spec('VRR-7')} NextcloudClient.getFiles('') returns [] on a 207 with no children (genuinely empty)`, async () => {
-      // The distinction the whole feature rests on: "the folder is there and holds nothing" keeps
-      // driving absence deletion, "the folder is not there" must not.
+      // "The folder is there and holds nothing" keeps driving absence deletion; "the folder is not there" must not.
       mockRequestUrl.mockImplementation(() => res(207, EMPTY_ROOT_MULTISTATUS));
 
       await expect(new NextcloudClient(settings, 'pw', 'Vault').getFiles('')).resolves.toEqual([]);

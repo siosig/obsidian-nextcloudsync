@@ -1,14 +1,6 @@
-// Minimal WebDAV client for asserting the SERVER side of a b-3 round trip.
-//
-// Why a second client exists at all: the plugin under test talks to Nextcloud through Obsidian's
-// mobile `requestUrl` inside the Android WebView, which is precisely the implementation b-3 is here
-// to exercise. Verifying the result with that same implementation would make the test agree with
-// itself. These helpers run in the wdio process (plain Node on the AVD host) and reach the server
-// independently, so a Capacitor-side encoding or body-length bug shows up as a mismatch instead of
-// cancelling out.
-//
-// Deliberately tiny — PUT / GET / DELETE / MKCOL and nothing else. It is an assertion aid, not a
-// second implementation of the sync engine.
+// Minimal WebDAV client (PUT / GET / DELETE / MKCOL) for asserting the SERVER side of a b-3 round trip. The plugin
+// talks to Nextcloud through Android's mobile `requestUrl`, so verifying with that same implementation would make
+// the test agree with itself. These helpers run in plain Node in the wdio runner and reach the server independently.
 import { browser } from '@wdio/globals';
 import { requireAndroidEnv } from './env';
 
@@ -16,7 +8,6 @@ function authHeader(user: string, password: string): string {
   return `Basic ${Buffer.from(`${user}:${password}`).toString('base64')}`;
 }
 
-/** Joins the DAV base with a vault-relative path, percent-encoding each segment exactly once. */
 export function davUrl(base: string, vaultPath: string): string {
   const root = base.endsWith('/') ? base : `${base}/`;
   const encoded = vaultPath
@@ -29,7 +20,7 @@ export function davUrl(base: string, vaultPath: string): string {
 
 export interface RemoteFile {
   status: number;
-  /** Raw bytes as returned by the server; compared byte-for-byte, never via a decoded string. */
+  // Raw bytes as returned by the server; compared byte-for-byte, never via a decoded string.
   body: Buffer;
 }
 
@@ -42,7 +33,6 @@ export class RemoteProbe {
     this.auth = authHeader(user, password);
   }
 
-  /** Builds a probe from the resolved b-3 environment. Throws if the connection is not usable. */
   static fromEnv(vaultFolder = ''): RemoteProbe {
     const env = requireAndroidEnv();
     const { NEXTCLOUD_SERVER_URL, NEXTCLOUD_USER, NEXTCLOUD_PASSWORD } = env.values;
@@ -55,20 +45,13 @@ export class RemoteProbe {
     return new RemoteProbe(root, NEXTCLOUD_USER, NEXTCLOUD_PASSWORD);
   }
 
-  /**
-   * Builds a probe scoped to the folder the plugin actually syncs into.
-   *
-   * The plugin does NOT sync to the DAV root: WebDAVFactory derives its remote base from
-   * `app.vault.getName()`, so everything lands under `<serverUrl>/<vaultName>/`. The vault name is
-   * generated per session by wdio-obsidian-service, so it has to be read from the device rather than
-   * configured. A probe pointed at the root finds nothing and reports it as "the file never arrived",
-   * which is indistinguishable from a sync failure — this is the one place that must not be guessed.
-   */
+  // The plugin syncs into `<serverUrl>/<vaultName>/` (WebDAVFactory derives it from `app.vault.getName()`), and
+  // wdio-obsidian-service generates the vault name per session, so read it from the device; a probe at the root
+  // finds nothing and looks like a sync failure.
   static async forCurrentVault(): Promise<RemoteProbe> {
     const vaultName = (await browser.executeObsidian(({ app }) => app.vault.getName())) as string;
-    // Seed the folder: scenarios that put a file on the server BEFORE the first sync would otherwise
-    // write into a collection that does not exist yet. MKCOL is idempotent enough here — an existing
-    // collection answers 405, which is a success for our purposes.
+    // Seed the folder so a file put on the server before the first sync has a collection to land in. An existing
+    // collection answers 405, which is fine here.
     const rootProbe = RemoteProbe.fromEnv();
     await rootProbe.mkcol(vaultName).catch(() => undefined);
     return RemoteProbe.fromEnv(vaultName);
@@ -84,7 +67,6 @@ export class RemoteProbe {
     return { status: res.status, body: buf };
   }
 
-  /** Writes a file server-side so a later sync has something to pull down. */
   put(vaultPath: string, content: Buffer | string): Promise<RemoteFile> {
     return this.request('PUT', vaultPath, Buffer.isBuffer(content) ? content : Buffer.from(content, 'utf-8'));
   }
@@ -101,12 +83,12 @@ export class RemoteProbe {
     return this.request('MKCOL', vaultPath);
   }
 
-  /** Best-effort teardown: a leftover fixture must never fail the next run. */
+  // A leftover fixture must never fail the next run.
   async removeQuietly(vaultPath: string): Promise<void> {
     try {
       await this.delete(vaultPath);
     } catch {
-      // ignored on purpose — cleanup is not an assertion
+      // Cleanup is not an assertion.
     }
   }
 }

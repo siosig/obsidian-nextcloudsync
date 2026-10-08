@@ -1,13 +1,8 @@
-// [SPEC:RSY-1] [SPEC:RSY-2] [SPEC:RSY-3] Sync when the app comes back to the foreground (feature 079,
-// GitHub discussion #44).
+// [SPEC:RSY-1] [SPEC:RSY-2] [SPEC:RSY-3] Sync when the app returns to the foreground (discussion #44).
 //
-// Mobile has no periodic sync and no watch mode — both are disabled there because the OS suspends
-// background timers — so an Obsidian left running in the background never syncs at all. Coming back
-// to the app is the one moment when the app is provably alive and the user is provably looking at it,
-// which makes it the only trigger that does not depend on background execution being reliable.
-//
-// The whole risk of this feature is the second half: a trigger that fires on every app switch would
-// cost the user data and battery for nothing. So the cooldown is tested as hard as the trigger.
+// Mobile has no periodic sync or watch mode (the OS suspends background timers), so coming back to the app
+// is the only trigger that does not depend on background execution. A trigger firing on every app switch
+// would cost data and battery for nothing, so the cooldown is tested as hard as the trigger.
 import {
   onAppResume,
   shouldSyncOnResume,

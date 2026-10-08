@@ -1,8 +1,6 @@
-// Layer B (MM-11) — feature 039: two real devices edit the SAME line of one file, producing conflict
-// markers, then keep syncing. This reproduces the real-world casualty (a 62KB / 3-deep-marker / 12x
-// duplication daily note) at the live-server level and proves the re-entrancy guard holds: once
-// markers exist, repeated syncs leave them at a SINGLE level and do NOT grow the file (no geometric
-// re-wrapping). Self-healing: when the markers are removed, normal merge resumes.
+// Layer B (MM-11): two real devices edit the SAME line of one file, producing conflict markers, then keep syncing.
+// Proves the re-entrancy guard holds on a live server: once markers exist, repeated syncs leave them at a SINGLE level
+// and do not grow the file (no geometric re-wrapping); when the markers are removed, normal merge resumes.
 import { describeLive } from '../support/env';
 import { setupWorkspace } from '../support/workspace';
 import { cleanupWorkspace, IsolatedWorkspace } from '../support/isolation';
@@ -34,13 +32,11 @@ describeLive('Layer B (MM-11) — conflict-marker re-entrancy does not grow the 
     const m = makeDevice(getEnv(), ws.remoteBase, 'M-mm', over);
     const f = 'mm-reentrancy.md';
 
-    // Baseline: both in sync on the same body.
     d.vault.seedLocal('anchor.md', 'anchor');
     d.vault.seedLocal(f, 'line1\nshared line\nline3\n');
     await d.sync();
     await m.sync();
 
-    // D and M edit the SAME line differently → a genuine conflict.
     d.vault.seedLocal(f, 'line1\nD wrote this\nline3\n');
     await d.sync(); // remote = D version
     m.vault.seedLocal(f, 'line1\nM wrote this\nline3\n');
@@ -68,7 +64,6 @@ describeLive('Layer B (MM-11) — conflict-marker re-entrancy does not grow the 
       expect(localBody.length).toBeLessThanOrEqual(firstSize);
     }
 
-    // Self-healing: the user resolves by removing markers and keeping one version.
     m.vault.seedLocal(f, 'line1\nresolved by hand\nline3\n');
     await m.sync();
     await d.sync();

@@ -1,6 +1,5 @@
-// Spec-conformance: 016-sync-status-ui + 013-sync-status-filter (pure logic FRs).
-// Dialog rendering / explorer menu are UI (manual checklist); here we assert the
-// pure helpers: 24-hour time formatting, run grouping, filter persistence.
+// Pure helpers behind the sync status dialog: 24-hour time formatting, run grouping, filter persistence.
+// Dialog rendering and the explorer menu are UI and are not covered here.
 import { formatClock24 } from '../../../src/ui/timeFormat';
 import {
   serializeFilter, deserializeFilter, makeDefaultFilterState, groupByRun, ALL_FILTER_OPS,

@@ -12,12 +12,6 @@ function shortHash(h: string | null): string {
   return h ? `${h.slice(0, 12)}…` : '—';
 }
 
-/**
- * Explorer "Compare with remote" popup (desktop, opt-in). Shows local vs remote modification time,
- * checksum (with a match/mismatch badge), and a line-level diff for text files. Offers two confirmed,
- * directional resolution actions: push (overwrite remote with local) and pull (overwrite local with
- * remote). Read-only until the user explicitly confirms a push/pull.
- */
 export class CompareModal extends Modal {
   private result: RemoteCompareResult | null = null;
   private busy = false;
@@ -88,7 +82,6 @@ export class CompareModal extends Modal {
     this.addActions(r);
   }
 
-  /** Modification time + checksum comparison rows, with a match/mismatch badge. */
   private addMetaRows(r: RemoteCompareResult): void {
     const { contentEl } = this;
     const table = contentEl.createDiv({ cls: 'ncs-compare-meta' });
@@ -110,7 +103,6 @@ export class CompareModal extends Modal {
     }
   }
 
-  /** Line-level diff for text files; a notice for binary/non-text. */
   private addDiff(r: RemoteCompareResult): void {
     const { contentEl } = this;
     if (!r.diffAvailable || r.localText == null || r.remoteText == null) {
@@ -132,7 +124,6 @@ export class CompareModal extends Modal {
     }
   }
 
-  /** One button per applicable resolution strategy (each behind a confirmation), plus Close. */
   private addActions(r: RemoteCompareResult): void {
     const setting = new Setting(this.contentEl);
     for (const strategy of RESOLUTION_STRATEGIES.filter(s => s.isApplicable(r))) {
@@ -163,7 +154,6 @@ export class CompareModal extends Modal {
     }
     this.busy = false;
     new Notice(strategy.successNotice);
-    // Re-run the comparison so the popup reflects the now-matching state.
     this.renderLoading();
     await this.load();
   }

@@ -1,19 +1,11 @@
-// Client-side PROPFIND parsing: the loop, the yield, and the routing (feature 075).
+// Client-side PROPFIND parsing: the loop, the yield, and the routing.
 //
-// No [SPEC:...] tags: the clauses live with the client-level and b-1 suites.
-//
-// The readers in src/network/dav answer what one response says. Everything the readers deliberately
-// do NOT decide is asserted here, because those decisions differ per call site and are exactly what
-// a careless "these three are nearly the same" merge would flatten:
-//
-//   - which side of the collection test each parser keeps
-//   - which paths count as out of scope, and that differs between the two clients
-//   - that a 404 status routes to a deletion instead of a modification
-//
-// And the yield. The parsers are async for one reason: a Depth:infinity listing of a large vault
-// freezes the UI and trips an Android ANR unless the loop hands the event loop back periodically.
-// Nothing about the extracted readers can preserve that — it lives in the loop — so it is pinned
-// here, with a listing long enough to cross the threshold.
+// The readers in src/network/dav decide only what one response says. Per-call-site decisions are
+// asserted here so that merging the near-identical parsers cannot flatten them: which side of the
+// collection test each parser keeps, which paths are out of scope (differs per client), and that a
+// 404 routes to a deletion. The parsers are async because a Depth:infinity listing of a large vault
+// freezes the UI (Android ANR) unless the loop yields; that lives in the loop, so it is pinned here
+// (docs/plan.md §18.1).
 import { DOMParser } from '@xmldom/xmldom';
 import { requestUrl } from 'obsidian';
 import { NextcloudClient } from '../../../src/network/NextcloudClient';
@@ -57,16 +49,12 @@ function deletedResponse(href: string): string {
   return `<d:response><d:href>${href}</d:href><d:status>HTTP/1.1 404 Not Found</d:status></d:response>`;
 }
 
-/** Make every request return `xml` with a 207. */
 function replyWith(xml: string): void {
   replyByUrl(() => xml);
 }
 
-/**
- * Reply per request URL. StandardWebDAVClient walks the tree with Depth:1 and recurses into every
- * folder it finds, so a mock that answers the same body for every URL would re-list the same
- * entries under each subfolder.
- */
+// Reply per request URL: the client recurses into every folder at Depth:1, so one shared body would
+// re-list the same entries under each subfolder.
 function replyByUrl(pick: (url: string) => string): void {
   (requestUrl as unknown as jest.Mock).mockReset();
   (requestUrl as unknown as jest.Mock).mockImplementation((req: { url: string }) => Promise.resolve({

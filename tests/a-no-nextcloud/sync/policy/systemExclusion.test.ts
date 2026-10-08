@@ -1,15 +1,10 @@
-// Direct tests for the system-exclusion rules (feature 074, Phase 1).
-//
-// No [SPEC:...] tags here — see the note at the top of localUnchanged.test.ts.
-//
-// isSystemExcluded is not only a "don't upload this" filter: every server-driven deletion consults
-// it before anything reaches a raw filesystem remove. A server that fabricates a deletion for
-// `.obsidian/plugins/...` is stopped here and nowhere else, which is why the precedence between the
-// rules is worth pinning directly instead of only through an engine.
+// Direct tests for the system-exclusion rules; no [SPEC:...] tags (see localUnchanged.test.ts).
+// isSystemExcluded also guards every server-driven deletion before a raw filesystem remove, so the
+// precedence between its rules is pinned directly.
 import { isSystemExcluded, SystemExclusionContext } from '../../../../src/sync/policy';
 import { DIR_BREAKER_REPORT_FILENAME, FILE_BREAKER_REPORT_FILENAME } from '../../../../src/ui/breakerReport';
 
-/** A context that excludes nothing of its own — every `true` below then comes from a rule, not setup. */
+// Excludes nothing of its own, so every `true` below comes from a rule, not setup.
 function ctx(over: Partial<SystemExclusionContext> = {}): SystemExclusionContext {
   return {
     excludedFolders: [],

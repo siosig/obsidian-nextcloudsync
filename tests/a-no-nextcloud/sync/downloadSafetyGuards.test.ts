@@ -1,4 +1,4 @@
-// [SPEC:SG-1..SG-4][SPEC:WB-1..WB-2] specs/main/spec.md §9 — download safety guards (spec 025).
+// [SPEC:SG-1..SG-4][SPEC:WB-1..WB-2] Download safety guards (docs/spec.md §9.2).
 // (1) Server-anomaly guard: never overwrite local with a body whose length disagrees with the size
 //     the server advertised (0-byte / truncated). (2) Write-back verification: atomicWriteBinary
 //     confirms the file landed at the intended byte length (fsync is unavailable).
@@ -11,26 +11,25 @@ import { DEFAULT_SETTINGS, FileState, RemoteFileInfo, SyncSessionSummary } from 
 
 const buf = (n: number): ArrayBuffer => new Uint8Array(n).buffer;
 
-describe('[SPEC:SG-1..SG-4] isAnomalousRemoteContent (empty-body server-anomaly guard)', () => {
-  it('SG-1 advertised >0 but received 0 (server returned empty body) → anomalous', () => {
+describe('[SPEC:[SPEC:SG-1]..SG-4] isAnomalousRemoteContent (empty-body server-anomaly guard)', () => {
+  it('[SPEC:SG-1] advertised >0 but received 0 (server returned empty body) → anomalous', () => {
     expect(isAnomalousRemoteContent(10, 0)).toBe(true);
   });
-  it('SG-3 legitimately empty (advertised 0, received 0) → NOT anomalous', () => {
+  it('[SPEC:SG-3] legitimately empty (advertised 0, received 0) → NOT anomalous', () => {
     expect(isAnomalousRemoteContent(0, 0)).toBe(false);
   });
-  it('SG-3 advertised == received → NOT anomalous', () => {
+  it('[SPEC:SG-3] advertised == received → NOT anomalous', () => {
     expect(isAnomalousRemoteContent(123, 123)).toBe(false);
   });
-  it('SG-3 NON-ZERO size mismatch is NOT anomalous (client byteLength ≠ server content-length on iOS; spec 025 fix)', () => {
-    // Real-world: Obsidian requestUrl on iOS reports e.g. 1949 bytes for a 1948-byte file. Flagging
-    // this refused legitimate downloads in 0.7.7 — only a truly empty (0-byte) body is an anomaly now.
+  it('[SPEC:SG-3] NON-ZERO size mismatch is NOT anomalous (client byteLength ≠ server content-length on iOS; spec 025 fix)', () => {
+    // Real-world: Obsidian requestUrl on iOS reports e.g. 1949 bytes for a 1948-byte file. Flagging this
+    // refused legitimate downloads; only a truly empty (0-byte) body is an anomaly.
     expect(isAnomalousRemoteContent(1948, 1949)).toBe(false);
     expect(isAnomalousRemoteContent(10766, 10994)).toBe(false);
     expect(isAnomalousRemoteContent(100, 40)).toBe(false);
   });
 });
 
-// ── Engine guard wiring (download path) ───────────────────────────────────────────────────────
 function makeStateAdapter(files: Record<string, string> = {}): DataAdapter {
   const store = { ...files };
   return {
@@ -80,7 +79,6 @@ describe('[SPEC:SG-2][SPEC:SG-4] SyncEngine.downloadFile refuses an anomalous re
   });
 });
 
-// ── LocalAdapter.atomicWriteBinary read-back verification ─────────────────────────────────────
 function fakeFsAdapter(statOverride?: () => Promise<{ size: number; mtime: number } | null>): DataAdapter {
   const sizes = new Map<string, number>();
   return {

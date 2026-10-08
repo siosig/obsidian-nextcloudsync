@@ -1,5 +1,4 @@
-// Obsidian runs in Electron, where `window` exists. The jest `node` test environment has no
-// `window`, but the source uses `window.setTimeout` / `clearTimeout` / `setInterval` (required by
-// the obsidianmd "prefer-window-timers" rule for popout-window compatibility). Alias window onto
-// the Node global so those timer calls resolve in tests.
+// Obsidian runs in Electron, where `window` exists; jest's `node` environment has none. Alias it onto
+// the Node global so src's `window.setTimeout` / `clearTimeout` / `setInterval` calls (required by the
+// obsidianmd prefer-window-timers rule) resolve.
 (globalThis as unknown as { window: typeof globalThis }).window = globalThis;

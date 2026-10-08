@@ -1,42 +1,14 @@
-/**
- * Syncing when the app comes back to the foreground (feature 079, GitHub discussion #44).
- *
- * Mobile has neither periodic sync nor watch mode — both are switched off there because the OS
- * suspends background timers, so neither can be relied on. That leaves an Obsidian left running in
- * the background with no way to notice that another device changed a note: nothing happens until the
- * user syncs by hand or restarts the app.
- *
- * Coming back to the foreground is the one moment when the app is provably running and the user is
- * provably looking at it, which makes it the only trigger that does not depend on background
- * execution working. It is registered on every platform rather than only on mobile: a desktop machine
- * that slept has the same hole (its interval timer did not tick while it was asleep), and not
- * branching on the platform is the simpler shape.
- *
- * The risk is entirely in the other direction — a trigger that fires on every app switch would spend
- * the user's data and battery for nothing — so the cooldown below is the part that matters.
- */
+// Sync when the app returns to the foreground (docs/spec.md §5.8). Registered on every platform:
+// mobile suspends background timers, and a slept desktop has the same gap. The cooldown keeps app
+// switching from spending data and battery.
 
-/**
- * Minimum gap between syncs for this trigger to fire.
- *
- * Not a setting, and deliberately so. Five minutes is short enough that any real "I was away and came
- * back" case syncs (the complaint in #44 was hours in the background) and long enough that the normal
- * mobile rhythm of glancing at a notification and returning costs nothing. For scale: the desktop
- * sync interval defaults to 15 minutes, so this is the more responsive of the two, not the less.
- */
+// Minimum gap between syncs for this trigger. Deliberately not a setting: short enough that a real
+// "was away, came back" case syncs, long enough that glancing at a notification costs nothing.
 export const RESUME_SYNC_COOLDOWN_MS = 5 * 60 * 1000;
 
-/**
- * Subscribe to "the app came back to the foreground"; returns the unsubscribe function.
- *
- * Extracted from `LoginFlowV2`, which has used exactly this since issue #34 and is covered by a
- * real-device b-3 test. Both events are kept: `visibilitychange` is what fires on mobile when the app
- * returns, and `focus` is what fires on desktop. Narrowing that here would change behaviour already
- * verified on a device, to no benefit — the cooldown absorbs the extra desktop firings.
- *
- * Guarded because the a-layer suite runs under jest's `node` environment, where neither global
- * exists. Keeping the guard here is what lets every call site stay free of environment checks.
- */
+// Both events are kept: `visibilitychange` fires on mobile resume, `focus` on desktop (issue #34);
+// the cooldown absorbs the extra desktop firings. The guard exists because jest's `node` environment
+// has neither global.
 export function onAppResume(cb: () => void): () => void {
   if (typeof document === 'undefined' || typeof window === 'undefined') return () => undefined;
   const onVisibility = (): void => { if (document.visibilityState === 'visible') cb(); };
@@ -48,60 +20,29 @@ export function onAppResume(cb: () => void): () => void {
   };
 }
 
-/**
- * Whether a resume at `now` should sync, given when the last sync finished.
- *
- * `lastSyncTime` is the timestamp every sync stamps in its finally block, whatever started it —
- * startup, interval, manual, or this trigger. Using the shared value rather than tracking resumes
- * separately is what makes "do not sync twice when the app has only just started" fall out for free:
- * the startup sync has already moved the clock forward by the time the resume event arrives.
- *
- * A never-synced vault (`0`) counts as long ago, so the first resume after installing does something.
- * A timestamp in the future — a clock change, or state written by a device running ahead — counts as
- * recent, so a bad clock cannot turn every resume into a sync. Declining is the safe direction: the
- * manual and periodic paths still work.
- */
+// `lastSyncTime` is stamped by every sync whatever started it, so a resume right after the startup
+// sync is skipped without extra bookkeeping. `0` (never synced) counts as long ago; a future
+// timestamp (clock change) counts as recent so a bad clock cannot make every resume sync.
 export function shouldSyncOnResume(now: number, lastSyncTime: number, cooldownMs: number): boolean {
   const elapsed = now - lastSyncTime;
   if (elapsed < 0) return false;
   return elapsed >= cooldownMs;
 }
 
-/** What {@link makeResumeSyncHandler} needs from its host, kept narrow so tests need no plugin. */
 export interface ResumeSyncDeps {
-  /** The sync engine, or null/undefined while the settings are incomplete or it is still starting. */
+  // null/undefined while the settings are incomplete or the engine is still starting.
   getEngine: () => { syncManual: () => Promise<void> } | null | undefined;
   getLastSyncTime: () => number;
   now?: () => number;
   log: (message: string) => void;
   cooldownMs?: number;
-  /**
-   * Whether resuming should be allowed to sync at all (feature 082, issue #49).
-   *
-   * Reads `startupSyncDelaySeconds > 0`: startup sync and resume sync are the same question — "the
-   * app just became available, should it sync?" — asked at two different moments, so turning the
-   * first off is read as the same answer for the second. Before this, someone who set that delay to
-   * 0 specifically to sync only by hand had no way to stop this trigger from firing anyway.
-   *
-   * A function, not a boolean, so a setting flipped mid-session takes effect on the very next resume
-   * with no reload — the same "read at call time" shape as {@link ResumeSyncDeps.getLastSyncTime}.
-   * Optional and defaulting to allowed, so call sites that predate feature 082 (there are none in
-   * this codebase, but the type stays honest about what is required) are not forced to supply it.
-   */
+  // Reads `startupSyncDelaySeconds > 0`: turning startup sync off also turns resume sync off (issue #49).
+  // A function so a setting flipped mid-session applies on the next resume; defaults to allowed.
   startupSyncEnabled?: () => boolean;
 }
 
-/**
- * Build the callback to run on each foreground resume.
- *
- * Separate from `main.ts` on purpose: inline, the two behaviours worth testing — that it syncs, and
- * that it stops syncing — would only be reachable by constructing a whole plugin, which in practice
- * means they would not be tested.
- *
- * Failure is silent by design. The user did not ask for this sync, so an engine that is not up yet is
- * a no-op rather than an error, and nothing here interrupts them with a notice. Both outcomes are
- * logged so the behaviour can still be explained afterwards from the diagnostic log.
- */
+// Kept out of main.ts so it is testable without constructing a plugin. Silent by design: the user
+// did not ask for this sync, so a missing engine is a no-op; outcomes go to the diagnostic log.
 export function makeResumeSyncHandler(deps: ResumeSyncDeps): () => void {
   const now = deps.now ?? (() => Date.now());
   const cooldownMs = deps.cooldownMs ?? RESUME_SYNC_COOLDOWN_MS;
