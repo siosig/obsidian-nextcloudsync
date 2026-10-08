@@ -1,13 +1,8 @@
-// Shared driver for the feature-048 two-level conflict matrix, split into one test FILE per
-// frontmatterStrategy so jest can run them in PARALLEL (`--maxWorkers`). Each file gets its own
-// isolated live workspace, so concurrent files never collide on the shared server.
-//
-// Feature 048: a markdown note's frontmatter is resolved by `frontmatterStrategy`, its body by
-// `autoMergeFileStrategy` (always — md is special-cased), and a part a `merge` primary cannot
-// auto-resolve is decided by `conflictStrategy`. This sweep fixes autoMergeFileStrategy=merge (so the
-// body genuinely conflicts) and varies conflictStrategy over its five values. The note diverges in both
-// halves against a real base: frontmatter title clash + tags union; body same line changed on both
-// sides. M is the resolving device (syncs last ⇒ newer); M's body line is larger; D is remote.
+// Driver for the two-level conflict matrix, one test file per frontmatterStrategy so jest runs them in parallel;
+// each file gets its own isolated workspace. A note's frontmatter is resolved by `frontmatterStrategy`, its body by
+// `autoMergeFileStrategy` (always; md is special-cased), and a part a `merge` primary cannot resolve by `conflictStrategy`
+// (docs/spec.md §6.0). The sweep fixes autoMergeFileStrategy=merge and varies conflictStrategy: frontmatter title clash + tags
+// union, body line changed on both sides. M resolves (syncs last, so newer; its body line is larger); D is remote.
 import { describeLive } from './env';
 import { setupWorkspace } from './workspace';
 import { cleanupWorkspace, IsolatedWorkspace } from './isolation';
@@ -28,7 +23,6 @@ function fmBlock(content: string): string {
 }
 const hasMarkers = (s: string): boolean => /^(?:<<<<<<<|=======|>>>>>>>)/m.test(s);
 
-/** Register the conflictStrategy sweep for one frontmatterStrategy as a live describe block. */
 export function defineConflictMatrix(frontmatterStrategy: SyncStrategy): void {
   describeLive(`Layer B — conflict-strategy sweep, frontmatterStrategy=${frontmatterStrategy} (feature 048)`, (getEnv) => {
     let ws: IsolatedWorkspace;
@@ -59,18 +53,16 @@ export function defineConflictMatrix(frontmatterStrategy: SyncStrategy): void {
         const d = makeDevice(env, ws.remoteBase, `D-${frontmatterStrategy}-${c.i}`, over);
         const m = makeDevice(env, ws.remoteBase, `M-${frontmatterStrategy}-${c.i}`, over);
 
-        // Baseline: in sync (seeds the merge base for the note — FR-015).
+        // Baseline in sync seeds the merge base for the note (FR-015).
         d.vault.seedLocal(path, BASE);
         await d.sync();
         await m.sync();
         expect(m.vault.readLocal(path)).toBe(BASE);
 
-        // D edits frontmatter + body → remote = D's version.
         d.vault.seedLocal(path, D_DOC);
         await d.sync();
         expect(await remote(path)).toBe(D_DOC);
 
-        // M makes its own divergent edit, then syncs → 2-level resolution.
         m.vault.seedLocal(path, M_DOC);
         await m.sync();
 
@@ -80,7 +72,6 @@ export function defineConflictMatrix(frontmatterStrategy: SyncStrategy): void {
         const fmb = fmBlock(mLocal);
         const body = mLocal.slice(fmb.length);
 
-        // Frontmatter never carries markers.
         expect(hasMarkers(fmb)).toBe(false);
 
         // Body: conflict-markers → markers + conflicted; else the winning side's line, no markers.
@@ -105,7 +96,6 @@ export function defineConflictMatrix(frontmatterStrategy: SyncStrategy): void {
           expect(fmb).toContain('tagM');
         }
 
-        // Converged, then stable on a second sync.
         expect(rRemote).toBe(mLocal);
         await m.sync();
         expect(m.vault.readLocal(path)).toBe(mLocal);

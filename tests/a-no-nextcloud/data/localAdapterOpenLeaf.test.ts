@@ -1,14 +1,12 @@
-// Issue #15: a background sync must not evict the user's open note. atomicWrite/atomicWriteBinary
-// used to apply remote changes via write-tmp -> adapter.remove(target) -> adapter.rename, a physical
-// delete+recreate that Obsidian's core reports as the file closing (empty pane), reproduced on a live
-// instance in tests/b2-nextcloud-ui/scenarios/activeLeafSurvivesSync.b2.test.ts. When the target path
-// is open in a leaf, LocalAdapter must instead update it in place via Vault.modify/modifyBinary (no
-// delete event). When it is not open (or no Workspace was injected), the existing tmp-write ->
+// Issue #15: a background sync must not evict the user's open note. A physical delete+recreate (write-tmp -> remove ->
+// rename) is reported by Obsidian as the file closing (empty pane); see
+// tests/b2-nextcloud-ui/scenarios/activeLeafSurvivesSync.b2.test.ts. When the target is open in a leaf, LocalAdapter
+// must update it in place via Vault.modify/modifyBinary; otherwise (or with no Workspace injected) the tmp-write ->
 // remove -> rename atomicity must run completely unchanged.
 import { LocalAdapter } from '../../../src/data/LocalAdapter';
 import { DataAdapter, FileView, TFile, Vault, Workspace } from 'obsidian';
 
-/** A minimal TFile double (real TFile has no public constructor usable from test code). */
+// TFile double (the real TFile has no public constructor usable from test code).
 function makeTFile(path: string): TFile {
   return { path } as unknown as TFile;
 }
@@ -34,13 +32,9 @@ function makeAdapter() {
   return { adapter, files };
 }
 
-/**
- * A Workspace double whose single leaf shows `openPath` (or no leaf at all if `openPath` is null).
- * `FileView` is abstract and its real constructor takes a `WorkspaceLeaf` (obsidian.d.ts), so we
- * build the instance via its prototype rather than `new` — LocalAdapter's `instanceof FileView`
- * check only cares that the prototype chain matches, which this satisfies at runtime (both this
- * test and LocalAdapter resolve the same mocked 'obsidian' module under Jest's moduleNameMapper).
- */
+// Workspace double whose single leaf shows `openPath` (or no leaf if null). FileView is abstract and its constructor
+// takes a WorkspaceLeaf, so the instance is built via its prototype; LocalAdapter's `instanceof FileView` check only
+// needs the prototype chain to match.
 function makeWorkspace(openPath: string | null, file: TFile | null): Workspace {
   const view = Object.create(FileView.prototype) as FileView;
   view.file = openPath ? file : null;
@@ -103,12 +97,9 @@ describe('[SPEC:OL-2] binary file open -> in-place vault.modifyBinary, no delete
   });
 });
 
-/**
- * A Workspace double whose single leaf holds `openPath` but is DEFERRED: per obsidian.d.ts
- * (`WorkspaceLeaf.isDeferred`, @since 1.7.2) a background leaf carries a `DeferredView` instead of
- * the FileView it would normally have, so `view instanceof FileView` is false even though the file
- * IS open in that tab. The file identity is still recoverable from `getViewState().state.file`.
- */
+// Workspace double whose single leaf holds `openPath` but is DEFERRED: since Obsidian 1.7.2 (`WorkspaceLeaf.isDeferred`)
+// a background leaf carries a DeferredView, so `view instanceof FileView` is false even though the file IS open. The
+// identity is still recoverable from `getViewState().state.file`.
 function makeDeferredWorkspace(openPath: string): Workspace {
   const leaf = {
     view: { getViewType: () => 'markdown' } as Record<string, unknown>, // stands in for DeferredView
@@ -120,14 +111,10 @@ function makeDeferredWorkspace(openPath: string): Workspace {
   } as unknown as Workspace;
 }
 
-/**
- * Issue #32. `findOpenTFile` used to recognise an open file only through `view instanceof FileView`.
- * Since Obsidian 1.7.2 a background leaf carries a `DeferredView` instead — confirmed against the
- * shipped app bundle, where the deferred class's prototype chain has none of FileView's members — so
- * a note sitting in an inactive tab was classified as "not open" and took the destructive
- * tmp-write -> remove -> rename path. That `remove()` is the physical delete that makes Obsidian drop
- * the leaf back to the previous note. Detection now also consults the leaf's serialized view state.
- */
+// Issue #32: since Obsidian 1.7.2 a background leaf carries a DeferredView, so recognising an open file only via
+// `view instanceof FileView` classified a note in an inactive tab as "not open" and took the destructive tmp-write ->
+// remove -> rename path, whose remove() makes Obsidian drop the leaf back to the previous note. Detection also
+// consults the leaf's serialized view state.
 describe('[SPEC:OL-4] file open in a DEFERRED (background) leaf -> must still update in place (issue #32)', () => {
   it('applies the update via vault.modify and never touches adapter.remove/adapter.rename', async () => {
     const path = 'Notes/background-tab.md';

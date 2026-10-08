@@ -1,10 +1,4 @@
-// [SPEC:WSF-1] specs/064-watch-single-file-conflict/contracts/watch-single-file-sync.md (C-0)
-//
-// Verifies IWebDAVClient.statFile() on both concrete implementations:
-//   - NextcloudClient (reuses PROPFIND_BODY / parsePropfindResponse, adds oc:checksums / oc:fileid)
-//   - StandardWebDAVClient (reuses parseListing)
-//
-// Contract table (C-0):
+// [SPEC:WSF-1] IWebDAVClient.statFile() on both implementations (NextcloudClient, StandardWebDAVClient):
 //   file exists (207, one entry)        -> RemoteFileInfo
 //   file absent (404)                   -> null
 //   target is a collection (folder)     -> null

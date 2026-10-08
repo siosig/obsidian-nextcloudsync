@@ -1,8 +1,6 @@
-// G4-2 regression: each store's doSave() does remove(path) then rename(tmp, path) with no
-// transaction — a crash (power loss / mobile OS kill) between the two leaves `path` absent while the
-// good, fully-written data still sits at `tmp`. Before the fix, load() only checked exists(path) and
-// silently treated this as "first run = empty state", discarding the persisted data. load() must
-// recover from a surviving tmp file instead.
+// Each store's doSave() does remove(path) then rename(tmp, path) with no transaction: a crash (power loss / mobile OS
+// kill) between the two leaves `path` absent while the good data still sits at `tmp`. load() must recover from the
+// surviving tmp file instead of treating it as "first run = empty state".
 import { DataAdapter } from 'obsidian';
 import { StateDB } from '../../../src/data/StateDB';
 import { CleanSideStore } from '../../../src/data/CleanSideStore';

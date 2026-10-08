@@ -16,15 +16,10 @@ const res = (status: number, headers: Record<string, string> = {}) =>
 
 const client = () => new NextcloudClient(settings, 'pw', 'Vault');
 
-// [SPEC:NET-3] feature 067 (issue #34 follow-up): NextcloudClient.reqReadonly() retries a transient
-// req() rejection (timeout / connection failure) up to 2x, but ONLY for read-only PROPFIND/GET
-// requests. req() only rejects when no HTTP response was received at all — any status code (incl.
-// 401/404/415) resolves normally, so a rejection reaching reqReadonly is always transient by
-// construction. Write requests (PUT/DELETE/MOVE/MKCOL/PATCH/LOCK/UNLOCK) never retry here, because a
-// timed-out write may already have succeeded server-side — blindly retrying risks double-processing
-// or a false MOVE-source-missing error. The REPORT-based getChanges()/getSyncToken() calls are also
-// explicitly OUT of scope (semantically read-only, but the agreed 070 scope is PROPFIND/GET only; the
-// full-scan PROPFIND fallback already covers the functional gap).
+// [SPEC:NET-3] NextcloudClient.reqReadonly() retries a transient req() rejection (timeout / connection failure)
+// up to 2x, only for read-only PROPFIND/GET. req() rejects only when no HTTP response arrived (any status resolves),
+// so a rejection here is always transient. Writes never retry: a timed-out write may already have succeeded
+// server-side. REPORT-based getChanges()/getSyncToken() are out of scope (the full-scan PROPFIND fallback covers them).
 describe('NextcloudClient — read-only retry on transient req() rejection (feature 067)', () => {
   beforeEach(() => {
     jest.useFakeTimers();
@@ -53,10 +48,9 @@ describe('NextcloudClient — read-only retry on transient req() rejection (feat
   });
 
   it('getFiles (PROPFIND) retries once after a transient rejection, then surfaces the root 404 as RemoteRootMissingError', async () => {
-    // The retry itself is unchanged: a rejection is transient, so the second attempt happens. What
-    // changed (feature 083) is the verdict on the retry's ANSWER — a 404 on the vault root is no
-    // longer flattened into an empty listing, because "the folder is gone" and "the folder is empty"
-    // drive opposite engine behaviour (see vaultRootListing.test.ts).
+    // The retry itself is unchanged: a rejection is transient, so the second attempt happens. A 404 on the vault root
+    // is not flattened into an empty listing: "folder gone" and "folder empty" drive opposite engine behaviour
+    // (see vaultRootListing.test.ts).
     let calls = 0;
     mockRequestUrl.mockImplementation(() => {
       calls += 1;
@@ -118,10 +112,8 @@ describe('NextcloudClient — read-only retry on transient req() rejection (feat
   });
 
   it('moveFile (MOVE) does NOT retry on a transient rejection — fails after exactly 1 call', async () => {
-    // moveFile MKCOLs the destination's ancestors before the MOVE itself; make every call reject.
-    // That ancestor step is advisory (feature 088, contract C-4): a failure there does not abort the
-    // MOVE, because the destination folder may well exist while MKCOL of it fails. What this test
-    // pins down is the MOVE: it is attempted exactly ONCE and the transient rejection is not retried.
+    // moveFile MKCOLs the destination's ancestors before the MOVE; make every call reject. That ancestor step is
+    // advisory (a failure does not abort the MOVE), so this pins only that the MOVE is attempted exactly ONCE.
     mockRequestUrl.mockImplementation(() => Promise.reject(new Error('timeout')));
 
     await expect(client().moveFile('a.md', 'b.md')).rejects.toThrow('timeout');
@@ -136,9 +128,8 @@ describe('NextcloudClient — read-only retry on transient req() rejection (feat
     expect(mockRequestUrl).toHaveBeenCalledTimes(1);
   });
 
-  // Explicit scope boundary: getChanges()/getSyncToken() ride the REPORT method and are semantically
-  // read-only, but 070's agreed scope is PROPFIND/GET only (REPORT is deliberately excluded — see the
-  // describe-block comment). Both must fail immediately on a transient rejection, same as a write.
+  // Scope boundary: getChanges()/getSyncToken() ride REPORT and are not retried (only PROPFIND/GET are);
+  // both must fail immediately on a transient rejection, same as a write.
   it('getChanges (REPORT) does NOT retry on a transient rejection — fails after exactly 1 call', async () => {
     mockRequestUrl.mockImplementation(() => Promise.reject(new Error('timeout')));
 
@@ -146,8 +137,7 @@ describe('NextcloudClient — read-only retry on transient req() rejection (feat
     expect(mockRequestUrl).toHaveBeenCalledTimes(1);
   });
 
-  // getSyncToken no longer performs any request (issue #37): Nextcloud's files DAV cannot answer a
-  // sync-collection REPORT, so there is nothing here to retry or not retry. Covered by SCR-1.
+  // getSyncToken performs no request (issue #37): Nextcloud's files DAV cannot answer a sync-collection REPORT. Covered by SCR-1.
   it('getSyncToken issues no request at all, so retry behaviour does not apply', async () => {
     mockRequestUrl.mockImplementation(() => Promise.reject(new Error('timeout')));
 

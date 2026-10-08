@@ -3,7 +3,7 @@ import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { sha256 } from '../../../src/util/hash';
 import { DavSyncSettings, FileState, RemoteFileInfo, SyncSessionSummary } from '../../../src/types';
 
-// Feature 049: the mass-delete breaker limit is user-configurable (Advanced / caution). -1 = automatic
+// The mass-delete breaker limit is user-configurable (Advanced / caution). -1 = automatic
 // (safe default), 0 = unlimited (opt-in), N = fixed absolute.
 describe('[SPEC:DEL-3] effectiveMassDeleteLimit — user-configurable breaker (feature 049)', () => {
   it('-1 (default) uses the automatic dynamic limit', () => {
@@ -20,11 +20,10 @@ describe('[SPEC:DEL-3] effectiveMassDeleteLimit — user-configurable breaker (f
   });
 });
 
-// [SPEC:DEL-3] specs/main/spec.md §8 — mass-delete circuit breaker. A full-scan reconciliation may delete
+// [SPEC:DEL-3] docs/spec.md §8 — mass-delete circuit breaker. A full-scan reconciliation may delete
 // locally at most max(20, floor(20% of tracked)) "remotely absent" files; beyond that it assumes a
-// partial/failed remote listing and refuses, to avoid wiping the vault. The threshold previously
-// lived as an inline `Math.max(20, Math.floor(tracked * 0.2))` in SyncEngine with no a-layer test
-// (its only b-1 test is an it.skip stub); extracted here as a pure helper so the contract is verified.
+// partial/failed remote listing and refuses, to avoid wiping the vault. The threshold is a pure helper
+// so the contract is verified without an engine.
 
 describe('[SPEC:DEL-3] mass-delete circuit breaker threshold', () => {
   describe('massDeleteLimit', () => {
@@ -58,12 +57,10 @@ describe('[SPEC:DEL-3] mass-delete circuit breaker threshold', () => {
   });
 });
 
-// Feature 055/056: when the FILE-side (absence-deletion) breaker above trips, the skipped candidate
-// paths are recorded as diagnostic info on the SyncErrorDetail (`skippedPaths.all`, full/uncapped —
-// feature 056 backs the report-note view), so the sync-status dialog can show the user WHICH files
-// were skipped, not just that "some files" were. This drives SyncEngine's private
-// `processLocalModifications` full-scan absence-deletion path directly, mirroring the `[SPEC:MDV-6]`
-// dir-breaker harness in tests/a-no-nextcloud/sync/dirSync.test.ts.
+// When the FILE-side (absence-deletion) breaker above trips, the skipped candidate paths are recorded on the
+// SyncErrorDetail (`skippedPaths.all`, full/uncapped) so the sync-status dialog can show WHICH files were skipped.
+// This drives SyncEngine's private `processLocalModifications` full-scan absence-deletion path directly,
+// mirroring the `[SPEC:MDV-6]` dir-breaker harness in tests/a-no-nextcloud/sync/dirSync.test.ts.
 describe('[SPEC:MDV-2] SyncEngine file mass-delete breaker — skippedPaths diagnostic (feature 055)', () => {
   const CONFIG_DIR = '.obsidian';
   const PLUGIN_DIR = `${CONFIG_DIR}/plugins/nextcloud-sync`;
@@ -78,7 +75,7 @@ describe('[SPEC:MDV-2] SyncEngine file mass-delete breaker — skippedPaths diag
   function settings(): DavSyncSettings {
     return {
       configDir: CONFIG_DIR, syncConfigFolder: false, excludedFolders: [], networkConcurrency: 4,
-      massDeleteLimit: -1, // feature 049 default: automatic dynamic limit (max(20, 20% of tracked))
+      massDeleteLimit: -1, // default: automatic dynamic limit (max(20, 20% of tracked))
       configSync: { appearance: false, themesSnippets: false, hotkeys: false, corePlugins: false, bookmarks: false },
     } as unknown as DavSyncSettings;
   }
@@ -142,7 +139,7 @@ describe('[SPEC:MDV-2] SyncEngine file mass-delete breaker — skippedPaths diag
     const breakerError = summary.errors.find((e) => e.path === '(mass-delete breaker)');
     expect(breakerError).toBeDefined();
     expect(breakerError!.skippedPaths).toBeDefined();
-    // Full, UNCAPPED list — no 10-item truncation (feature 056: needed for the report-note view).
+    // Full, UNCAPPED list — no 10-item truncation.
     const expectedCandidates = tracked.map((f) => f.path);
     expect(breakerError!.skippedPaths!.all.slice().sort()).toEqual(expectedCandidates.slice().sort());
   });
@@ -150,7 +147,7 @@ describe('[SPEC:MDV-2] SyncEngine file mass-delete breaker — skippedPaths diag
   // Drives the private `recordError` directly (same private-method-cast pattern as `runFullScan`
   // above) to prove that ordinary, non-breaker error recording is unaffected by the skippedPaths
   // diagnostic added for the mass-delete breaker: a plain per-file error (e.g. an upload/download
-  // failure) must NOT get a skippedPaths value — only the breaker call sites (feature 055) pass one.
+  // failure) must NOT get a skippedPaths value — only the breaker call sites pass one.
   const callRecordError = (engine: SyncEngine, summary: SyncSessionSummary, path: string, err: unknown): void =>
     (engine as unknown as {
       recordError(summary: SyncSessionSummary, path: string, err: unknown): void;

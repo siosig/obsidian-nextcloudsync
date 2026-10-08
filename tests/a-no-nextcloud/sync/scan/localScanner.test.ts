@@ -1,23 +1,17 @@
-// Direct tests for LocalScanner (feature 074, Phase 2).
-//
-// No [SPEC:...] tags: EXCL-HARD-1 and CSF-12 are already claimed by the SyncEngine-level suites,
-// which is also where the engine-to-module wiring is proven. What this file adds is a way to state
-// the enumeration's own contract without a SyncEngine in the way.
-//
-// The subject here is the two-route enumeration. Vault.getFiles() omits EVERY dot-prefixed path
-// while adapter.list() includes them, so the scanner walks both — and the temptation to "simplify"
-// it onto the Vault index alone would silently stop syncing every dotfile in the vault. These tests
-// exist mostly so that regression cannot pass unnoticed.
+// Direct tests for LocalScanner; no [SPEC:...] tags (EXCL-HARD-1 and CSF-12 are claimed by the
+// SyncEngine-level suites, which also prove the wiring). Vault.getFiles() omits EVERY dot-prefixed path
+// while adapter.list() includes them, so the scanner walks both; "simplifying" it onto the Vault index
+// alone would silently stop syncing every dotfile. These tests exist so that regression cannot pass unnoticed.
 import { LocalScanner, LocalScanDeps } from '../../../../src/sync/scan/LocalScanner';
 
 type Dir = { files: string[]; folders: string[] };
 
 interface FakeFs {
-  /** What Vault.getFiles() reports — never a dot path. */
+  // What Vault.getFiles() reports: never a dot path.
   vault: Array<{ path: string; size: number; mtime: number }>;
-  /** What adapter.list() reports, keyed by directory ('' is the vault root). */
+  // What adapter.list() reports, keyed by directory ('' is the vault root).
   dirs: Record<string, Dir>;
-  /** Sizes for adapter-listed files; anything missing here stats as null. */
+  // Sizes for adapter-listed files; anything missing here stats as null.
   stats: Record<string, { size: number; mtime: number }>;
 }
 
@@ -42,7 +36,7 @@ function build(fs: FakeFs, over: Partial<LocalScanDeps> = {}) {
   return { scanner: new LocalScanner(deps), listCalls };
 }
 
-/** A vault with one ordinary note, one root dotfile, and one dot folder holding a note. */
+// A vault with one ordinary note, one root dotfile, and one dot folder holding a note.
 const FS: FakeFs = {
   vault: [{ path: 'notes/a.md', size: 10, mtime: 1 }],
   dirs: {

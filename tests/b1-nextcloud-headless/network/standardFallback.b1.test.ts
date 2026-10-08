@@ -1,5 +1,4 @@
-// Layer A — standard WebDAV fallback (ST-1) per report/mock_test.md §3.K.
-// StandardWebDAVClient must reject Nextcloud-only features with FeatureUnsupportedError.
+// Layer A — standard WebDAV fallback (ST-1): StandardWebDAVClient must reject Nextcloud-only features with FeatureUnsupportedError.
 import { StandardWebDAVClient } from '../../../src/network/StandardWebDAVClient';
 import { FeatureUnsupportedError, FileVersion } from '../../../src/types';
 import { describeLive } from '../support/env';

@@ -22,7 +22,6 @@ describe('NoticeStatusBar', () => {
     jest.useRealTimers();
   });
 
-  // ── US1: startup feedback / single toast ─────────────────────────────────
   it('C2: setStatus("syncing") with no progress creates exactly one toast "🔄 Syncing…"', () => {
     bar.setStatus('syncing');
     expect(NoticeMock.instances).toHaveLength(1);
@@ -60,7 +59,6 @@ describe('NoticeStatusBar', () => {
     expect(lastNotice().hidden).toBe(true);
   });
 
-  // ── US2: live progress ───────────────────────────────────────────────────
   it('C1: setProgress updates the same toast to "🔄 12/150" without a new Notice', () => {
     bar.setStatus('syncing');
     bar.setProgress(12, 150);
@@ -74,7 +72,6 @@ describe('NoticeStatusBar', () => {
     expect(lastNotice().message).toBe('🔄 2/4');
   });
 
-  // ── US3: conflict & error outcomes ───────────────────────────────────────
   it('C3: errors render "🔴 2 errors — ↑1 ↓0" and dismiss after 10s', () => {
     bar.setStatus('syncing');
     bar.setSyncComplete(1, 0, 0, 2);

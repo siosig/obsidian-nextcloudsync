@@ -1,13 +1,8 @@
-// Layer B — clean-side snapshot recovery (feature 044), live server.
-// Two devices produce a same-line body conflict under the Merge strategy → markers are written locally
-// AND pushed, so both local and remote hold the marker content (the note is flagged conflicted). This
-// is exactly the case where force-resolution used to recover NOTHING (it re-synced markers) while
-// clearing the flag. With feature 044 the two clean sides captured at conflict time let force-resolution
-// restore a real clean version.
-//
-// forceResolution's "Use remote" / "Use local" reduce to the SyncEngine CompareEngine methods
-// (applyCleanRemote / applyCleanLocal when a snapshot exists). We drive those directly on the resolver
-// device, exactly as the Sync dialog does.
+// Layer B — clean-side snapshot recovery, live server. Two devices produce a same-line body conflict under Merge:
+// markers are written locally AND pushed, so both sides hold marker content and the note is flagged conflicted. The two
+// clean sides captured at conflict time let force-resolution restore a real clean version instead of re-syncing markers.
+// "Use remote" / "Use local" reduce to the CompareEngine methods (applyCleanRemote / applyCleanLocal when a snapshot
+// exists); we drive those directly on the resolver device, as the Sync dialog does.
 import { describeLive } from '../support/env';
 import { setupWorkspace } from '../support/workspace';
 import { cleanupWorkspace, IsolatedWorkspace } from '../support/isolation';
@@ -16,7 +11,6 @@ import { makeDevice, Device } from '../support/engineDevice';
 import { decodeBuf } from '../support/helpers';
 import { applyForceResolution } from '../../../src/ui/forceResolution';
 
-/** True when any line is a plugin conflict-marker line. */
 function hasMarkers(s: string): boolean {
   return /^(?:<<<<<<<|=======|>>>>>>>)/m.test(s);
 }
@@ -36,7 +30,6 @@ describeLive('Layer B — clean-side snapshot recovery (044) across D/M', (getEn
 
   const remote = (p: string): Promise<string> => baseClient.downloadFile(p).then(decodeBuf);
 
-  /** Drive a same-line conflict on `f` so M writes markers (pushed to the server) and is flagged conflicted. */
   async function markerConflict(f: string): Promise<{ d: Device; m: Device }> {
     const env = getEnv();
     const d = makeDevice(env, ws.remoteBase, 'D-desktop');
@@ -60,7 +53,6 @@ describeLive('Layer B — clean-side snapshot recovery (044) across D/M', (getEn
     expect(hasMarkers(m.vault.readLocal(f)!)).toBe(true);
     expect(hasMarkers(await remote(f))).toBe(true);
 
-    // "Use remote" via the same entry point the Sync dialog uses.
     expect(await applyForceResolution(m.engine, f, 'remote')).toBe('applied');
 
     const local = m.vault.readLocal(f)!;
@@ -101,7 +93,6 @@ describeLive('Layer B — clean-side snapshot recovery (044) across D/M', (getEn
     // No snapshot leak: the resolved path retains no captured clean sides.
     const store = (m.engine as unknown as { opts: { cleanSideStore?: { get(p: string): unknown } } }).opts.cleanSideStore;
     expect(store?.get(f)).toBeUndefined();
-    // D also converges onto the recovered clean content.
     expect(d.vault.readLocal(f)).toBe(recovered);
   }, 240_000);
 });

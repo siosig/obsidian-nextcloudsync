@@ -1,7 +1,6 @@
 import { FIXED, chunkThresholdMB } from '../../../src/util/fixedSyncConfig';
 
-// Feature 033: five low-value settings are removed from the UI and pinned to fixed values.
-// fixedSyncConfig is the single source of truth for those values.
+// Five low-value settings are pinned to fixed values; fixedSyncConfig is their single source of truth.
 describe('[SPEC:FX-1] fixed sync config (033)', () => {
   it('pins the three boolean/number fixed values', () => {
     expect(FIXED.fileLockingEnabled).toBe(false);  // If-Match precondition is the lost-update guard

@@ -1,11 +1,10 @@
 import { buildMirrorPlan, LocalFileEntry } from '../../../src/sync/mirrorPlan';
 import { RemoteFileInfo } from '../../../src/types';
 
-// [SPEC:MIR-1] specs/045-remote-mirror-pull — Pull mirror plan classification (pure).
+// [SPEC:MIR-1] Pull mirror plan classification (pure).
 // The mirror overwrites this device to match the remote: download what the remote has (or differs),
 // delete local-only files/folders, skip content-identical files. It bypasses the mass-delete breaker
-// COUNT limit but is gated on a COMPLETE remote listing (FR-008/FR-009). Folders deleted child→parent
-// (FR-016). Exclusions honored (FR-010).
+// COUNT limit but is gated on a COMPLETE remote listing. Folders are deleted child→parent. Exclusions honored.
 
 function remote(path: string, checksum: string | null = null): RemoteFileInfo {
   return { path, fileId: null, checksum, etag: null, size: 1, lastModified: 0 };

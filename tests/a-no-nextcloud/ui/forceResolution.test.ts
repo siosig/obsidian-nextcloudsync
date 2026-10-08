@@ -4,8 +4,8 @@ import { RemoteCompareResult, SyncFileOp } from '../../../src/types';
 import { filterReport, SyncStatusReport, ALL_FILTER_OPS } from '../../../src/ui/statusFilter';
 
 // A fake CompareEngine that records which overwrite path ran and serves a scripted compare result.
-// Feature 041: applyForceResolution must reduce every choice to push (local wins) / pull (remote wins)
-// or a no-op (tie), and must propagate overwrite failures so the caller keeps the file conflicted.
+// applyForceResolution reduces every choice to push (local wins) / pull (remote wins) or a no-op (tie),
+// and propagates overwrite failures so the caller keeps the file conflicted.
 function makeEngine(compare: Partial<RemoteCompareResult> = {}, opts: { failPush?: boolean; failPull?: boolean } = {}) {
   const calls: string[] = [];
   const engine: CompareEngine = {
@@ -119,12 +119,9 @@ describe('forceResolution — missing side & failure propagation', () => {
   });
 });
 
-// Feature 042: applyBulkForceResolution — a purely sequential fan-out over applyForceResolution that
-// never rejects and tallies resolved/noop/failed. Unlike `makeEngine` above (which records only the
-// operation name), BRC-2 (sequential order) and BRC-3 (partial failure) need to know WHICH path each
-// call belongs to, so this fake records `${op}:${path}` and lets each path be scripted independently
-// (per-path compare result / per-path push-or-pull failure). `makeEngine` is left untouched so the
-// existing FRC-* tests above keep passing unmodified.
+// applyBulkForceResolution: a purely sequential fan-out that never rejects and tallies
+// resolved/noop/failed. This fake records `${op}:${path}` and scripts each path independently, because
+// BRC-2 (order) and BRC-3 (partial failure) need to know WHICH path each call belongs to.
 interface RecordingEngineConfig {
   compare?: Partial<RemoteCompareResult>;
   failPush?: boolean;
@@ -159,10 +156,9 @@ function makeRecordingEngine(perPath: Record<string, RecordingEngineConfig> = {}
   return { engine, calls };
 }
 
-// Feature 044: when the engine exposes a clean-side snapshot for a path, force-resolution must recover
-// from it (applyCleanRemote/applyCleanLocal) instead of the current-content pull/push; Latest/Biggest
-// dispatch by the snapshot metrics. When no snapshot exists, every choice falls back to the legacy
-// pull/push behavior (proven by all the FRC-* tests above, whose fake has none of these methods).
+// When the engine exposes a clean-side snapshot for a path, force-resolution recovers from it
+// (applyCleanRemote/applyCleanLocal) and Latest/Biggest dispatch by snapshot metrics. Without one, every
+// choice falls back to current-content pull/push (the FRC-* tests above use a fake with none).
 function makeSnapshotEngine(
   metrics: { localMtime: number; remoteMtime: number; localSize: number; remoteSize: number } | null,
 ) {

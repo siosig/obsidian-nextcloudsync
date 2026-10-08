@@ -1,12 +1,7 @@
-// PERF BENCHMARK (manual, b-1 live): current full-scan getFiles('') Depth:infinity vs an ETag
-// directory-propagation skip walk (PROPFIND Depth:1 from the root, pruning subtrees whose ETag
-// matches the stored one). Self-contained: the skip walk is implemented here (raw requestUrl +
-// the shared hrefToRelative util) so src/ carries no un-wired prototype.
-//
-// Measures round-trips, transferred bytes (decompressed XML the client must parse) and wall time
-// for four scenarios against the real Nextcloud at NEXTCLOUD_SERVER_URL. Manual only:
-//   pnpm test:b1 -- etagSkip.perf
-// Skips cleanly when live env is absent. Builds an isolated tree, prints a report, then deletes it.
+// Manual perf benchmark (live): full-scan getFiles('') Depth:infinity vs an ETag directory-propagation skip walk
+// (PROPFIND Depth:1 from the root, pruning subtrees whose ETag matches the stored one). The skip walk lives here so
+// src/ carries no un-wired prototype. Measures round-trips, transferred bytes and wall time for four scenarios; run
+// with `pnpm test:b1 -- etagSkip.perf`. Skips when live env is absent; builds an isolated tree and deletes it.
 
 import { NextcloudClient } from '../../../src/network/NextcloudClient';
 import { hrefToRelative } from '../../../src/network/remotePath';
@@ -14,12 +9,12 @@ import { describeLive } from '../support/env';
 import { makeClient, baseUrlOf, authHeaderOf } from '../support/clientFactory';
 import { requestUrl } from 'obsidian';
 
-// ── tree shape: branching 3 × depth 4 × 3 files/dir ⇒ 120 dirs + 363 files (~"400 files / 4 levels")
+// Tree shape: branching 3 x depth 4 x 3 files/dir => 120 dirs + 363 files.
 const BRANCHING = 3;
 const DEPTH = 4;
 const FILES_PER_DIR = 3;
 const REPS = 3; // measured repetitions (median), plus 1 warmup
-const POOL = 16; // upload concurrency
+const POOL = 16;
 
 // Same PROPFIND body the production NextcloudClient uses, so the per-entry response size (and thus
 // the byte comparison vs the baseline scan) is apples-to-apples.
@@ -35,7 +30,7 @@ type FetchFn = (...args: unknown[]) => Promise<Response>;
 function setFetch(fn: FetchFn): void { (globalThis as unknown as { fetch: FetchFn }).fetch = fn; }
 function getFetch(): FetchFn { return (globalThis as unknown as { fetch: FetchFn }).fetch; }
 
-/** Count round-trips by HTTP method (cheap; no body double-read ⇒ does not inflate timing). */
+// Counting by method avoids a body double-read that would inflate timing.
 function instrumentCalls(): { stats: Stats; restore: () => void } {
   const orig = getFetch();
   const stats: Stats = { calls: 0, byMethod: {} };
@@ -49,7 +44,7 @@ function instrumentCalls(): { stats: Stats; restore: () => void } {
   return { stats, restore: () => setFetch(orig) };
 }
 
-/** Sum of decompressed response bytes for one run (separate untimed pass — reads bodies). */
+// Separate untimed pass: reads bodies.
 async function auditBytes(run: () => Promise<unknown>): Promise<number> {
   const orig = getFetch();
   let bytes = 0;
@@ -76,7 +71,6 @@ async function pool<T>(items: T[], limit: number, fn: (t: T) => Promise<void>): 
   await Promise.all(workers);
 }
 
-/** Deterministic file list (vault-relative paths). */
 function genFiles(): string[] {
   const files: string[] = [];
   const walk = (prefix: string, depth: number): void => {
@@ -87,7 +81,6 @@ function genFiles(): string[] {
   return files;
 }
 
-/** Unique parent directories of a file list, shallow-first. */
 function dirsOf(files: string[]): string[] {
   const set = new Set<string>();
   for (const f of files) {
@@ -111,13 +104,11 @@ describeLive('PERF: ETag directory-propagation skip vs full scan', (getEnv) => {
   const dirs = dirsOf(files);
   let dirEtags = new Map<string, string>(); // pristine (pre-change) dir path → etag
 
-  /** Collection URL for a vault-relative dir path (handles the space in "plugin test"). */
   function collUrl(rel: string): string {
     const full = rel ? `${remoteBase}/${rel}` : remoteBase;
     return `${baseUrl}/${full.split('/').filter(Boolean).map(encodeURIComponent).join('/')}/`;
   }
 
-  /** Parse a Depth:1 multistatus into immediate child files + child dirs (excludes the dir itself). */
   function parseDepth1(xml: string, dirPath: string): { files: string[]; dirs: { path: string; etag: string | null }[] } {
     const doc = new DOMParser().parseFromString(xml, 'text/xml');
     const responses = doc.getElementsByTagNameNS('DAV:', 'response');
@@ -142,7 +133,6 @@ describeLive('PERF: ETag directory-propagation skip vs full scan', (getEnv) => {
     return { files: outFiles, dirs: outDirs };
   }
 
-  /** ETag-skip walk: Depth:1 from root, pruning subtrees whose stored ETag matches. Returns all file paths. */
   async function scanSkip(dirPath: string, stored: Map<string, string>): Promise<string[]> {
     const res = await requestUrl({
       url: collUrl(dirPath), method: 'PROPFIND',
@@ -164,11 +154,10 @@ describeLive('PERF: ETag directory-propagation skip vs full scan', (getEnv) => {
   beforeAll(async () => {
     client = makeClient(env, remoteBase);
     await client.connect();
-    // 1) create dirs sequentially shallow-first (parallel MKCOL races on shared ancestors ⇒ 404/409)
+    // Dirs sequentially shallow-first (parallel MKCOL races on shared ancestors give 404/409); files in parallel once all dirs exist.
     for (const d of dirs) await client.createDirectory(d);
-    // 2) upload files in parallel (all dirs exist ⇒ no reactive-MKCOL races)
     await pool(files, POOL, (p) => client.uploadFile(p, enc(`# ${p}\ncontent for ${p}\n`)));
-    // 3) capture pristine dir ETag map (what StateDB.remoteEtag would hold after a full scan)
+    // Pristine dir ETag map: what StateDB.remoteEtag would hold after a full scan.
     const remoteDirs = await client.getDirectories('');
     dirEtags = new Map(remoteDirs.filter((d) => d.etag).map((d) => [d.path, d.etag as string]));
   }, 600_000);
@@ -178,7 +167,7 @@ describeLive('PERF: ETag directory-propagation skip vs full scan', (getEnv) => {
   }, 120_000);
 
   async function bench(run: () => Promise<unknown>): Promise<{ ms: number; rt: number; byMethod: Record<string, number>; bytes: number }> {
-    await run(); // warmup
+    await run();
     const times: number[] = []; const rts: number[] = [];
     let lastByMethod: Record<string, number> = {};
     for (let r = 0; r < REPS; r++) {

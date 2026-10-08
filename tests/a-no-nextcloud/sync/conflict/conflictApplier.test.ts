@@ -1,14 +1,10 @@
-// Direct tests for ConflictApplier (feature 074, addendum).
+// Direct tests for ConflictApplier.
 //
 // No [SPEC:...] tags: CF-*, MB-* and CSS-* stay with the engine-level suites.
-//
-// ConflictResolver decides; this carries it out. The property that runs through every branch is
-// that NONE of them may report success they did not achieve: a state pairing the new local hash
-// with the old remote id reads as "converged" to the next sync, and the merge then never reaches
-// the other devices. Most of what is asserted below is that failure paths stay honest.
-//
-// Real strategies are driven through the real ConflictResolver rather than a stubbed decision, so
-// the tests exercise the actual dispatch instead of a paraphrase of it.
+// ConflictResolver decides; this carries it out, and no branch may report success it did not achieve:
+// a state pairing the new local hash with the old remote id reads as "converged" to the next sync,
+// so the merge never reaches the other devices. Real strategies are driven through the real
+// ConflictResolver rather than a stubbed decision.
 import { ConflictApplier, ConflictDeps } from '../../../../src/sync/conflict/ConflictApplier';
 import { SyncJournal } from '../../../../src/sync/session/SyncJournal';
 import { MergeBaseRecorder } from '../../../../src/sync/session/MergeBaseRecorder';
@@ -46,13 +42,13 @@ const CONFIG: MergeConfig = {
 
 interface Opts {
   config?: Partial<MergeConfig>;
-  /** Local file content and stat. */
+  // Local file content and stat.
   local?: { content: string; mtime: number; size: number };
-  /** Remote body the client returns. */
+  // Remote body the client returns.
   remoteBody?: string;
-  /** Merge base body, '' when unknown. */
+  // Merge base body, '' when unknown.
   mergeBase?: string;
-  /** Make the upload fail (transient) or report 'skipped'. */
+  // Make the upload fail (transient) or report 'skipped'.
   upload?: 'ok' | 'skipped' | 'throw';
   oversize?: boolean;
 }
@@ -260,8 +256,8 @@ describe('ConflictApplier.resolveByWrite — a failed push must not read as conv
   });
 
   it('keeps the PREVIOUS baseline and stays conflicted when the push fails', async () => {
-    // Feature 063: recording the merged hash here made the next sync read "both sides unchanged"
-    // and take the converged arm, so the merge stayed local forever.
+    // Recording the merged hash would make the next sync read "both sides unchanged" and take
+    // the converged arm, so the merge would stay local forever.
     const { applier, conn, calls } = build({ upload: 'throw' });
     const s = summary();
     await applier.resolveByWrite(conn, ...CLEAN_ARGS, s);
@@ -339,11 +335,9 @@ describe('ConflictApplier.resolveByPreferLocal / resolveByPreferRemote — failu
   });
 
   it('prefer-remote: ACCEPTS a non-zero length that disagrees with the advertised size', async () => {
-    // Spec 025 deliberately does not flag a size mismatch. Obsidian's requestUrl on iOS reports a
-    // byte count that drifts from the server's content-length on multi-byte content, and treating
-    // that as an anomaly refused legitimate downloads outright (a remote→local sync gap in 0.7.7).
-    // Only a genuinely empty body is anomalous. This test exists to stop that guard being widened
-    // back to "any mismatch".
+    // A size mismatch is deliberately not flagged: Obsidian's requestUrl on iOS reports a byte count that
+    // drifts from content-length on multi-byte content, and flagging it refused legitimate downloads.
+    // Only a genuinely empty body is anomalous; this stops the guard being widened to any mismatch.
     const { applier, calls } = build();
     const s = summary();
     const body = new TextEncoder().encode('x').buffer; // advertised 20, received 1

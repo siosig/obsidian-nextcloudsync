@@ -1,6 +1,4 @@
-// E2E mock for the 'obsidian' module.
-// Identical surface to tests/__mocks__/obsidian.ts EXCEPT requestUrl is backed by
-// Node.js native fetch so the tests exercise a real Nextcloud server.
+// E2E mock for 'obsidian': same surface as tests/__mocks__/obsidian.ts, but requestUrl uses Node fetch against a real Nextcloud.
 import { load, dump } from 'js-yaml';
 
 export class Plugin {
@@ -194,7 +192,6 @@ export function normalizePath(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+/g, '/');
 }
 
-// Mutable platform flags so tests can simulate desktop / iOS / Android.
 export const Platform = {
   isMobile: false,
   isDesktop: true,
@@ -203,23 +200,21 @@ export const Platform = {
   isAndroidApp: false,
 };
 
-// ── Feature 043: official frontmatter/YAML APIs the merge code depends on. Ported verbatim from the
-// a-layer double (tests/a-no-nextcloud/support/obsidian.ts) so b1 exercises the SAME merge behaviour
-// against a live server. Backed by js-yaml internally (test double only; production uses Obsidian's).
+// Frontmatter/YAML doubles ported from tests/a-no-nextcloud/support/obsidian.ts so b1 merges behave as in the a layer;
+// backed by js-yaml (test double only; production uses Obsidian's).
 
-/** Test double for Obsidian's `parseYaml`. Obsidian returns null for empty/whitespace input. */
+// Obsidian returns null for empty/whitespace input.
 export function parseYaml(s: string): any {
   if (s == null) return null;
   if (s.trim() === '') return null;
   return load(s);
 }
 
-/** Test double for Obsidian's `stringifyYaml`. `lineWidth: -1` disables folding for lossless round-trips. */
+// `lineWidth: -1` disables folding for lossless round-trips.
 export function stringifyYaml(obj: any): string {
   return dump(obj, { lineWidth: -1 });
 }
 
-/** Mirror of Obsidian's `FrontMatterInfo` (obsidian.d.ts). */
 export interface FrontMatterInfo {
   exists: boolean;
   frontmatter: string;
@@ -228,10 +223,7 @@ export interface FrontMatterInfo {
   contentStart: number;
 }
 
-/**
- * Test double for Obsidian's `getFrontMatterInfo`. Recognizes a leading `---` fenced YAML block only
- * (a `---` later in the body is a thematic break). CRLF and LF both accepted.
- */
+// Recognizes only a leading `---` fenced block (a later `---` is a thematic break); CRLF and LF both accepted.
 export function getFrontMatterInfo(content: string): FrontMatterInfo {
   const none: FrontMatterInfo = { exists: false, frontmatter: '', from: 0, to: 0, contentStart: 0 };
   if (content == null) return none;
@@ -250,11 +242,8 @@ export function getFrontMatterInfo(content: string): FrontMatterInfo {
   return { exists: true, frontmatter: content.slice(from, to), from, to, contentStart };
 }
 
-/**
- * Test double for Obsidian's `parseFrontMatterStringArray`. Normalizes a frontmatter value to a
- * string array: scalars become one-element arrays, entries are stringified, trimmed, and a leading
- * `#` (tag sigil) is stripped. Returns null when the key is absent/null. Duplicates preserved.
- */
+// Scalars become one-element arrays, entries are stringified and trimmed, a leading `#` is stripped;
+// null when the key is absent; duplicates preserved.
 export function parseFrontMatterStringArray(frontmatter: any, key: string | RegExp): string[] | null {
   if (frontmatter == null || typeof frontmatter !== 'object') return null;
   let value: any = null;

@@ -20,21 +20,18 @@ jest.mock('node-diff3', () => ({
   },
 }));
 
-
-/** Extract the leading `---\n…\n---` frontmatter block from merged content (empty when none). */
 function frontmatterBlock(content: string): string {
   const m = content.match(/^---\n[\s\S]*?\n---/);
   return m ? m[0] : '';
 }
 
-/** True when any line is a plugin conflict-marker line (`<<<<<<<`, `=======`, `>>>>>>>`). */
 function hasMarkerLines(s: string): boolean {
   return /^(?:<<<<<<<|=======|>>>>>>>)/m.test(s);
 }
 
 describe('MergeEngine', () => {
   it('union-merges differing frontmatter tag arrays (feature 040)', () => {
-    // Previously returned success=false; now semantic merge union-merges array fields.
+    // Semantic merge union-merges array fields.
     const engine = new MergeEngine();
     const local = '---\ntags:\n  - a\n---\nBody';
     const remote = '---\ntags:\n  - b\n---\nBody';
@@ -69,9 +66,8 @@ describe('MergeEngine', () => {
     expect(result).toBeDefined();
   });
 
-  // [SPEC:CF-14] feature 048: a real body conflict is resolved per-region by conflictStrategy — the
-  // default (conflict-markers) writes the region as markers and flags conflicted; a deterministic
-  // conflictStrategy picks the region's hunk cleanly.
+  // [SPEC:CF-14] a real body conflict is resolved per-region by conflictStrategy: the default (conflict-markers) writes
+  // the region as markers and flags conflicted; a deterministic conflictStrategy picks the region's hunk cleanly.
   it('[SPEC:CF-14] a body conflict is written as markers under the default conflict-markers strategy', () => {
     const engine = new MergeEngine();
     const base = 'Line 1\nLine 2';
@@ -95,16 +91,14 @@ describe('MergeEngine', () => {
     expect(result.mergedContent).not.toContain('Changed 1');
   });
 
-  // ─── Feature 043: frontmatter is never text-diffed (no marker lines inside a --- block) ──────────
-
   it('[SPEC:HFM-9] frontmatter the old regex could not parse (CRLF + trailing-space fences) yields zero marker lines', () => {
     const engine = new MergeEngine();
     const base = '---\ntags:\n  - a\n---\nBody';
     const local = '---\ntags:\n  - a\n  - b\n---\nBody';
-    // Trailing spaces after the fences + CRLF: the OLD FRONTMATTER_RE/parseFm regex failed to parse
-    // this, dropped to whole-file diff3, and buried the frontmatter inside conflict markers.
+    // Trailing spaces after the fences + CRLF must still parse as frontmatter; otherwise it drops to whole-file diff3
+    // and buries the frontmatter inside conflict markers.
     const remote = '--- \r\ntags:\r\n  - a\r\n  - c\r\n--- \r\nBody';
-    // frontmatter behavior lives on the markdown path (resolveMarkdown); merge() is now non-md body-only (G3-3).
+    // frontmatter behavior lives on the markdown path (resolveMarkdown); merge() is non-md body-only.
     const result = engine.resolveMarkdown(base, local, remote, { frontmatterStrategy: 'merge', bodyStrategy: 'merge' });
     expect(result.success).toBe(true);
     const fmBlock = frontmatterBlock(result.mergedContent);
@@ -149,8 +143,7 @@ describe('MergeEngine', () => {
     const engine = new MergeEngine();
     const bad = '---\n{ unterminated: yaml\n---\nBody';
     const good = '---\ntitle: Clean\n---\nBody';
-    // Feature 047: the scalar policy is gone; the unparseable-side pick is latest-mtime. Remote newer
-    // → pick the whole remote (good) side.
+    // The unparseable-side pick is latest-mtime. Remote newer -> pick the whole remote (good) side.
     const ctxRemote: MergeContext = { localMtime: 0, remoteMtime: 5000 };
     const r1 = engine.resolveMarkdown('', bad, good, { frontmatterStrategy: 'merge', bodyStrategy: 'merge', ctx: ctxRemote });
     const fm1 = frontmatterBlock(r1.mergedContent);
@@ -162,8 +155,6 @@ describe('MergeEngine', () => {
     const fm2 = frontmatterBlock(r2.mergedContent);
     expect(hasMarkerLines(fm2)).toBe(false);
   });
-
-  // ─── Feature 043: server-rewrite scenario + convergence/idempotence (the reported real bug) ──────
 
   it('[SPEC:HFM-13] a server tag rewrite (base [1,2,3] → remote [2,3,4], local unchanged) converges to [2,3,4] and is idempotent', () => {
     const engine = new MergeEngine();
@@ -180,20 +171,18 @@ describe('MergeEngine', () => {
     expect(fm1).not.toContain("'1'"); // deletion propagated, no resurrection
     expect(hasMarkerLines(fm1)).toBe(false);
 
-    // Convergence (FR-011): r1's merged result is pushed to the server, so on the next no-edit sync
-    // BOTH sides — and the new merge base — hold the converged note. Re-merging that fixed point yields
-    // identical frontmatter with no marker growth and no array growth.
+    // Convergence: r1's merged result is pushed to the server, so on the next no-edit sync BOTH sides (and the new merge
+    // base) hold the converged note. Re-merging that fixed point yields identical frontmatter with no marker or array growth.
     const converged = r1.mergedContent;
     const r2 = engine.resolveMarkdown(converged, converged, converged, { frontmatterStrategy: 'merge', bodyStrategy: 'merge' });
     expect(r2.success).toBe(true);
     const fm2 = frontmatterBlock(r2.mergedContent);
     expect(tagsIn(fm2)).toEqual(['2', '3', '4']); // no array growth
-    expect(fm2).toBe(fm1); // idempotent frontmatter (the convergence claim for this feature)
+    expect(fm2).toBe(fm1); // idempotent frontmatter
     expect(hasMarkerLines(r2.mergedContent)).toBe(false); // no marker growth
   });
 });
 
-/** Parse the `tags` array out of a `---`-wrapped frontmatter block (empty array when none). */
 function tagsIn(fmBlock: string): string[] {
   const lines = fmBlock.split('\n');
   const start = lines.findIndex((l) => /^tags:\s*$/.test(l));

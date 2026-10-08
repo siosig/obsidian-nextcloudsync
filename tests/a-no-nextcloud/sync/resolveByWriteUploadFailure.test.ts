@@ -1,13 +1,6 @@
-// [G1-1] REGRESSION: SyncEngine.resolveByWrite must not mark a clean merge "resolved" when the
-// re-upload of the merged content fails.
-//
-// Root cause (static-analysis report G1-1): the committed FileState set `isConflicted: !clean`
-// UNCONDITIONALLY, while `remoteId`/`idType` (and, on the caller's side, `recordMergeBase`) were
-// already correctly gated on `uploaded`. So a clean auto-merge whose PUT fails (423 locked / 412
-// precondition / network error) committed: isConflicted:false (from clean:true) + localHash = the
-// NEW merged hash + remoteId = the OLD (still-on-server) id. The next sync then reads this as
-// "local unchanged since base, remote unchanged since base" → converged — and the merged content is
-// silently never retried and never reaches the server or any other device.
+// REGRESSION: SyncEngine.resolveByWrite must not mark a clean merge "resolved" when the re-upload of the
+// merged content fails. Otherwise the next sync reads local and remote as unchanged since base, converges,
+// and the merged content never reaches the server or any other device.
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { NetworkError, RemoteFileInfo, SyncSessionSummary, FileState } from '../../../src/types';
 
@@ -37,9 +30,8 @@ function makeEngine() {
     },
     stateDB: {
       setFile: jest.fn((fs: FileState) => { setFileCalls.push(fs); }),
-      // Feature 063: resolveByWrite now reads the prior baseline so a FAILED push does not record the
-      // merged body as the local baseline (which made the next sync declare convergence and strand
-      // the merge). No prior record in these cases.
+      // resolveByWrite reads the prior baseline so a FAILED push does not record the merged body as the local
+      // baseline. No prior record in these cases.
       getFile: jest.fn(() => undefined),
     },
     statusBar: {}, webdavFactory: {}, pluginDir: '', configDir: '.obsidian',
@@ -51,7 +43,7 @@ function makeEngine() {
 describe('[SPEC:G1-1] SyncEngine.resolveByWrite — merge upload failure must not look converged', () => {
   it('keeps isConflicted:true when clean=true but the merge re-upload throws', async () => {
     const { engine, setFileCalls } = makeEngine();
-    // Simulate a failing upload strategy (423 locked / 412 / network) — never resolves 'skipped', always throws.
+    // Simulate a failing upload strategy (423 locked / 412 / network): never resolves 'skipped', always throws.
     (engine as unknown as { uploadStrategy: unknown }).uploadStrategy = {
       upload: jest.fn(async () => { throw new NetworkError(423, 'Locked'); }),
     };
@@ -66,11 +58,10 @@ describe('[SPEC:G1-1] SyncEngine.resolveByWrite — merge upload failure must no
 
     expect(setFileCalls).toHaveLength(1);
     const written = setFileCalls[0];
-    // BUG guard: the merge did NOT reach the server, so it must still read as unresolved/pending —
-    // otherwise the next sync sees local==base(new hash) and remote==base(old id) and never retries.
+    // The merge did NOT reach the server, so it must still read as unresolved/pending; otherwise the next sync
+    // sees local==base(new hash) and remote==base(old id) and never retries.
     expect(written.isConflicted).toBe(true);
-    // remoteId/idType stay pinned to the OLD (still-accurate) values — unchanged by this fix, but
-    // asserted here to pin down the exact bug: these were ALREADY correctly gated on `uploaded`.
+    // remoteId/idType stay pinned to the OLD (still-accurate) values: they are gated on `uploaded`.
     expect(written.remoteId).toBe('old-remote-id');
     expect(written.idType).toBe('sha256');
     expect(summary.mergedCount).toBe(1); // still counted as a clean merge for the session summary

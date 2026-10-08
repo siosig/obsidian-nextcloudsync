@@ -1,13 +1,9 @@
-// Share helper for the two-account b-1 tests (LK-4 / SL-1): the admin account shares one of its
-// files with a second user through the OCS Files Sharing API, so the second user's client can
-// then contend with the admin's server-side lock.
+// Share helper for the two-account tests (LK-4 / SL-1): the admin shares a file with a second user via the OCS
+// Files Sharing API so that user's client can contend with the admin's server-side lock.
 import { LiveEnv } from './env';
 import { authHeaderOf } from './clientFactory';
 
-/**
- * Share `ownerPath` (relative to the admin's files root, e.g. `<remoteBase>/<file>`) with the user
- * `shareWith` (read/write, permissions=31). Throws unless the OCS response status code is 200.
- */
+// Shares read/write (permissions=31); throws unless the OCS status code is 200.
 export async function shareWithUser(env: LiveEnv, ownerPath: string, shareWith: string): Promise<void> {
   const url = `${new URL(env.serverUrl).origin}/ocs/v2.php/apps/files_sharing/api/v1/shares`;
   const body = new URLSearchParams({

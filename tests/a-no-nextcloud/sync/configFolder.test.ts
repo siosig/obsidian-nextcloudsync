@@ -28,12 +28,8 @@ function makeEmptyVault(adapter: DataAdapter): Vault {
   } as unknown as Vault;
 }
 
-/**
- * Config-folder sync wiring in SyncEngine:
- *  - local scan injects enabled-category files (US1)
- *  - hard exclusions (plugins/, the plugin dir) survive every toggle, including via the
- *    remote-deletion scope guard (US2 / FR-003 / FR-004 / FR-008)
- */
+// Config-folder sync wiring in SyncEngine: local scan injects enabled-category files, and hard
+// exclusions (plugins/, the plugin dir) survive every toggle, including the remote-deletion scope guard.
 
 const enc = new TextEncoder();
 const toBuf = (s: string): ArrayBuffer => enc.encode(s).buffer;
@@ -113,7 +109,7 @@ describe('SyncEngine remote-deletion scope guard (config folder hard exclusions)
     const engine = new SyncEngine({
       app,
       settings: s,
-      // getAllFiles/getAllDirs/deleteDir: feature 086 — the deletion sink forgets a trashed folder's
+      // getAllFiles/getAllDirs/deleteDir: the deletion sink forgets a trashed folder's
       // whole subtree, so it enumerates tracking even for a plain file path.
       stateDB: { deleteFile, getAllFiles: () => [], getAllDirs: () => [], deleteDir: jest.fn() },
       configDir: CONFIG_DIR,
@@ -147,10 +143,9 @@ describe('SyncEngine remote-deletion scope guard (config folder hard exclusions)
   });
 });
 
-// Feature 037 FR-013: the old config-folder newest-wins special branch in handleConflict was removed.
-// A `.obsidian` JSON conflict now flows through the single dispatch as an Other File: its extension
-// (json) is not in autoMergeFileTypes, so it takes otherFileStrategy (default latest-mtime), which is
-// JSON-safe (never writes conflict markers). Equal mtime → no-op, re-evaluated next sync (self-healing).
+// A `.obsidian` JSON conflict flows through the single dispatch as an Other File: json is not in
+// autoMergeFileTypes, so it takes otherFileStrategy, which is JSON-safe (never writes markers).
+// Equal mtime is a no-op, re-evaluated next sync. (docs/spec.md §7)
 describe('[SPEC:CSF-12] config JSON conflict resolves via Other File / latest-mtime (no special branch)', () => {
   const enc2 = new TextEncoder();
   const toBuf2 = (s: string): ArrayBuffer => enc2.encode(s).buffer;

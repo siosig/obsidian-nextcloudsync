@@ -1,11 +1,7 @@
-// Regression test for bug G6-2: VersionHistoryModal's Restore buttons must share a modal-level
-// in-flight guard so that, while restoring version A, clicking Restore on version B (or A again) is
-// ignored until the first restore settles. jest's testEnvironment is 'node' (no `document`), so —
-// consistent with the existing layer-a limitation already documented for Modal/Setting-backed UI in
-// tests/a-no-nextcloud/spec-coverage/clauses.ts (BRC_DOM waiver) — full Modal/DOM instantiation is
-// impractical here. This test instead imports and exercises the extracted `BusyGate` guard directly
-// (no Modal construction, so no `document` dependency) and wires it exactly the way
-// VersionHistoryModal's Restore click handler does, to prove the concurrency guard itself is correct.
+// VersionHistoryModal's Restore buttons must share a modal-level in-flight guard: while restoring
+// version A, clicking Restore on version B (or A again) is ignored until the first restore settles. jest
+// runs under `node` (no `document`), so the extracted `BusyGate` is exercised directly, wired the way
+// VersionHistoryModal's Restore click handler uses it.
 import { BusyGate } from '../../../src/ui/VersionHistoryModal';
 
 describe('VersionHistoryModal restore guard ([SPEC:G6-2])', () => {

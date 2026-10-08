@@ -1,10 +1,7 @@
-// Layer B (MIR-B1) — feature 045: Remote-authoritative Pull mirror against a live Nextcloud.
-// These end-to-end cases prove the mirror behaves on a real server: mass local-only download+delete
-// is NOT halted by the mass-delete breaker, folder deletion (incl. empty, child→parent) works, the
-// listing-failure gate performs zero deletions, and the sync immediately after a mirror converges
-// (self-healing). They are it.skip stubs for now (traced + documented; run under `pnpm test:b1` once
-// wired to the live harness) — surfaced as pending-adjudication waivers in the coverage catalog, not
-// silently passing. See specs/045-remote-mirror-pull/quickstart.md for the manual procedure.
+// Layer B (MIR-B1): Remote-authoritative Pull mirror against a live Nextcloud. Cases: mass local-only download+delete is
+// NOT halted by the mass-delete breaker, folder deletion (incl. empty, child->parent) works, the listing-failure gate
+// performs zero deletions, and the sync after a mirror converges (self-healing). it.skip stubs, surfaced as
+// pending-adjudication waivers in the coverage catalog, not silently passing.
 
 describe('Layer B (MIR-B1) — Pull mirror against a live server', () => {
   // eslint-disable-next-line jest/no-disabled-tests

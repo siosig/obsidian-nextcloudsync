@@ -1,15 +1,11 @@
 // [SPEC:WSF-2] [SPEC:WSF-3] [SPEC:WSF-4] [SPEC:WSF-8]
-// specs/064-watch-single-file-conflict/contracts/watch-single-file-sync.md (C-1, C-6)
-//
-// Feature 064 (GitHub issue #23 regression): "Sync on file change" used to PUT the local body
-// straight to the server with no PROPFIND and no If-Match, so an edit made on another device since
-// the last sync was silently overwritten. `SyncEngine.syncSingleFile` now fetches the remote state
-// first and hands it to the SAME classifier the full sync uses (`processRemoteFile`).
-//
+// "Sync on file change" must not PUT the local body straight to the server with no PROPFIND and no If-Match,
+// which silently overwrites an edit made on another device (GitHub issue #23; docs/spec.md §5.7).
+// `SyncEngine.syncSingleFile` fetches the remote state first and hands it to the SAME classifier the full
+// sync uses (`processRemoteFile`).
 // These tests drive the REAL `SyncEngine.syncSingleFile` end to end (client double + in-memory local
-// adapter), exactly as tests/a-no-nextcloud/sync/untrackedBothSides.test.ts does for
-// `processRemoteFile`. They deliberately do NOT reimplement the C-1 classification table: the point
-// of this suite is to prove the real engine follows it, not to check a parallel copy of the logic.
+// adapter), as untrackedBothSides.test.ts does for `processRemoteFile`, and deliberately do NOT reimplement
+// the classification table: the point is to prove the real engine follows it.
 import { DataAdapter, Notice } from 'obsidian';
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { StateDB } from '../../../src/data/StateDB';
@@ -36,10 +32,8 @@ function makeStateAdapter(): DataAdapter {
   } as unknown as DataAdapter;
 }
 
-/**
- * In-memory local vault. `files` maps path -> current content; a path that is absent means the file
- * does not exist locally. mtimes are fixed per path so the deterministic strategies are predictable.
- */
+// In-memory local vault. `files` maps path -> current content; a path that is absent means the file does
+// not exist locally. mtimes are fixed per path so the deterministic strategies are predictable.
 function makeLocalAdapter(files: Record<string, string>, mtimes: Record<string, number> = {}) {
   const mtimeOf = (p: string): number => mtimes[p] ?? 1_000;
   return {
@@ -57,14 +51,11 @@ function makeLocalAdapter(files: Record<string, string>, mtimes: Record<string, 
   };
 }
 
-/**
- * Row 6's only path into the engine (per the contract's footnote): `syncSingleFile` decides "content
- * changed" from its OWN read before ever asking the remote, then hands off to `processRemoteFile`,
- * which re-reads and re-hashes independently. The only way the second read can find "actually
- * unchanged from base" after the first read found "changed" is a real race — the on-disk content
- * reverted between the two reads (e.g. an editor / format-on-save round-trip completing mid-debounce).
- * `readBinary` here serves `tempBody` once (the first, "changed" read) and `finalBody` afterwards.
- */
+// The only path into the engine for the "unchanged on re-read" case: `syncSingleFile` decides "content
+// changed" from its OWN read before asking the remote, then hands off to `processRemoteFile`, which re-reads
+// and re-hashes independently. The second read can find "unchanged from base" after the first found
+// "changed" only through a real race (the content reverted between the reads, e.g. a format-on-save
+// round-trip mid-debounce). `readBinary` here serves `tempBody` once, then `finalBody`.
 function makeRacyLocalAdapter(path: string, tempBody: string, finalBody: string, mtime = 1_000) {
   const files: Record<string, string> = { [path]: tempBody };
   let readBinaryCalls = 0;
@@ -105,9 +96,8 @@ async function buildEngine(
     localAdapter, stateDB, baseStore, statusBar, webdavFactory: {},
     pluginDir: PLUGIN_DIR, configDir: '.obsidian',
   } as never);
-  // Bypass ensureClient()'s webdavFactory.createClient() call the same way
-  // untrackedBothSides.test.ts bypasses it for processRemoteFile: pre-seed both fields it guards on
-  // (`!this.client || !this.features`) so syncSingleFile's `ensureClient()` call is a no-op.
+  // Bypass ensureClient()'s webdavFactory.createClient() call the way untrackedBothSides.test.ts does:
+  // pre-seed both fields it guards on (`!this.client || !this.features`) so ensureClient() is a no-op.
   (engine as unknown as { client: unknown }).client = client;
   (engine as unknown as { features: unknown }).features = {
     isNextcloud: true, version: '30.0.0', hasChecksums: true, hasFilesLocking: false,
@@ -123,11 +113,11 @@ const remoteOf = (path: string, body: string, over: Partial<RemoteFileInfo> = {}
     size: enc.encode(body).length, lastModified: 9_000, ...over,
   });
 
-/** The mock Notice records every constructed toast on a static `instances` array (test double only). */
+// The mock Notice records every constructed toast on a static `instances` array (test double only).
 const notices = (): { message: string }[] =>
   (Notice as unknown as { instances: { message: string }[] }).instances;
 
-/** Record `path` as tracked (previously converged) with `body` on both sides. */
+// Record `path` as tracked (previously converged) with `body` on both sides.
 function seedTracked(stateDB: StateDB, path: string, body: string, hash: string): void {
   const fs: FileState = {
     path, localHash: hash, remoteId: hash, idType: 'sha256',
@@ -162,7 +152,7 @@ describe('[SPEC:WSF-2] C-1 row 3 — local content unchanged from base: zero com
 
     await engine.syncSingleFile('note.md');
 
-    // FR-006: a modify event with no real content change must produce ZERO network calls.
+    // A modify event with no real content change must produce ZERO network calls.
     expect(client.statFile).not.toHaveBeenCalled();
     expect(notices().length).toBe(0);
   });
@@ -190,7 +180,7 @@ describe('[SPEC:WSF-3] C-1 row 4 — untracked local file, remote absent: upload
     const state = stateDB.getFile('new.md');
     expect(state?.remoteId).toBe(await hashOf(BODY));
     expect(state?.isConflicted).toBe(false);
-    expect(notices().length).toBe(0); // plain upload: silent (C-6)
+    expect(notices().length).toBe(0); // plain upload: silent
   });
 });
 
@@ -217,7 +207,7 @@ describe('[SPEC:WSF-3] C-1 row 5 — local-only change, remote unchanged: upload
     expect(upload).toHaveBeenCalledTimes(1);
     const [, , , , uploadOpts] = upload.mock.calls[0];
     expect(uploadOpts?.ifMatchEtag).toBe(remoteEtag);
-    expect(notices().length).toBe(0); // plain upload: silent (C-6)
+    expect(notices().length).toBe(0); // plain upload: silent
   });
 });
 
@@ -242,7 +232,7 @@ describe('[SPEC:WSF-4] C-1 row 6 — local reverted to base after the initial ha
     expect(client.downloadFile).toHaveBeenCalledWith('note.md');
     expect(local.files['note.md']).toBe(REMOTE_BODY);
     expect(upload).not.toHaveBeenCalled();
-    expect(notices().length).toBe(0); // plain download: silent (C-6)
+    expect(notices().length).toBe(0); // plain download: silent
   });
 });
 
@@ -269,7 +259,7 @@ describe('[SPEC:WSF-4] C-1 row 7 — both sides changed a tracked .md: merged, b
     expect(local.files['note.md']).toContain('remote addition');
     expect(upload).toHaveBeenCalled(); // the merge is pushed so both sides converge
 
-    // C-6: a resolved conflict (clean merge included) must notify, naming the path.
+    // A resolved conflict (clean merge included) must notify, naming the path.
     expect(notices().length).toBe(1);
     expect(notices()[0].message).toContain('note.md');
   });
@@ -304,7 +294,7 @@ describe('[SPEC:WSF-4] C-1 row 8 — upload race (412 If-Match failure): falls b
     expect(local.files['note.md']).toContain('local addition'); // local edit not overwritten
     expect(local.files['note.md']).toContain('remote addition that landed mid-sync'); // remote edit not lost
 
-    expect(notices().length).toBe(1); // resolved as a conflict → C-6 notifies
+    expect(notices().length).toBe(1); // resolved as a conflict → notifies
   });
 });
 
@@ -318,13 +308,13 @@ describe('[SPEC:WSF-4] C-1 row 9 — statFile fails with a NetworkError: local k
     const { engine, stateDB } = await buildEngine(local, client);
     seedTracked(stateDB, 'offline.md', OLD, oldHash);
 
-    await expect(engine.syncSingleFile('offline.md')).resolves.toBeUndefined(); // FR-009: never throws out
+    await expect(engine.syncSingleFile('offline.md')).resolves.toBeUndefined(); // never throws out
 
     expect(local.files['offline.md']).toBe(EDITED); // local edit survives untouched
     const retryQueue = (engine as unknown as { retryQueue: string[] }).retryQueue;
     expect(retryQueue).toContain('offline.md');
 
-    // C-6: a failed single-file sync must notify, naming the path.
+    // A failed single-file sync must notify, naming the path.
     expect(notices().length).toBe(1);
     expect(notices()[0].message).toContain('offline.md');
   });
@@ -349,7 +339,7 @@ describe('[SPEC:WSF-4] C-1 row 10 — untracked file present on both sides (feat
     const seeded = stateDB.getFile('same.md');
     expect(seeded?.remoteId).toBe(checksum);
     expect(seeded?.isConflicted).toBe(false);
-    expect(notices().length).toBe(0); // no transfer, no conflict: silent (C-6)
+    expect(notices().length).toBe(0); // no transfer, no conflict: silent
   });
 
   it('[SPEC:WSF-4] resolves as a conflict (both edits preserved) when the untracked content differs', async () => {
@@ -366,14 +356,14 @@ describe('[SPEC:WSF-4] C-1 row 10 — untracked file present on both sides (feat
 
     expect(local.files['note2.md']).toContain('local only');
     expect(local.files['note2.md']).toContain('remote only');
-    expect(notices().length).toBe(1); // resolved as a conflict → C-6 notifies
+    expect(notices().length).toBe(1); // resolved as a conflict → notifies
   });
 });
 
-// C-6, deterministic-strategy row: a conflict on a NON-markdown file settles via `otherFileStrategy`
-// (default latest-mtime), which reports itself as a plain upload/download — no mergedCount, no
-// conflictedCount. That is the outcome where one side's content is dropped outright, so it must NOT
-// be silent. The engine detects it from the handleConflict entry count rather than the counters.
+// Deterministic-strategy case: a conflict on a NON-markdown file settles via `otherFileStrategy` (default
+// latest-mtime), which reports itself as a plain upload/download (no mergedCount, no conflictedCount). One
+// side's content is dropped outright, so it must NOT be silent. The engine detects it from the
+// handleConflict entry count rather than the counters.
 describe('[SPEC:WSF-8] C-6: a conflict settled by a deterministic strategy still notifies', () => {
   it('notifies when both sides changed a non-mergeable file and the newer side won', async () => {
     const LOCAL = 'local body';

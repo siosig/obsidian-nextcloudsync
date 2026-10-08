@@ -1,6 +1,5 @@
-// Builds a full SyncEngine "device" wired to an in-memory FakeVault (local) and a REAL
-// NextcloudClient (remote, localhost Docker). Lets b1 drive syncManual end to end — the only
-// way to verify cross-device behaviour like empty-directory pruning and concurrent renames.
+// A SyncEngine "device" over an in-memory FakeVault and a real NextcloudClient; the only way to verify
+// cross-device behaviour such as empty-directory pruning and concurrent renames.
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { LocalAdapter } from '../../../src/data/LocalAdapter';
 import { StateDB } from '../../../src/data/StateDB';
@@ -31,7 +30,6 @@ export interface Device {
   sync(): Promise<void>;
 }
 
-/** Construct an independent device (own vault + state) sharing one remote workspace folder. */
 export function makeDevice(
   env: LiveEnv, remoteBase: string, deviceId: string, over: Partial<DavSyncSettings> = {},
 ): Device {
@@ -45,11 +43,9 @@ export function makeDevice(
   const vault = new FakeVault();
   const localAdapter = new LocalAdapter(vault.adapter, vault.vault);
   const stateDB = new StateDB(vault.adapter, PLUGIN_DIR, deviceId);
-  // Feature 038: per-device merge base store (last-synced bodies), wired exactly like production so
-  // b1 exercises the real 3-way merge with a true base across devices.
+  // Per-device merge base store wired as in production, so b1 runs the real 3-way merge with a true base.
   const baseStore = new MergeBaseStore(vault.adapter, PLUGIN_DIR, deviceId);
-  // Feature 044: clean-side snapshot store, wired exactly like production so b1 exercises real
-  // force-resolution recovery across devices.
+  // Clean-side snapshot store wired as in production, so b1 exercises force-resolution recovery across devices.
   const cleanSideStore = new CleanSideStore(vault.adapter, PLUGIN_DIR, deviceId);
   const client = new NextcloudClient(settings, env.appPassword, remoteBase);
   const webdavFactory = {

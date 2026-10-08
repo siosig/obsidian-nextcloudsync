@@ -1,11 +1,9 @@
-// Feature 087 (issue #51): proves the engine needs NO changes to do the right thing with an
-// unreadable listing — the fix lives entirely in the WebDAV client layer (readMultistatus), and this
-// file exists to show that a RemoteListingUnreadableError thrown from a client double already lands
-// on the SAME catch blocks that a network outage does: the session is recorded as failed, nothing is
-// deleted, nothing is uploaded, and StateDB is untouched. Modelled on
-// tests/a-no-nextcloud/sync/emptyListingAbsenceDelete.test.ts (real SyncEngine + real StateDB; only
-// the WebDAV client, LocalAdapter and Obsidian App are doubles) because re-implementing the
-// classification in a mock would prove nothing about the actual catch wiring.
+// Proves the engine needs NO changes to do the right thing with an unreadable listing (issue #51): the fix
+// lives in the WebDAV client layer (readMultistatus). A RemoteListingUnreadableError thrown from a client
+// double lands on the SAME catch blocks as a network outage: the session is recorded as failed, nothing is
+// deleted or uploaded, and StateDB is untouched. Modelled on emptyListingAbsenceDelete.test.ts (real
+// SyncEngine + real StateDB; only the WebDAV client, LocalAdapter and Obsidian App are doubles) because
+// re-implementing the classification in a mock would prove nothing about the actual catch wiring.
 import { DataAdapter } from 'obsidian';
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { StateDB } from '../../../src/data/StateDB';

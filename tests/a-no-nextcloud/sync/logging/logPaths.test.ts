@@ -2,7 +2,7 @@ import { joinLogPath, debugLogPath, isActiveOwnLog } from '../../../../src/util/
 
 describe('logPaths — the single per-device log file uses the .txt extension', () => {
   // The log is plain text (not Markdown); a .md extension makes editors render it as Markdown and
-  // garble the output. Feature 052 folded the old two files into one `nextcloud-debug_<host>.txt`.
+  // garble the output.
   it('debug-log path is nextcloud-debug_<host>.txt', () => {
     expect(debugLogPath('_logs', 'desktop-abc')).toBe('_logs/nextcloud-debug_desktop-abc.txt');
   });
@@ -18,7 +18,6 @@ describe('logPaths — the single per-device log file uses the .txt extension', 
 
 describe('[SPEC:LOG-1] isActiveOwnLog — exclude the log only while THIS device is writing it', () => {
   const HOST = 'desktop-plugintest';
-  // Feature 028: the per-log toggles are unified into a single loggingEnabled flag.
   const base = { logsFolder: '_logs', host: HOST, loggingEnabled: true };
   const debugP = debugLogPath('_logs', HOST);
 

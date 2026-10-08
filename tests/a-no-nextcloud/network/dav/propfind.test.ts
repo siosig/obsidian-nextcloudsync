@@ -1,17 +1,9 @@
-// Direct tests for the PROPFIND readers (feature 075).
+// Direct tests for the PROPFIND readers: every case is a string, so an abnormal server response costs one table
+// row instead of a running Nextcloud.
 //
-// No [SPEC:...] tags: the clauses these serve are claimed by the client-level and b-1 suites.
-//
-// This file is the point of the extraction. Every case below used to require a running Nextcloud —
-// a cloud VM, four minutes, and a real server willing to produce a malformed answer on demand,
-// which is why abnormal responses were barely covered at all. They are strings now, so a new case
-// costs one table row.
-//
-// DOMParser comes from @xmldom/xmldom, already a devDependency for the b-1 and b-4 layers. It is
-// installed here rather than in the shared a-layer setup so nothing else changes behaviour — wrapped
-// (feature 087) so a test can also ask for the Blink/WebKit shape of a parse failure, which is a
-// <parsererror> document rather than a throw. See support/browserLikeDOMParser.ts for why that
-// difference matters.
+// DOMParser comes from @xmldom/xmldom (already a devDependency for b-1 and b-4), installed here rather than in the
+// shared a-layer setup so nothing else changes behaviour. It is wrapped so a test can also ask for the Blink/WebKit
+// shape of a parse failure (a <parsererror> document, not a throw); see support/browserLikeDOMParser.ts.
 import {
   parseResponses, readSyncToken, readHref, readProp, readStatusText,
   readIsCollection, readDavProps, readOwncloudProps, readLockDiscoveryOwner, MultistatusUnreadableError,
@@ -21,12 +13,10 @@ import { installBrowserLikeDOMParser, PARSERERROR_NS } from '../../support/brows
 const dom = installBrowserLikeDOMParser();
 afterAll(() => dom.restore());
 
-/** Wrap response fragments in a multistatus envelope with both namespaces declared. */
 function multistatus(...responses: string[]): string {
   return `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">${responses.join('')}</d:multistatus>`;
 }
 
-/** One response with the given href and prop body. */
 function response(href: string, propBody: string, status?: string): string {
   return `<d:response><d:href>${href}</d:href>${status ? `<d:status>${status}</d:status>` : ''}<d:propstat><d:prop>${propBody}</d:prop></d:propstat></d:response>`;
 }
@@ -45,7 +35,6 @@ const FOLDER_PROPS = `
   <d:getlastmodified>Wed, 27 Aug 2026 01:00:00 GMT</d:getlastmodified>
   <oc:fileid>555</oc:fileid>`;
 
-/** The single prop element of the first response in `xml`. */
 function firstProp(xml: string): Element {
   const prop = readProp(parseResponses(xml)[0]);
   if (!prop) throw new Error('fixture has no prop');
@@ -62,12 +51,9 @@ describe('parseResponses', () => {
     expect(parseResponses(multistatus())).toEqual([]);
   });
 
-  // Feature 087 (issue #51). Everything below this line is about ONE distinction: "the server said
-  // there is nothing here" versus "we could not read what the server said". The old code collapsed
-  // both into an empty list, and an empty list is what the full scan reads as "every tracked file was
-  // deleted on the server". A multi-megabyte listing that arrived truncated became, in one step, a
-  // request to delete the whole vault — held back only by the mass-delete breaker (large vaults) or
-  // the per-file 404 re-check (small ones). This is the upstream fix: an unreadable body is an error.
+  // Issue #51: everything below is about ONE distinction: "the server said there is nothing here" versus "we could
+  // not read what the server said". An empty list is what the full scan reads as "every tracked file was deleted on
+  // the server", so an unreadable or truncated body must be an error, never an empty list.
 
   it('[SPEC:ULG-1] rejects an empty body — that is not a listing of nothing, it is no listing', () => {
     for (const body of ['', '\n  ', '   ']) {
@@ -124,8 +110,7 @@ describe('parseResponses', () => {
   });
 
   it('[SPEC:ULG-5] still returns an empty list for a genuine multistatus with no responses', () => {
-    // Feature 083 depends on this: a vault the server says is empty must read as empty, not as an
-    // error, or absence-based deletion never converges on a small vault.
+    // A vault the server says is empty must read as empty, not as an error, or absence-based deletion never converges on a small vault.
     expect(parseResponses(multistatus())).toEqual([]);
     expect(parseResponses('<d:multistatus xmlns:d="DAV:"/>')).toEqual([]);
   });
@@ -230,15 +215,10 @@ describe('readDavProps — the standard properties', () => {
     expect(readDavProps(firstProp(multistatus(response('/a', propBody))))).toEqual(expected);
   });
 
-  // The next two pin CURRENT behaviour, which is not the desirable behaviour. A non-numeric
-  // content length or an unparseable date yields NaN, and NaN spreads: `NaN !== base.localSize` is
-  // always true, so such a file reads as changed on every single sync. It is not data loss — the
-  // comparisons fail safe — but it is a permanent rehash.
-  //
-  // They are asserted as-is rather than fixed here because this feature must not change behaviour
-  // (FR-001). Pinning them means a future fix shows up as a failing test that has to be updated
-  // deliberately, instead of a silent change nobody notices. No real server sends these, which is
-  // why it has never surfaced.
+  // The next two pin CURRENT behaviour, which is not the desirable behaviour. A non-numeric content length or an
+  // unparseable date yields NaN, and NaN spreads: `NaN !== base.localSize` is always true, so such a file reads as
+  // changed on every sync (a permanent rehash, not data loss). Asserted as-is so a future fix shows up as a failing
+  // test that must be updated deliberately. No real server sends these.
 
   it('yields NaN for an unparseable content length (current behaviour, see note above)', () => {
     const xml = multistatus(response('/a', '<d:getcontentlength>not-a-number</d:getcontentlength>'));
@@ -297,9 +277,8 @@ describe('readOwncloudProps — the Nextcloud extensions', () => {
 });
 
 describe('readLockDiscoveryOwner (feature 090)', () => {
-  // The response an Nextcloud/RFC-4918 server sends for a Depth:0 <D:lockdiscovery/> PROPFIND
-  // issued right after a PUT/DELETE came back 423 Locked (see
-  // specs/090-server-lock-force-resolve/contracts/lockdiscovery-propfind.md).
+  // The response a Nextcloud/RFC-4918 server sends for a Depth:0 <D:lockdiscovery/> PROPFIND issued right after a
+  // PUT/DELETE came back 423 Locked.
   function lockMultistatus(...responses: string[]): string {
     return `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" xmlns:nc="http://nextcloud.org/ns">${responses.join('')}</d:multistatus>`;
   }
@@ -351,9 +330,9 @@ describe('readSyncToken', () => {
   });
 
   it('rejects an unparseable body rather than reporting an empty token', () => {
-    // xmldom throws here. In production readSyncToken is only reached after parseResponses has
-    // already validated the same body (feature 087), so the Blink parsererror shape never gets this
-    // far; the throw is pinned so a future reordering cannot make it silently return ''.
+    // xmldom throws here. In production readSyncToken is only reached after parseResponses has already validated the
+    // same body, so the Blink parsererror shape never gets this far; the throw is pinned so a future reordering cannot
+    // make it silently return ''.
     expect(() => readSyncToken('not xml')).toThrow();
   });
 });

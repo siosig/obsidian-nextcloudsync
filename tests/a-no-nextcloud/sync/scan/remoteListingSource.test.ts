@@ -1,8 +1,6 @@
-// Direct tests for RemoteListingSource (feature 074, Phase 2).
-//
-// No [SPEC:...] tags: ES-1..ES-10 are claimed by rootEtagShortcircuit.test.ts, which drives the same
-// logic through SyncEngine and therefore also proves the wiring. This file covers what is awkward to
-// reach from there — the State rebuild's own shape, and the checksum pass's batching.
+// Direct tests for RemoteListingSource; no [SPEC:...] tags (ES-1..ES-10 are claimed by
+// rootEtagShortcircuit.test.ts, which also proves the wiring). This file covers the State rebuild's own
+// shape and the checksum pass's batching.
 import { RemoteListingSource, RemoteListingDeps } from '../../../../src/sync/scan/RemoteListingSource';
 import { FileState, DirState, RemoteFileInfo } from '../../../../src/types';
 

@@ -1,5 +1,5 @@
-// [SPEC:MB-5..MB-11] specs/038-merge-base-store — the merge base is recorded at every convergence
-// point and dropped on deletion, only for Auto Merge File types (feature 038).
+// [SPEC:MB-5..MB-11] The merge base is recorded at every convergence point and dropped on deletion,
+// only for Auto Merge File types. (docs/spec.md §6.2)
 import { DataAdapter } from 'obsidian';
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { StateDB } from '../../../src/data/StateDB';

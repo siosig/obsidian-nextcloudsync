@@ -1,38 +1,23 @@
-// MSF-12 MSF-13 MSF-14 MSF-15 MSF-16 — specs/088-mkcol-single-flight/spec.md, User Story 1.
+// MSF-12 MSF-13 MSF-14 MSF-15 MSF-16 — single-flight MKCOL for nested folder uploads (docs/spec.md §5.3).
 //
-// The bug this file pins down is not in the engine and not in any single request: it is what happens
-// when two uploads that share an ANCESTOR run at the same time.
+// Uploads are serialised per *immediate parent directory* (`runFileBatch(..., serializeByDir=true)`), so `F/a.md` and
+// `F/sub/b.md` land on two different promise chains and run in parallel while both need the ancestor `F`. Neither
+// chain knows about the other's MKCOL, so both issue it, and `ensureRemoteDir` must not record the path as "created"
+// without looking at the status the server returned. One nesting level is stable (`F/a.md` + `F/b.md` share a chain,
+// MSF-15); two levels raced.
 //
-// Uploads are serialised per *immediate parent directory* (`runFileBatch(..., serializeByDir=true)`,
-// SyncEngine.ts:1079ff). `F/a.md` sits under `F` and `F/sub/b.md` under `F/sub`, so they land on two
-// different promise chains and run in parallel — while both need the same ancestor `F` to exist.
-// Neither chain knows about the other's MKCOL, so both issue it, and `ensureRemoteDir` then records
-// the path as "created" WITHOUT looking at the status the server returned. One lie is enough: every
-// later request in that session skips the MKCOL it now believes is unnecessary.
-//
-// That is why one nesting level is stable and two are not — `F/a.md` + `F/b.md` share a chain and
-// never race (MSF-15 asserts that half stays working), whereas `F/a.md` + `F/sub/b.md` failed about
-// one run in four on the live b-1 instance.
-//
-// ── Why the fake server answers the way it does ──────────────────────────────────────────────────
-// These tests drive the REAL `NextcloudClient` (so the real `ensureRemoteDir` + `createdDirs` cache
-// are under test) against an in-memory WebDAV server behind the `requestUrl` mock. The three answers
-// that matter were MEASURED against the b-1 instance (Nextcloud 34) on 2026-09-10 with raw HTTP, no
-// client cache involved — see the live-server confirmation section in the spec:
+// These tests drive the REAL `NextcloudClient` (real `ensureRemoteDir` + `createdDirs` cache) against an in-memory
+// WebDAV server behind the `requestUrl` mock. The answers were measured against a live Nextcloud 34 with raw HTTP:
 //
 //   - concurrent MKCOL on the SAME collection → first 201, the others 423 Locked
-//     (`OCA\DAV\Connector\Sabre\Exception\FileLocked`); observed [201,423,405,423] and
-//     [405,423,201,405,405,405,405,405]
+//     (`OCA\DAV\Connector\Sabre\Exception\FileLocked`)
 //   - MKCOL whose parent does not exist yet    → 409 Conflict (`Sabre\DAV\Exception\Conflict`)
 //   - PUT whose parent does not exist yet      → 404 (Nextcloud's files DAV, not the RFC's 409)
 //
-// The 423 is the whole point. Without it a fake server would happily accept both concurrent MKCOLs
-// and the race would be invisible here while remaining real in production. So the server below
-// refuses a MKCOL that arrives while another MKCOL for the same path is still in flight, and holds a
-// genuine creation open for a few macrotasks so the overlap is deterministic rather than lucky.
-//
-// After the fix the same server produces exactly one MKCOL per path: the single-flight cache makes
-// the second caller await the first one's request instead of issuing its own, so 423 never occurs.
+// The 423 is the whole point: without it a fake server would accept both concurrent MKCOLs and the race would be
+// invisible here. So the server refuses a MKCOL that arrives while another for the same path is in flight, and holds
+// a genuine creation open for a few macrotasks so the overlap is deterministic. The single-flight cache makes the
+// second caller await the first one's request, so exactly one MKCOL per path is sent and 423 never occurs.
 import { DataAdapter, requestUrl } from 'obsidian';
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { NextcloudClient } from '../../../src/network/NextcloudClient';
@@ -47,7 +32,7 @@ const dec = new TextDecoder();
 const toBuf = (s: string): ArrayBuffer => enc.encode(s).buffer as ArrayBuffer;
 
 const PLUGIN_DIR = '.obsidian/plugins/nextcloud-sync';
-/** Fixed local mtime, far outside the signature safety window of both `now` and the last sync. */
+// Fixed local mtime, far outside the signature safety window of both `now` and the last sync.
 const MTIME = 1_000;
 
 const SETTINGS: DavSyncSettings = {
@@ -58,22 +43,16 @@ const SETTINGS: DavSyncSettings = {
   syncOnWifiOnly: false,
 };
 
-/** Request URL prefix the settings above produce (the Server URL minus its trailing slash). */
+// Request URL prefix the settings above produce (the Server URL minus its trailing slash).
 const URL_BASE = 'https://nc/remote.php/dav/files/alice';
-/** The remote base folder (the vault name). Every remote path below is rooted here. */
+// The remote base folder (the vault name). Every remote path below is rooted here.
 const BASE = 'Vault';
-/** The path prefix of every href the fake server emits. */
+// The path prefix of every href the fake server emits.
 const HREF_ROOT = '/remote.php/dav/files/alice';
 
-/**
- * How many macrotasks a genuine MKCOL creation is held open.
- *
- * Every other answer resolves on a microtask, so a chain that receives 423/409/404 runs its whole
- * remaining reactive-recovery sequence (MKCOL the child, retry the PUT) while the winning MKCOL is
- * still in flight — which is exactly the live trace `a: mkcol=[423] → retry PUT 404`,
- * `b: mkcol=[423, 409] → retry PUT 404`. Making the two orders of magnitude apart is what turns a
- * timing-dependent production race into a deterministic test.
- */
+// How many macrotasks a genuine MKCOL creation is held open. Every other answer resolves on a microtask, so a chain
+// that receives 423/409/404 runs its whole reactive-recovery sequence while the winning MKCOL is still in flight;
+// making the two orders of magnitude apart turns the timing-dependent race into a deterministic test.
 const CREATE_MACROTASKS = 5;
 
 const LOCKED_BODY =
@@ -96,7 +75,7 @@ interface FakeResponse {
 const reply = (status: number, text = '', arrayBuffer: ArrayBuffer = new ArrayBuffer(0)): FakeResponse =>
   ({ status, text, json: {}, arrayBuffer, headers: {} });
 
-/** One macrotask. `window` is aliased onto the Node global by tests/a-no-nextcloud/support/setup.ts. */
+// One macrotask. `window` is aliased onto the Node global by tests/a-no-nextcloud/support/setup.ts.
 const macrotask = (): Promise<void> => new Promise((r) => { window.setTimeout(r, 0); });
 
 async function afterMacrotasks<T>(n: number, value: () => T): Promise<T> {
@@ -108,25 +87,21 @@ interface RemoteFile { body: string; checksum: string | null; mtime: number }
 interface RequestRecord { method: string; path: string; status: number }
 
 interface ServerOptions {
-  /**
-   * When set, a MKCOL that would CREATE a collection answers with this status instead (a server that
-   * permanently refuses to create anything). A MKCOL on a collection that already exists still
-   * answers 405, because that is not a creation.
-   */
+  // When set, a MKCOL that would CREATE a collection answers with this status instead (a server that
+  // permanently refuses to create anything). A MKCOL on a collection that already exists still
+  // answers 405, because that is not a creation.
   mkcolCreateStatus?: number;
 }
 
-/**
- * A small in-memory Nextcloud, driven through the `requestUrl` mock.
- *
- * It models only what this feature turns on: which collections exist, that a PUT into a missing
- * collection 404s, and that MKCOL is not safe to issue twice concurrently. Everything else is the
- * minimum the engine's full-scan path needs to reach the upload stage.
- */
+// A small in-memory Nextcloud, driven through the `requestUrl` mock.
+//
+// It models only what this test turns on: which collections exist, that a PUT into a missing
+// collection 404s, and that MKCOL is not safe to issue twice concurrently. Everything else is the
+// minimum the engine's full-scan path needs to reach the upload stage.
 function makeServer(opts: ServerOptions = {}) {
   const dirs = new Set<string>([BASE]);
   const files = new Map<string, RemoteFile>();
-  /** Collections whose MKCOL has been accepted but not yet completed — the source of the 423. */
+  // Collections whose MKCOL has been accepted but not yet completed — the source of the 423.
   const creating = new Set<string>();
   const requests: RequestRecord[] = [];
   let version = 0;
@@ -236,7 +211,7 @@ function makeServer(opts: ServerOptions = {}) {
     files,
     requests,
     handle,
-    /** How many MKCOLs the session sent for one VAULT-RELATIVE path (e.g. `F`, `F/x`). */
+    // How many MKCOLs the session sent for one VAULT-RELATIVE path (e.g. `F`, `F/x`).
     mkcolCount: (rel: string): number =>
       requests.filter((r) => r.method === 'MKCOL' && r.path === `${BASE}/${rel}`).length,
     hasDir: (rel: string): boolean => dirs.has(`${BASE}/${rel}`),
@@ -258,7 +233,7 @@ function makeStateAdapter(): DataAdapter {
   } as unknown as DataAdapter;
 }
 
-/** In-memory local vault (path → body). */
+// In-memory local vault (path → body).
 function makeLocalAdapter(files: Record<string, string>) {
   const sizeOf = (p: string): number => enc.encode(files[p]).length;
   return {
@@ -278,20 +253,18 @@ function makeLocalAdapter(files: Record<string, string>) {
 }
 
 interface HarnessOptions {
-  /** Local vault contents (path → body). The vault has never been synced (StateDB is empty). */
+  // Local vault contents (path → body). The vault has never been synced (StateDB is empty).
   localFiles: Record<string, string>;
-  /** Passed straight to the fake server. */
+  // Passed straight to the fake server.
   server?: ServerOptions;
 }
 
-/**
- * A first sync of an untracked vault whose remote folder exists and is empty.
- *
- * `getAllFolders()` deliberately answers `[]`. Directory reconciliation runs after the uploads and
- * would otherwise MKCOL folders the uploads had just created, which would muddy the per-path MKCOL
- * counts these tests turn on. With no local folders it classifies every remote folder as
- * `!L && R && !T` → create locally, which touches nothing on the server.
- */
+// A first sync of an untracked vault whose remote folder exists and is empty.
+//
+// `getAllFolders()` deliberately answers `[]`. Directory reconciliation runs after the uploads and
+// would otherwise MKCOL folders the uploads had just created, which would muddy the per-path MKCOL
+// counts these tests turn on. With no local folders it classifies every remote folder as
+// `!L && R && !T` → create locally, which touches nothing on the server.
 async function buildHarness(o: HarnessOptions) {
   const server = makeServer(o.server ?? {});
   mockRequestUrl.mockImplementation(server.handle);
@@ -356,8 +329,8 @@ afterAll(() => { (globalThis as unknown as { DOMParser: unknown }).DOMParser = p
 
 describe('[SPEC:MSF-12] two files under a brand-new two-level folder both reach the server in ONE session', () => {
   it('uploads F/a.md and F/sub/b.md with no errors, and leaves both collections on the server', async () => {
-    // The reported failure, stated as the user sees it: create a folder, put a note in it and a note
-    // in a subfolder, sync once. Observed before the fix (live b-1, ~1 run in 4):
+    // The reported failure as the user sees it: create a folder, put a note in it and a note
+    // in a subfolder, sync once. The failure looked like:
     //   errors: [{"path":"GDP30/a.md","message":"HTTP 404 (PUT)"},
     //            {"path":"GDP30/sub/b.md","message":"HTTP 404 (PUT)"}]
     const h = await buildHarness({
@@ -372,8 +345,7 @@ describe('[SPEC:MSF-12] two files under a brand-new two-level folder both reach 
     expect(summary.uploadedCount).toBe(2);
 
     // Both ancestors really exist afterwards — not merely "not reported as an error". The chain that
-    // loses the race caches `F/sub` as created after a 409, so before the fix the folder is missing
-    // from the server while the client is convinced it made it.
+    // loses the race could cache `F/sub` as created after a 409 while the folder is missing from the server.
     expect(h.server.hasDir('F')).toBe(true);
     expect(h.server.hasDir('F/sub')).toBe(true);
     expect(h.server.hasFile('F/a.md')).toBe(true);
@@ -437,8 +409,7 @@ describe('[SPEC:MSF-15] a single new level keeps working exactly as before', () 
   it('uploads F/a.md and F/b.md through one MKCOL, unchanged by the fix', async () => {
     // The regression half. Both files share the parent `F`, so `serializeByDir` already puts them on
     // one chain and there is no race to fix here — the second PUT simply finds the folder the first
-    // one created. This is the configuration that was 5/5 stable on the live instance, and it must
-    // still cost exactly one MKCOL and one PUT per file afterwards.
+    // one created. It must cost exactly one MKCOL and one PUT per file.
     const h = await buildHarness({
       localFiles: { 'F/a.md': 'body of a\n', 'F/b.md': 'body of b\n' },
     });

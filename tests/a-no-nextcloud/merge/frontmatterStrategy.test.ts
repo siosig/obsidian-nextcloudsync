@@ -1,6 +1,5 @@
-// Feature 047: frontmatter is resolved by `frontmatterStrategy`, INDEPENDENTLY of the body strategy.
-// Integration-style: the REAL FrontmatterMergeStrategy + reconcile/diff3 run through ConflictResolver
-// (no merge mocks), so this validates true end-to-end split-resolution behaviour.
+// Frontmatter is resolved by `frontmatterStrategy`, INDEPENDENTLY of the body strategy. Integration-style: the REAL
+// FrontmatterMergeStrategy + reconcile/diff3 run through ConflictResolver (no merge mocks).
 import { ConflictResolver, MergeConfig, ConflictContext } from '../../../src/sync/ConflictResolver';
 import { SyncStrategy } from '../../../src/types';
 import type { App } from 'obsidian';

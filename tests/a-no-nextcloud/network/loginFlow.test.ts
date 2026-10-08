@@ -9,13 +9,10 @@ function res(status: number, json: unknown = {}) {
 }
 
 const noSleep = (): Promise<void> => Promise.resolve();
-/** Resume signal that never fires — the desktop case, where the timer alone drives the loop. */
+// Resume signal that never fires (desktop: the timer alone drives the loop).
 const noResume = () => () => undefined;
 
-/**
- * A fake clock that advances by `stepMs` on every read, so a loop using `noSleep` still reaches the
- * wall-clock deadline in bounded time instead of spinning against the real `Date.now`.
- */
+// Fake clock advancing by `stepMs` per read, so a loop using `noSleep` still reaches the wall-clock deadline in bounded time.
 function fakeClock(stepMs: number) {
   let t = 0;
   return () => { const v = t; t += stepMs; return v; };
@@ -109,8 +106,7 @@ describe('LoginFlowV2', () => {
     });
 
     it('[SPEC:LF-2] the deadline matches the server-side token lifetime (20 minutes)', () => {
-      // Nextcloud's LoginFlowV2Mapper::lifetime is 1200 s; giving up earlier would strand a token
-      // the server would still honour, which is what the old 90-iteration cap effectively did.
+      // Nextcloud's LoginFlowV2Mapper::lifetime is 1200 s; giving up earlier would strand a token the server still honours.
       expect(LoginFlowV2.POLL_DEADLINE_MS).toBe(20 * 60 * 1000);
     });
   });

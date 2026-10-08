@@ -1,9 +1,7 @@
-// [SPEC:SCR-1] Issue #37: the plugin must not issue the RFC 6578 sync-collection REPORT against
-// Nextcloud's files DAV. That endpoint does not implement it — Sabre answers ReportNotSupported,
-// which is HTTP 415 — so the request can only fail, and Nextcloud logs the rejection at ERROR level
-// with a stack trace. An administrator therefore got a server-log error every time the plugin built
-// a client, for a request whose failure was a foregone conclusion. "No token" is already the engine's
-// normal path on Nextcloud (full scan, narrowed by the root-ETag short-circuit), so nothing is lost.
+// [SPEC:SCR-1] Issue #37: the plugin must not issue the RFC 6578 sync-collection REPORT against Nextcloud's files
+// DAV. Sabre answers ReportNotSupported (HTTP 415), so the request can only fail, and Nextcloud logs it at ERROR level
+// with a stack trace on every client build. "No token" is already the engine's normal path on Nextcloud (full scan,
+// narrowed by the root-ETag short-circuit), so nothing is lost.
 import { requestUrl } from 'obsidian';
 import { NextcloudClient } from '../../../src/network/NextcloudClient';
 import { DEFAULT_SETTINGS, DavSyncSettings } from '../../../src/types';

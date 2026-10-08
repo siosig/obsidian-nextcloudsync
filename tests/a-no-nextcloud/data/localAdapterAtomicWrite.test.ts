@@ -1,12 +1,10 @@
-// G4-1 regression: atomicWrite/atomicWriteBinary must not delete the tmp file when `rename` fails
-// AFTER the pre-existing target has already been removed — at that point tmpPath is the ONLY
-// surviving copy of the new content (mobile process kill / Windows AV lock / storage blip mid-rename).
-// Deleting it in the catch block would lose the data outright (neither old nor new content remains).
+// atomicWrite/atomicWriteBinary must not delete the tmp file when `rename` fails AFTER the pre-existing target was
+// removed: tmpPath is then the ONLY surviving copy (mobile kill / Windows AV lock / storage blip mid-rename), so
+// deleting it in the catch block would lose the data outright.
 import { LocalAdapter } from '../../../src/data/LocalAdapter';
 import { DataAdapter } from 'obsidian';
 
-/** Fake adapter where `remove(target)` succeeds but the subsequent `rename` always throws — the
- *  exact crash window the bug targets. */
+// Fake adapter where `remove(target)` succeeds but the subsequent `rename` always throws: the crash window under test.
 function makeCrashingAdapter(target: string) {
   const files = new Map<string, string | ArrayBuffer>();
   const adapter = {

@@ -1,9 +1,6 @@
-// b-2 (UI) env guard. wdio-obsidian-service downloads & launches Obsidian itself
-// (no Obsidian account login needed), so b-2 only needs the live Nextcloud
-// connection (NEXTCLOUD_*) for the plugin to talk to the server.
-// Values are read from process.env only (no .env file). When any are missing the
-// suite skips cleanly, unless SUITE_REQUIRE_ENV=1 (set by the Docker runner), in
-// which case it throws so that a misconfigured run can never pass silently.
+// b-2 (UI) env guard. Only the live Nextcloud connection (NEXTCLOUD_*) is needed; wdio-obsidian-service
+// provisions Obsidian itself. Values come from process.env only. When any are missing the suite skips,
+// unless SUITE_REQUIRE_ENV=1 (set by the Docker runner), in which case it throws so a run cannot pass silently.
 
 const REQUIRED = ['NEXTCLOUD_SERVER_URL', 'NEXTCLOUD_USER', 'NEXTCLOUD_PASSWORD'] as const;
 

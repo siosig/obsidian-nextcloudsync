@@ -1,19 +1,11 @@
-// [SPEC:SD-1] Server-type detection and client dispatch (feature 073, from a maintainer report).
+// [SPEC:SD-1] Server-type detection and client dispatch.
 //
-// The plugin promises in its README that a non-Nextcloud WebDAV server degrades gracefully: the
-// Nextcloud-only features switch off and plain WebDAV sync takes over. It did not. The factory only
-// fell back to StandardWebDAVClient when NextcloudClient.connect() *threw*, and connect() probes
-// /status.php and the OCS capabilities endpoint with `throw: false` — so a plain server answering 404
-// to both resolves normally, the Nextcloud client is kept, and `isNextcloud` comes back true because
-// it was hardcoded. The fallback was therefore unreachable in every case that mattered.
-//
-// Detection is now taken from what the probes ANSWER rather than from whether an exception escaped:
+// A non-Nextcloud WebDAV server must degrade to plain WebDAV sync. connect() probes /status.php and the OCS
+// capabilities endpoint with `throw: false`, so a plain server answering 404 to both resolves normally; detection must
+// therefore come from what the probes ANSWER, not from whether an exception escaped:
 //   isNextcloud = (capabilities 200 with ocs.data) OR (status.php 200 with productname ~ /nextcloud/i)
-// Capabilities comes first because it is the source of every other feature flag — a connection that
-// cannot read it has nothing to back an `isNextcloud: true` with. status.php is the second witness so
-// a genuine Nextcloud whose OCS is closed off (401/403) is not misfiled as plain WebDAV.
-//
-// The case table below is the contract (specs/073-webdav-client-dispatch/contracts/server-detection.md).
+// Capabilities comes first because it backs every other feature flag; status.php is the second witness so a genuine
+// Nextcloud whose OCS is closed off (401/403) is not misfiled as plain WebDAV.
 import { requestUrl } from 'obsidian';
 import { WebDAVFactory } from '../../../src/network/WebDAVFactory';
 import { NextcloudClient } from '../../../src/network/NextcloudClient';
@@ -39,17 +31,13 @@ function res(status: number, body: Partial<{ text: string; json: unknown }> = {}
   });
 }
 
-/** A Nextcloud /status.php payload (the real endpoint returns productname alongside the version). */
 const NEXTCLOUD_STATUS = { installed: true, maintenance: false, version: '34.0.1.1', productname: 'Nextcloud' };
-/** ownCloud serves the same shape under a different product name. */
+// ownCloud serves the same shape under a different product name.
 const OWNCLOUD_STATUS = { installed: true, maintenance: false, version: '10.15.0.5', productname: 'ownCloud' };
-/** A minimal but valid OCS capabilities envelope. */
 const OCS_CAPABILITIES = { ocs: { data: { version: { string: '34.0.1' }, capabilities: {} } } };
 
-/**
- * Route probe responses by URL so a case reads as "what the server answers", not "what the Nth call
- * returns" — the call order is an implementation detail and should not be baked into the contract.
- */
+// Route probe responses by URL so a case reads as "what the server answers", not "what the Nth call returns"; call
+// order is an implementation detail.
 function serveProbes(opts: {
   status?: () => ReturnType<typeof res>;
   capabilities?: () => ReturnType<typeof res>;
@@ -99,9 +87,8 @@ describe('[SPEC:SD-1] server-type detection decides which client is used', () =>
   });
 
   it('D-4: a Nextcloud public link share lands on the standard client', async () => {
-    // Same probe answers as D-3, and deliberately so: the share URL is not under /remote.php, so the
-    // probes are built against /public.php/webdav and 404. Routing it to plain WebDAV therefore needs
-    // no special case — it falls out of the general rule, which is what FR-009 asks for.
+    // Same probe answers as the plain-server case: the share URL is not under /remote.php, so the probes are built against
+    // /public.php/webdav and 404. Routing it to plain WebDAV needs no special case; it falls out of the general rule.
     serveProbes({});
 
     const { client, features } = await create('https://cloud.example.com/public.php/webdav/');
@@ -148,8 +135,8 @@ describe('[SPEC:SD-2] detection costs a Nextcloud connection nothing extra', () 
   beforeEach(() => mockRequestUrl.mockReset());
 
   it('does not add probe round-trips on the Nextcloud path', async () => {
-    // INV-4. Deciding in the factory instead would mean probing twice; reusing what connect() already
-    // asked for keeps the common path at exactly the two probes it costs today.
+    // Deciding in the factory instead would mean probing twice; reusing what connect() already asked for keeps the
+    // common path at exactly the two probes.
     serveProbes({ status: () => res(200, { json: NEXTCLOUD_STATUS }), capabilities: () => res(200, { json: OCS_CAPABILITIES }) });
 
     await create();

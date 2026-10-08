@@ -4,25 +4,10 @@ import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { DavSyncSettings } from '../../../src/types';
 import { isActiveOwnLog, debugLogPath } from '../../../src/util/logPaths';
 
-/**
- * REPRODUCTION + FIX GUARD: the "Destination file already exists!" error reported on the
- * plugin's own per-device debug log (e.g. _logs/nextcloud-debug_<host>.txt).
- *
- * Root cause established by investigation + live evidence:
- *  - The real Nextcloud server returns a DIFFERENT message for a MOVE/Overwrite:F to an existing
- *    destination ("The destination node already exists, and the overwrite header is set to false",
- *    HTTP 412, Sabre\DAV\Exception\PreconditionFailed) — verified against the live server.
- *  - The plugin's NetworkError.message is always "HTTP <status>", never the body, so a server 412
- *    could never surface as the reported text.
- *  - "Destination file already exists!" is the message Obsidian's DataAdapter.rename throws when the
- *    destination already exists. It is produced LOCALLY inside LocalAdapter.atomicWrite*.
- *  - The plugin's own log files are NOT excluded from sync (isSystemExcluded only filters the config
- *    folder + tmp files), so the log enters the sync's local-write path while FileLogger is still
- *    appending to it. Between atomicWrite's `remove(target)` and `rename(tmp,target)`, the concurrent
- *    append re-creates `target`, so the rename hits an existing destination → throws.
- *
- * These two tests reproduce both halves of the root cause against the real plugin code.
- */
+// Regression guard for "Destination file already exists!" on the plugin's own per-device debug log
+// (_logs/nextcloud-debug_<host>.txt). Obsidian's DataAdapter.rename throws that message locally when the destination
+// exists: while FileLogger appends to the log, a concurrent append re-creates `target` between atomicWrite's
+// remove(target) and rename(tmp,target). (docs/spec.md §9.1)
 
 const enc = new TextEncoder();
 const toBuf = (s: string): ArrayBuffer => enc.encode(s).buffer;
@@ -30,12 +15,8 @@ const HOST = 'desktop-daidows';
 const LOG_PATH = '_logs/nextcloud-debug_desktop-daidows.txt';
 const DEBUG_LOG = debugLogPath('_logs', HOST);
 
-/**
- * An in-memory DataAdapter that mimics the two Obsidian behaviours that matter here:
- *  1. `rename(from,to)` THROWS `"Destination file already exists!"` when `to` already exists.
- *  2. a hook lets us simulate a concurrent writer (FileLogger) re-creating the target file in the
- *     window between atomicWrite's remove() and rename().
- */
+// An in-memory DataAdapter: rename(from,to) THROWS "Destination file already exists!" when `to` exists, and a hook
+// simulates a concurrent writer (FileLogger) re-creating the target between atomicWrite's remove() and rename().
 function makeObsidianLikeAdapter(target: string, onRemoveTarget: () => void) {
   const files = new Map<string, ArrayBuffer>();
   const adapter = {
@@ -75,7 +56,6 @@ describe('[SPEC:LOG-1] REPRO: plugin syncs its own debug log → local atomicWri
 
   // FIX (regression guard): the live log is kept out of sync while its toggle is ON, so the local
   // write above never happens for it; turning the toggle OFF makes the now-static file syncable.
-  // Feature 028: the per-log toggles are unified into a single loggingEnabled flag.
   function excludedWith(loggingEnabled: boolean, path: string): boolean {
     const settings = {
       configDir: '.obsidian', logsFolder: '_logs',

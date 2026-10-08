@@ -1,5 +1,4 @@
-// Layer A — version history (VR-1..4) per report/mock_test.md §3.J.
-// VR-1..3 require the server's versions app; they self-skip when unavailable.
+// Layer A — version history (VR-1..4). VR-1..3 need the server's versions app and self-skip when unavailable.
 import { NextcloudClient } from '../../../src/network/NextcloudClient';
 import { FeatureUnsupportedError } from '../../../src/types';
 import { describeLive } from '../support/env';
@@ -28,7 +27,6 @@ describeLive('Layer A — versions (VR)', (getEnv) => {
   });
 
   it('[SPEC:VR-1]/2/3 list (newest-first), fetch and restore a prior version', async () => {
-    // Create two revisions to generate a version.
     await client.uploadFile('vr.md', textBuf('VERSION-ONE'));
     await sleep(1100);
     await client.uploadFile('vr.md', textBuf('VERSION-TWO'));

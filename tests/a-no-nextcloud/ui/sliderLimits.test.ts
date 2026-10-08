@@ -8,15 +8,14 @@ import { DEFAULT_SETTINGS } from '../../../src/types';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const sliderLimitsModule = require('../../../src/settings/sliderLimits') as Record<string, unknown>;
 
-// Feature 034 (+ 034-rev): the numeric settings sliders get new ranges/steps. SLIDER_LIMITS
-// is the single source of truth; SettingTab, the mockup (settings.html) and spec.md §15.1 all
-// mirror it. A value sits "on the grid" when it is min + k*step within bounds.
+// SLIDER_LIMITS is the single source of truth; SettingTab and docs/spec.md §15.1.1 mirror it. A value
+// sits "on the grid" when it is min + k*step within bounds.
 const onGrid = (value: number, { min, max, step }: SliderLimit): boolean =>
   value >= min && value <= max && (value - min) % step === 0;
 
-// Expected limits straight from spec.md §15.1-slider (kept literal so the test fails loudly
-// if the constant drifts, rather than re-deriving from the constant). 034-rev: startup 0/10/1
-// (0 = off), syncInterval added at 0/60/4 (0 = manual only), networkConcurrency 0/60/4 (0 = 1).
+// Expected limits straight from docs/spec.md §15.1.1, kept literal so the test fails loudly if the
+// constant drifts: startup 0/10/1 (0 = off), syncInterval 0/60/4 (0 = manual only),
+// networkConcurrency 0/60/4 (0 = 1).
 const EXPECTED: Record<string, SliderLimit> = {
   startupSyncDelay: { min: 0, max: 10, step: 1 },
   syncInterval: { min: 0, max: 60, step: 4 },

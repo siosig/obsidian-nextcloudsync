@@ -1,10 +1,7 @@
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { TFile, TFolder } from 'obsidian';
 
-/**
- * Behavior contract tests for processRemoteDeletion.
- * Spec: specs/003-trash-setting-respect/contracts/remote-deletion.md (T1-T5)
- */
+// Behavior contract tests for processRemoteDeletion (T1-T5).
 function makeEngine(opts?: { resolved?: unknown; exists?: boolean; trashRejects?: boolean }) {
   const trashFile = jest.fn(() =>
     opts?.trashRejects ? Promise.reject(new Error('boom')) : Promise.resolve(),
@@ -21,8 +18,7 @@ function makeEngine(opts?: { resolved?: unknown; exists?: boolean; trashRejects?
   };
   const engine = new SyncEngine({
     app,
-    // Feature 086: a trashed folder takes its contents with it, so the deletion sink now enumerates
-    // the tracked subtree to forget it too.
+    // A trashed folder takes its contents with it, so the deletion sink enumerates the tracked subtree to forget it too.
     stateDB: { deleteFile, getAllFiles: () => [], getAllDirs: () => [], deleteDir: jest.fn() },
     localAdapter: { ignore: jest.fn() },
   } as never);

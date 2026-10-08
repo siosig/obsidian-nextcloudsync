@@ -1,4 +1,4 @@
-// [SPEC:MWM-5] specs/091-mobile-watch-mode/contracts/watch-wifi-gate.md C-2 — the real SyncEngine hands its own "Wi-Fi only" decision to watch mode.
+// [SPEC:MWM-5] The real SyncEngine hands its own "Wi-Fi only" decision to watch mode (docs/spec.md §5.7c).
 //
 // Drives the REAL SyncEngine against a real StateDB (in-memory DataAdapter); only the WebDAV client
 // and LocalAdapter are test doubles. The harness is copied from watchPendingDuringFullSync.test.ts

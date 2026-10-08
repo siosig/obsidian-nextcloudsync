@@ -1,11 +1,8 @@
-// Feature 051 — abnormal (conflict) matrix, defined once per pair (D↔M / D↔N / M↔N) so jest runs the
-// three pairs in PARALLEL files. For each pair it sweeps the degeneracy-reduced strategy space:
-//   - txt body conflict  × conflictStrategy {conflict-markers, local-win, remote-win}
-//   - md frontmatter clash × frontmatterStrategy {merge, remote-win, local-win} (body identical)
-//   - delete-vs-modify   → convergence (self-healing), winner left to the strategy
-// Cluster-only: N needs SSH + occ. describeCluster() SKIPS the whole suite (visible in the report,
-// never a silent pass) when the cluster env is absent, so the default `pnpm test:b1` stays green.
-// Run the matrix via `bash tests/docker/run.sh b1` (which exports the N-actor env).
+// Abnormal (conflict) matrix, defined once per pair (D<->M / D<->N / M<->N) so jest runs the pairs in parallel files.
+// Sweeps the degeneracy-reduced strategy space: txt body conflict x conflictStrategy, md frontmatter clash x
+// frontmatterStrategy (body identical), and delete-vs-modify (convergence, winner left to the strategy).
+// Cluster-only: describeCluster() skips the suite visibly when the N-actor env is absent, so `pnpm test:b1` stays green;
+// run the matrix via `bash tests/docker/run.sh b1`.
 import { describeCluster } from './env';
 import { setupWorkspace } from './workspace';
 import { cleanupWorkspace, IsolatedWorkspace } from './isolation';
@@ -36,7 +33,6 @@ export function defineThreeActorConflict(cfg: PairCfg): void {
     const actors = (suffix: string, over: Partial<DavSyncSettings>) =>
       makeThreeActors(getEnv(), ws.remoteBase, `${cfg.key}-${suffix}`, over);
 
-    // ── txt body conflict × conflictStrategy (deterministic-by-side values) ──
     const CS: ConflictStrategy[] = ['conflict-markers', 'local-win', 'remote-win'];
     it.each(CS)(`txt body conflict, conflictStrategy=%s`, async (cs) => {
       const a = actors(`txt-${cs}`, { autoMergeFileTypes: ['txt'], autoMergeFileStrategy: 'merge', conflictStrategy: cs });
@@ -60,7 +56,6 @@ export function defineThreeActorConflict(cfg: PairCfg): void {
       expect(remoteView).toBe(localView); // converged: server matches the resolved local content
     }, 120_000);
 
-    // ── md frontmatter clash × frontmatterStrategy (body identical → no body conflict) ──
     const FM: SyncStrategy[] = ['merge', 'remote-win', 'local-win'];
     it.each(FM)(`md frontmatter clash, frontmatterStrategy=%s`, async (fm) => {
       const a = actors(`md-${fm}`, { autoMergeFileStrategy: 'merge', frontmatterStrategy: fm, conflictStrategy: 'remote-win' });
@@ -70,7 +65,7 @@ export function defineThreeActorConflict(cfg: PairCfg): void {
       const { localView, remoteView } = await runDivergentEdit(a, cfg, { path: `c-${fm}.md`, base, localContent: local, remoteContent: remote });
       const fmb = fmOf(localView);
       expect(hasMarkers(fmb)).toBe(false); // frontmatter never carries markers
-      // frontmatterStrategy semantics (spec.md §6.2, MergeEngine.resolveFrontmatterBlock):
+      // frontmatterStrategy semantics (docs/spec.md §6.2, MergeEngine.resolveFrontmatterBlock):
       //   merge     → semantic 3-way: arrays SET-merge (union tl+tr); the title scalar clash defers to
       //               conflictStrategy (fixed remote-win here) → title REMOTE.
       //   local-win → adopt the WHOLE local frontmatter block verbatim (title LOCAL, tags [t0, tl]);
@@ -92,10 +87,8 @@ export function defineThreeActorConflict(cfg: PairCfg): void {
       expect(remoteView).toBe(localView);
     }, 120_000);
 
-    // ── delete-vs-modify → converges (self-healing), all three actors agree ──
     it(`delete-vs-modify converges`, async () => {
       const a = actors(`delvsmod`, { autoMergeFileTypes: ['txt'], autoMergeFileStrategy: 'merge', conflictStrategy: 'remote-win' });
-      // remote modifies, local deletes.
       await runDivergentEdit(a, cfg, { path: `dm.txt`, base: 'base\n', localContent: null, remoteContent: 'remote edit\n' });
       await a.converge(4); // extra passes to reach a stable state
       const v = await a.readAll('dm.txt');

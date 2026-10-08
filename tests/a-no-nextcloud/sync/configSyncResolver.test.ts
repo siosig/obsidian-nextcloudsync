@@ -8,12 +8,12 @@ import { ConfigSyncCategories } from '../../../src/types';
 const CONFIG_DIR = '.obsidian';
 const PLUGIN_DIR = `${CONFIG_DIR}/plugins/nextcloud-sync`;
 
-// Feature 029: two categories — Bookmarks and "Other settings" (appearance/themes/hotkeys/core).
+// Two categories — Bookmarks and "Other settings" (appearance/themes/hotkeys/core).
 function categories(overrides: Partial<ConfigSyncCategories> = {}): ConfigSyncCategories {
   return { bookmarks: false, others: false, ...overrides };
 }
 
-/** Minimal in-memory LocalAdapter for enumeration tests. */
+// Minimal in-memory LocalAdapter for enumeration tests.
 function makeAdapter(tree: { files: Record<string, true>; dirs: Record<string, { files: string[]; folders: string[] }> }) {
   return {
     stat: jest.fn(async (p: string) => (tree.files[p] ? { size: 1, mtime: 1 } : null)),
@@ -114,13 +114,9 @@ describe('ConfigSyncResolver.isIncluded', () => {
   });
 });
 
-// GitHub issue #12 (feature request: "sync community plugins"). Declined by design — community
-// plugins live under `<configDir>/plugins/**` (each an arbitrary third-party bundle: main.js,
-// manifest.json, styles.css, data.json, nested assets) and syncing executable plugin code across
-// devices is a correctness/security hazard the plugin deliberately does not take on. This is a
-// REGRESSION GUARD locking that stance: no toggle combination may ever pull a community plugin's
-// files into the sync set. If a future change wants to support it, this test must be updated
-// consciously (not silently), forcing the decision back through review.
+// Community-plugin sync (issue #12) is declined by design: syncing third-party executable code under
+// <configDir>/plugins/** is a correctness/security hazard. Regression guard: no toggle combination
+// may pull a community plugin's files into the sync set.
 describe('ConfigSyncResolver — community plugins are never synced (GitHub issue #12)', () => {
   const COMMUNITY_PLUGIN_FILES = [
     `${CONFIG_DIR}/plugins/dataview/main.js`,

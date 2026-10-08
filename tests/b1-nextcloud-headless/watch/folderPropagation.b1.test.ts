@@ -1,8 +1,6 @@
-// Layer B (WF-B1) — feature 046: with watch mode on, folder create/delete/rename propagate to a live
-// Nextcloud immediately (MKCOL / collection delete via trashbin / MOVE), and an immediate-op failure
-// self-heals on the next full sync. it.skip stubs (traced + documented; run under `pnpm test:b1` once
-// wired to the live harness) — surfaced as pending-adjudication waivers in the coverage catalog. See
-// specs/046-watch-folder-propagation/quickstart.md for the manual procedure.
+// Layer B (WF-B1): with watch mode on, folder create/delete/rename propagate to a live Nextcloud immediately (MKCOL /
+// collection delete via trashbin / MOVE), and a failed immediate op self-heals on the next full sync. it.skip stubs,
+// surfaced as pending-adjudication waivers in the coverage catalog.
 
 describe('Layer B (WF-B1) — watch-mode folder propagation against a live server', () => {
   // eslint-disable-next-line jest/no-disabled-tests

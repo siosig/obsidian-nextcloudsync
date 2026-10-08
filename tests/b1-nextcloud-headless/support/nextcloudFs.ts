@@ -1,11 +1,8 @@
-// Feature 051: the "N" actor — a change made DIRECTLY on the Nextcloud server's filesystem (as if by
-// another tool), then made visible to WebDAV via `occ files:scan`. In the Docker suite this is done
-// by the `nc-fsops` sidecar, which shares the Nextcloud data volume and exposes a small JSON HTTP API
-// (POST /v1/write, /v1/remove, /v1/scan). The runner exports its base URL as:
-//   NEXTCLOUD_FSOPS_URL   e.g. http://nc-fsops:8080  (reachable only inside the run network)
-// The API stays synchronous (curl via execFileSync) so callers need no change.
-// When the variable is absent, N is unavailable and the 3-actor suites skip cleanly via
-// describeCluster() (see support/env.ts); `bash tests/docker/run.sh b1` provides it.
+// The "N" actor: a change made directly on the Nextcloud server filesystem, then made visible to WebDAV via
+// `occ files:scan`. In the Docker suite the `nc-fsops` sidecar (sharing the data volume) does it over a JSON HTTP API
+// (POST /v1/write, /v1/remove, /v1/scan); its base URL is exported as NEXTCLOUD_FSOPS_URL (e.g. http://nc-fsops:8080).
+// The API stays synchronous (curl via execFileSync) so callers need no change. Without the variable N is unavailable
+// and the 3-actor suites skip via describeCluster() (support/env.ts).
 import { execFileSync } from 'child_process';
 
 function fsopsUrl(): string {
@@ -14,7 +11,6 @@ function fsopsUrl(): string {
   return v.replace(/\/$/, '');
 }
 
-/** POST one JSON request to the fsops sidecar; throws with curl's stderr on any failure. */
 function fsops(op: 'write' | 'remove' | 'scan', body: Record<string, string>): void {
   try {
     execFileSync(
@@ -33,15 +29,11 @@ function fsops(op: 'write' | 'remove' | 'scan', body: Record<string, string>): v
   }
 }
 
-/**
- * The N actor scoped to one isolated workspace folder (`remoteBase`, e.g. `e2e-<id>`). All paths are
- * relative to that folder. Changes are applied on the server FS by nc-fsops and picked up by
- * `occ files:scan` so the WebDAV layer (and thus the plugin devices) see them.
- */
+// All paths are relative to the isolated workspace folder; changes land on the server FS and `occ files:scan`
+// makes them visible to WebDAV.
 export class NextcloudFs {
   constructor(private readonly remoteBase: string) {}
 
-  /** Create or overwrite a file directly on the server FS, then rescan so WebDAV sees it. */
   write(relPath: string, content: string): void {
     fsops('write', {
       base: this.remoteBase,
@@ -51,13 +43,11 @@ export class NextcloudFs {
     this.scan();
   }
 
-  /** Delete a file or folder directly on the server FS, then rescan. */
   remove(relPath: string): void {
     fsops('remove', { base: this.remoteBase, path: relPath });
     this.scan();
   }
 
-  /** Force Nextcloud to re-index this workspace so direct-FS changes become visible to WebDAV. */
   scan(): void {
     fsops('scan', { base: this.remoteBase });
   }

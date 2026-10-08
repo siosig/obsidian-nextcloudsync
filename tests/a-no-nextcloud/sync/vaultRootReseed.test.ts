@@ -1,37 +1,19 @@
 // [SPEC:VRR-1] [SPEC:VRR-2] [SPEC:VRR-3] [SPEC:VRR-4] [SPEC:VRR-5]
-// specs/083-empty-listing-absence-delete/contracts/vault-root.md (C-1 / C-3), FR-007..FR-013.
-//
-// The vault folder itself disappearing from the server is NOT the same event as the vault folder
-// being there and holding nothing, and the whole feature turns on keeping those two apart.
-//
-// An empty listing is the server's own statement about the contents of a folder it still has: every
-// tracked file is genuinely gone from it, so absence-based deletion is the right reading. A 404 on
-// the root says nothing whatsoever about any individual file — the folder that would have answered
-// the question is not there to answer it. Collapsing the 404 to `[]` (what the code did before this
-// feature) therefore produces the worst of both worlds: unchanged files are not upload candidates,
-// deletions are refused by the guards, and every file in the vault is left stranded — present
-// locally, absent remotely, and never reconciled. The user cannot fix it by hand either, because the
-// remote path was derived by the plugin from the vault name and is not something they chose.
-//
-// So the engine re-creates the folder and re-seeds it from local, and MKCOL is what makes that safe
-// to do. MKCOL is the proof step, not a convenience:
-//   - 201 'created' — the folder really was absent. The 404 listing was telling the truth, nothing
-//     on the server can be a deletion record any more, and local is the only surviving copy. Reset
-//     the tracking index and re-run the first-sync path: upload every file, MKCOL every folder
-//     (empty ones included), delete NOTHING locally.
-//   - 405 'exists'  — the folder is there after all, so the listing that reported 404 was wrong. A
-//     wrong listing is a failed listing: change nothing at all (no reset, no deletion, no upload),
-//     record the error, and let the next sync do a real scan.
-//   - anything else — no proof either way, so likewise change nothing.
-// The asymmetry is deliberate. Re-seeding on a false 404 would wipe the tracking index while the
-// remote state is unknown; refusing to re-seed on a true 404 merely postpones the repair by one sync.
-//
-// These tests drive the REAL SyncEngine (syncManual) against a REAL StateDB, so the routing decision
-// under test — first sync (State empty) vs. incremental (State non-empty) — is made by the engine
-// itself, not by the test. Only the WebDAV client, the local adapter and the Obsidian app are
-// doubles. The client double is a small in-memory server rather than a set of canned answers, which
-// is what lets VRR-1 assert the thing that actually matters to a user: after the re-seed, a second
-// sync moves nothing (up=0 del=0) because both sides genuinely agree again.
+// A missing vault folder is NOT the same event as a folder that is there and holds nothing (docs/spec.md §8).
+// An empty listing is the server's statement that every tracked file is genuinely gone, so absence-based
+// deletion is right; a 404 on the root says nothing about any file. Collapsing the 404 to `[]` would strand
+// every file: present locally, absent remotely, never reconciled.
+// So the engine re-creates the folder and re-seeds it from local, and MKCOL is the proof step:
+//   - 201 'created': the folder really was absent. Reset the tracking index and re-run the first-sync path
+//     (upload every file, MKCOL every folder, empty ones included, delete NOTHING locally).
+//   - 405 'exists': the 404 listing was wrong, so it is a failed listing: change nothing (no reset, no
+//     deletion, no upload), record the error, and let the next sync do a real scan.
+//   - anything else: no proof either way, so likewise change nothing.
+// Re-seeding on a false 404 would wipe the tracking index while the remote state is unknown; refusing on a
+// true 404 only postpones the repair by one sync.
+// These tests drive the REAL SyncEngine (syncManual) against a REAL StateDB, so the routing decision (first
+// sync vs incremental) is the engine's own. The client double is a small in-memory server so VRR-1 can assert
+// that after the re-seed a second sync moves nothing (up=0 del=0).
 import { DataAdapter } from 'obsidian';
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { StateDB } from '../../../src/data/StateDB';
@@ -46,7 +28,7 @@ const enc = new TextEncoder();
 const dec = new TextDecoder();
 const toBuf = (s: string): ArrayBuffer => enc.encode(s).buffer as ArrayBuffer;
 const PLUGIN_DIR = '.obsidian/plugins/nextcloud-sync';
-/** Fixed local mtime, far outside the signature safety window of both `now` and the last sync. */
+// Fixed local mtime, far outside the signature safety window of both `now` and the last sync.
 const MTIME = 1_000;
 
 function makeStateAdapter(): DataAdapter {
@@ -63,13 +45,9 @@ function makeStateAdapter(): DataAdapter {
 
 interface RemoteEntry { body: string; checksum: string; mtime: number }
 
-/**
- * A minimal in-memory server. It models exactly one thing beyond ordinary storage: `rootMissing`,
- * which makes a root listing answer 404 the way a deleted vault folder does, and which any write
- * that materialises the folder again clears — `createVaultRoot()` returning 'created', an upload
- * (whose client creates missing ancestors), or a MKCOL. That coupling is the point: a test cannot
- * assert "the second listing succeeded" without the engine having actually created the folder first.
- */
+// A minimal in-memory server. `rootMissing` makes a root listing answer 404 like a deleted vault folder; any
+// write that materialises the folder again clears it (`createVaultRoot()` returning 'created', an upload, or
+// a MKCOL), so a test cannot assert "the second listing succeeded" without the engine having created it.
 function makeClient(opts: { rootMissing: boolean; vaultRoot: VaultRootOutcome | Error }) {
   const files = new Map<string, RemoteEntry>();
   const dirs = new Set<string>();
@@ -87,12 +65,12 @@ function makeClient(opts: { rootMissing: boolean; vaultRoot: VaultRootOutcome | 
     files, dirs,
     getRootEtag: jest.fn(async (): Promise<string | null> => (rootMissing ? null : `root-etag-${version}`)),
     getFiles: jest.fn(async (path: string): Promise<RemoteFileInfo[]> => {
-      // C-1: only the ROOT distinguishes 404 from "empty"; a missing subpath stays an empty listing.
+      // Only the ROOT distinguishes 404 from "empty"; a missing subpath stays an empty listing.
       if (path === '' && rootMissing) throw new RemoteRootMissingError();
       return [...files.entries()].map(([p, e]) => infoOf(p, e));
     }),
-    // Nextcloud does not support the sync-collection REPORT (spec §18 F1), so every sync takes the
-    // full-scan branch of incrementalSync — which is the branch this feature changes.
+    // Nextcloud does not support the sync-collection REPORT (docs/spec.md §18), so every sync takes the
+    // full-scan branch of incrementalSync.
     getSyncToken: jest.fn(async (): Promise<string | null> => null),
     getChanges: jest.fn(async () => { throw new Error('getChanges must not be reached (no sync token)'); }),
     createVaultRoot: jest.fn(async (): Promise<VaultRootOutcome> => {
@@ -122,7 +100,7 @@ function makeClient(opts: { rootMissing: boolean; vaultRoot: VaultRootOutcome | 
 
 type FakeClient = ReturnType<typeof makeClient>;
 
-/** In-memory local vault. `folders` carries EMPTY folders too — they are first-class here. */
+// In-memory local vault. `folders` carries EMPTY folders too: they are first-class here.
 function makeLocalAdapter(files: Record<string, string>) {
   const sizeOf = (p: string): number => enc.encode(files[p]).length;
   return {
@@ -142,15 +120,15 @@ function makeLocalAdapter(files: Record<string, string>) {
 }
 
 interface HarnessOptions {
-  /** Local vault contents (path → body). */
+  // Local vault contents (path → body).
   localFiles: Record<string, string>;
-  /** Local folders, including empty ones. */
+  // Local folders, including empty ones.
   localFolders: string[];
-  /** Whether StateDB already tracks the vault (false = the very first sync). */
+  // Whether StateDB already tracks the vault (false = the very first sync).
   tracked: boolean;
-  /** Whether the server's vault folder is gone (root listing answers 404). */
+  // Whether the server's vault folder is gone (root listing answers 404).
   rootMissing: boolean;
-  /** What `createVaultRoot()` answers, or an error it rejects with. */
+  // What `createVaultRoot()` answers, or an error it rejects with.
   vaultRoot: VaultRootOutcome | Error;
 }
 
@@ -161,10 +139,9 @@ async function buildHarness(o: HarnessOptions) {
   const client = makeClient({ rootMissing: o.rootMissing, vaultRoot: o.vaultRoot });
 
   if (o.tracked) {
-    // A vault this device has synced before: every file and folder is recorded, and each file's
-    // post-write stat signature matches disk, so the engine's fast-path reads them as UNCHANGED —
-    // which is precisely why the old "404 → []" reading stranded them (not upload candidates, and
-    // the deletion guards refuse to act on an empty listing).
+    // A vault this device has synced before: every file and folder is recorded, and each file's post-write stat
+    // signature matches disk, so the fast-path reads them as UNCHANGED. That is why reading a 404 as `[]` would
+    // strand them (not upload candidates, and the deletion guards refuse to act on an empty listing).
     for (const [path, body] of Object.entries(o.localFiles)) {
       const hash = await sha256(toBuf(body));
       const size = enc.encode(body).length;
@@ -215,7 +192,7 @@ async function buildHarness(o: HarnessOptions) {
   };
 }
 
-/** A tracked two-file vault with one subfolder and one EMPTY folder. */
+// A tracked two-file vault with one subfolder and one EMPTY folder.
 const TRACKED_VAULT = {
   localFiles: { 'a.md': 'body of a\n', 'sub/b.md': 'body of b\n' },
   localFolders: ['sub', 'empty'],
@@ -248,7 +225,7 @@ describe('[SPEC:VRR-1] a tracked vault whose folder vanished is re-created and r
     expect(paths(h.client.uploadFile)).toEqual(['a.md', 'sub/b.md']);
     expect(paths(h.client.createDirectory)).toEqual(['empty', 'sub']);
 
-    // FR-009: nothing is removed from the vault. A re-seed is a push, never a reconciliation.
+    // Nothing is removed from the vault. A re-seed is a push, never a reconciliation.
     expect(h.trashed).toEqual([]);
     expect(Object.keys(h.local.files).sort()).toEqual(['a.md', 'sub/b.md']);
 
@@ -293,7 +270,7 @@ describe('[SPEC:VRR-2] MKCOL 405 means the listing lied — nothing is changed',
     expect(h.logs()).toContain('treating the listing as failed');
     expect(h.logs()).not.toContain('re-seeding from local');
 
-    // FR-010: a session that cannot trust its listing performs NO destructive work at all.
+    // A session that cannot trust its listing performs NO destructive work at all.
     expect(h.client.uploadFile).not.toHaveBeenCalled();
     expect(h.client.deleteFile).not.toHaveBeenCalled();
     expect(h.client.deleteCollection).not.toHaveBeenCalled();
@@ -313,8 +290,8 @@ describe('[SPEC:VRR-2] MKCOL 405 means the listing lied — nothing is changed',
 
 describe('[SPEC:VRR-3] a failed MKCOL is treated exactly like a 405 — no proof, no changes', () => {
   it('leaves tracking and both sides untouched when createVaultRoot rejects', async () => {
-    // FR-011: 403 / 5xx / offline all say the same thing — the server did not tell us whether the
-    // folder is there. Only a 201 licenses the reset, so everything else must stop here.
+    // 403 / 5xx / offline all say the same thing: the server did not tell us whether the folder is there. Only
+    // a 201 licenses the reset, so everything else must stop here.
     const h = await buildHarness({
       ...TRACKED_VAULT, rootMissing: true, vaultRoot: new NetworkError(403, '', 'MKCOL'),
     });
@@ -340,10 +317,10 @@ describe('[SPEC:VRR-3] a failed MKCOL is treated exactly like a 405 — no proof
 
 describe('[SPEC:VRR-4] the first sync of an untracked vault is unaffected', () => {
   it('reads the missing folder as an empty listing and uploads everything, without a re-seed', async () => {
-    // FR-012 regression guard. With nothing tracked there is no state to protect and no deletion the
-    // absence could imply, so the historical behaviour still applies: treat it as empty and let the
-    // first upload create the hierarchy. Routing this through reseedFromLocal instead would reset an
-    // already-empty index and fire a Notice about a repair that never happened.
+    // Regression guard. With nothing tracked there is no state to protect and no deletion the absence could
+    // imply, so the historical behaviour still applies: treat it as empty and let the first upload create the
+    // hierarchy. Routing this through reseedFromLocal would reset an already-empty index and fire a Notice
+    // about a repair that never happened.
     const h = await buildHarness({
       localFiles: TRACKED_VAULT.localFiles, localFolders: TRACKED_VAULT.localFolders,
       tracked: false, rootMissing: true, vaultRoot: 'created',
@@ -362,10 +339,9 @@ describe('[SPEC:VRR-4] the first sync of an untracked vault is unaffected', () =
 
 describe('[SPEC:VRR-5] an empty listing is not a missing folder', () => {
   it('never asks to create the vault folder when the server answered 207 with no children', async () => {
-    // The separation this whole feature rests on, asserted from the other side: a folder that exists
-    // and holds nothing is a listing the engine must believe. Whatever it then decides about the
-    // tracked files (that is absence-deletion's business, covered by the EAD tests) it must not
-    // reach for the repair path — a vault folder that is present needs no creating.
+    // A folder that exists and holds nothing is a listing the engine must believe. Whatever it then decides about
+    // the tracked files (absence-deletion's business, covered by the EAD tests) it must not reach for the repair
+    // path: a vault folder that is present needs no creating.
     const h = await buildHarness({ ...TRACKED_VAULT, rootMissing: false, vaultRoot: 'created' });
 
     await h.engine.syncManual({ manual: true });
@@ -378,7 +354,7 @@ describe('[SPEC:VRR-5] an empty listing is not a missing folder', () => {
   });
 });
 
-/** Keeps the client double honest: the engine must find every method it reaches for. */
+// Keeps the client double honest: the engine must find every method it reaches for.
 describe('client double sanity', () => {
   it('exposes the surface the full-sync path uses', async () => {
     const h = await buildHarness({ ...TRACKED_VAULT, rootMissing: false, vaultRoot: 'exists' });

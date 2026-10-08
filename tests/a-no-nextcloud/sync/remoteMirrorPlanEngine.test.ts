@@ -1,6 +1,5 @@
 // [SPEC:MIR-1] Regression: planRemoteMirror must lazily connect via ensureClient (like a normal sync),
-// NOT read a possibly-null this.client. The shipped 0.7.22-beta.1 aborted with "Not signed in" when the
-// mirror was invoked before any sync had populated this.client; this locks in the connect-on-demand fix.
+// not read a possibly-null this.client, which aborted with "Not signed in" before any sync had run.
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { sha256 } from '../../../src/util/hash';
 import {
@@ -103,13 +102,9 @@ describe('[SPEC:MIR-1] SyncEngine.planRemoteMirror — connects on demand', () =
   });
 
   it('[SPEC:VRR-6] plans zero deletions when the vault folder itself is missing from the server', async () => {
-    // Feature 083 side effect, locked in here. Mirror-from-remote makes the remote authoritative and
-    // deletes whatever the vault holds that the listing does not — so a root 404 read as "[]" would
-    // plan the deletion of EVERY local file and folder. Turning that 404 into a typed throw routes it
-    // through the abort gate above instead, and the gate is what keeps the plan empty. This is a
-    // regression test for the gate, not for the mirror: it must stay `ok:false`, never "mirror an
-    // empty server". The engine's own repair (create the folder, re-seed from local) is the sync
-    // path's business (VRR-1); the mirror simply declines to act.
+    // Mirror-from-remote deletes whatever the listing does not hold, so a root 404 read as "[]" would plan the
+    // deletion of every local file. The typed throw routes it through the abort gate, which keeps the plan
+    // empty: it must stay `ok:false`, never "mirror an empty server". The repair is the sync path's (VRR-1).
     const getFiles = jest.fn(async (): Promise<RemoteFileInfo[]> => { throw new RemoteRootMissingError(); });
     const { engine } = makeEngine({
       getFiles,

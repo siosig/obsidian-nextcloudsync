@@ -1,28 +1,13 @@
-// Feature 090 (issue #58): server-side lock detection on 423.
-//
-// SL-1 reproduces a foreign-lock 423 against a real server: the admin account locks a file and
-// shares it with a second account (ncuser2, now provisioned by the suite), and ncuser2's client then
-// attempts a PUT and a DELETE on the shared file. Shared-file locking reproduces the 423, and both
-// must surface as ServerLockedError (the very scenario issue #58 reports: a lock held by a DIFFERENT
-// identity). The a-layer suites (tests/a-no-nextcloud/network/nextcloudClient.serverLock423.test.ts
-// and standardWebDavClient.serverLock423.test.ts) additionally cover the client-side 423 ->
-// ServerLockedError logic deterministically with a mocked 423 + lockdiscovery response.
-//
-// SL-2 verifies the one thing only a real server can prove: that a genuine Nextcloud lockdiscovery
-// PROPFIND round-trip is well-formed (207, readable, readLockDiscoveryOwner never throws), and that
-// IF the server reports an owner, the reader extracts it correctly.
-//
-// It does NOT assert that an owner is always present. Measured against this project's own Docker test suite
-// Nextcloud: taking a lock via NextcloudClient.lockFile (X-User-Lock: '1', the plugin's
-// own mechanism) and then issuing the exact PROPFIND from contracts/lockdiscovery-propfind.md comes
-// back 207 but with NO owner in <D:lockdiscovery> (neither D:owner nor nc:lock-owner). This differs
-// from issue #58's own report, where a lock held by the Nextcloud Text web editor on the reporter's
-// server (35.0.0) DID show `<d:owner>Text</d:owner>`/`<nc:lock-owner>Text</nc:lock-owner>` under the
-// same query. Whether files_lock exposes an owner via plain lockdiscovery apparently depends on the
-// server version and/or on WHO/WHAT took the lock (X-User-Lock via this plugin's own lockFile vs. the
-// Text app's own lock-taking path) — not something this harness can control or force either way.
-// This is exactly why FR-004 requires a graceful fallback to the plain, pre-existing message when no
-// owner can be read: production correctness does not depend on the owner always being present.
+// Server-side lock detection on 423 (issue #58).
+// SL-1: the admin locks a file and shares it with ncuser2, whose client then PUTs and DELETEs the shared file; both must
+// surface as ServerLockedError (a lock held by a DIFFERENT identity). The a-layer serverLock423 suites cover the
+// client-side 423 -> ServerLockedError logic with a mocked response.
+// SL-2: only a real server can prove a genuine lockdiscovery PROPFIND round-trip is well-formed (207, readable,
+// readLockDiscoveryOwner never throws) and that an owner, if reported, is extracted.
+// It does NOT assert an owner is always present: on the Docker suite's Nextcloud a lock taken via
+// NextcloudClient.lockFile (X-User-Lock: '1') answers 207 with no owner in <D:lockdiscovery>, whereas issue #58's
+// server showed the Text editor as owner. Whether an owner is exposed depends on server version and on who took the
+// lock, which this harness cannot control; hence FR-004's fallback to the plain message when no owner can be read.
 import { readLockDiscoveryOwner } from '../../../src/network/dav/propfind';
 import { encodeRemoteUrl, toRemotePath } from '../../../src/network/remotePath';
 import { ServerLockedError, DEFAULT_SETTINGS } from '../../../src/types';

@@ -5,9 +5,8 @@ import { IWebDAVClient } from '../../../src/network/IWebDAVClient';
 import { NextcloudClient } from '../../../src/network/NextcloudClient';
 import { DEFAULT_SETTINGS, DavSyncSettings, PreconditionFailedError } from '../../../src/types';
 
-// G5-1: the chunked-upload MAIN path must carry the optimistic-concurrency `opts`
-// (ifMatchEtag) exactly like the single-PUT path, so a large file is not silently
-// overwritten when the remote changed concurrently.
+// The chunked-upload main path must carry the ifMatchEtag opts like the single PUT,
+// so a large file is not overwritten when the remote changed concurrently.
 
 interface FakeClient {
   uploadFile: jest.Mock;

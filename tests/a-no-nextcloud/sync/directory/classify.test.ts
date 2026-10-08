@@ -1,16 +1,14 @@
-// The directory classification and the mass-delete breaker, as tables (feature 075).
+// The directory classification and the mass-delete breaker, as tables.
 //
 // No [SPEC:...] tags: DP-* and DEL-* stay with the reconciler and engine suites.
 //
-// The point of extracting this was to be able to write the six cases down. Inside the loop they
-// could only be traced; here the whole rule fits on a screen, and the two that are easy to invert
-// sit next to each other:
+// The six cases are tabulated so the two that are easy to invert sit side by side:
 //
 //   local, no remote, NOT tracked  → created here      → push to remote
 //   local, no remote, tracked      → deleted elsewhere → remove here
 //
-// Reading those the wrong way round either resurrects a folder the user deleted on another device
-// or deletes one they just made.
+// Reading them the wrong way round resurrects a folder deleted on another device or deletes one just made.
+// (docs/plan.md §18.2)
 import {
   classifyDirectories, shouldTripMassDeleteBreaker, breakerDenominator,
 } from '../../../../src/sync/directory/classify';
@@ -31,7 +29,7 @@ function classify(
   );
 }
 
-/** Which of the six lists a path landed in, for a single-path world. */
+// Which of the six lists a path landed in, for a single-path world.
 function outcomeOf(where: { local: boolean; remote: boolean; tracked: boolean }): string {
   const plan = classify({
     local: where.local ? ['D'] : [],
@@ -106,7 +104,7 @@ describe('classifyDirectories — all six combinations', () => {
 });
 
 describe('shouldTripMassDeleteBreaker', () => {
-  /** A plan whose destructive half holds `n` paths and nothing else. */
+  // A plan whose destructive half holds `n` paths and nothing else.
   function destructive(n: number, split: 'remote' | 'local' | 'both' = 'remote') {
     const paths = Array.from({ length: n }, (_, i) => `d${i}`);
     const half = Math.ceil(n / 2);

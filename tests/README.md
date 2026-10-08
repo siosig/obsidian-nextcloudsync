@@ -127,6 +127,10 @@ assertion inside an active test — or through `spec()` from
 `CF-2` does not count: ids like `FR-014` recur across features with different
 meanings, and a bare match once made an unrelated test look like coverage.
 
+Comments that point at the specification must use the form `docs/spec.md §N` or `docs/plan.md §N`. The `DOC-1` check
+fails when the referenced section does not exist; `DOC-2` fails when a comment names a private path (the specs or
+report directories) or carries a feature-number history marker.
+
 ```ts
 import { spec } from '../support/specRef';
 it(`${spec('CF-2', 'FR-008')} same-line conflict skips`, () => { /* ... */ });

@@ -1,7 +1,7 @@
-// Machine-checkable spec coverage meta-test (US1).
+// Machine-checkable spec coverage meta-test.
 // Statically scans EVERY test file (a / b-1 / b-2 / b-3 / b-4) for clause references — an explicit
 // [SPEC:<id>] tag, in a test name or in a comment labelling an assertion inside an active test —
-// and cross-references the clause catalog. A bare id (e.g. "CF-2") no longer counts.
+// and cross-references the clause catalog. A bare id (e.g. "CF-2") does not count.
 //
 //   uncovered (in-scope, no waiver, no test)  -> FAIL  (spec clause with no test)
 //   unknown [SPEC:<id>] tag (not in catalog)  -> FAIL  (typo / missing catalog entry)
@@ -54,9 +54,8 @@ const testFiles = walk(TESTS_ROOT);
 const allText = testFiles.map((f) => stripSkippedTraceability(readFileSync(f, 'utf-8'))).join('\n');
 
 function isReferenced(id: string): boolean {
-  // Only an explicit [SPEC:<id>] tag counts. A bare id used to count too, but ids such as FR-006 or
-  // FR-014 recur across features with different meanings, so an unrelated feature's "FR-014" made a
-  // clause look covered when no test verified it (found by drift-check, 2026-10-08).
+  // Only an explicit [SPEC:<id>] tag counts: ids such as FR-006 or FR-014 recur across features with
+  // different meanings, so a bare id could make a clause look covered when no test verified it.
   // `spec('ID', ...)` from specRef.ts renders the same tag at run time, so its arguments count too.
   return new RegExp(`\\[SPEC:${escapeRe(id)}\\]`).test(allText) || specHelperIds.has(id);
 }
@@ -116,8 +115,8 @@ describe('[SPEC:FR-002] spec coverage map (clauses <-> tests)', () => {
   it('[SPEC:FR-003] known spec-vs-implementation deviations are surfaced as waivers, not silent', () => {
     // F1 (sync-collection 415) and F3 (owner-based lock) must remain visible.
     const waivedIds = new Set(waived.map((c) => c.id));
-    // F4 was resolved in 0.7.1 — CF-12 is no longer waived (verified at layer a by
-    // diff3Strategy.test.ts). F1/F3 server quirks remain visible.
+    // CF-12 is not waived (F4 resolved; verified at layer a by diff3Strategy.test.ts). F1/F3 server quirks
+    // remain visible.
     expect(waivedIds.has('TK-1')).toBe(true); // F1
     expect(waived.length).toBeGreaterThan(0);
   });

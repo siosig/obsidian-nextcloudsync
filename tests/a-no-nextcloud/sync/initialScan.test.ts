@@ -32,10 +32,8 @@ function makeVault(files: TFile[], adapter: DataAdapter): Vault {
   } as unknown as Vault;
 }
 
-/**
- * P0-C first-sync optimizations: no double whole-vault hash (executePlan reuses the scan), size-first
- * plan classification, and a size-gate that defers hashing of large files during the scan.
- */
+// First-sync optimizations: no double whole-vault hash (executePlan reuses the scan), size-first
+// plan classification, and a size-gate that defers hashing of large files during the scan.
 
 const SETTINGS = {
   // Config-folder sync OFF so enumerateIncludedPaths() returns [] (keeps the scan to the vault tree).
@@ -53,10 +51,10 @@ function makeEngine(localAdapter: unknown) {
   return new SyncEngine(opts as never);
 }
 
-/** LocalFiles type after Task 3: no hash field. */
+// LocalFiles has no hash field.
 type LocalFiles = Map<string, { size: number; mtime: number }>;
 
-// --- Task 3: size-first hashing — buildInitialPlan is now async and hashes lazily ---
+// --- size-first hashing: buildInitialPlan is async and hashes lazily ---
 
 describe('SyncEngine.buildInitialPlan — size-first lazy hash (Task 3)', () => {
   const remote = (path: string, over: Partial<RemoteFileInfo> = {}): RemoteFileInfo => ({
@@ -139,7 +137,6 @@ describe('SyncEngine.buildInitialPlan — size-first lazy hash (Task 3)', () => 
   });
 });
 
-// --- Legacy tests updated for Task 3 type (no hash in LocalFiles) ---
 
 describe('SyncEngine.buildInitialPlan — size-first (P0-C / FR-011)', () => {
   const engine = makeEngine({
@@ -177,7 +174,7 @@ describe('SyncEngine.buildInitialPlan — size-first (P0-C / FR-011)', () => {
 
 describe('SyncEngine.scanLocalFiles — no pre-hashing (Task 3 / FR-012)', () => {
   it('returns only size+mtime; readBinary is never called during the scan', async () => {
-    // Task 3: scanLocalFiles no longer hashes files at all.
+    // scanLocalFiles does not hash files at all.
     const readBinary = jest.fn(async () => new ArrayBuffer(1));
     const rawAdapter = makeDataAdapter();
     (rawAdapter.readBinary as jest.Mock).mockImplementation(readBinary);

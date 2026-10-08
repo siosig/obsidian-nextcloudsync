@@ -5,8 +5,8 @@ function freshSettings(): DavSyncSettings {
   return { ...DEFAULT_SETTINGS, configSync: { ...DEFAULT_SETTINGS.configSync } };
 }
 
-// Feature 048: md is always special-cased and must not sit in autoMergeFileTypes; conflictStrategy's
-// default ('conflict-markers') comes from DEFAULT_SETTINGS for profiles that lack it.
+// md is always special-cased and must not sit in autoMergeFileTypes; conflictStrategy's default
+// ('conflict-markers') comes from DEFAULT_SETTINGS for profiles that lack it.
 describe('[feat048 FR-011/FR-012] migrateMarkdownAutoMergeType — strip md, default conflictStrategy', () => {
   it('[feat048 FR-011] strips md from a persisted autoMergeFileTypes list (idempotent)', () => {
     const s = freshSettings();
@@ -23,9 +23,8 @@ describe('[feat048 FR-011/FR-012] migrateMarkdownAutoMergeType — strip md, def
   });
 });
 
-// Feature 047: the experimental frontmatterScalarConflictPolicy is removed and folded into the new
-// dedicated frontmatterStrategy. To PRESERVE the old always-semantic-merge behaviour (arrays union),
-// every migrating user — whatever the old value — converges to `merge`; the old key is then pruned.
+// The experimental frontmatterScalarConflictPolicy is folded into frontmatterStrategy. To PRESERVE the old
+// always-semantic-merge behaviour (arrays union), every migrating user converges to `merge`; the old key is pruned.
 describe('[feat048 FR-010/FR-011] migrateFrontmatterScalarPolicyToStrategy — old scalar policy → frontmatterStrategy', () => {
   it('[feat048 FR-010] any old scalar policy value migrates to merge (preserves semantic merge, not a whole-side pick)', () => {
     for (const old of ['latest-mtime', 'remote-win', 'local-win']) {
@@ -59,8 +58,8 @@ describe('[feat048 FR-010/FR-011] migrateFrontmatterScalarPolicyToStrategy — o
   });
 });
 
-// Feature 037 (R3): the three removed conflict settings fold into the per-type strategy model, then
-// the obsolete keys are pruned (self-healing). CSF-11.
+// The three removed conflict settings fold into the per-type strategy model, then the obsolete keys are
+// pruned (self-healing). CSF-11.
 describe('[SPEC:CSF-11] migrateConflictSettingsToStrategies — old conflict settings → per-type strategies', () => {
   it('[SPEC:CSF-11] carries mergeableExtensions → autoMergeFileTypes and autoMergeEnabled:true → merge', () => {
     const s = freshSettings();
@@ -129,9 +128,8 @@ describe('[SPEC:CSF-11] migrateConflictSettingsToStrategies — old conflict set
   });
 });
 
-// Feature 032: the Debug section no longer exposes a device name or a log folder. On every load both
-// are forced back to the auto/fixed sentinel ('' ⇒ derived device name / vault-root logs), so every
-// user converges onto one path regardless of what an older version persisted.
+// The Debug section exposes no device name or log folder. On every load both are forced back to the
+// auto/fixed sentinel ('' ⇒ derived device name / vault-root logs), so every user converges onto one path.
 describe('[SPEC:DBG-3] resetDebugIdentityFields — converge device name / log folder to the fixed path', () => {
   it('[SPEC:DBG-3] resets a persisted custom device name and log folder to "" and reports dirty', () => {
     const settings = freshSettings();
@@ -172,8 +170,7 @@ describe('[SPEC:DBG-3] resetDebugIdentityFields — converge device name / log f
   });
 });
 
-// Feature 028 removed migrateLegacyDebugMode (the debug-log fields it migrated to no longer exist).
-// The legacy `debugMode` key is still dropped by pruneObsoleteSettings (covered below).
+// The legacy `debugMode` key is dropped by pruneObsoleteSettings (covered below).
 
 describe('migrateBookmarksToConfigSync', () => {
   it('turns the master on with only Bookmarks when legacy syncBookmarks was true', () => {
@@ -207,9 +204,9 @@ describe('migrateBookmarksToConfigSync', () => {
   });
 });
 
-// Feature 034-rev: the "Sync on startup" toggle was folded into the startup-delay slider, where
-// 0 = no startup sync (1–10 = delay seconds). migrateStartupToggleToDelay converts any persisted
-// toggle state on load, before pruneObsoleteSettings drops the now-obsolete syncOnStartupEnabled key.
+// The "Sync on startup" toggle is folded into the startup-delay slider, where 0 = no startup sync (1–10 =
+// delay seconds). migrateStartupToggleToDelay converts any persisted toggle on load, before
+// pruneObsoleteSettings drops syncOnStartupEnabled.
 describe('[SPEC:SLD-7] migrateStartupToggleToDelay — fold the startup toggle into the delay slider', () => {
   it('startup OFF (toggle false) → delay becomes 0 (disabled)', () => {
     const settings = freshSettings();
@@ -258,7 +255,7 @@ describe('pruneObsoleteSettings', () => {
   it('removes keys not present in the current schema', () => {
     const settings = {
       ...DEFAULT_SETTINGS,
-      // Leftovers from an earlier 0.3.0-beta / the removed debugMode field.
+      // Leftovers from the removed debugMode field.
       debugMode: false,
       logLevel: 'verbose',
       syncResultsEnabled: true,
@@ -282,9 +279,9 @@ describe('pruneObsoleteSettings', () => {
   });
 });
 
-// Feature 033: five low-value settings were removed from the schema. Their persisted values must not
-// influence behavior (behavior reads the fixed config — see fixedSyncConfig.test.ts /
-// uploadStrategySelection.test.ts) and the obsolete keys must be pruned on load (self-healing).
+// Five low-value settings are no longer in the schema. Their persisted values must not influence behavior
+// (it reads the fixed config; see fixedSyncConfig.test.ts / uploadStrategySelection.test.ts) and the
+// obsolete keys are pruned on load (self-healing).
 describe('[SPEC:FX-1] feature 033 — the five removed settings are pruned (self-healing)', () => {
   const REMOVED = [
     'explorerCompareEnabled',

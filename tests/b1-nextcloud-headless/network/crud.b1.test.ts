@@ -1,5 +1,4 @@
-// Layer A — CRUD and boundaries: UP-1..5, DL-1..2, DEL-1..2, MV-1..2
-// per report/mock_test.md §3.B. Live server; skips when env absent.
+// Layer A — CRUD and boundaries: UP-1..5, DL-1..2, DEL-1..2, MV-1..2. Live server; skips when env absent.
 import { NextcloudClient } from '../../../src/network/NextcloudClient';
 import { ConflictError } from '../../../src/types';
 import { isSafeVaultRelativePath } from '../../../src/network/remotePath';
@@ -27,14 +26,12 @@ describeLive('Layer A — CRUD + boundaries (UP/DL/DEL/MV)', (getEnv) => {
     await client.uploadFile('up1.md', data);
     const back = await client.downloadFile('up1.md');
     expect(buffersEqual(back, data)).toBe(true);
-    // recalcChecksum returns the server-persisted SHA-256 (null if unsupported).
     const sum = await client.recalcChecksum('up1.md');
     if (sum) expect(sum).toBe(await sha256Hex(data));
   });
 
   it('[SPEC:UP-2] reactive MKCOL on a nested path (server 404s missing ancestors → MKCOL → retry)', async () => {
-    // The client now treats a 404 missing-parent like 409: MKCOL ancestors then retry.
-    // No pre-creation — this exercises the reactive path against the live server.
+    // A 404 missing-parent is treated like 409: MKCOL ancestors then retry. No pre-creation, so this exercises the reactive path.
     const data = textBuf('nested');
     await client.uploadFile('deep/a/b/up2.md', data);
     const back = await client.downloadFile('deep/a/b/up2.md');
@@ -56,10 +53,8 @@ describeLive('Layer A — CRUD + boundaries (UP/DL/DEL/MV)', (getEnv) => {
   });
 
   it('UP-6 CJK filename is preserved verbatim on the server (independent PROPFIND check)', async () => {
-    // UP-4 round-trips upload/download through the same encodeRemoteUrl(), so it can't
-    // detect a mismatch between what we uploaded and what the server actually stored.
-    // getFiles() decodes hrefs via hrefToRelative(), an independent code path — this is
-    // what actually asserts the server-side name is correct.
+    // UP-4 round-trips through the same encodeRemoteUrl(), so it cannot detect a mismatch with what the server stored;
+    // getFiles() decodes hrefs via the independent hrefToRelative(), which asserts the server-side name.
     const data = textBuf('cjk body');
     await client.uploadFile(CJK_PATH, data);
     const files = await client.getFiles('');
@@ -106,8 +101,8 @@ describeLive('Layer A — CRUD + boundaries (UP/DL/DEL/MV)', (getEnv) => {
   });
 
   it('[SPEC:FR-011] a rename is a MOVE that keeps the server fileId, so the file history follows it', async () => {
-    // spec 001 FR-011: a rename must not become delete + create, which would start a new file (new
-    // fileId, no versions). The engine renames through moveFile; the server must keep the identity.
+    // A rename must not become delete + create, which would start a new file (new fileId, no versions); the engine
+    // renames through moveFile and the server must keep the identity.
     await client.uploadFile('fr011-src.md', textBuf('history'));
     const before = (await client.getFiles('')).find((f) => f.path.endsWith('fr011-src.md'))?.fileId;
     expect(before).toBeTruthy();

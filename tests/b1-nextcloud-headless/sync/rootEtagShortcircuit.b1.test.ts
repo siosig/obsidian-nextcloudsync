@@ -1,9 +1,6 @@
-// [SPEC:ES-1][SPEC:ES-6] Root-ETag short-circuit (spec 023) — live verification of the core premise
-// the optimization relies on: Nextcloud propagates ANY descendant change up to the vault root
-// collection's ETag, and the ETag is stable while nothing changes. If this held false on the real
-// server, the short-circuit could miss remote changes — so it is verified here against live Nextcloud.
-//
-// Manual only (pnpm test:b1 -- rootEtagShortcircuit); skips cleanly without .env NEXTCLOUD_*.
+// [SPEC:ES-1][SPEC:ES-6] Root-ETag short-circuit: live check of its core premise, that Nextcloud propagates ANY
+// descendant change up to the vault root ETag and that the ETag is stable while nothing changes (otherwise the
+// short-circuit could miss remote changes). Manual only (pnpm test:b1 -- rootEtagShortcircuit); skips without live env.
 import { describeLive } from '../support/env';
 import { makeClient, baseUrlOf, authHeaderOf } from '../support/clientFactory';
 import { requestUrl } from 'obsidian';

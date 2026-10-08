@@ -1,9 +1,6 @@
-// Layer B — deletion safety (SF) per report/mock_test.md §3.H.
-// The full-scan deletion reconciliation and the mass-delete circuit breaker live
-// inside SyncEngine.syncManual, whose harness (fakeVault + LocalAdapter + StateDB +
-// WebDAVFactory) is out of scope for this feature (see spec FR-016 / Layer B decision).
-// We verify the live remote-state transition that those features build on, and keep
-// the engine-level cases as skip-with-reason.
+// Layer B — deletion safety (SF). The full-scan deletion reconciliation and mass-delete circuit breaker live inside
+// SyncEngine.syncManual, whose harness (fakeVault + LocalAdapter + StateDB + WebDAVFactory) is out of scope here; we
+// verify the live remote-state transition they build on and keep the engine-level cases as skip-with-reason.
 import { NextcloudClient } from '../../../src/network/NextcloudClient';
 import { describeLive } from '../support/env';
 import { cleanupWorkspace, IsolatedWorkspace } from '../support/isolation';
@@ -39,8 +36,7 @@ describeLive('Layer B — deletion safety (SF)', (getEnv) => {
     expect(after.some((p) => p.endsWith('sf-b.md'))).toBe(true);
   });
 
-  // SF-1..4: full-scan deletion propagation, lost-update prevention, checksum-less
-  // delete, and the mass-delete circuit breaker (max(20, 20% of tracked)) require
-  // driving SyncEngine.syncManual with a fake vault. Out of scope for this feature.
+  // SF-1..4: full-scan deletion propagation, lost-update prevention, checksum-less delete, and the mass-delete circuit
+  // breaker (max(20, 20% of tracked)) need SyncEngine.syncManual driven with a fake vault (out of scope here).
   it.skip('SF-1..4 full-scan deletion safety & mass-delete circuit breaker (needs SyncEngine harness)', () => undefined);
 });

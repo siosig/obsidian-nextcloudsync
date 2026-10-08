@@ -1,4 +1,4 @@
-// Layer A — chunked upload (CHK-1..4) per report/mock_test.md §3.D.
+// Layer A — chunked upload (CHK-1..4).
 import { NextcloudClient } from '../../../src/network/NextcloudClient';
 import { describeLive } from '../support/env';
 import { cleanupWorkspace, IsolatedWorkspace } from '../support/isolation';
@@ -33,11 +33,9 @@ describeLive('Layer A — chunked upload (CHK)', (getEnv) => {
     expect(buffersEqual(await client.downloadFile('chk2.bin'), data)).toBe(true);
   });
 
-  // CHK-3: post-assembly checksum mismatch. Skipped — requires corrupting bytes
-  // server-side mid-transfer, which we cannot control on a live server.
+  // CHK-3: post-assembly checksum mismatch. Skipped: corrupting bytes server-side mid-transfer is not controllable on a live server.
   it.skip('CHK-3 post-assembly checksum mismatch → NetworkError (needs byte corruption)', () => undefined);
 
-  // CHK-4: session cleanup on abort. Skipped — reliably forcing a mid-upload
-  // failure against a live server is not controllable here.
+  // CHK-4: session cleanup on abort. Skipped: forcing a mid-upload failure against a live server is not controllable here.
   it.skip('CHK-4 aborted session is cleaned up (needs forced mid-upload failure)', () => undefined);
 });

@@ -1,8 +1,7 @@
-// [SPEC:MWM-4] Watch mode runs on a real Android device (feature 091). The a-layer proves the decision; only a real device proves that Obsidian's Android WebView delivers vault events and exposes navigator.connection.type.
-//
-// "Sync now" is never pressed here: the only way a note can reach the server in these scenarios is
-// the plugin's own vault-event listeners (watch mode). "Wi-Fi only" is switched off so the result
-// does not depend on which network the device happens to be on.
+// [SPEC:MWM-4] Watch mode runs on a real Android device: only a real device shows that Obsidian's Android WebView
+// delivers vault events and exposes navigator.connection.type.
+// "Sync now" is never pressed, so a note reaches the server only via the plugin's vault-event listeners;
+// "Wi-Fi only" is off so the result does not depend on the device's network.
 import { browser, expect } from '@wdio/globals';
 import type { TFile } from 'obsidian';
 import { requireAndroidEnv, requireEnvOrSkip } from '../support/env';
@@ -10,7 +9,6 @@ import { seedConnection } from '../support/plugin';
 import { RemoteProbe } from '../support/webdav';
 
 describe('[SPEC:MWM-4] b-3 — watch mode on a real Android device', function () {
-  // Shared between the create and edit scenarios, and cleaned up in `after`.
   let probe: RemoteProbe | undefined;
   let path = '';
 

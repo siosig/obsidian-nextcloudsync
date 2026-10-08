@@ -1,6 +1,6 @@
-// [SPEC:MWM-3] specs/091-mobile-watch-mode/contracts/watch-wifi-gate.md C-3 — watch operations skipped on cellular ("Wi-Fi only") converge on a live server after the next full sync on Wi-Fi.
+// [SPEC:MWM-3] watch operations skipped on cellular ("Wi-Fi only") converge on a live server after the next full sync on Wi-Fi.
 //
-// Layer B — feature 091, live server. Each case follows the same three steps:
+// Layer B, live server. Each case follows the same three steps:
 //   1. on Wi-Fi, establish the starting state and run a full sync;
 //   2. on cellular, change the vault and call the matching watch operation, then assert the server
 //      did NOT change (the "Wi-Fi only" gate skipped the operation with zero side effects);

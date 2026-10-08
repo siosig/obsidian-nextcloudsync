@@ -1,7 +1,6 @@
-// Diff3Strategy against the REAL node-diff3 library (no mock) — proves the F4 fix:
-// the strategy must consume diff3Merge's MergeRegion[] ({ok}|{conflict}) and surface a
-// real conflict (e.g. diverging YAML frontmatter) as conflictRegions>0 with full-file
-// markers, instead of silently dropping it. See specs/main/spec.md §6.2 / §18 (F4 resolved).
+// Diff3Strategy against the REAL node-diff3 library (no mock): the strategy must consume diff3Merge's MergeRegion[]
+// ({ok}|{conflict}) and surface a real conflict (e.g. diverging YAML frontmatter) as conflictRegions>0 with full-file
+// markers, instead of silently dropping it (docs/spec.md §6.2).
 import { Diff3Strategy } from '../../../src/sync/merge/Diff3Strategy';
 
 describe('[SPEC:CF-12] Diff3Strategy detects real conflicts via node-diff3 diff3Merge', () => {
@@ -19,7 +18,7 @@ describe('[SPEC:CF-12] Diff3Strategy detects real conflicts via node-diff3 diff3
   });
 
   it('diverging frontmatter (same line changed on both sides) → conflict markers, not a silent merge', () => {
-    // The F4 regression: this exact case was reported as conflictRegions:0 (silently merged).
+    // Must report conflictRegions>0, never 0 (silently merged).
     const base = '---\ntitle: base\n---\n\nbody\n';
     const local = '---\ntitle: local\n---\n\nbody\n';
     const remote = '---\ntitle: remote\n---\n\nbody\n';

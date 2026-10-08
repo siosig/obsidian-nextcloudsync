@@ -1,26 +1,18 @@
-// [SPEC:DSD-1] [SPEC:DSD-2] [SPEC:DSD-3] [SPEC:DSD-4] Declarative settings definitions (feature 077).
+// [SPEC:DSD-1] [SPEC:DSD-2] [SPEC:DSD-3] [SPEC:DSD-4] Declarative settings definitions.
 //
-// The settings tab moved from an imperative `display()` to Obsidian's declarative
-// `getSettingDefinitions()` (1.13.0+), because the search index is built ONLY from that array —
-// so before this feature none of the plugin's settings could be found by name.
+// The settings tab is an adapter over `getSettingDefinitions()` (Obsidian 1.13.0+), because the search
+// index is built ONLY from that array.
 //
-// The migration's real hazard is not the rendering. It is that a `key` typo silently detaches one
-// row from its stored value: the row still renders, the user still changes it, and nothing is
-// persisted. That failure is invisible in a screenshot, so it is pinned here instead — every
-// control's `key` is checked against DEFAULT_SETTINGS, both directions.
+// The real hazard is a `key` typo that silently detaches a row from its stored value: the row renders,
+// the user changes it, and nothing is persisted. So every control's `key` is checked against
+// DEFAULT_SETTINGS, both directions.
 //
-// The coverage is deliberately asymmetric, and the asymmetry is the point:
-//   - `control` rows carry a `key`, so key/type integrity IS checkable (about 14 rows)
-//   - `render` rows carry no key, so it ISN'T (about 10 rows) — for those the assertions are
-//     presence, order and search visibility only. Clarification #7 records why those rows exist:
-//     the numeric input beside each slider (spec 036, a touch-reachability fix) and the
-//     SecretComponent for the app password have no declarative equivalent, and dropping them to
-//     satisfy a lint warning would trade a real affordance for a formality.
+// Coverage is deliberately asymmetric: `control` rows carry a `key`, so key/type integrity IS checkable
+// (about 14 rows); `render` rows carry no key (about 10 rows: the numeric input beside each slider, the
+// SecretComponent for the app password), so only presence, order and search visibility are asserted.
 //
-// Row counts come from specs/077-declarative-settings/baseline.md, captured from the imperative
-// implementation BEFORE it was replaced. Three successive miscounts while producing that baseline
-// are why the expected values are hardcoded here rather than derived: a derivation that silently
-// skips a row produces a green test that asserts the wrong shape.
+// Row counts are hardcoded, not derived: a derivation that silently skips a row would produce a green
+// test asserting the wrong shape.
 import type { SettingDefinitionItem, SettingDefinitionGroup } from 'obsidian';
 import {
   buildSettingDefinitions,
@@ -30,7 +22,7 @@ import {
 } from '../../../src/settings/settingDefinitions';
 import { DEFAULT_SETTINGS, type DavSyncSettings } from '../../../src/types';
 
-/** Static structure captured from the pre-migration implementation (baseline.md). */
+// Expected static structure: section headings and the rows each holds.
 const BASELINE: { heading: string | null; rows: string[] }[] = [
   { heading: null, rows: ['Sync now'] },
   {
@@ -104,7 +96,6 @@ function makeHost(over: Partial<SettingDefinitionsHost> = {}): SettingDefinition
 const isGroup = (i: SettingDefinitionItem): i is SettingDefinitionGroup =>
   (i as SettingDefinitionGroup).type === 'group' || (i as SettingDefinitionGroup).type === 'list';
 
-/** Flatten to (section heading, row definition) pairs in render order. */
 function flatten(items: SettingDefinitionItem[]): { heading: string | null; row: any }[] {
   const out: { heading: string | null; row: any }[] = [];
   for (const item of items) {
@@ -120,28 +111,21 @@ function flatten(items: SettingDefinitionItem[]): { heading: string | null; row:
 const rowsOf = (items: SettingDefinitionItem[]) => flatten(items).map((f) => f.row);
 const controlRows = (items: SettingDefinitionItem[]) => rowsOf(items).filter((r) => r.control);
 
-/**
- * Rows that represent a setting, i.e. everything the baseline captured.
- *
- * The old implementation drew banners, help paragraphs, dividers and the caution block as raw
- * elements, not as `Setting` rows, so they were never in the baseline's 27. Declaratively they have
- * to become rows — there is nowhere else to put them — so they are filtered out here rather than
- * retro-fitted into the baseline, which would make the baseline stop describing what it captured.
- */
+// Rows that represent a setting. Banners, help paragraphs, dividers and the caution block are rows
+// declaratively but are not counted in the baseline, so they are filtered out here.
 const settingRowsIn = (items: SettingDefinitionItem[]) =>
   flatten(items).filter((f) => !RENDER_ONLY_ROWS.decorations.includes(f.row.name));
 
 describe('[SPEC:DSD-1] structure matches the pre-migration baseline', () => {
   it('returns a non-empty array — an empty one would fall back to the deleted display()', () => {
-    // Not a formality. `display()` is only called when getSettingDefinitions() returns empty
-    // (obsidian.d.ts:6633), and feature 077 deletes display(), so an empty return renders NOTHING.
+    // `display()` is only called when getSettingDefinitions() returns empty (obsidian.d.ts:6633) and this tab
+    // has none, so an empty return renders NOTHING.
     expect(buildSettingDefinitions(makeHost()).length).toBeGreaterThan(0);
   });
 
   it('has the same section headings, in the same order', () => {
     const items = buildSettingDefinitions(makeHost());
-    // The first group carries no heading — the pre-migration tab opened with "Sync now" above the
-    // first `setHeading()` call, and that shape is preserved.
+    // The first group carries no heading: the tab opens with "Sync now" above the first `setHeading()`.
     const headings = items.filter(isGroup).map((g) => g.heading).filter((h) => h !== undefined);
     expect(headings).toEqual(BASELINE.filter((s) => s.heading !== null).map((s) => s.heading));
   });
@@ -153,9 +137,8 @@ describe('[SPEC:DSD-1] structure matches the pre-migration baseline', () => {
   });
 
   it('[SPEC:DBG-1] keeps the Debug section a single toggle', () => {
-    // Feature 032 removed the device-name and log-folder inputs so every user converges on one
-    // path. That guarantee used to live in the tooltip catalog test, which feature 077 deleted
-    // along with tooltips; it moves here rather than lapsing.
+    // The Device name / Log folder inputs were removed so every user converges on one path; this asserts
+    // that guarantee.
     const debug = buildSettingDefinitions(makeHost())
       .filter(isGroup)
       .find((g) => g.heading === 'Debug')!;
@@ -171,9 +154,8 @@ describe('[SPEC:DSD-1] structure matches the pre-migration baseline', () => {
 });
 
 describe('[SPEC:DSD-2] row count is dynamic, not a constant', () => {
-  // baseline.md, "further correction": the imperative tab rendered one row per excluded folder and
-  // two more when config sync was on. Asserting a fixed count would pass while silently dropping
-  // every dynamic row.
+  // Excluded folders render one row each (two more when config sync is on), so a fixed count would pass
+  // while silently dropping every dynamic row.
   it('adds one row per excluded folder', () => {
     const none = settingRowsIn(buildSettingDefinitions(makeHost())).length;
     const three = settingRowsIn(
@@ -283,7 +265,7 @@ describe('[SPEC:DSD-4] search visibility is precise', () => {
     const baselineNames = new Set(BASELINE.flatMap((s) => s.rows));
     const hidden = rowsOf(buildSettingDefinitions(makeHost()))
       .filter((r) => r.searchable === false && baselineNames.has(r.name));
-    // SC-001 is the whole point of the feature; a stray searchable:false silently undoes it.
+    // SC-001: a stray searchable:false silently undoes search discoverability, the point of the tab.
     expect(hidden.map((r) => r.name)).toEqual([]);
   });
 
@@ -295,9 +277,7 @@ describe('[SPEC:DSD-4] search visibility is precise', () => {
   });
 
   it('gives every non-heading row a description (the old tooltip coverage guarantee, moved)', () => {
-    // settingsTooltips.test.ts guaranteed every row carried supplementary help. Tooltips are gone
-    // (Clarification #6 folded them into desc, where mobile can finally see them); the guarantee
-    // moves here rather than disappearing with them.
+    // Every row carries its supplementary help in `desc`, where mobile can read it (there are no tooltips).
     const undocumented = rowsOf(buildSettingDefinitions(makeHost()))
       .filter((r) => !r.desc)
       .map((r) => r.name);
@@ -358,8 +338,8 @@ describe('[SPEC:DSD-5] predicates reflect platform and sign-in state', () => {
 });
 
 describe('[SPEC:FR-007] Server URL row always shows the full-endpoint guidance', () => {
-  // A host-only URL fails with HTTP 405. The desc is always visible (unlike the tooltips removed in
-  // feature 077), so it is the one place a mobile user can read the expected shape before typing.
+  // A host-only URL fails with HTTP 405. The desc is always visible, so it is the one place a mobile
+  // user can read the expected shape before typing.
   it('names the full WebDAV endpoint, the optional subfolder and the 405 on a host-only URL', () => {
     const row = rowsOf(buildSettingDefinitions(makeHost())).find((r) => r.name === 'Server URL');
     const desc = String(row?.desc);

@@ -1,9 +1,6 @@
-// Layer A — files locking (LK) per report/mock_test.md §3.E.
-// LK-2/LK-4/LK-5 exercise NextcloudClient lock/unlock directly (capability-gated).
-// LK-4 reproduces a real 423: the admin account locks a file and shares it with the second account
-// (ncuser2, provisioned by the suite), whose client then fails to take the lock.
-// LK-1 (no-lock PUT) and LK-3 (FeatureUnsupportedError handling) are engine-level
-// (SyncEngine.acquireLock) and noted as out of Layer A scope.
+// Layer A — files locking (LK). LK-2/LK-4/LK-5 drive NextcloudClient lock/unlock (capability-gated); LK-4 reproduces
+// a real 423 (admin locks and shares a file; the second account ncuser2 then fails to lock it). LK-1 and LK-3 are
+// engine-level (SyncEngine.acquireLock), out of Layer A scope.
 import { NextcloudClient } from '../../../src/network/NextcloudClient';
 import { FileLockedError, NetworkError, DEFAULT_SETTINGS } from '../../../src/types';
 import { describeLive, requireUser2 } from '../support/env';

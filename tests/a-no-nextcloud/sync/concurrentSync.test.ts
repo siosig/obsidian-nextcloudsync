@@ -2,19 +2,15 @@ import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { DEFAULT_SETTINGS } from '../../../src/types';
 import { autoNetworkConcurrency } from '../../../src/util/platformDefaults';
 
-// Feature 028: network concurrency is no longer a user setting — the engine reads
-// autoNetworkConcurrency(). Tests mock it to exercise the bounded-parallel cap.
+// Network concurrency is not a user setting: the engine reads autoNetworkConcurrency(); tests mock it to exercise the bounded-parallel cap.
 jest.mock('../../../src/util/platformDefaults', () => ({
   ...jest.requireActual('../../../src/util/platformDefaults'),
   autoNetworkConcurrency: jest.fn(() => 8),
 }));
 const mockedConcurrency = autoNetworkConcurrency as jest.Mock;
 
-/**
- * P1-A: the engine's bounded-parallel file runner (runFileBatch). Verifies the safety properties the
- * sync loops rely on: every item runs exactly once, same-directory work is serialized (avoids 423s),
- * and different directories run concurrently.
- */
+// The engine's bounded-parallel file runner (runFileBatch): every item runs once, same-directory work
+// is serialized (avoids 423), and different directories run concurrently.
 function makeEngine(networkConcurrency = 8) {
   mockedConcurrency.mockReturnValue(networkConcurrency);
   const opts = {
@@ -116,11 +112,8 @@ describe('SyncEngine — Two-Phase Termination (requestStop)', () => {
 });
 
 describe('[SPEC:CONC-1] SyncEngine — a failed ensureClient must not strand the running guard', () => {
-  // Regression for feature 053. ensureClient() (client creation + capabilities probe) used to run
-  // OUTSIDE runSyncSession's try/finally, so a connection failure stranded `running=true` forever —
-  // every later sync balked with "already running" — AND swallowed the real error (no FAILED log).
-  // The fix moves ensureClient inside the guard so the failure is caught + logged and the flag is
-  // always cleared, letting the next sync retry.
+// ensureClient() (client creation + capability probe) must run inside runSyncSession's try/finally:
+// otherwise a connection failure strands running=true and swallows the real error.
   function makeFailingEngine() {
     const logs: string[] = [];
     const createClient = jest.fn(async () => { throw new Error('boom: capabilities probe failed'); });
@@ -150,8 +143,7 @@ describe('[SPEC:CONC-1] SyncEngine — a failed ensureClient must not strand the
     (globalThis as { navigator?: unknown }).navigator ??= {};
     const { engine, createClient, logs } = makeFailingEngine();
 
-    // First sync: ensureClient throws. With the fix the error is caught, so syncManual RESOLVES
-    // (before the fix it rejected and left `running` stranded).
+    // First sync: ensureClient throws; the error is caught so syncManual resolves.
     await expect(engine.syncManual({ manual: true })).resolves.toBeUndefined();
     expect(createClient).toHaveBeenCalledTimes(1);
     expect(logs.some((l) => l.startsWith('sync: FAILED'))).toBe(true); // real error surfaced, not swallowed

@@ -1,10 +1,7 @@
-// Layer B — feature 063 (GitHub issue #23), live server.
-//
-// Two devices create the SAME path independently, each without ever having seen the other's copy, so
-// neither has a StateDB record for it. Device D uploads first; device M then syncs with its own local
-// copy already on disk. The incremental path used to classify that as "remote changed only" and
-// download straight over M's body — silent data loss. It must resolve as a conflict instead, and for
-// .md that means both bodies survive the merge.
+// Layer B (GitHub issue #23), live server. Two devices create the SAME path independently, so neither has a StateDB
+// record for it. D uploads first; M then syncs with its own local copy on disk. The incremental path must not classify
+// that as "remote changed only" and download over M's body (silent data loss): it resolves as a conflict, and for .md
+// both bodies survive the merge.
 import { describeLive } from '../support/env';
 import { setupWorkspace } from '../support/workspace';
 import { cleanupWorkspace, IsolatedWorkspace } from '../support/isolation';

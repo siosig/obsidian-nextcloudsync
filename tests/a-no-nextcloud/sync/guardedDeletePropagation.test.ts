@@ -1,27 +1,15 @@
-// Feature 086 (GitHub issue #46): a deletion the PLUGIN performed must never come back as a deletion
-// the plugin sends to the server.
+// A deletion the PLUGIN performed must never come back as a deletion the plugin sends to the server (GitHub issue #46).
 //
-// The reporter lost notes from both sides. Their folder went to the local `.trash` — that part was
-// already understood, and feature 081 put a server probe in front of it — and then the same notes
-// turned up in Nextcloud's trashbin. The second half is a separate mechanism, and it is the one this
-// file is about.
+// Trashing a folder takes its contents with it; if the plugin forgets only the FOLDER's row, every child file keeps
+// a StateDB entry saying "synced, now absent locally", which is what a user deletion looks like, so the next sync
+// propagates the plugin's own cleanup to the server.
 //
-// Trashing a folder takes its contents with it, but the plugin only forgot the FOLDER's row. Every
-// child file kept a StateDB entry, and an entry saying "synced, and now absent locally" is exactly
-// what a user deletion looks like. So the next sync read the plugin's own cleanup as user intent and
-// propagated it upward. A listing glitch that should have cost nothing more than a local copy became
-// real, server-side data loss — an amplifier sitting between a recoverable mistake and an
-// unrecoverable one.
+// Up direction: a tracked file absent locally AND from the listing is not deleted on the listing's word. The path
+// is asked about directly, and anything still present goes through the same checksum proof as every other
+// deletion. (docs/spec.md §8)
 //
-// The up direction had a second, quieter hole. A tracked file absent locally AND absent from the
-// listing was deleted on the server with no question asked, on the reasoning that the listing already
-// proved there was nothing there to lose. This issue is the proof that a listing can be wrong about
-// exactly that, so absence is no longer accepted as evidence: the path is asked about directly, and
-// anything still present goes through the same checksum proof every other deletion needs.
-//
-// These tests drive the REAL SyncEngine over a real StateDB (in-memory DataAdapter); only the WebDAV
-// client, the LocalAdapter and Obsidian's App are doubles. The bug lives in how the engine classifies
-// what it sees, so a mock that re-implemented the classification would prove nothing.
+// These tests drive the REAL SyncEngine over a real StateDB (in-memory DataAdapter); only the WebDAV client,
+// the LocalAdapter and Obsidian's App are doubles, because the bug lives in how the engine classifies what it sees.
 import { DataAdapter } from 'obsidian';
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { StateDB } from '../../../src/data/StateDB';
@@ -53,19 +41,19 @@ function makeStateAdapter(): DataAdapter {
   } as unknown as DataAdapter;
 }
 
-/** What the client double answers with. Mutable between syncs within one test. */
+// What the client double answers with. Mutable between syncs within one test.
 interface RemoteWorld {
-  /** The full-scan file listing (`getFiles('')`). */
+  // The full-scan file listing (`getFiles('')`).
   listing: RemoteFileInfo[];
-  /** The full-scan directory listing (`getDirectories('')`), a SEPARATE PROPFIND from the above. */
+  // The full-scan directory listing (`getDirectories('')`), a SEPARATE PROPFIND from the above.
   dirs: RemoteDirInfo[];
-  /** Bodies a GET returns, by path. A download whose length disagrees with the listing is refused. */
+  // Bodies a GET returns, by path. A download whose length disagrees with the listing is refused.
   bodies: Record<string, string>;
-  /** The Depth 0 existence probe used by feature 081 (folders) and 083 (absent-locally files). */
+  // The Depth 0 existence probe used for folders and for files absent locally.
   exists: boolean | ((path: string) => boolean);
-  /** The Depth 0 stat used by the up-direction proof. `'throw'` models an unanswerable server. */
+  // The Depth 0 stat used by the up-direction proof. `'throw'` models an unanswerable server.
   stat: (path: string) => RemoteFileInfo | null | 'throw';
-  /** What the server computes on demand when the listing carried no checksum. */
+  // What the server computes on demand when the listing carried no checksum.
   recalc: string | null;
 }
 
@@ -75,7 +63,7 @@ function world(over: Partial<RemoteWorld> = {}): RemoteWorld {
   };
 }
 
-/** A listing entry for `body` that reads as UNCHANGED against what {@link track} recorded. */
+// A listing entry for `body` that reads as UNCHANGED against what {@link track} recorded.
 async function listed(path: string, body: string): Promise<RemoteFileInfo> {
   return {
     path, fileId: `fid-${path}`, checksum: await sha256(toBuf(body)), etag: null,
@@ -83,7 +71,7 @@ async function listed(path: string, body: string): Promise<RemoteFileInfo> {
   };
 }
 
-/** A listing entry for `body` that reads as CHANGED — the server copy moved on after our base. */
+// A listing entry for `body` that reads as CHANGED — the server copy moved on after our base.
 async function listedAs(path: string, body: string, serverBody: string): Promise<RemoteFileInfo> {
   return {
     path, fileId: `fid-${path}`, checksum: await sha256(toBuf(serverBody)), etag: null,
@@ -95,10 +83,8 @@ const remoteDir = (path: string): RemoteDirInfo => ({
   path, fileId: `dir-${path}`, etag: null, lastModified: BASE_MTIME,
 });
 
-/**
- * `vault` and `folders` are both live: `trashFile` mutates them, so what the NEXT scan enumerates is
- * whatever the previous one left behind rather than a fixed script.
- */
+// `vault` and `folders` are both live: `trashFile` mutates them, so what the NEXT scan enumerates is
+// whatever the previous one left behind rather than a fixed script.
 async function buildEngine(
   vault: Record<string, string>, folders: string[], w: RemoteWorld,
 ) {
@@ -169,8 +155,7 @@ async function buildEngine(
       getAllFolders: () => folders.map(p => new TFolder(p)),
     },
     fileManager: {
-      // Obsidian takes the CONTENTS with the folder. That is not incidental to this feature — it is
-      // the whole reason the child rows were left stranded, so the double has to do it too.
+      // Obsidian takes the CONTENTS with the folder; that is why the child rows were stranded, so the double must too.
       trashFile: jest.fn(async (f: TFile | TFolder) => {
         if (trashFails) throw new Error('EACCES');
         events.push(`trash:${f.path}`);
@@ -206,11 +191,9 @@ async function buildEngine(
   };
 }
 
-/**
- * Records `path` as converged: the recorded hash matches the body on disk, and the stat signature
- * matches what the vault double reports. Both matter — the signature keeps the file out of the upload
- * pass, and the hash is what every deletion decision is proved against.
- */
+// Records `path` as converged: the recorded hash matches the body on disk, and the stat signature
+// matches what the vault double reports. Both matter — the signature keeps the file out of the upload
+// pass, and the hash is what every deletion decision is proved against.
 async function track(stateDB: StateDB, path: string, body: string): Promise<FileState> {
   const hash = await sha256(toBuf(body));
   const size = enc.encode(body).length;
@@ -233,12 +216,9 @@ function emptySummary(): SyncSessionSummary {
   };
 }
 
-/**
- * The listing glitch this issue is about. The two listings are separate PROPFINDs, so the file
- * listing can be perfectly correct about `F/a.md` while the directory listing has lost `F` — and the
- * server, asked directly, agrees the folder is gone. That is what sends `F` to the local trash with
- * its contents still fully tracked.
- */
+// The listing glitch: the file and directory listings are separate PROPFINDs, so the file listing can be correct
+// about `F/a.md` while the directory listing has lost `F`, and the server, asked directly, agrees the folder is
+// gone. That sends `F` to the local trash with its contents still fully tracked.
 async function vaultWithTrashedFolder() {
   // `keep.md` is not decoration. Once State holds no files and there is no sync token, the next
   // session is classified as a FIRST sync and takes the initial-sync route instead — a different code
@@ -380,8 +360,7 @@ describe('[SPEC:GDP-13] the trash is announced as the plugin\'s own before it ha
     await h.sync();
 
     // Obsidian fires a vault `delete` event for the folder and for every file inside it. Watch mode
-    // reads those as user deletions, so without this they would travel to the server by a completely
-    // different route than the one the rest of this feature guards.
+    // reads those as user deletions, so without the ignore they would reach the server by another route.
     expect(h.localAdapter.ignore).toHaveBeenCalledWith('F');
     expect(h.localAdapter.ignore).toHaveBeenCalledWith('F/a.md');
     expect(h.localAdapter.ignore).toHaveBeenCalledWith('F/sub');
@@ -399,10 +378,7 @@ describe('[SPEC:GDP-13] the trash is announced as the plugin\'s own before it ha
   });
 });
 
-/**
- * A tracked file that is gone locally and missing from the listing. Before this feature that was a
- * bare DELETE; the listing was treated as proof there was nothing on the server worth keeping.
- */
+// A tracked file that is gone locally and missing from the listing: absence is not proof, so it is probed, not blindly deleted.
 async function vaultWithUnlistedMissingFile(w: Partial<RemoteWorld> = {}) {
   const h = await buildEngine({}, [], world(w));
   await track(h.stateDB, 'x.md', 'base body');
@@ -432,8 +408,7 @@ describe('[SPEC:GDP-21] a path the server really does not have costs no DELETE',
 
     expect(h.client.deleteFile).not.toHaveBeenCalled();
     expect(h.stateDB.getFile('x.md')).toBeUndefined();
-    // Nothing was removed from the server, so nothing is counted as removed — as before, where the
-    // DELETE threw 404 before reaching the counter.
+    // Nothing was removed from the server, so nothing is counted as removed.
     expect(summary.deletedCount).toBe(0);
     expect(summary.errorCount).toBe(0);
   });
@@ -455,8 +430,7 @@ describe('[SPEC:GDP-22] a path the server still holds unchanged is a real user d
 
 describe('[SPEC:GDP-23] a path the server has EDITED is not a deletion at all', () => {
   it('restores the server copy rather than destroying another device\'s work', async () => {
-    // The case the bare DELETE got wrong, and the reason absence is no longer accepted as proof: the
-    // file was missing from the listing and very much present — and newer — on the server.
+    // Absence is not proof: the file was missing from the listing and very much present, and newer, on the server.
     const serverCopy = await listedAs('x.md', 'their edit', 'their edit');
     const h = await vaultWithUnlistedMissingFile({
       stat: () => serverCopy,
@@ -504,8 +478,7 @@ describe('[SPEC:GDP-25] an unanswerable probe deletes nothing and is retried', (
 
 describe('[SPEC:GDP-26] a genuine local deletion still reaches the server', () => {
   it('deletes a file the listing shows unchanged and the vault no longer has', async () => {
-    // The listing-present route — a different branch from GDP-22, and the one most local deletions
-    // take. It has demanded a checksum since spec 023; this pins that feature 086 left it alone.
+    // It demands a checksum; this pins that the absence-probe change leaves it alone.
     const h = await buildEngine({ 'keep.md': 'kept' }, [], world({
       listing: [await listed('gone.md', 'gone body'), await listed('keep.md', 'kept')],
       exists: true,
@@ -582,9 +555,7 @@ describe('[SPEC:GDP-28] a folder deleted on another device leaves nothing behind
 
 describe('[SPEC:GDP-29] the added round trip is bounded', () => {
   it('probes each deletion candidate exactly once', async () => {
-    // The cost of demanding proof: one PROPFIND per candidate, replacing the DELETE that used to go
-    // out unasked. A per-candidate probe that fanned out would make large local deletions expensive
-    // enough to be a regression in its own right.
+    // The cost of demanding proof: one PROPFIND per candidate. A fan-out per candidate would make large local deletions expensive.
     const h = await buildEngine({}, [], world({ stat: () => null }));
     await track(h.stateDB, 'one.md', 'one');
     await track(h.stateDB, 'two.md', 'two');
