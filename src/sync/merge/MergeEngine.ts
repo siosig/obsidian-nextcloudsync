@@ -8,6 +8,16 @@ interface Diff3Chunk {
   conflict?: { a: string[]; b: string[] };
 }
 
+interface MarkdownParts {
+  // Raw bytes of the frontmatter block including both fences and the closing fence's line terminator; '' when absent.
+  fm: string;
+  // Text between the fences as Obsidian reports it; null when there is no frontmatter.
+  inner: string | null;
+  // Whitespace between the block and the body.
+  lead: string;
+  body: string;
+}
+
 // Two-level resolution: markdown frontmatter and body resolve independently; a part a `merge` primary
 // cannot auto-resolve falls to `ctx.conflictStrategy`. Frontmatter never carries a marker line
 // (docs/spec.md §6.0).
@@ -40,14 +50,15 @@ export class MergeEngine {
     },
   ): MergeResult {
     const cs = opts.ctx?.conflictStrategy ?? 'conflict-markers';
-    const { frontmatter: localFm, body: localBody } = this.splitFrontmatter(local);
-    const { frontmatter: remoteFm, body: remoteBody } = this.splitFrontmatter(remote);
-    const { frontmatter: baseFm, body: baseBody } = this.splitFrontmatter(base);
+    const l = this.splitMarkdown(local);
+    const r = this.splitMarkdown(remote);
+    const b = this.splitMarkdown(base);
 
-    const mergedFm = this.resolveFrontmatterBlock(opts.frontmatterStrategy, baseFm, localFm, remoteFm, cs, opts.ctx);
-    const body = this.resolveBodyBlock(opts.bodyStrategy, cs, baseBody, localBody, remoteBody, opts.ctx);
-
-    const merged = mergedFm ? `${mergedFm}\n${body.content}` : body.content;
+    const mergedFm = this.resolveFrontmatterBlock(opts.frontmatterStrategy, b, l, r, cs, opts.ctx);
+    const body = this.resolveBodyBlock(opts.bodyStrategy, cs, b.body, l.body, r.body, opts.ctx);
+    // The side that differs from the base wins; with both sides differing, local.
+    const lead = l.lead === r.lead ? l.lead : (l.lead === b.lead ? r.lead : l.lead);
+    const merged = joinMarkdown(mergedFm, lead, body.content);
 
     // Stacked markers indicate a bypassed guard: never persist, signal hold.
     if (hasNestedConflictMarkers(merged)) {
@@ -59,16 +70,17 @@ export class MergeEngine {
   // Always marker-free: an unparseable side picks a whole side, with `conflict-markers` degraded to
   // latest-mtime because `---` cannot hold markers.
   private resolveFrontmatterBlock(
-    strategy: SyncStrategy, baseFm: string, localFm: string, remoteFm: string,
+    strategy: SyncStrategy, base: MarkdownParts, local: MarkdownParts, remote: MarkdownParts,
     conflictStrategy: ConflictStrategy, ctx?: MergeContext,
   ): string {
-    if (localFm === remoteFm) return localFm;
+    // Equal frontmatter keeps the local block byte for byte (docs/spec.md §6.2).
+    if (local.inner === remote.inner) return local.fm;
     if (strategy === 'merge') {
-      const r = this.fmStrategy.merge(baseFm, localFm, remoteFm, ctx);
+      const r = this.fmStrategy.merge(base.fm, local.fm, remote.fm, ctx);
       if (r.success) return r.frontmatter;
-      return this.pickWholeSide(localFm, remoteFm, this.fmFallbackStrategy(conflictStrategy), ctx);
+      return this.pickWholeSide(local.fm, remote.fm, this.fmFallbackStrategy(conflictStrategy), ctx);
     }
-    return this.pickWholeSide(localFm, remoteFm, strategy, ctx);
+    return this.pickWholeSide(local.fm, remote.fm, strategy, ctx);
   }
 
   private fmFallbackStrategy(conflictStrategy: ConflictStrategy): SyncStrategy {
@@ -170,13 +182,19 @@ export class MergeEngine {
     return { content: this.pickWholeSide(local, remote, conflictStrategy, ctx), hadConflicts: false };
   }
 
-  // Uses Obsidian's getFrontMatterInfo, so only a leading `---` fence counts and a body thematic break is
-  // never a delimiter. Returns a normalized `---\n<inner>\n---` block so equal frontmatter compares equal.
-  private splitFrontmatter(content: string): { frontmatter: string; body: string } {
+  // Invariant: fm + lead + body === content. Uses Obsidian's getFrontMatterInfo, so only a leading `---`
+  // fence counts and a body thematic break is never a delimiter.
+  private splitMarkdown(content: string): MarkdownParts {
     const info = getFrontMatterInfo(content);
-    if (!info.exists) return { frontmatter: '', body: content };
-    const frontmatter = `---\n${info.frontmatter}\n---`;
-    return { frontmatter, body: content.slice(info.contentStart).trimStart() };
+    if (!info.exists) return { fm: '', inner: null, lead: '', body: content };
+    const rest = content.slice(info.contentStart);
+    const body = rest.trimStart();
+    return {
+      fm: content.slice(0, info.contentStart),
+      inner: info.frontmatter,
+      lead: rest.slice(0, rest.length - body.length),
+      body,
+    };
   }
 
   // `biggest-size` compares block length and falls back to latest-mtime on a tie (never a no-op); a mtime
@@ -191,6 +209,15 @@ export class MergeEngine {
     }
     return (ctx?.localMtime ?? 0) > (ctx?.remoteMtime ?? 0) ? localBlk : remoteBlk;
   }
+}
+
+// Re-joins the parts of a split Markdown file; adds a line break only when a block without a trailing one
+// (a re-serialized frontmatter) precedes more content.
+export function joinMarkdown(fm: string, lead: string, body: string): string {
+  if (fm === '') return body;
+  const rest = lead + body;
+  if (rest === '') return fm;
+  return fm.endsWith('\n') ? fm + rest : `${fm}\n${rest}`;
 }
 
 // A second opening marker before the prior region closes is the fingerprint of marker re-entrancy. Only

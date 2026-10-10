@@ -91,13 +91,14 @@ describe('MergeEngine', () => {
     expect(result.mergedContent).not.toContain('Changed 1');
   });
 
-  it('[SPEC:HFM-9] frontmatter the old regex could not parse (CRLF + trailing-space fences) yields zero marker lines', () => {
+  it('[SPEC:HFM-9] frontmatter the old regex could not parse (CRLF fences) yields zero marker lines', () => {
     const engine = new MergeEngine();
     const base = '---\ntags:\n  - a\n---\nBody';
     const local = '---\ntags:\n  - a\n  - b\n---\nBody';
-    // Trailing spaces after the fences + CRLF must still parse as frontmatter; otherwise it drops to whole-file diff3
-    // and buries the frontmatter inside conflict markers.
-    const remote = '--- \r\ntags:\r\n  - a\r\n  - c\r\n--- \r\nBody';
+    // CRLF fences must still parse as frontmatter; otherwise it drops to whole-file diff3 and buries the
+    // frontmatter inside conflict markers. (A fence line with trailing spaces is not a fence in Obsidian, so
+    // that shape is not frontmatter at all: docs/spec.md §6.2.)
+    const remote = '---\r\ntags:\r\n  - a\r\n  - c\r\n---\r\nBody';
     // frontmatter behavior lives on the markdown path (resolveMarkdown); merge() is non-md body-only.
     const result = engine.resolveMarkdown(base, local, remote, { frontmatterStrategy: 'merge', bodyStrategy: 'merge' });
     expect(result.success).toBe(true);

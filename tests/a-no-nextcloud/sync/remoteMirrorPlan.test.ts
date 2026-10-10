@@ -1,5 +1,5 @@
 import { buildMirrorPlan, LocalFileEntry } from '../../../src/sync/mirrorPlan';
-import { RemoteFileInfo } from '../../../src/types';
+import { RemoteDirInfo, RemoteFileInfo } from '../../../src/types';
 
 // [SPEC:MIR-1] Pull mirror plan classification (pure).
 // The mirror overwrites this device to match the remote: download what the remote has (or differs),
@@ -10,7 +10,10 @@ function remote(path: string, checksum: string | null = null): RemoteFileInfo {
   return { path, fileId: null, checksum, etag: null, size: 1, lastModified: 0 };
 }
 function local(path: string, hash: string): LocalFileEntry {
-  return { path, hash };
+  return { path, hash, size: 1, mtime: 0 };
+}
+function rdir(path: string): RemoteDirInfo {
+  return { path, fileId: null, etag: null, lastModified: 0 };
 }
 const noExclude = () => false;
 
@@ -147,6 +150,72 @@ describe('[SPEC:MIR-1] buildMirrorPlan', () => {
       expect(plan.skipCount).toBe(1); // same.md
       const deleteTotal = plan.deleteFiles.length + plan.deleteDirs.length;
       expect(deleteTotal).toBe(2); // goneFile.md + goneDir
+    });
+  });
+
+  describe('[SPEC:MIR-6] remote folder reconciliation', () => {
+    it('[SPEC:MIR-6] plans creation of remote-only empty folders, shallowest first', () => {
+      const plan = buildMirrorPlan([], [], [], noExclude, true, null, [rdir('a/b'), rdir('a')]);
+      expect(plan.createDirs).toEqual(['a', 'a/b']);
+      expect(plan.remoteDirs.map((d) => d.path).sort()).toEqual(['a', 'a/b']);
+    });
+
+    it('[SPEC:MIR-6] does not delete a local folder that exists on the remote as an empty folder', () => {
+      const plan = buildMirrorPlan([], [], ['keep'], noExclude, true, null, [rdir('keep')]);
+      expect(plan.deleteDirs).toEqual([]);
+      expect(plan.createDirs).toEqual([]);
+    });
+
+    it('[SPEC:MIR-6] ignores excluded folders in createDirs, deleteDirs and remoteDirs', () => {
+      const isExcluded = (p: string) => p === 'Excluded' || p.startsWith('Excluded/');
+      const plan = buildMirrorPlan(
+        [],
+        [],
+        ['Excluded/local'],
+        isExcluded,
+        true,
+        null,
+        [rdir('Excluded'), rdir('Excluded/sub')],
+      );
+      expect(plan.createDirs).toEqual([]);
+      expect(plan.deleteDirs).toEqual([]);
+      expect(plan.remoteDirs).toEqual([]);
+    });
+
+    it('[SPEC:MIR-6] normalizes a trailing slash in remote folder paths', () => {
+      const plan = buildMirrorPlan([], [], [], noExclude, true, null, [rdir('x/')]);
+      expect(plan.createDirs).toEqual(['x']);
+      expect(plan.remoteDirs.map((d) => d.path)).toEqual(['x']);
+    });
+
+    it('[SPEC:MIR-6] returns empty createDirs, remoteDirs and skipped when the listing is not ok', () => {
+      const plan = buildMirrorPlan(
+        [remote('a.md', 'h')],
+        [local('a.md', 'h')],
+        [],
+        noExclude,
+        false,
+        'network error',
+        [rdir('x')],
+      );
+      expect(plan.ok).toBe(false);
+      expect(plan.createDirs).toEqual([]);
+      expect(plan.remoteDirs).toEqual([]);
+      expect(plan.skipped).toEqual([]);
+    });
+  });
+
+  describe('[SPEC:MIR-5] skipped files', () => {
+    it('[SPEC:MIR-5] records skipped files with path, size and mtime and keeps skipCount in step', () => {
+      const plan = buildMirrorPlan(
+        [remote('a.md', 'h-a')],
+        [{ path: 'a.md', hash: 'h-a', size: 7, mtime: 42 }],
+        [],
+        noExclude,
+        true,
+      );
+      expect(plan.skipped).toEqual([{ path: 'a.md', size: 7, mtime: 42 }]);
+      expect(plan.skipCount).toBe(plan.skipped.length);
     });
   });
 });

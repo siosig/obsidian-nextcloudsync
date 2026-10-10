@@ -23,20 +23,32 @@ const remote = (path: string, checksum: string): RemoteFileInfo => ({
   path, fileId: null, checksum, etag: null, size: 1, lastModified: 0,
 });
 
-function makeEngine(opts: { tracked: FileState[]; localFiles: string[] }) {
+function makeEngine(opts: {
+  tracked: FileState[];
+  localFiles: string[];
+  trashFile?: jest.Mock;
+  stat?: jest.Mock;
+  mkdir?: jest.Mock;
+  save?: jest.Mock;
+  folders?: string[];
+  dirs?: string[];
+  baseStore?: Record<string, unknown>;
+  historyStore?: Record<string, unknown>;
+}) {
   const store = new Map<string, FileState>(opts.tracked.map((f) => [f.path, f]));
-  const trashFile = jest.fn(async () => undefined);
+  const trashFile = opts.trashFile ?? jest.fn(async () => undefined);
   const setRemoteRootEtag = jest.fn();
   const setSyncToken = jest.fn();
   const adapter = {
-    stat: jest.fn(async () => null),
+    stat: opts.stat ?? jest.fn(async (p: string) => (opts.localFiles.includes(p) ? { size: 1, mtime: 0 } : null)),
+    mkdir: opts.mkdir ?? jest.fn(async () => undefined),
     exists: jest.fn(async () => false),
     remove: jest.fn(async () => undefined),
     readBinary: jest.fn(async () => new ArrayBuffer(0)),
   };
   const vault = {
     adapter,
-    getAllFolders: () => [],
+    getAllFolders: () => (opts.folders ?? []).map((path) => ({ path })),
     getAbstractFileByPath: (p: string) => (opts.localFiles.includes(p) ? new TFile(p) : null),
   };
   const app = { vault, fileManager: { trashFile } };
@@ -45,7 +57,9 @@ function makeEngine(opts: { tracked: FileState[]; localFiles: string[] }) {
     setFile: (f: FileState) => { store.set(f.path, f); },
     deleteFile: (p: string) => { store.delete(p); },
     getAllFiles: () => [...store.values()],
-    getAllDirs: () => [],
+    getAllDirs: () => (opts.dirs ?? []).map((path) => ({ path })),
+    setDir: jest.fn(),
+    save: opts.save ?? jest.fn(async () => undefined),
     deleteDir: jest.fn(),
     setRemoteRootEtag,
     setSyncToken,
@@ -56,12 +70,14 @@ function makeEngine(opts: { tracked: FileState[]; localFiles: string[] }) {
   const engine = new SyncEngine({
     app, settings: settings(), localAdapter: adapter,
     stateDB, statusBar, webdavFactory: {}, pluginDir: PLUGIN_DIR, configDir: CONFIG_DIR,
+    baseStore: opts.baseStore, historyStore: opts.historyStore,
   } as never);
-  return { engine, store, trashFile, setRemoteRootEtag, setSyncToken, statusBar };
+  return { engine, store, trashFile, setRemoteRootEtag, setSyncToken, statusBar, adapter, stateDB };
 }
 
 const plan = (over: Partial<MirrorPlan>): MirrorPlan => ({
-  ok: true, reason: null, downloads: [], deleteFiles: [], deleteDirs: [], skipCount: 0, remoteFiles: [], ...over,
+  ok: true, reason: null, downloads: [], deleteFiles: [], deleteDirs: [], skipCount: 0, remoteFiles: [],
+  skipped: [], remoteDirs: [], createDirs: [], ...over,
 });
 
 describe('[SPEC:MIR-3] SyncEngine.applyRemoteMirror — convergence & breaker bypass', () => {
@@ -73,6 +89,7 @@ describe('[SPEC:MIR-3] SyncEngine.applyRemoteMirror — convergence & breaker by
     const result = await engine.applyRemoteMirror(plan({
       deleteFiles: ['gone1.md', 'gone2.md'],
       skipCount: 1,
+      skipped: [{ path: 'keep.md', size: 1, mtime: 0 }],
       remoteFiles: [remote('keep.md', 'h')],
     }));
     expect(trashFile).toHaveBeenCalledTimes(2);
@@ -90,6 +107,7 @@ describe('[SPEC:MIR-3] SyncEngine.applyRemoteMirror — convergence & breaker by
     // model it as already-present skip to test the reconcile-tracks-skipped branch.
     await engine.applyRemoteMirror(plan({
       skipCount: 1,
+      skipped: [{ path: 'a.md', size: 1, mtime: 0 }],
       remoteFiles: [remote('a.md', 'ha')],
     }));
     // a.md remains tracked (unchanged); stale.md (not on remote) is dropped → StateDB == remote.
@@ -112,7 +130,8 @@ describe('[SPEC:MIR-3] SyncEngine.applyRemoteMirror — convergence & breaker by
     const remoteFiles = Array.from({ length: 10 }, (_, i) => remote(`keep${i}.md`, `k${i}`));
     const { engine, store, trashFile } = makeEngine({ tracked, localFiles });
 
-    const result = await engine.applyRemoteMirror(plan({ deleteFiles, skipCount: 10, remoteFiles }));
+    const skipped = Array.from({ length: 10 }, (_, i) => ({ path: `keep${i}.md`, size: 1, mtime: 0 }));
+    const result = await engine.applyRemoteMirror(plan({ deleteFiles, skipCount: 10, skipped, remoteFiles }));
 
     expect(trashFile).toHaveBeenCalledTimes(90); // all deletions executed, breaker did NOT halt
     expect(result.deleted).toBe(90);
@@ -156,5 +175,130 @@ describe('[SPEC:MIR-3] SyncEngine.applyRemoteMirror — convergence & breaker by
     await engine.applyRemoteMirror(plan({ remoteFiles: [remote('a.md', 'h')] }));
     expect(setRemoteRootEtag).toHaveBeenCalledWith(null);
     expect(setSyncToken).toHaveBeenCalledWith('');
+  });
+});
+
+describe('[SPEC:MIR-4] applyRemoteMirror — the sync state is always persisted', () => {
+  it('[SPEC:MIR-4] saves once, before the completion toast', async () => {
+    const order: string[] = [];
+    const save = jest.fn(async () => { order.push('save'); });
+    const { engine, statusBar } = makeEngine({
+      tracked: [fstate('gone.md', 'x')], localFiles: ['gone.md'], save,
+    });
+    statusBar.setSyncComplete.mockImplementation(() => { order.push('complete'); });
+    await engine.applyRemoteMirror(plan({ deleteFiles: ['gone.md'] }));
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(['save', 'complete']);
+  });
+
+  // A failed trash is absorbed inside the deletion service (it notifies and keeps going), so the item
+  // failure that reaches the result here is a folder that could not be created.
+  it('[SPEC:MIR-4] saves once even when an item fails', async () => {
+    const mkdir = jest.fn(async () => { throw new Error('mkdir failed'); });
+    const save = jest.fn(async () => undefined);
+    const { engine } = makeEngine({ tracked: [], localFiles: [], mkdir, save });
+    const result = await engine.applyRemoteMirror(plan({
+      createDirs: ['a'],
+      remoteDirs: [{ path: 'a', fileId: null, etag: null, lastModified: 0 }],
+    }));
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0].path).toBe('a');
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it('[SPEC:MIR-4] reports a failed save as one error entry instead of throwing', async () => {
+    const save = jest.fn(async () => { throw new Error('disk full'); });
+    const { engine, statusBar } = makeEngine({
+      tracked: [fstate('a.md', 'h')], localFiles: ['a.md'], save,
+    });
+    const result = await engine.applyRemoteMirror(plan({ remoteFiles: [remote('a.md', 'h')] }));
+    expect(result.errors.filter((e) => e.path === '(state save)')).toHaveLength(1);
+    expect(statusBar.setSyncComplete).toHaveBeenCalledTimes(1);
+    expect(statusBar.setSyncComplete.mock.calls[0][3]).toBe(1);
+  });
+
+  it('[SPEC:MIR-4] saves the state DB, then the merge bases, then the history', async () => {
+    const order: string[] = [];
+    const save = jest.fn(async () => { order.push('state'); });
+    const baseStore = {
+      get: jest.fn(() => undefined), set: jest.fn(), delete: jest.fn(), requestSave: jest.fn(),
+      flush: jest.fn(async () => { order.push('bases'); }),
+    };
+    const historyStore = {
+      record: jest.fn(), recent: jest.fn(() => []), since: jest.fn(() => []),
+      save: jest.fn(async () => { order.push('history'); }),
+    };
+    const { engine } = makeEngine({
+      tracked: [fstate('gone.md', 'x')], localFiles: ['gone.md'], save, baseStore, historyStore,
+    });
+    await engine.applyRemoteMirror(plan({ deleteFiles: ['gone.md'] }));
+    expect(order).toEqual(['state', 'bases', 'history']);
+  });
+
+  it('[SPEC:MIR-4] does not save when the plan is not ok', async () => {
+    const save = jest.fn(async () => undefined);
+    const { engine } = makeEngine({ tracked: [fstate('a.md', 'h')], localFiles: ['a.md'], save });
+    await engine.applyRemoteMirror(plan({ ok: false, reason: 'network error' }));
+    expect(save).not.toHaveBeenCalled();
+  });
+});
+
+describe('[SPEC:MIR-5] applyRemoteMirror — a skipped file changed since the plan is not marked converged', () => {
+  const skippedPlan = () => plan({
+    skipCount: 1,
+    skipped: [{ path: 'a.md', size: 1, mtime: 0 }],
+    remoteFiles: [remote('a.md', 'remote-hash')],
+  });
+
+  it('[SPEC:MIR-5] leaves the tracked state untouched when the current stat differs', async () => {
+    const before = fstate('a.md', 'old-local');
+    const stat = jest.fn(async () => ({ size: 2, mtime: 5 }));
+    const { engine, store } = makeEngine({ tracked: [before], localFiles: ['a.md'], stat });
+    await engine.applyRemoteMirror(skippedPlan());
+    expect(store.get('a.md')).toEqual(before);
+  });
+
+  it('[SPEC:MIR-5] records the file as converged when the current stat matches the plan', async () => {
+    const stat = jest.fn(async () => ({ size: 1, mtime: 0 }));
+    const { engine, store } = makeEngine({
+      tracked: [fstate('a.md', 'old-local')], localFiles: ['a.md'], stat,
+    });
+    await engine.applyRemoteMirror(skippedPlan());
+    const a = store.get('a.md')!;
+    expect(a.localHash).toBe(a.remoteId);
+  });
+});
+
+describe('[SPEC:MIR-6] applyRemoteMirror — folders are created and tracked', () => {
+  const dir = (path: string) => ({ path, fileId: null, etag: null, lastModified: 0 });
+  const trackedPaths = (setDir: jest.Mock) =>
+    setDir.mock.calls.map((c) => (typeof c[0] === 'string' ? c[0] : c[0].path));
+
+  it('[SPEC:MIR-6] creates missing folders shallowest first and converges directory tracking', async () => {
+    const { engine, adapter, stateDB } = makeEngine({
+      tracked: [], localFiles: [], folders: ['a', 'a/b'], dirs: ['gone-locally', 'stale'],
+    });
+    const result = await engine.applyRemoteMirror(plan({
+      createDirs: ['a', 'a/b'],
+      remoteDirs: [dir('a'), dir('a/b'), dir('gone-locally')],
+    }));
+    expect(adapter.mkdir.mock.calls.map((c) => c[0])).toEqual(['a', 'a/b']);
+    expect(trackedPaths(stateDB.setDir).sort()).toEqual(['a', 'a/b']);
+    expect(stateDB.deleteDir.mock.calls.map((c) => c[0]).sort()).toEqual(['gone-locally', 'stale']);
+    expect(result.createdDirs).toBe(2);
+  });
+
+  it('[SPEC:MIR-6] records a failed folder creation and continues without tracking it', async () => {
+    const mkdir = jest.fn(async (p: string) => { if (p === 'a') throw new Error('mkdir failed'); });
+    const { engine, stateDB } = makeEngine({
+      tracked: [], localFiles: [], mkdir, folders: ['b'],
+    });
+    const result = await engine.applyRemoteMirror(plan({
+      createDirs: ['a', 'b'],
+      remoteDirs: [dir('a'), dir('b')],
+    }));
+    expect(result.errors.filter((e) => e.path === 'a')).toHaveLength(1);
+    expect(mkdir).toHaveBeenCalledTimes(2);
+    expect(trackedPaths(stateDB.setDir)).not.toContain('a');
   });
 });

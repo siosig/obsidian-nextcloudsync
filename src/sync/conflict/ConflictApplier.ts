@@ -20,6 +20,7 @@ import { isMarkdown } from '../../util/mergeableExtensions';
 import { isAnomalousRemoteContent } from '../../util/limits';
 import { FileLogger } from '../../util/FileLogger';
 import { sha256 } from '../../util/hash';
+import { bytesEqual, checksumProvesIdentical, convergedState } from '../identity/contentIdentity';
 import type { App } from 'obsidian';
 
 export interface Connection {
@@ -52,10 +53,10 @@ export class ConflictApplier {
     path: string, base: FileState | undefined, remote: RemoteFileInfo,
     remoteId: string, idType: FileState['idType'], summary: SyncSessionSummary,
   ): Promise<void> {
-    this.deps.onConflictEncountered();
     // An oversized remote cannot be fetched without risking OOM: keep local untouched and flag the file
     // conflicted. No retry, since it would fail identically until the cap is raised.
     if (this.deps.transfer.isRemoteOverSizeLimit(remote)) {
+      this.deps.onConflictEncountered();
       this.deps.transfer.warnDownloadSkipped(path, remote.size);
       if (base) this.deps.stateDB.setFile({ ...base, isConflicted: true });
       void this.deps.logger?.log(`conflict: remote over size limit (${remote.size}B > ${this.deps.maxFileSizeMB()}MB), skipped → ${path}`);
@@ -64,6 +65,9 @@ export class ConflictApplier {
 
     // Must precede any merge write: feeds the max(local, remote) mtime stamp and the size/mtime strategies.
     const localStatBefore = await this.deps.localAdapter.stat(path);
+    const identity = await this.convergeIfIdentical(conn, path, remote, localStatBefore);
+    if (identity.converged) return;
+    this.deps.onConflictEncountered();
     const localMtimeBefore = localStatBefore?.mtime ?? 0;
     const localSizeBefore = localStatBefore?.size ?? 0;
 
@@ -79,11 +83,11 @@ export class ConflictApplier {
 
     // `merge` and every markdown file need both sides' text; the other strategies decide from size/mtime,
     // so their remote download is deferred until required.
-    let remoteData: ArrayBuffer | undefined;
+    let remoteData: ArrayBuffer | undefined = identity.remoteData;
     let decision: ConflictResolution;
     if (resolver.strategyFor(path) === 'merge' || isMarkdown(path)) {
       const localContent = await this.deps.localAdapter.read(path);
-      remoteData = await conn.client.downloadFile(remote.path);
+      remoteData = remoteData ?? await conn.client.downloadFile(remote.path);
       const remoteContent = new TextDecoder().decode(remoteData);
       // The stored last-synced body is the 3-way base, so shared blocks are not duplicated. Empty when none
       // is known yet; the expansion guard prevents a corrupt write and the next convergence seeds it.
@@ -134,6 +138,31 @@ export class ConflictApplier {
         await this.resolveByWrite(conn, path, decision.content, decision.clean, remote, remoteId, idType, localMtimeBefore, summary);
         return;
     }
+  }
+
+  // Proof of identity is the server checksum, or the fetched body when the server has none and the sizes match.
+  private async convergeIfIdentical(
+    conn: Connection, path: string, remote: RemoteFileInfo,
+    localStat: { size: number; mtime: number } | null,
+  ): Promise<{ converged: boolean; remoteData?: ArrayBuffer }> {
+    if (!localStat) return { converged: false };
+    const localData = await this.deps.localAdapter.readBinary(path);
+    const localHash = await sha256(localData);
+    let remoteData: ArrayBuffer | undefined;
+    let identical = false;
+    if (remote.checksum) {
+      identical = checksumProvesIdentical(remote, localHash);
+    } else if (localData.byteLength === remote.size) {
+      remoteData = await conn.client.downloadFile(remote.path);
+      identical = bytesEqual(localData, remoteData);
+    }
+    if (!identical) return { converged: false, remoteData };
+    this.deps.stateDB.setFile(await withLocalSignature(
+      this.deps.localAdapter, convergedState(remote, localHash, localStat), remote.lastModified,
+    ));
+    this.deps.mergeBase.record(path, new TextDecoder().decode(localData));
+    void this.deps.logger?.log(`conflict: content identical to the remote → state converged, no transfer → ${path}`);
+    return { converged: true };
   }
 
   async resolveByWrite(

@@ -398,7 +398,7 @@ export const CLAUSES: Clause[] = [
   { id: 'HFM-5', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-006: stable order base-first-then-additions, deterministic, no mtime dependence for arrays)', layer: 'a' },
   { id: 'HFM-6', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-009: scalar conflicts via existing frontmatterScalarConflictPolicy; nested objects stay opaque scalars)', layer: 'a' },
   { id: 'HFM-7', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-005: unparseable side → merge returns success:false, never partial frontmatter with marker lines)', layer: 'a' },
-  { id: 'HFM-8', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-003: split via getFrontMatterInfo — body --- break not mistaken for delimiter, CRLF tolerated)', layer: 'a' },
+  { id: 'HFM-8', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-003: split via getFrontMatterInfo — body --- break not mistaken for delimiter, CRLF tolerated; a fence line with trailing spaces is not a fence)', layer: 'a' },
   { id: 'HFM-9', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-001: diff3 fallback NEVER invoked on frontmatter text — zero marker lines in a --- block)', layer: 'a' },
   { id: 'HFM-10', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-005: unparseable side → whole-side pick per scalar policy, latest-mtime/remote-win/local-win)', layer: 'a' },
   { id: 'HFM-11', source: 'specs/043-harden-frontmatter-merge/contracts/frontmatter-merge.md (FR-002: nested-marker backstop still holds; combined with HFM-9 markers cannot originate in frontmatter)', layer: 'a' },
@@ -413,7 +413,7 @@ export const CLAUSES: Clause[] = [
   { id: 'FM-B1-1', source: 'specs/043-harden-frontmatter-merge (D deletes+adds a tag / M adds a tag → base-aware set merge: deletion propagates, both adds kept, no frontmatter marker, converges)', layer: 'b-1' },
   { id: 'FM-B1-2', source: 'specs/043-harden-frontmatter-merge (D and M change the same scalar → existing frontmatterScalarConflictPolicy decides one winner, no marker)', layer: 'b-1' },
   { id: 'FM-B1-3', source: 'specs/043-harden-frontmatter-merge (server rewrites tags [t1,t2,t3]→[t2,t3,t4] out of band, local drifted → set merge deletes t1, no union resurrection)', layer: 'b-1' },
-  { id: 'FM-B1-4', source: 'specs/043-harden-frontmatter-merge (server rewrite with CRLF + trailing-space fences → getFrontMatterInfo split → no marker inside frontmatter)', layer: 'b-1' },
+  { id: 'FM-B1-4', source: 'specs/043-harden-frontmatter-merge (server rewrite with CRLF fences → getFrontMatterInfo split → no marker inside frontmatter)', layer: 'b-1' },
   { id: 'FM-B1-5', source: 'specs/043-harden-frontmatter-merge (after a set merge, repeated no-edit syncs converge — no churn, no marker growth, no tag growth)', layer: 'b-1' },
   // Conflict clean-side snapshot: capture both clean sides at marker-conflict time so force-resolution
   // ("Use remote"/"Use local"/Latest/Biggest) recovers a REAL clean version instead of the
@@ -444,9 +444,16 @@ export const CLAUSES: Clause[] = [
   { id: 'MIR-1', source: 'specs/045-remote-mirror-pull/spec.md (FR-002/005/006/007/010/016: buildMirrorPlan classifies download / delete files+folders(child→parent) / skip; exclusions honored; counts for the dialog)', layer: 'a' },
   { id: 'MIR-2', source: 'specs/045-remote-mirror-pull/spec.md (FR-009/SC-005: listing-completeness gate — an incomplete/failed remote listing yields ok:false and zero deletions)', layer: 'a' },
   { id: 'MIR-3', source: 'specs/045-remote-mirror-pull/spec.md (FR-008/011/SC-002: applyRemoteMirror deletes local-only via trash, reconciles StateDB to the remote (converges to zero diff), and bypasses the mass-delete breaker count limit)', layer: 'a' },
-  { id: 'MIR-B1-1', source: 'specs/045-remote-mirror-pull (live: mass local-only download+delete not halted by the breaker; vault ends equal to the remote)', layer: 'b-1', waiver: 'deferred b-1 end-to-end stub (it.skip): needs a live Nextcloud; validated manually via quickstart until executed' },
-  { id: 'MIR-B1-2', source: 'specs/045-remote-mirror-pull (live: local-only folder deletion incl. empty, child→parent; listing-failure gate performs zero deletions)', layer: 'b-1', waiver: 'deferred b-1 end-to-end stub (it.skip): needs a live Nextcloud; validated manually via quickstart until executed' },
-  { id: 'MIR-B1-3', source: 'specs/045-remote-mirror-pull (live: the sync immediately after a mirror converges with zero upload/download/delete — self-healing)', layer: 'b-1', waiver: 'deferred b-1 end-to-end stub (it.skip): needs a live Nextcloud; validated manually via quickstart until executed' },
+  { id: 'MIR-4', source: 'docs/spec.md §14 (a mirror persists the state DB, merge bases and history when it ends, with or without item errors; a failed save is reported as an error, never as success)', layer: 'a' },
+  { id: 'MIR-5', source: 'docs/spec.md §14 (a file judged identical at plan time but changed locally before apply is not recorded as converged)', layer: 'a' },
+  { id: 'MIR-6', source: 'docs/spec.md §14 (folders: remote-only folders are created locally, a folder that exists remotely is never deleted locally, directory tracking follows the folders present locally, a failed directory listing aborts the plan)', layer: 'a' },
+  { id: 'MIR-B1-1', source: 'specs/045-remote-mirror-pull (live: mass local-only download+delete not halted by the breaker; vault ends equal to the remote)', layer: 'b-1' },
+  { id: 'MIR-B1-2', source: 'specs/045-remote-mirror-pull (live: local-only folder deletion incl. empty, child→parent; listing-failure gate performs zero deletions)', layer: 'b-1' },
+  { id: 'MIR-B1-3', source: 'specs/045-remote-mirror-pull (live: the sync immediately after a mirror converges with zero upload/download/delete — self-healing)', layer: 'b-1' },
+  { id: 'MIR-B1-4', source: 'docs/spec.md §14 (live: mirror, reload the state from disk in a fresh engine, then sync with zero transfers; the next sync short-circuits)', layer: 'b-1' },
+  { id: 'MIR-B1-5', source: 'docs/spec.md §14 (live: remote empty folders, tracked or not, exist locally after a mirror and survive the next sync)', layer: 'b-1' },
+  { id: 'MIR-B1-6', source: 'docs/spec.md §14 (live: a mirror with a failed download, an oversized file, or lost persistence self-heals — the next sync handles only the leftovers and the one after is empty)', layer: 'b-1' },
+  { id: 'MIR-B1-7', source: 'docs/spec.md §5.3a (live: notes identical on both sides with a stale baseline on both sides are not uploaded; remote ETags and mtimes are unchanged)', layer: 'b-1' },
   // Watch mode ("Sync on file change") propagates folder create/delete/rename to the remote immediately
   // (MKCOL / trashbin delete / MOVE), mirroring the file path. The status bar reflects it; the file path is
   // unchanged (non-regression).
@@ -696,4 +703,20 @@ export const CLAUSES: Clause[] = [
   { id: 'VSN-1', source: 'specs/089-fix-server-version-notice/spec.md FR-003 (a server below MIN_NEXTCLOUD_VERSION still shows the "Server compatibility" banner, with the detected version in the text) — GitHub issue #54', layer: 'a' },
   { id: 'VSN-2', source: 'specs/089-fix-server-version-notice/spec.md FR-002 (a server at or above MIN_NEXTCLOUD_VERSION no longer shows the banner — the bug reported in issue #54, where the banner appeared unconditionally regardless of isSupportedNextcloudVersion())', layer: 'a' },
   { id: 'VSN-3', source: 'specs/089-fix-server-version-notice/spec.md FR-001/FR-002 (no server version detected yet -> the "Server compatibility" row is not built at all, preserving the existing outer guard)', layer: 'a' },
+  // ICN: identical content is never transferred (docs/spec.md §5.3a).
+  { id: 'ICN-1', source: 'docs/spec.md §5.3a (both sides read as changed, server checksum equals the local hash: no upload, no download, no local write, state converged)', layer: 'a' },
+  { id: 'ICN-2', source: 'docs/spec.md §5.3a (no server checksum, equal sizes: one GET, bodies compared, no upload and no local write when equal; the baseline records the ETag)', layer: 'a' },
+  { id: 'ICN-3', source: 'docs/spec.md §5.3a (remote reads as changed, local unchanged: no GET when the checksum equals the tracked hash; without a checksum the fetched body is compared and an identical one is not written)', layer: 'a' },
+  { id: 'ICN-4', source: 'docs/spec.md §5.3a (a file converged this way is unchanged on the next pass)', layer: 'a' },
+  { id: 'ICN-5', source: 'docs/spec.md §5.3a (content that differs keeps its previous outcome: merge, whole-side pick, markers, safe-hold; a body fetched for the comparison is reused)', layer: 'a' },
+  { id: 'ICN-6', source: 'docs/spec.md §5.3a (not counted: no summary counter moves, no history entry, no conflict encounter)', layer: 'a' },
+  { id: 'ICN-7', source: 'docs/spec.md §5.3a (matrix: baseline state x proof x file kind; 1,600 identical notes with a stale baseline produce zero uploads)', layer: 'a' },
+  // MBP: a markdown merge keeps unchanged parts byte for byte (docs/spec.md §6.2).
+  { id: 'MBP-1', source: 'docs/spec.md §6.2 (identical inputs give byte-identical output: with/without frontmatter, blank lines after the fence, no trailing newline, CRLF, a blank line before the closing fence)', layer: 'a' },
+  { id: 'MBP-2', source: 'docs/spec.md §6.2 (a body-only change keeps the frontmatter block and the separator bytes)', layer: 'a' },
+  { id: 'MBP-3', source: 'docs/spec.md §6.2 (idempotent: merging a merge result with itself returns it unchanged)', layer: 'a' },
+  { id: 'MBP-4', source: 'docs/spec.md §6.2 (a frontmatter-only change keeps the separator and the body bytes)', layer: 'a' },
+  // FMI: the getFrontMatterInfo test double equals the real Obsidian (docs/spec.md §16).
+  { id: 'FMI-1', source: 'docs/spec.md §16 (the real getFrontMatterInfo returns the recorded corpus values)', layer: 'b-2' },
+  { id: 'FMI-2', source: 'docs/spec.md §16 (the test double returns the same recorded corpus values)', layer: 'a' },
 ];
