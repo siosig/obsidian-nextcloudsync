@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (1.0.10)
+## What's new in this release (1.0.11-beta.1)
 
-- **Clearer error when the Server URL subfolder is missing (1.0.10)** — if the Server URL ends in a subfolder that does not exist in Nextcloud, the sync used to fail with a bare `HTTP 409 (MKCOL)`. The notice and the Sync Status listing now say that a parent folder is missing and that the subfolder must be created in Nextcloud first (the plugin does not create it). The README explains this too. Sync behavior is unchanged.
+- **A sync after "Mirror from remote" no longer re-uploads the vault (1.0.11-beta.1)** — the sync that followed a mirror could treat most notes as conflicts and upload them again, adding a blank line before the closing `---` of the frontmatter. Three things changed. The mirror now saves its sync state when it finishes; it used to stay in memory until the next sync completed, so closing the app in between lost it. A file whose content is identical on both sides is never transferred, whatever the sync state says. And a merge no longer changes the parts of a note that neither side edited. The mirror also creates folders that exist only on the server, so an empty remote folder is no longer deleted by the next sync. Notes that already received the extra blank line are left as they are; they can be restored from the Nextcloud version history.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
