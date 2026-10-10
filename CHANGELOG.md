@@ -11,6 +11,12 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [1.0.11] - 2026-10-10
+
+### Fixed
+- **A sync after "Mirror from remote" no longer re-uploads the vault.** The sync that followed a mirror could treat most notes as conflicts and upload them again, adding a blank line before the closing `---` of the frontmatter. Three things changed. The mirror now saves its sync state when it finishes; it used to stay in memory until the next sync completed, so closing the app in between lost it. A file whose content is identical on both sides is never transferred, whatever the sync state says. And a merge no longer changes the parts of a note that neither side edited. The mirror also creates folders that exist only on the server, so an empty remote folder is no longer deleted by the next sync. Notes that already received the extra blank line are left as they are; they can be restored from the Nextcloud version history.
+- **A file "Mirror from remote" could not delete is no longer uploaded.** When the mirror could not move a local-only file or folder to the trash, it used to report success, and the next sync uploaded that file (or created that folder) on the server. The mirror now shows each item it could not delete, with the reason, and counts only what was really deleted. The item stays off the server: the next sync does not upload it and tries the deletion again. A file you edit after the mirror is kept and synced as your edit. A deletion that fails during an ordinary sync is now also retried on the very next sync; it could previously wait for many syncs.
+
 ## [1.0.10] - 2026-10-08
 
 ### Changed
@@ -484,6 +490,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[1.0.11]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.11
 [1.0.10]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.10
 [1.0.9]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.9
 [1.0.8]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.8
