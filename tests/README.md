@@ -92,6 +92,11 @@ recorded only when the tree is the same at the end of the layer as at the start,
 each layer is kept. The record does not expire: it says nothing about a newer Obsidian or Nextcloud image, so
 run without `--changed` when the environment, not the code, is what changed.
 
+The pre-push hook uses the same record: it runs `bash tests/docker/run.sh --changed a`, so a push of a tree whose
+layer a already passed runs no tests, and a push that does run them leaves a record for the next one (a release
+pushes the branch and then the tag, on the same tree). Where the suite cannot run (exit 2 or 3: no Docker, or
+another run holds the lock) the hook falls back to `pnpm test`, which records nothing.
+
 **Release gating**: a beta release requires every layer to have passed on the tree being released:
 `bash tests/docker/run.sh --changed all` must exit 0 (exit 3 aborts it too);
 a stable release runs no tests, because it promotes code whose every layer already passed at the beta.

@@ -12,8 +12,11 @@
 #   4. a stable release (plain x.y.z) is missing its CHANGELOG entry — the changelog is the
 #      canonical version history, so CHANGELOG.md AND CHANGELOG.ja.md must each carry a
 #      "[x.y.z]" entry. Pre-release builds (x.y.z-beta.N) are skipped (betas aren't listed);
-#   5. the test suite fails (skipped for a stable version: the beta release already gated
-#      every test layer).
+#   5. the pure-logic test layer fails. It runs through tests/docker/run.sh, which records a pass
+#      together with the identity of the working tree, so a tree that already passed is not
+#      tested again (the second push of a release, or a push right after a suite run). Where the
+#      suite cannot run (no Docker, or another run holds its lock) the tests run directly.
+#      Skipped for a stable version: the beta release already gated every test layer.
 #
 # Bypass in an emergency with: git push --no-verify
 set -e
@@ -74,7 +77,17 @@ esac
 case "$VERSION" in
   *-*)
     echo "pre-push: test suite…"
-    pnpm test
+    rc=0
+    bash tests/docker/run.sh --changed a || rc=$?
+    case "$rc" in
+      0) ;;
+      2|3)
+        # Not a verdict on the code: the suite could not prepare or start.
+        echo "pre-push: the Docker suite could not run (exit $rc) — running the tests directly."
+        pnpm test
+        ;;
+      *) exit "$rc" ;;
+    esac
     echo "pre-push: lint, build, README/README.ja sync, CHANGELOG sync, and tests passed."
     ;;
   *)
