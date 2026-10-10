@@ -12,6 +12,13 @@ import { FileLogger } from '../../util/FileLogger';
 import { isSafeVaultRelativePath } from '../../network/remotePath';
 import { collectSubtreePaths, dropSubtreeTracking } from './subtreeTracking';
 
+// What a local deletion did; a caller that must report failures (the mirror) reads it, an ordinary sync ignores it.
+export type RemoteDeletionOutcome =
+  | { status: 'deleted' }
+  | { status: 'absent' }
+  | { status: 'ignored' }
+  | { status: 'failed'; message: string };
+
 export interface DeletionDeps {
   app: App;
   stateDB: Pick<StateDB, 'deleteFile' | 'getFile' | 'getAllFiles' | 'getAllDirs' | 'deleteDir'>;
@@ -101,16 +108,17 @@ export class DeletionService {
     this.deps.dropCleanSnapshot(path);
   }
 
-  async processRemoteDeletion(path: string, summary: SyncSessionSummary): Promise<void> {
+  async processRemoteDeletion(path: string, summary: SyncSessionSummary): Promise<RemoteDeletionOutcome> {
     // Security boundary at the delete sink: a compromised server could fabricate a deletion for
     // `.obsidian/...`, which would otherwise reach the raw fs remove below. Enforced here for all callers.
     if (this.deps.isSystemExcluded(path)) {
       void this.deps.logger?.log(`delete-local: ignored out-of-scope remote deletion → ${path}`);
-      return;
+      return { status: 'ignored' };
     }
     void this.deps.logger?.log(`delete-local: applying remote deletion → ${path}`);
     const file = this.deps.app.vault.getAbstractFileByPath(path);
     const normalized = normalizePath(path);
+    let removed = false;
     try {
       if (file instanceof TFile || file instanceof TFolder) {
         // trashFile honours the user's "Deleted files" setting. A folder is trashed with its contents and
@@ -122,12 +130,14 @@ export class DeletionService {
           for (const p of new Set([path, ...stale.files, ...stale.dirs])) this.deps.markOwnEvent(p);
         }
         await this.deps.app.fileManager.trashFile(file);
+        removed = true;
         summary.downloadedCount++;
         this.deps.journal.recordHistory(path, 'deleted');
       } else if (isSafeVaultRelativePath(path) && await this.deps.app.vault.adapter.exists(normalized)) {
         // Not a vault-tracked file (e.g. dotfiles under a config folder): delete directly. Defence in depth:
         // only for a safe path (no traversal, not absolute) so a remote-controlled path never reaches this sink.
         await this.deps.app.vault.adapter.remove(normalized);
+        removed = true;
         summary.downloadedCount++;
         this.deps.journal.recordHistory(path, 'deleted');
       }
@@ -135,7 +145,7 @@ export class DeletionService {
     } catch (err) {
       // One failed deletion must not abort the session; keep the StateDB entry so the next sync retries.
       new Notice(`❌ Failed to delete ${path}: ${(err as Error).message}`, 6000);
-      return;
+      return { status: 'failed', message: (err as Error).message };
     }
     this.deps.stateDB.deleteFile(path);
     this.deps.mergeBase.drop(path);
@@ -146,5 +156,6 @@ export class DeletionService {
     if (dropped.files + dropped.dirs > 0) {
       void this.deps.logger?.log(`delete-local: plugin trash — dropped tracking for ${dropped.files} files / ${dropped.dirs} dirs under ${path} (not a local deletion)`);
     }
+    return { status: removed ? 'deleted' : 'absent' };
   }
 }

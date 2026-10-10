@@ -203,6 +203,18 @@ The `SyncEngine` methods below delegate to extracted services (see §17); the be
   (a malicious server cannot make the client delete config / plugins / the active log) → Vault trash / raw remove →
   `deleteFile()`.
 
+`processRemoteDeletion()` returns a `RemoteDeletionOutcome` (`DeletionService.ts`), so a caller that must report failures (the mirror, §18.3)
+can tell what happened:
+
+| `status` | Meaning |
+|---|---|
+| `deleted` | The local file or folder was removed (Vault trash or raw remove) |
+| `absent` | There was nothing locally to remove |
+| `ignored` | The path is system-excluded; nothing was touched |
+| `failed` (with `message`) | The removal threw; the user was notified |
+
+An ordinary sync uses the return value for one thing only: when the removal `failed`, `SyncEngine.processRemoteDeletion()` clears the stored root ETag. The entry kept for the retry describes a file the server no longer has, and a short-circuited scan would rebuild the remote listing from State, see that file as still on the server and never retry. What the user sees is unchanged (the wrapper still returns `void`).
+
 ### §7.5 Renames and absence deletes
 
 - **Remote rename**: `RenameTracker.detectRemoteRenames()` maps `oc:fileid` to the destination path
@@ -635,6 +647,16 @@ folder that is missing locally is read by the next sync as a local deletion and 
 
 **Files are recorded only if they are still what the plan saw.** Each file to track is compared with the plan's `skipped` entries (path, size, mtime) and
 the current stat. A file that is not in `skipped`, has no stat, or differs in size or mtime is left for the next sync.
+
+**Local deletions that failed (`keepTracked`, `leftoverFileState`).** `planStateConvergence` and `planDirConvergence` take a trailing
+`keepTracked` set: paths that must stay tracked although the remote lacks them. The mirror fills it with the local leftovers whose deletion failed.
+A failure is judged only after **every** deletion has run, by checking whether the path still exists, because a path whose own deletion failed can
+still disappear with its parent folder. Only paths that still exist are reported as errors and kept; the others count as deleted.
+
+- **A leftover file** is recorded with `leftoverFileState`: its current content hash is stored as both the local hash and the remote id, so the
+  baseline reads "in sync at this content with a remote that no longer has it". The next full scan reads it as a remote deletion and retries
+  the removal (an edit made in the meantime is uploaded instead, as for any remote deletion of a locally edited file); it is never uploaded as new.
+- **A leftover folder** stays tracked. An untracked local-only folder would be created on the server by the next sync.
 
 **The state is saved in a `finally`** (see §12), so a partly failed mirror still persists what it converged.
 

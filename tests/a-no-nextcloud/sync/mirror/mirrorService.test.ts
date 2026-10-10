@@ -59,7 +59,7 @@ function build(over: Partial<MirrorDeps> = {}, tracked: FileState[] = []) {
 
   const deps: MirrorDeps = {
     app: {
-      vault: { getAllFolders: () => [], adapter: { mkdir: async () => undefined } },
+      vault: { getAllFolders: () => [], adapter: { mkdir: async () => undefined, exists: async () => false } },
     } as unknown as MirrorDeps['app'],
     localAdapter: {
       stat: async () => ({ size: 10, mtime: 1000 }),
@@ -72,6 +72,7 @@ function build(over: Partial<MirrorDeps> = {}, tracked: FileState[] = []) {
       deleteFile: (p: string) => { calls.deleteFile.push(p); },
       deleteDir: (p: string) => { calls.deleteDir.push(p); },
       getAllDirs: () => [],
+      getDir: () => undefined,
       setDir: () => { /* noop */ },
       setRemoteRootEtag: () => { /* noop */ },
       setSyncToken: () => { /* noop */ },
@@ -94,6 +95,7 @@ function build(over: Partial<MirrorDeps> = {}, tracked: FileState[] = []) {
     deletion: {
       processRemoteDeletion: async (p: string, s: SyncSessionSummary) => {
         calls.deleted.push(p); s.downloadedCount++;
+        return { status: 'deleted' as const };
       },
     } as unknown as DeletionService,
     localScanner: { collectLocalStats: async () => { /* noop */ } } as unknown as LocalScanner,
@@ -257,6 +259,7 @@ describe('MirrorService.applyRemoteMirror — converging the state DB', () => {
         deleteFile: () => { /* noop */ },
         deleteDir: () => { /* noop */ },
         getAllDirs: () => [],
+        getDir: () => undefined,
         setDir: () => { /* noop */ },
         setRemoteRootEtag: (e: string | null) => rootEtag.push(e),
         setSyncToken: (t: string) => tokens.push(t),

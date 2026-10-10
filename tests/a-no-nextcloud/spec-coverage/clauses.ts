@@ -447,6 +447,10 @@ export const CLAUSES: Clause[] = [
   { id: 'MIR-4', source: 'docs/spec.md §14 (a mirror persists the state DB, merge bases and history when it ends, with or without item errors; a failed save is reported as an error, never as success)', layer: 'a' },
   { id: 'MIR-5', source: 'docs/spec.md §14 (a file judged identical at plan time but changed locally before apply is not recorded as converged)', layer: 'a' },
   { id: 'MIR-6', source: 'docs/spec.md §14 (folders: remote-only folders are created locally, a folder that exists remotely is never deleted locally, directory tracking follows the folders present locally, a failed directory listing aborts the plan)', layer: 'a' },
+  { id: 'MDF-1', source: 'docs/spec.md §14 (a local deletion reports its outcome: deleted, absent, ignored, or failed with the reason; what an ordinary sync shows on a failure is unchanged)', layer: 'a' },
+  { id: 'MDF-2', source: 'docs/spec.md §14 (a mirror counts only real deletions and lists every deletion that failed and left the path in place; a path that is gone by the end, for example with its parent folder, is not an error; other items still run)', layer: 'a' },
+  { id: 'MDF-3', source: 'docs/spec.md §14 (a leftover file stays tracked at its current content, whether or not it was tracked before, and a leftover folder stays tracked)', layer: 'a' },
+  { id: 'MDF-4', source: 'docs/spec.md §8a.5 (a local deletion that fails in an ordinary sync invalidates the root-ETag short circuit, so the next sync rescans and retries; a successful or absent one leaves it alone)', layer: 'a' },
   { id: 'MIR-B1-1', source: 'specs/045-remote-mirror-pull (live: mass local-only download+delete not halted by the breaker; vault ends equal to the remote)', layer: 'b-1' },
   { id: 'MIR-B1-2', source: 'specs/045-remote-mirror-pull (live: local-only folder deletion incl. empty, child→parent; listing-failure gate performs zero deletions)', layer: 'b-1' },
   { id: 'MIR-B1-3', source: 'specs/045-remote-mirror-pull (live: the sync immediately after a mirror converges with zero upload/download/delete — self-healing)', layer: 'b-1' },
@@ -454,6 +458,10 @@ export const CLAUSES: Clause[] = [
   { id: 'MIR-B1-5', source: 'docs/spec.md §14 (live: remote empty folders, tracked or not, exist locally after a mirror and survive the next sync)', layer: 'b-1' },
   { id: 'MIR-B1-6', source: 'docs/spec.md §14 (live: a mirror with a failed download, an oversized file, or lost persistence self-heals — the next sync handles only the leftovers and the one after is empty)', layer: 'b-1' },
   { id: 'MIR-B1-7', source: 'docs/spec.md §5.3a (live: notes identical on both sides with a stale baseline on both sides are not uploaded; remote ETags and mtimes are unchanged)', layer: 'b-1' },
+  { id: 'MDF-B1-1', source: 'docs/spec.md §14 (live, files: a deletion that failed in a mirror is never uploaded by the next sync and is retried; an edit made after the mirror is kept; matrix of history x scope x edit x restart)', layer: 'b-1' },
+  { id: 'MDF-B1-2', source: 'docs/spec.md §14 (live, folders: a folder whose deletion failed in a mirror is never created on the server and is retried; a file added afterwards keeps it; matrix of tracking x scope x added file x restart)', layer: 'b-1' },
+  { id: 'MDF-B1-3', source: 'docs/spec.md §14 (live: when the retry fails again the file is still not uploaded, and the following sync retries once more)', layer: 'b-1' },
+  { id: 'MDF-B1-4', source: 'docs/spec.md §14 (live: leftovers above the mass-delete limit are not uploaded and the skipped retry is reported; running the mirror again clears them)', layer: 'b-1' },
   // Watch mode ("Sync on file change") propagates folder create/delete/rename to the remote immediately
   // (MKCOL / trashbin delete / MOVE), mirroring the file path. The status bar reflects it; the file path is
   // unchanged (non-regression).

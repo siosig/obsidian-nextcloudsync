@@ -19,7 +19,8 @@ function makeEngine(opts?: { resolved?: unknown; exists?: boolean; trashRejects?
   const engine = new SyncEngine({
     app,
     // A trashed folder takes its contents with it, so the deletion sink enumerates the tracked subtree to forget it too.
-    stateDB: { deleteFile, getAllFiles: () => [], getAllDirs: () => [], deleteDir: jest.fn() },
+    // A failed deletion invalidates the root ETag so the next sync rescans and retries.
+    stateDB: { deleteFile, getAllFiles: () => [], getAllDirs: () => [], deleteDir: jest.fn(), setRemoteRootEtag: jest.fn() },
     localAdapter: { ignore: jest.fn() },
   } as never);
   const summary = { downloadedCount: 0 } as { downloadedCount: number };

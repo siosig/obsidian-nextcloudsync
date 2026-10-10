@@ -1018,8 +1018,11 @@ export class SyncEngine {
   }
 
 
-  private processRemoteDeletion(path: string, summary: SyncSessionSummary): Promise<void> {
-    return this.deletion.processRemoteDeletion(path, summary);
+  private async processRemoteDeletion(path: string, summary: SyncSessionSummary): Promise<void> {
+    const outcome = await this.deletion.processRemoteDeletion(path, summary);
+    // The entry kept for the retry describes a file the server no longer has. A short-circuit would rebuild the
+    // listing from State, report it as still on the server, and never retry (docs/spec.md §8a.5).
+    if (outcome.status === 'failed') this.opts.stateDB.setRemoteRootEtag(null);
   }
 
   private async processLocalModifications(

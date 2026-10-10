@@ -143,6 +143,18 @@ export class FakeVault {
   readLocal(path: string): string | null { const e = this.store.get(path); return e ? dec(e.data) : null; }
   localExists(path: string): boolean { return this.store.has(path); }
   isTrashed(path: string): boolean { return this.trashed.has(path); }
+  // Makes trashing fail for these paths and for every folder that contains one of them (a folder cannot be
+  // removed while an entry in it cannot); returns the function that restores normal trashing.
+  failTrashFor(paths: readonly string[]): () => void {
+    const fm = this.app.fileManager as unknown as { trashFile: (file: TFile | TFolder) => Promise<void> };
+    const original = fm.trashFile;
+    fm.trashFile = async (file: TFile | TFolder): Promise<void> => {
+      const prefix = `${file.path}/`;
+      if (paths.some((p) => p === file.path || p.startsWith(prefix))) throw new Error('trash failed');
+      return original(file);
+    };
+    return () => { fm.trashFile = original; };
+  }
   deleteLocalTree(path: string): void {
     const prefix = `${path}/`;
     for (const f of [...this.store.keys()]) if (f === path || f.startsWith(prefix)) this.store.delete(f);

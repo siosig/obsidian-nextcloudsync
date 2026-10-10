@@ -4,7 +4,7 @@
 import { TFolder, Vault, App, normalizePath } from 'obsidian';
 import { FileState, RemoteFileInfo, RemoteDirInfo } from '../../types';
 import { buildMirrorPlan, MirrorPlan, MirrorResult, LocalFileEntry } from '../mirrorPlan';
-import { planStateConvergence, planDirConvergence } from './convergence';
+import { planStateConvergence, planDirConvergence, leftoverFileState } from './convergence';
 import { LocalAdapter } from '../../data/LocalAdapter';
 import { StateDB } from '../../data/StateDB';
 import { IStatusBar } from '../../ui/StatusBarItem';
@@ -30,7 +30,7 @@ export interface MirrorDeps {
   localAdapter: Pick<LocalAdapter, 'stat' | 'readBinary'>;
   stateDB: Pick<StateDB,
     'getFile' | 'setFile' | 'getAllFiles' | 'deleteFile' | 'deleteDir'
-    | 'getAllDirs' | 'setDir' | 'setRemoteRootEtag' | 'setSyncToken'>;
+    | 'getAllDirs' | 'getDir' | 'setDir' | 'setRemoteRootEtag' | 'setSyncToken'>;
   statusBar: IStatusBar;
   journal: SyncJournal;
   mergeBase: MergeBaseRecorder;
@@ -149,25 +149,31 @@ export class MirrorService {
         tick();
       }
 
-      for (const path of plan.deleteFiles) {
+      // Failures are judged after every deletion ran: a path can still disappear with its parent folder.
+      const failedDeletes: Array<{ path: string; message: string; isDir: boolean }> = [];
+      const removeLocal = async (path: string, isDir: boolean): Promise<void> => {
         try {
-          await this.deps.deletion.processRemoteDeletion(path, summary);
-          result.deleted++;
+          const outcome = await this.deps.deletion.processRemoteDeletion(path, summary);
+          if (outcome.status === 'deleted') result.deleted++;
+          else if (outcome.status === 'failed') failedDeletes.push({ path, message: outcome.message, isDir });
         } catch (err) {
-          result.errors.push({ path, message: (err as Error).message });
+          failedDeletes.push({ path, message: (err as Error).message, isDir });
         }
         tick();
-      }
-
+      };
+      for (const path of plan.deleteFiles) await removeLocal(path, false);
       // Local-only folders, child to parent. Dir tracking is dropped inside processRemoteDeletion with the subtree's.
-      for (const path of plan.deleteDirs) {
-        try {
-          await this.deps.deletion.processRemoteDeletion(path, summary);
+      for (const path of plan.deleteDirs) await removeLocal(path, true);
+
+      const leftoverFiles = new Set<string>();
+      const leftoverDirs = new Set<string>();
+      for (const f of failedDeletes) {
+        if (await this.deps.app.vault.adapter.exists(normalizePath(f.path))) {
+          result.errors.push({ path: f.path, message: f.message });
+          (f.isDir ? leftoverDirs : leftoverFiles).add(f.path);
+        } else {
           result.deleted++;
-        } catch (err) {
-          result.errors.push({ path, message: (err as Error).message });
         }
-        tick();
       }
 
       // Remote folders missing locally; progress is not ticked because creation is not part of the total.
@@ -185,6 +191,7 @@ export class MirrorService {
         new Set(plan.downloads.map((d) => d.path)),
         this.deps.stateDB.getAllFiles().map((f) => f.path),
         (p) => this.deps.isSystemExcluded(p),
+        leftoverFiles,
       );
       const plannedByPath = new Map(plan.skipped.map((s) => [s.path, s] as const));
       // Skipped files (content already matched) never ran downloadFile; track them as unchanged
@@ -212,15 +219,35 @@ export class MirrorService {
         this.deps.stateDB.deleteFile(path);
         this.deps.mergeBase.drop(path);
       }
+      // A leftover stays tracked at its current content, so the next sync retries the deletion instead of uploading it.
+      for (const path of leftoverFiles) {
+        const st = await this.deps.localAdapter.stat(path);
+        if (!st) continue;
+        let localHash = '';
+        try {
+          localHash = await sha256(await this.deps.localAdapter.readBinary(path));
+        } catch {
+          localHash = '';
+        }
+        const remoteFileId = this.deps.stateDB.getFile(path)?.remoteFileId ?? null;
+        this.deps.stateDB.setFile(await withLocalSignature(
+          this.deps.localAdapter, leftoverFileState(path, localHash, st, remoteFileId),
+        ));
+      }
       const localDirsNow = new Set(this.readLocalDirs());
       const dirs = planDirConvergence(
         plan.remoteDirs,
         localDirsNow,
         this.deps.stateDB.getAllDirs().map((d) => d.path),
         (p) => this.deps.isSystemExcluded(p),
+        leftoverDirs,
       );
       for (const d of dirs.toTrack) this.deps.stateDB.setDir({ path: d.path, remoteFileId: d.remoteFileId });
       for (const path of dirs.toDrop) this.deps.stateDB.deleteDir(path);
+      // A leftover folder stays tracked: untracked it would be created on the server by the next sync.
+      for (const path of leftoverDirs) {
+        this.deps.stateDB.setDir({ path, remoteFileId: this.deps.stateDB.getDir(path)?.remoteFileId ?? null });
+      }
       // Force a real full scan next sync so convergence is verified without a short-circuit.
       this.deps.stateDB.setRemoteRootEtag(null);
       this.deps.stateDB.setSyncToken('');
