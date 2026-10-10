@@ -31,10 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (1.0.11)
+## What's new in this release (1.0.12-beta.1)
 
-- **A sync after "Mirror from remote" no longer re-uploads the vault (1.0.11)** — the sync that followed a mirror could treat most notes as conflicts and upload them again, adding a blank line before the closing `---` of the frontmatter. Three things changed. The mirror now saves its sync state when it finishes; it used to stay in memory until the next sync completed, so closing the app in between lost it. A file whose content is identical on both sides is never transferred, whatever the sync state says. And a merge no longer changes the parts of a note that neither side edited. The mirror also creates folders that exist only on the server, so an empty remote folder is no longer deleted by the next sync. Notes that already received the extra blank line are left as they are; they can be restored from the Nextcloud version history.
-- **A file "Mirror from remote" could not delete is no longer uploaded (1.0.11)** — when the mirror could not move a local-only file or folder to the trash, it used to report success, and the next sync uploaded that file (or created that folder) on the server. The mirror now shows each item it could not delete, with the reason, and counts only what was really deleted. The item stays off the server: the next sync does not upload it and tries the deletion again. A file you edit after the mirror is kept and synced as your edit. A deletion that fails during an ordinary sync is now also retried on the very next sync; it could previously wait for many syncs.
+- **No change to the plugin (1.0.12-beta.1)** — this build behaves exactly like 1.0.11. The change is in the project's own test suite: the Android test layer runs its emulated device in a container, and that container used to rewrite kernel settings of the machine running the tests. It is now confined so that a test run leaves the machine as it was.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
