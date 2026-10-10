@@ -25,16 +25,22 @@ bash tests/docker/run.sh <a|b1|b2|b3|b4|all>     # `all` = a, b4, b1, b2, b3 in 
 bash tests/docker/run.sh --changed <layer|all>   # skip a layer that already passed on exactly this working tree
 ```
 
-**Host prerequisites**: Docker with Compose 2.23.1 or newer. `b3` and `all` also need the kernel's
-`binder` support (the `binder_linux` module) because the Android runtime is a Redroid container —
-`grep -w binder /proc/filesystems` must print a line. Redroid needs no hardware virtualisation.
+**Host prerequisites**: Docker with Compose 2.23.1 or newer. `b3` and `all` also need two things from
+the host, because the Android runtime is a Redroid container (it needs no hardware virtualisation):
+
+- the kernel's `binder` support (the `binder_linux` module) — `grep -w binder /proc/filesystems` must
+  print a line;
+- AppArmor, with the suite's profile for the Android container loaded:
+  `sudo apparmor_parser -r tests/docker/redroid/apparmor.profile`. That lasts until the next reboot;
+  copy the file into `/etc/apparmor.d/` to have it loaded at boot. "Android and the host kernel" below
+  explains what it is for.
 
 | Exit code | Meaning |
 |---|---|
 | 0 | every test passed |
 | 1 | a test failed |
-| 2 | the environment could not be prepared (image build, start-up, CA check, Android boot, timeout) |
-| 3 | a prerequisite is missing, so nothing ran (no Docker, old Compose, no binder, another run in progress, bad argument) |
+| 2 | the environment could not be prepared (image build, start-up, CA check, Android boot, timeout), or the Android container changed the host's kernel state |
+| 3 | a prerequisite is missing, so nothing ran (no Docker, old Compose, no binder, no AppArmor profile, another run in progress, bad argument) |
 | 130 | interrupted (everything is cleaned up first) |
 
 What the entry point guarantees:
@@ -50,6 +56,43 @@ What the entry point guarantees:
   from memory, and masked in any diagnostics. The repo-root `.env` is never read or mounted.
 - Tests trust the per-run CA instead of switching certificate checks off (Node, the desktop Electron
   and the Android system trust store).
+
+### Android and the host kernel
+
+Redroid has to run as a privileged container, and Android's `init` treats the kernel it sees as its
+own. Left alone, every boot rewrites settings that are not namespaced and so belong to the whole host:
+`kernel.*` and `vm.*` sysctls (it empties `kernel.modprobe`, which stops the kernel from loading
+modules on demand), the owners and modes of files under `/proc` and `/sys`, and the mount options of
+tracefs and debugfs. They stay that way until the host reboots.
+
+Three things in `tests/docker/redroid/` prevent this:
+
+- `apparmor.profile` confines the container. Writes under `/proc` and `/sys` are allowed only where
+  they belong to the container itself (its processes, its network sysctls, its cgroup, its bpffs), the
+  host-wide filesystems cannot be mounted, and the clock and the kernel's modules are out of reach. AppArmor counts a `chown` or `chmod` as a write, so owners
+  and modes are covered too. The host has to load the profile (see the prerequisites); `run.sh` exits
+  with 3 when it is not enforced.
+- `entrypoint.sh` runs ahead of `init` and binds a private file over each of the three sysctls `init`
+  refuses to boot without writing (`kernel.kptr_restrict`, `vm.mmap_rnd_bits`, `vm.mmap_rnd_compat_bits`).
+- `Dockerfile` drops the two `init.rc` lines that change the owner and mode of `/proc/pressure/memory`,
+  so that the profile can let the low-memory killer open that file for writing.
+
+`run.sh` records the host's kernel and vm sysctls, the owners and modes at the top of `/proc`
+(`/proc/pressure` included) and of the tracing, debug, pstore and power directories of `/sys`, and
+the registered binary formats before Android starts, and compares them once it is gone, however the
+run ended. A difference is kept in `host/host-state.diff` and turns a run that would have passed into
+exit code 2. The comparison reads as the user who runs the suite, so the few sysctls only root can
+read are not in it.
+
+The number at the end of the profile's name is the version of its rules, and `run.sh` asks for exactly
+the name in the file. After a change to the rules the host therefore has to load the file again before
+Android will start; the profile it loaded earlier stays behind under its old name until it is removed
+(`sudo apparmor_parser -R <old file>`) or the host reboots.
+
+Each Android boot leaves `apparmor="DENIED"` lines for the profile in the host's kernel log.
+They are the profile at work, not a fault. Two side effects remain and are harmless: `init` writes its
+boot log to the kernel log, and the kernel loads a few networking modules on Android's behalf
+(`inet_diag`, `af_key`, the `xfrm` tunnels), which stay loaded until the host reboots.
 
 Layers:
 
@@ -192,6 +235,8 @@ under `.test-output/<run_id>/` after a failed run:
   packages: is `md.obsidian` there?)
 - `b3/appium-server.log` — the order of `installApp` / `removeApp` / `am start` during session creation
 - `host/redroid.log` and `host/redroid-state.txt` — the Android container's own log and whether it was OOM-killed
+- `host/host-state.diff` — present only when the host's kernel state changed during the run (see
+  "Android and the host kernel")
 
 The `afterTest` collector (`tests/b3-android-ui/support/diagnostics.ts`) runs through the `browser`
 session, so when session creation itself fails it can collect nothing; the files above cover that gap.
