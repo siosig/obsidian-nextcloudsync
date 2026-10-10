@@ -17,6 +17,10 @@ repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 suite="$repo/tests/docker"
 project=ncs-suite
 cache_volumes=(ncs-suite-cache-obsidian ncs-suite-cache-obsidian-android)
+# The profile's name carries the version of its rules; the file is the only place that states it.
+SUITE_ANDROID_PROFILE="$(sed -n 's/^profile \([^ ]*\) .*/\1/p' "$suite/redroid/apparmor.profile")"
+export SUITE_ANDROID_PROFILE
+host_before=""
 min_compose=2.23.1
 
 usage() { echo "usage: bash tests/docker/run.sh [--changed] <a|b1|b2|b3|b4|all>" >&2; exit 3; }
@@ -33,7 +37,7 @@ compose() { docker compose -f "$suite/compose.yml" -p "$project" "$@"; }
 
 check_host() {
   local cmd
-  for cmd in docker flock base64 sha256sum git; do
+  for cmd in docker flock base64 sha256sum git sysctl diff; do
     command -v "$cmd" >/dev/null 2>&1 || die 3 "'$cmd' is required on the host"
   done
   docker info >/dev/null 2>&1 || die 3 "the Docker daemon is not reachable"
@@ -48,6 +52,15 @@ check_host() {
 check_binder() {
   grep -qw binder /proc/filesystems \
     || die 3 "binder is not available on this host (kernel module binder_linux); see tests/README.md"
+}
+
+# Android runs privileged; without the profile enforced, its init rewrites host-wide kernel settings.
+check_android_profile() {
+  local mode
+  [ -n "$SUITE_ANDROID_PROFILE" ] || die 2 "no profile name found in tests/docker/redroid/apparmor.profile"
+  mode="$(cat /sys/kernel/security/apparmor/policy/profiles/"$SUITE_ANDROID_PROFILE".*/mode 2>/dev/null || true)"
+  [ "$mode" = enforce ] \
+    || die 3 "the AppArmor profile $SUITE_ANDROID_PROFILE is not enforced on this host (load tests/docker/redroid/apparmor.profile); see tests/README.md"
 }
 
 # ------------------------------------------------------------ image tags (R-11)
@@ -66,7 +79,9 @@ compute_tags() {
   SUITE_NEXTCLOUD_TAG="$(hash_files $(list_files tests/docker/nextcloud))"
   # shellcheck disable=SC2046
   SUITE_WEBDAV_TAG="$(hash_files $(list_files tests/b4-plain-webdav/docker))"
-  export SUITE_RUNNER_TAG SUITE_NEXTCLOUD_TAG SUITE_WEBDAV_TAG
+  # shellcheck disable=SC2046
+  SUITE_REDROID_TAG="$(hash_files $(list_files tests/docker/redroid))"
+  export SUITE_RUNNER_TAG SUITE_NEXTCLOUD_TAG SUITE_WEBDAV_TAG SUITE_REDROID_TAG
 }
 
 ensure_image() { # <service> <image-name> <tag>
@@ -86,6 +101,7 @@ ensure_images_for() { # <layer>
     b4) ensure_image webdav ncs-suite-webdav "$SUITE_WEBDAV_TAG" ;;
     b1|b2|b3) ensure_image nc-app ncs-suite-nextcloud "$SUITE_NEXTCLOUD_TAG" ;;
   esac
+  [ "$1" != b3 ] || ensure_image redroid ncs-suite-redroid "$SUITE_REDROID_TAG"
   ensure_image runner ncs-suite-runner "$SUITE_RUNNER_TAG"
 }
 
@@ -94,8 +110,8 @@ ensure_images_for() { # <layer>
 cleanup() {
   compose --profile '*' down -v --remove-orphans --timeout 10 >/dev/null 2>&1 || true
 }
-on_exit() { local rc=$?; trap - EXIT; cleanup; exit "$rc"; }
-on_signal() { trap - EXIT; cleanup; exit 130; }
+on_exit() { local rc=$?; trap - EXIT; cleanup; host_unchanged || true; exit "$rc"; }
+on_signal() { trap - EXIT; cleanup; host_unchanged || true; exit 130; }
 
 # ------------------------------------------------------------ per-run material (R-5)
 
@@ -128,6 +144,33 @@ save_host_diagnostics() { # failed b3 run
   local cid
   cid="$(compose ps -a -q redroid 2>/dev/null || true)"
   [ -z "$cid" ] || docker inspect -f 'OOMKilled={{.State.OOMKilled}}' "$cid" >"$dir/redroid-state.txt" 2>&1 || true
+}
+
+# ------------------------------------------------------------ host state (b3)
+
+# What Android's init rewrites on the host when its AppArmor profile has a gap: kernel and vm sysctls,
+# the owners and modes of the files at the top of /proc and of the tracing, debug, pstore and power
+# directories of /sys, the multi-generation LRU switch and the registered binary formats. Values the
+# kernel moves by itself are left out, and so is what only root can read.
+host_state() {
+  sysctl -a 2>/dev/null | grep -E '^(kernel|vm)\.' \
+    | grep -vE '^(kernel\.(ns_last_pid|random\.|pty\.nr|tainted|hung_task_detect_count|perf_event_max_sample_rate|perf_cpu_time_max_percent)|vm\.(nr_|stat_))' || true
+  stat -c '%U:%G %a %n' /proc/[!0-9]* /proc/pressure/* /sys/kernel/tracing /sys/kernel/debug /sys/fs/pstore /sys/power/* 2>/dev/null || true
+  grep -H . /sys/kernel/mm/lru_gen/enabled 2>/dev/null || true
+  ls /proc/sys/fs/binfmt_misc 2>/dev/null || true
+}
+
+# Compares the host with the state recorded when the Android layer began. Runs once per recording.
+host_unchanged() {
+  [ -n "$host_before" ] || return 0
+  local before=$host_before after
+  host_before=""
+  after="$(host_state)"
+  [ "$after" != "$before" ] || return 0
+  mkdir -p "$SUITE_OUT_DIR/host"
+  diff <(printf '%s\n' "$before") <(printf '%s\n' "$after") >"$SUITE_OUT_DIR/host/host-state.diff" || true
+  echo "run.sh: host-wide kernel state changed while Android ran; see $SUITE_OUT_DIR/host/host-state.diff" >&2
+  return 1
 }
 
 # ------------------------------------------------------------ recorded passes
@@ -173,15 +216,20 @@ run_layer() { # <layer>
 
   ensure_images_for "$layer"
   load_run_material
+  [ "$layer" != b3 ] || host_before="$(host_state)"
 
   if [ "${#profiles[@]}" -gt 0 ]; then
-    compose "${profiles[@]}" up -d --wait >&2 || { cleanup; die 2 "starting the services for $layer failed"; }
+    if ! compose "${profiles[@]}" up -d --wait >&2; then
+      [ "$layer" != b3 ] || save_host_diagnostics
+      die 2 "starting the services for $layer failed"
+    fi
   fi
 
   compose --profile runner run --rm runner "$layer" || rc=$?
   [ "$rc" -eq 0 ] || { [ "$layer" != b3 ] || save_host_diagnostics; }
 
   cleanup
+  host_unchanged || { [ "$rc" -ne 0 ] || rc=2; }
   if [ "$rc" -eq 0 ]; then
     rm -rf "$SUITE_OUT_DIR"
   else
@@ -206,7 +254,7 @@ for layer in "${layers[@]}"; do
   fi
 done
 [ "${#todo[@]}" -gt 0 ] || exit 0
-case " ${todo[*]} " in *" b3 "*) check_binder ;; esac
+case " ${todo[*]} " in *" b3 "*) check_binder; check_android_profile ;; esac
 
 mkdir -p "$repo/.test-output"
 exec 9>"$repo/.test-output/.lock"
