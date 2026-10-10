@@ -5,7 +5,7 @@
 // Both gaps this closes are silent until the NEXT sync reads them wrong, which is what makes them
 // worth stating as a rule rather than tracing through the apply loop: a skipped file the transfer
 // never recorded reads as a conflict, and a tracked file the remote no longer has gets re-created.
-import { planDirConvergence, planStateConvergence } from '../../../../src/sync/mirror/convergence';
+import { leftoverFileState, planDirConvergence, planStateConvergence } from '../../../../src/sync/mirror/convergence';
 import { RemoteDirInfo, RemoteFileInfo } from '../../../../src/types';
 
 const remote = (path: string): RemoteFileInfo => ({
@@ -122,5 +122,52 @@ describe('planDirConvergence', () => {
 
   it('returns empty sets for empty input', () => {
     expect(planDirs({})).toEqual({ toTrack: [], toDrop: [] });
+  });
+});
+
+describe('keepTracked', () => {
+  const noExclude = () => false;
+
+  it('planStateConvergence keeps a tracked path absent from the remote when it is in keepTracked', () => {
+    const r = planStateConvergence([], new Set(), ['left.md', 'gone.md'], noExclude, new Set(['left.md']));
+    expect(r.toDrop).toEqual(['gone.md']);
+  });
+
+  it('planStateConvergence drops that path when keepTracked is omitted', () => {
+    expect(planStateConvergence([], new Set(), ['left.md'], noExclude).toDrop).toEqual(['left.md']);
+  });
+
+  it('planStateConvergence toTrack is unaffected by keepTracked', () => {
+    const args = [[remote('a.md')], new Set<string>(), ['x.md'], noExclude] as const;
+    const without = planStateConvergence(...args);
+    const withKeep = planStateConvergence(...args, new Set(['a.md', 'x.md']));
+    expect(withKeep.toTrack.map((f) => f.path)).toEqual(without.toTrack.map((f) => f.path));
+    expect(withKeep.toTrack.map((f) => f.path)).toEqual(['a.md']);
+  });
+
+  it('planDirConvergence keeps a tracked folder dropped by the plan when it is in keepTracked', () => {
+    const r = planDirConvergence([], new Set(['d', 'e']), ['d', 'e'], noExclude, new Set(['d']));
+    expect(r.toDrop).toEqual(['e']);
+  });
+
+  it('planDirConvergence drops that folder when keepTracked is omitted', () => {
+    expect(planDirConvergence([], new Set(['d']), ['d'], noExclude).toDrop).toEqual(['d']);
+  });
+
+  it('planDirConvergence toTrack is unaffected by keepTracked', () => {
+    const args = [[remoteDir('d')], new Set(['d']), ['x'], noExclude] as const;
+    const without = planDirConvergence(...args);
+    const withKeep = planDirConvergence(...args, new Set(['d', 'x']));
+    expect(withKeep.toTrack).toEqual(without.toTrack);
+    expect(withKeep.toTrack).toEqual([{ path: 'd', remoteFileId: 'fid-d' }]);
+  });
+});
+
+describe('leftoverFileState', () => {
+  it('records the current content as in sync with the remote', () => {
+    expect(leftoverFileState('a.md', 'h', { size: 7, mtime: 55 }, 'fid')).toEqual({
+      path: 'a.md', localHash: 'h', remoteId: 'h', idType: 'sha256', size: 7, mtime: 55,
+      remoteFileId: 'fid', isConflicted: false,
+    });
   });
 });

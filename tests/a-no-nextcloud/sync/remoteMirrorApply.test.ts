@@ -2,7 +2,8 @@
 // zero diff), and bypass the mass-delete breaker. Downloads route through downloadFile and are covered in b1.
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { MirrorPlan } from '../../../src/sync/mirrorPlan';
-import { TFile } from '../support/obsidian';
+import { TFile, TFolder } from '../support/obsidian';
+import { sha256 } from '../../../src/util/hash';
 import { DavSyncSettings, FileState, RemoteFileInfo } from '../../../src/types';
 
 const CONFIG_DIR = '.obsidian';
@@ -23,44 +24,70 @@ const remote = (path: string, checksum: string): RemoteFileInfo => ({
   path, fileId: null, checksum, etag: null, size: 1, lastModified: 0,
 });
 
+type DirRecord = { path: string; remoteFileId: string | null };
+
 function makeEngine(opts: {
   tracked: FileState[];
   localFiles: string[];
+  localDirs?: string[];
+  failTrash?: string[];
   trashFile?: jest.Mock;
   stat?: jest.Mock;
   mkdir?: jest.Mock;
   save?: jest.Mock;
   folders?: string[];
-  dirs?: string[];
+  dirs?: (string | DirRecord)[];
   baseStore?: Record<string, unknown>;
   historyStore?: Record<string, unknown>;
 }) {
   const store = new Map<string, FileState>(opts.tracked.map((f) => [f.path, f]));
-  const trashFile = opts.trashFile ?? jest.fn(async () => undefined);
+  // Paths that still exist locally (files and folders); trashing removes a path and everything under it.
+  const present = new Set<string>([...opts.localFiles, ...(opts.localDirs ?? [])]);
+  const failTrash = opts.failTrash ?? [];
+  const trashFile = opts.trashFile ?? jest.fn(async (f: { path: string }) => {
+    if (failTrash.includes(f.path)) throw new Error('trash failed');
+    for (const q of [...present]) if (q === f.path || q.startsWith(f.path + '/')) present.delete(q);
+  });
   const setRemoteRootEtag = jest.fn();
   const setSyncToken = jest.fn();
   const adapter = {
-    stat: opts.stat ?? jest.fn(async (p: string) => (opts.localFiles.includes(p) ? { size: 1, mtime: 0 } : null)),
+    stat: opts.stat ?? jest.fn(async (p: string) => (
+      present.has(p) && opts.localFiles.includes(p) ? { size: 1, mtime: 0 } : null)),
     mkdir: opts.mkdir ?? jest.fn(async () => undefined),
-    exists: jest.fn(async () => false),
+    exists: jest.fn(async (p: string) => present.has(p)),
     remove: jest.fn(async () => undefined),
+    // Trashing a folder registers its paths as the plugin's own events before the trash runs.
+    ignore: jest.fn(),
     readBinary: jest.fn(async () => new ArrayBuffer(0)),
   };
   const vault = {
     adapter,
     getAllFolders: () => (opts.folders ?? []).map((path) => ({ path })),
-    getAbstractFileByPath: (p: string) => (opts.localFiles.includes(p) ? new TFile(p) : null),
+    getAbstractFileByPath: (p: string) => {
+      if (!present.has(p)) return null;
+      return opts.localFiles.includes(p) ? new TFile(p) : new TFolder(p);
+    },
   };
   const app = { vault, fileManager: { trashFile } };
+  const dirStore = new Map<string, DirRecord>(
+    (opts.dirs ?? []).map((d) => {
+      const rec = typeof d === 'string' ? { path: d, remoteFileId: null } : d;
+      return [rec.path, rec];
+    }),
+  );
   const stateDB = {
     getFile: (p: string) => store.get(p),
     setFile: (f: FileState) => { store.set(f.path, f); },
     deleteFile: (p: string) => { store.delete(p); },
     getAllFiles: () => [...store.values()],
-    getAllDirs: () => (opts.dirs ?? []).map((path) => ({ path })),
-    setDir: jest.fn(),
+    getAllDirs: () => [...dirStore.values()],
+    getDir: (p: string) => dirStore.get(p),
+    setDir: jest.fn((d: string | DirRecord) => {
+      const rec = typeof d === 'string' ? { path: d, remoteFileId: null } : d;
+      dirStore.set(rec.path, rec);
+    }),
     save: opts.save ?? jest.fn(async () => undefined),
-    deleteDir: jest.fn(),
+    deleteDir: jest.fn((p: string) => { dirStore.delete(p); }),
     setRemoteRootEtag,
     setSyncToken,
   };
@@ -72,7 +99,9 @@ function makeEngine(opts: {
     stateDB, statusBar, webdavFactory: {}, pluginDir: PLUGIN_DIR, configDir: CONFIG_DIR,
     baseStore: opts.baseStore, historyStore: opts.historyStore,
   } as never);
-  return { engine, store, trashFile, setRemoteRootEtag, setSyncToken, statusBar, adapter, stateDB };
+  return {
+    engine, store, trashFile, setRemoteRootEtag, setSyncToken, statusBar, adapter, stateDB, present, dirStore,
+  };
 }
 
 const plan = (over: Partial<MirrorPlan>): MirrorPlan => ({
@@ -300,5 +329,120 @@ describe('[SPEC:MIR-6] applyRemoteMirror — folders are created and tracked', (
     expect(result.errors.filter((e) => e.path === 'a')).toHaveLength(1);
     expect(mkdir).toHaveBeenCalledTimes(2);
     expect(trackedPaths(stateDB.setDir)).not.toContain('a');
+  });
+});
+
+describe('[SPEC:MDF-2] applyRemoteMirror — a failed deletion is reported and not counted', () => {
+  const three = ['a.md', 'b.md', 'c.md'];
+  const dirRec = (path: string) => ({ path, fileId: null, etag: null, lastModified: 0 });
+
+  it('[SPEC:MDF-2] counts only the real deletions and lists the failed one', async () => {
+    const { engine, statusBar } = makeEngine({ tracked: [], localFiles: three, failTrash: ['b.md'] });
+    const result = await engine.applyRemoteMirror(plan({ deleteFiles: three }));
+    expect(result.deleted).toBe(2);
+    expect(result.errors).toEqual([{ path: 'b.md', message: 'trash failed' }]);
+    expect(statusBar.setSyncComplete.mock.calls[0][3]).toBe(1);
+  });
+
+  it('[SPEC:MDF-2] keeps going with other work when every deletion fails', async () => {
+    const { engine, adapter } = makeEngine({ tracked: [], localFiles: three, failTrash: three });
+    const result = await engine.applyRemoteMirror(plan({
+      deleteFiles: three, createDirs: ['x'], remoteDirs: [dirRec('x')],
+    }));
+    expect(result.deleted).toBe(0);
+    expect(result.errors).toHaveLength(3);
+    expect(adapter.mkdir.mock.calls.map((c) => c[0])).toContain('x');
+  });
+
+  it('[SPEC:MDF-2] reports no error when every deletion succeeds', async () => {
+    const { engine } = makeEngine({ tracked: [], localFiles: three });
+    const result = await engine.applyRemoteMirror(plan({ deleteFiles: three }));
+    expect(result.deleted).toBe(3);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('[SPEC:MDF-2] treats a path that does not exist as neither a failure nor a deletion', async () => {
+    const { engine } = makeEngine({ tracked: [], localFiles: ['a.md'] });
+    const result = await engine.applyRemoteMirror(plan({ deleteFiles: ['a.md', 'ghost.md'] }));
+    expect(result.deleted).toBe(1);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('[SPEC:MDF-2] does not report a child folder whose parent removed it', async () => {
+    const { engine } = makeEngine({
+      tracked: [], localFiles: [], localDirs: ['d', 'd/sub'], failTrash: ['d/sub'],
+    });
+    const result = await engine.applyRemoteMirror(plan({ deleteDirs: ['d/sub', 'd'] }));
+    expect(result.deleted).toBe(2);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('[SPEC:MDF-2] reports a folder that could not be removed', async () => {
+    const { engine } = makeEngine({ tracked: [], localFiles: [], localDirs: ['d'], failTrash: ['d'] });
+    const result = await engine.applyRemoteMirror(plan({ deleteDirs: ['d'] }));
+    expect(result.deleted).toBe(0);
+    expect(result.errors).toEqual([{ path: 'd', message: 'trash failed' }]);
+  });
+});
+
+describe('[SPEC:MDF-3] applyRemoteMirror — what is left behind stays tracked', () => {
+  let EMPTY_HASH = '';
+  beforeAll(async () => { EMPTY_HASH = await sha256(new ArrayBuffer(0)); });
+
+  const expectLeftover = (f: FileState | undefined, remoteFileId: string | null) => {
+    expect(f).toEqual(expect.objectContaining({
+      path: 'b.md', localHash: EMPTY_HASH, remoteId: EMPTY_HASH, idType: 'sha256', size: 1,
+      remoteFileId, isConflicted: false,
+    }));
+  };
+
+  it('[SPEC:MDF-3] tracks a leftover file at its current content hash and keeps its remote file id', async () => {
+    const { engine, store } = makeEngine({
+      tracked: [{ ...fstate('b.md', 'old'), remoteFileId: 'fid-b' }],
+      localFiles: ['b.md'], failTrash: ['b.md'],
+    });
+    await engine.applyRemoteMirror(plan({ deleteFiles: ['b.md'] }));
+    expectLeftover(store.get('b.md'), 'fid-b');
+  });
+
+  it('[SPEC:MDF-3] tracks an untracked leftover file with no remote file id', async () => {
+    const { engine, store } = makeEngine({ tracked: [], localFiles: ['b.md'], failTrash: ['b.md'] });
+    await engine.applyRemoteMirror(plan({ deleteFiles: ['b.md'] }));
+    expectLeftover(store.get('b.md'), null);
+  });
+
+  it('[SPEC:MDF-3] records an empty local hash when the leftover file cannot be read', async () => {
+    const { engine, store, adapter } = makeEngine({
+      tracked: [], localFiles: ['b.md'], failTrash: ['b.md'],
+    });
+    adapter.readBinary.mockRejectedValue(new Error('read failed'));
+    await engine.applyRemoteMirror(plan({ deleteFiles: ['b.md'] }));
+    expect(store.get('b.md')!.localHash).toBe('');
+  });
+
+  it('[SPEC:MDF-3] tracks an untracked leftover folder', async () => {
+    const { engine, dirStore } = makeEngine({
+      tracked: [], localFiles: [], localDirs: ['d'], failTrash: ['d'], dirs: [],
+    });
+    await engine.applyRemoteMirror(plan({ deleteDirs: ['d'] }));
+    expect(dirStore.get('d')).toEqual({ path: 'd', remoteFileId: null });
+  });
+
+  it('[SPEC:MDF-3] keeps a tracked leftover folder with its remote file id', async () => {
+    const { engine, dirStore, stateDB } = makeEngine({
+      tracked: [], localFiles: [], localDirs: ['d'], failTrash: ['d'],
+      dirs: [{ path: 'd', remoteFileId: 'fid-d' }],
+    });
+    await engine.applyRemoteMirror(plan({ deleteDirs: ['d'] }));
+    expect(dirStore.get('d')!.remoteFileId).toBe('fid-d');
+    expect(stateDB.deleteDir.mock.calls.map((c) => c[0])).not.toContain('d');
+  });
+
+  it('[SPEC:MDF-3] does not track a file that was deleted', async () => {
+    const { engine, store } = makeEngine({
+      tracked: [fstate('a.md', 'x')], localFiles: ['a.md'],
+    });
+    await engine.applyRemoteMirror(plan({ deleteFiles: ['a.md'] }));
+    expect(store.has('a.md')).toBe(false);
   });
 });

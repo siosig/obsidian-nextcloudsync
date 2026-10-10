@@ -279,7 +279,50 @@ describe('DeletionService.processRemoteDeletion — applying it locally', () => 
 
   it('does not abort the session for one failed deletion', async () => {
     const { deletion } = build({ vaultFiles: { 'note.md': 'file' }, trashFails: true });
-    await expect(deletion.processRemoteDeletion('note.md', summary())).resolves.toBeUndefined();
+    await expect(deletion.processRemoteDeletion('note.md', summary())).resolves.toEqual({ status: 'failed', message: expect.any(String) });
+  });
+});
+
+describe('[SPEC:MDF-1] DeletionService.processRemoteDeletion — the reported outcome', () => {
+  beforeEach(() => { Notice.instances = []; });
+
+  it('reports deleted for a vault-tracked file', async () => {
+    const { deletion } = build({ vaultFiles: { 'note.md': 'file' } });
+    await expect(deletion.processRemoteDeletion('note.md', summary())).resolves.toEqual({ status: 'deleted' });
+  });
+
+  it('reports deleted for a vault-tracked folder', async () => {
+    const { deletion } = build({ vaultFiles: { Folder: 'folder' } });
+    await expect(deletion.processRemoteDeletion('Folder', summary())).resolves.toEqual({ status: 'deleted' });
+  });
+
+  it('reports deleted for a config dotfile removed through the adapter', async () => {
+    const { deletion } = build({ adapterPaths: ['.obsidian/bookmarks.json'] });
+    await expect(deletion.processRemoteDeletion('.obsidian/bookmarks.json', summary()))
+      .resolves.toEqual({ status: 'deleted' });
+  });
+
+  it('reports absent when nothing is there locally', async () => {
+    const { deletion } = build({ vaultFiles: {}, adapterPaths: [] });
+    await expect(deletion.processRemoteDeletion('note.md', summary())).resolves.toEqual({ status: 'absent' });
+  });
+
+  it('reports ignored for a path outside sync scope', async () => {
+    const { deletion } = build({
+      excluded: (p) => p.startsWith('.obsidian/'),
+      adapterPaths: ['.obsidian/plugins/other/main.js'],
+    });
+    await expect(deletion.processRemoteDeletion('.obsidian/plugins/other/main.js', summary()))
+      .resolves.toEqual({ status: 'ignored' });
+  });
+
+  it('reports failed with a message when the trash fails, keeping state and notifying once', async () => {
+    const { deletion, calls } = build({ vaultFiles: { 'note.md': 'file' }, trashFails: true });
+    const outcome = await deletion.processRemoteDeletion('note.md', summary());
+    expect(outcome.status).toBe('failed');
+    if (outcome.status === 'failed') expect(outcome.message.length).toBeGreaterThan(0);
+    expect(Notice.instances).toHaveLength(1);
+    expect(calls.stateDeletes).toEqual([]);
   });
 });
 
