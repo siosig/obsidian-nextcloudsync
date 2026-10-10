@@ -32,6 +32,7 @@ export interface Device {
 
 export function makeDevice(
   env: LiveEnv, remoteBase: string, deviceId: string, over: Partial<DavSyncSettings> = {},
+  vault: FakeVault = new FakeVault(),
 ): Device {
   const settings: DavSyncSettings = {
     ...DEFAULT_SETTINGS,
@@ -40,7 +41,6 @@ export function makeDevice(
     deviceId,
     ...over,
   };
-  const vault = new FakeVault();
   const localAdapter = new LocalAdapter(vault.adapter, vault.vault);
   const stateDB = new StateDB(vault.adapter, PLUGIN_DIR, deviceId);
   // Per-device merge base store wired as in production, so b1 runs the real 3-way merge with a true base.
@@ -67,4 +67,15 @@ export function makeDevice(
     configDir: CONFIG_DIR,
   } as never);
   return { engine, vault, stateDB, baseStore, cleanSideStore, client, settings, sync: () => engine.syncManual({ manual: true }) };
+}
+
+// Models an app restart: a fresh engine over the same vault with every store re-read from disk.
+export async function restartDevice(
+  env: LiveEnv, remoteBase: string, d: Device, over: Partial<DavSyncSettings> = {},
+): Promise<Device> {
+  const next = makeDevice(env, remoteBase, d.settings.deviceId, over, d.vault);
+  await next.stateDB.load();
+  await next.baseStore.load();
+  await next.cleanSideStore.load();
+  return next;
 }

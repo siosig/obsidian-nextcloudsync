@@ -12,6 +12,10 @@ const dec = (a: ArrayBuffer): string => new TextDecoder().decode(a);
 // construct via the runtime class while satisfying the compile-time (real) types with a cast.
 const TFolderCtor = TFolder as unknown as { new (path: string): TFolder };
 const mkFolder = (path: string): TFolder => new TFolderCtor(path);
+// Same for files: the deletion path trashes only a genuine `TFile` and removes anything else outright, so a
+// plain object here would make every plugin deletion bypass the trash.
+const TFileCtor = TFile as unknown as { new (path: string): TFile };
+const mkFile = (path: string): TFile => new TFileCtor(path);
 
 function ancestorsOf(path: string): string[] {
   const out: string[] = [];
@@ -96,7 +100,7 @@ export class FakeVault {
         return [...self.allFolderPaths()].map((p) => mkFolder(p));
       },
       getAbstractFileByPath(p: string): TFile | TFolder | null {
-        if (store.has(p)) return { path: p } as unknown as TFile;
+        if (store.has(p)) return mkFile(p);
         if (self.folderExists(p)) return mkFolder(p);
         return null;
       },

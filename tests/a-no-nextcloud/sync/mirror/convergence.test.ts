@@ -5,8 +5,8 @@
 // Both gaps this closes are silent until the NEXT sync reads them wrong, which is what makes them
 // worth stating as a rule rather than tracing through the apply loop: a skipped file the transfer
 // never recorded reads as a conflict, and a tracked file the remote no longer has gets re-created.
-import { planStateConvergence } from '../../../../src/sync/mirror/convergence';
-import { RemoteFileInfo } from '../../../../src/types';
+import { planDirConvergence, planStateConvergence } from '../../../../src/sync/mirror/convergence';
+import { RemoteDirInfo, RemoteFileInfo } from '../../../../src/types';
 
 const remote = (path: string): RemoteFileInfo => ({
   path, fileId: `fid-${path}`, checksum: null, etag: '"e"', size: 1, lastModified: 0,
@@ -74,5 +74,53 @@ describe('planStateConvergence', () => {
     // A file can be downloaded without having been tracked before, and vice versa.
     const r = plan({ remote: ['a.md'], downloaded: ['a.md'], tracked: ['b.md'] });
     expect(r).toEqual({ toTrack: [], toDrop: ['b.md'] });
+  });
+});
+
+const remoteDir = (path: string): RemoteDirInfo => ({
+  path, fileId: `fid-${path}`, etag: '"e"', lastModified: 0,
+});
+
+function planDirs(o: {
+  remote?: string[]; local?: string[]; tracked?: string[]; excluded?: (p: string) => boolean;
+}) {
+  return planDirConvergence(
+    (o.remote ?? []).map(remoteDir),
+    new Set(o.local ?? []),
+    o.tracked ?? [],
+    o.excluded ?? (() => false),
+  );
+}
+
+describe('planDirConvergence', () => {
+  it('tracks a remote folder that exists locally', () => {
+    expect(planDirs({ remote: ['d'], local: ['d'] })).toEqual({
+      toTrack: [{ path: 'd', remoteFileId: 'fid-d' }],
+      toDrop: [],
+    });
+  });
+
+  it('leaves alone an untracked remote folder that is missing locally', () => {
+    expect(planDirs({ remote: ['d'], local: [] })).toEqual({ toTrack: [], toDrop: [] });
+  });
+
+  it('drops a tracked folder that is on the remote but missing locally', () => {
+    expect(planDirs({ remote: ['d'], local: [], tracked: ['d'] })).toEqual({ toTrack: [], toDrop: ['d'] });
+  });
+
+  it('drops a tracked folder the remote no longer has', () => {
+    expect(planDirs({ remote: [], local: ['d'], tracked: ['d'] })).toEqual({ toTrack: [], toDrop: ['d'] });
+  });
+
+  it('ignores excluded paths on both sides', () => {
+    const r = planDirs({
+      remote: ['.cfg', 'd'], local: ['.cfg', 'd'], tracked: ['.cfg', '.cfg2'],
+      excluded: (p) => p.startsWith('.cfg'),
+    });
+    expect(r).toEqual({ toTrack: [{ path: 'd', remoteFileId: 'fid-d' }], toDrop: [] });
+  });
+
+  it('returns empty sets for empty input', () => {
+    expect(planDirs({})).toEqual({ toTrack: [], toDrop: [] });
   });
 });

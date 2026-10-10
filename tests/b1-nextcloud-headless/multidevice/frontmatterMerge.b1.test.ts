@@ -149,8 +149,8 @@ describeLive('Layer B — frontmatter merge hardening (043) across D/M + server 
     expect(hasMarkerLines(fmBlock(d.vault.readLocal(F)!))).toBe(false);
   }, 180_000);
 
-  // FM-B1-4: server rewrite in a "strict regex breaks" shape (CRLF + trailing-space fences)
-  it('[SPEC:FM-B1-4] a server rewrite with CRLF + trailing-space fences never lands a marker inside frontmatter', async () => {
+  // FM-B1-4: server rewrite in a "strict regex breaks" shape (CRLF fences)
+  it('[SPEC:FM-B1-4] a server rewrite with CRLF fences never lands a marker inside frontmatter', async () => {
     const env = getEnv();
     const d = makeDevice(env, ws.remoteBase, 'D-desktop');
     const F = 'fm-b1-4.md';
@@ -161,17 +161,18 @@ describeLive('Layer B — frontmatter merge hardening (043) across D/M + server 
     // Local drift is in the FRONTMATTER (add tag z), body untouched — so the merge path runs but the
     // body has no spurious conflict (only the frontmatter diverges structurally).
     d.vault.seedLocal(F, '---\ntags:\n  - a\n  - z\n---\nBody\n');
-    // Server rewrites with CRLF and trailing spaces after the fences, a shape a strict regex fails to parse (dropping
-    // the whole file to diff3 and burying the frontmatter inside markers).
-    await baseClient.uploadFile(F, textBuf('--- \r\ntags:\r\n  - a\r\n  - b\r\n--- \r\nBody\r\n'));
+    // Server rewrites with CRLF line endings, a shape a strict LF-only regex fails to parse (dropping the whole
+    // file to diff3 and burying the frontmatter inside markers). A fence line with trailing spaces is not a fence
+    // in Obsidian, so that shape would not be frontmatter at all (docs/spec.md §6.2).
+    await baseClient.uploadFile(F, textBuf('---\r\ntags:\r\n  - a\r\n  - b\r\n---\r\nBody\r\n'));
 
     await d.sync();
     const merged = d.vault.readLocal(F)!;
-    // getFrontMatterInfo tolerates CRLF/trailing spaces → frontmatter resolved STRUCTURALLY, so NO
+    // getFrontMatterInfo accepts CRLF fences → frontmatter resolved STRUCTURALLY, so NO
     // conflict-marker line lands inside (or anywhere near) the frontmatter block.
     expect(hasMarkerLines(fmBlock(merged))).toBe(false);
     expect(merged).not.toContain('<<<<<<< LOCAL');
-    // Structural set merge across the CRLF/trailing-space rewrite: base [a] + local +z + remote +b.
+    // Structural set merge across the CRLF rewrite: base [a] + local +z + remote +b.
     expect(tagsIn(merged).sort()).toEqual(['a', 'b', 'z']);
 
     await d.sync();

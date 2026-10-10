@@ -41,7 +41,10 @@ async function buildEngine(maxFileSizeMB: number, localAdapter: Record<string, u
   const stateDB = new StateDB(makeStateAdapter(), PLUGIN_DIR, 'dev-1');
   await stateDB.load();
   const engine = new SyncEngine({
-    app: {}, settings: { ...DEFAULT_SETTINGS, maxFileSizeMB }, localAdapter,
+    // The file on disk before a download holds other bytes: a body equal to it would not be written
+    // (docs/spec.md §5.3a), and these tests are about downloads that do write.
+    app: {}, settings: { ...DEFAULT_SETTINGS, maxFileSizeMB },
+    localAdapter: { readBinary: jest.fn(async () => new ArrayBuffer(0)), ...localAdapter },
     stateDB, statusBar: {}, webdavFactory: {}, pluginDir: PLUGIN_DIR, configDir: '.obsidian',
   } as never);
   return { engine, stateDB };
@@ -193,7 +196,12 @@ describe('[SPEC:DSG-8] self-healing: raising the cap downloads the once-skipped 
     const stateDB = new StateDB(makeStateAdapter(), PLUGIN_DIR, 'dev-1');
     await stateDB.load();
     const engine = new SyncEngine({
-      app: {}, settings, localAdapter: { atomicWriteBinary, setMtime: jest.fn(async () => undefined), stat: jest.fn(async () => ({ size: 10, mtime: 0 })) },
+      app: {}, settings,
+      localAdapter: {
+        atomicWriteBinary, setMtime: jest.fn(async () => undefined), stat: jest.fn(async () => ({ size: 10, mtime: 0 })),
+        // Other bytes on disk, so the download really writes (docs/spec.md §5.3a).
+        readBinary: jest.fn(async () => new ArrayBuffer(0)),
+      },
       stateDB, statusBar: {}, webdavFactory: {}, pluginDir: PLUGIN_DIR, configDir: '.obsidian',
     } as never);
     const client = { downloadFile: jest.fn(async () => buf(10)) };

@@ -13,9 +13,10 @@ describe('[SPEC:HFM-14] Obsidian test double: frontmatter primitives', () => {
       const content = '---\ntags: [a]\n---\n# H\n---\nx';
       const info = getFrontMatterInfo(content);
       expect(info.exists).toBe(true);
-      expect(info.frontmatter).toBe('tags: [a]');
+      // Obsidian keeps the line terminator that precedes the closing fence.
+      expect(info.frontmatter).toBe('tags: [a]\n');
       // Offsets bound the inner YAML text exactly.
-      expect(content.slice(info.from, info.to)).toBe('tags: [a]');
+      expect(content.slice(info.from, info.to)).toBe('tags: [a]\n');
       // The body (starting at the first heading) still contains the trailing --- break.
       const body = content.slice(info.contentStart);
       expect(body).toBe('# H\n---\nx');
@@ -26,7 +27,7 @@ describe('[SPEC:HFM-14] Obsidian test double: frontmatter primitives', () => {
       const content = '---\r\ntags: [a]\r\n---\r\n\u672c\u6587';
       const info = getFrontMatterInfo(content);
       expect(info.exists).toBe(true);
-      expect(info.frontmatter).toBe('tags: [a]');
+      expect(info.frontmatter).toBe('tags: [a]\r\n');
       expect(content.slice(info.contentStart)).toBe('\u672c\u6587');
     });
 

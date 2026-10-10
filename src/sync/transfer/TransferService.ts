@@ -16,6 +16,7 @@ import { FIXED } from '../../util/fixedSyncConfig';
 import { isAnomalousRemoteContent, isOverFileSizeLimit } from '../../util/limits';
 import { sha256 } from '../../util/hash';
 import { remoteIdOf } from '../remoteIdentity';
+import { bytesEqual } from '../identity/contentIdentity';
 
 export interface TransferDeps {
   localAdapter: Pick<LocalAdapter, 'stat' | 'readBinary' | 'atomicWriteBinary' | 'setMtime'>;
@@ -131,6 +132,20 @@ export class TransferService {
       const base = this.deps.stateDB.getFile(remote.path);
       if (base) this.deps.stateDB.setFile({ ...base, isConflicted: true });
       void this.deps.logger?.log(`download: REFUSED anomalous remote (size ${remote.size}≠${data.byteLength}) → kept local, queued retry → ${remote.path}`);
+      return;
+    }
+    // A fetched body equal to the local file is not written (docs/spec.md §5.3a): the mtime stays and no vault event fires.
+    const localStat = await this.deps.localAdapter.stat(remote.path);
+    if (localStat && localStat.size === data.byteLength
+        && bytesEqual(await this.deps.localAdapter.readBinary(remote.path), data)) {
+      const sameHash = await sha256(data);
+      this.deps.stateDB.setFile(await withLocalSignature(this.deps.localAdapter, {
+        path: remote.path, localHash: sameHash, remoteId, idType,
+        size: remote.size, mtime: remote.lastModified || localStat.mtime,
+        remoteFileId: remote.fileId, isConflicted: false,
+      }, remote.lastModified));
+      this.deps.mergeBase.record(remote.path, new TextDecoder().decode(data));
+      void this.deps.logger?.log(`download: body identical to the local file → state converged, no write → ${remote.path}`);
       return;
     }
     await this.deps.localAdapter.atomicWriteBinary(remote.path, data);

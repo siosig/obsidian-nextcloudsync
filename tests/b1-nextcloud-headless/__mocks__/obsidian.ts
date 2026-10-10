@@ -225,24 +225,7 @@ export interface FrontMatterInfo {
   contentStart: number;
 }
 
-// Recognizes only a leading `---` fenced block (a later `---` is a thematic break); CRLF and LF both accepted.
-export function getFrontMatterInfo(content: string): FrontMatterInfo {
-  const none: FrontMatterInfo = { exists: false, frontmatter: '', from: 0, to: 0, contentStart: 0 };
-  if (content == null) return none;
-  const open = /^---[^\S\r\n]*\r?\n/.exec(content);
-  if (!open) return none;
-  const from = open[0].length;
-  const rest = content.slice(from);
-  const immediate = /^---[^\S\r\n]*(?:\r?\n|$)/.exec(rest);
-  if (immediate) {
-    return { exists: true, frontmatter: '', from, to: from, contentStart: from + immediate[0].length };
-  }
-  const close = /\r?\n---[^\S\r\n]*(?:\r?\n|$)/.exec(rest);
-  if (!close) return none;
-  const to = from + close.index;
-  const contentStart = from + close.index + close[0].length;
-  return { exists: true, frontmatter: content.slice(from, to), from, to, contentStart };
-}
+export { getFrontMatterInfo } from '../../fixtures/frontMatterInfo';
 
 // Scalars become one-element arrays, entries are stringified and trimmed, a leading `#` is stripped;
 // null when the key is absent; duplicates preserved.
