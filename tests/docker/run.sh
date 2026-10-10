@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # The single entry point of the Docker test suite.
-#   bash tests/docker/run.sh <a|b1|b2|b3|b4|all>
+#   bash tests/docker/run.sh [--changed] <a|b1|b2|b3|b4|all>
 #
-# Exit codes (see specs/092-docker-test-suite/contracts/run-cli.md):
+# A layer that passes is recorded together with the identity of the working tree it ran on. With `--changed`,
+# a layer whose recorded pass is for exactly the current tree is skipped, so a release does not repeat the
+# run that already passed while the change was being written.
+#
+# Exit codes (see tests/README.md):
 #   0 passed   1 tests failed   2 environment preparation failed
 #   3 prerequisite missing (could not run)   130 interrupted
 # Never use `set -x` and never print `docker compose config`: per-run secrets live in this
@@ -15,9 +19,11 @@ project=ncs-suite
 cache_volumes=(ncs-suite-cache-obsidian ncs-suite-cache-obsidian-android)
 min_compose=2.23.1
 
-usage() { echo "usage: bash tests/docker/run.sh <a|b1|b2|b3|b4|all>" >&2; exit 3; }
+usage() { echo "usage: bash tests/docker/run.sh [--changed] <a|b1|b2|b3|b4|all>" >&2; exit 3; }
 die() { local code=$1; shift; echo "run.sh: $*" >&2; exit "$code"; }
 
+only_changed=0
+if [ "${1:-}" = --changed ]; then only_changed=1; shift; fi
 [ "$#" -eq 1 ] || usage
 case "$1" in a|b1|b2|b3|b4|all) layer_arg="$1" ;; *) usage ;; esac
 
@@ -124,6 +130,31 @@ save_host_diagnostics() { # failed b3 run
   [ -z "$cid" ] || docker inspect -f 'OOMKilled={{.State.OOMKilled}}' "$cid" >"$dir/redroid-state.txt" 2>&1 || true
 }
 
+# ------------------------------------------------------------ recorded passes
+
+# Identity of everything a test can read: each tracked or untracked-but-not-ignored file, by path and content.
+# Committing or merging the same files does not change it, which is what lets a later run reuse the pass.
+tree_id() {
+  cd "$repo"
+  git ls-files -co --exclude-standard -z | LC_ALL=C sort -z \
+    | while IFS= read -r -d '' f; do if [ -f "$f" ]; then printf '%s\0' "$f"; fi; done \
+    | xargs -0 -r sha256sum | sha256sum | cut -d' ' -f1
+}
+pass_file() { echo "$repo/.test-output/passed/$1"; }
+has_pass() { # <layer>
+  local f; f="$(pass_file "$1")"
+  [ -f "$f" ] && [ "$(cut -d' ' -f1 "$f")" = "$tree_at_start" ]
+}
+record_pass() { # <layer>
+  # A tree that changed while the layer ran is not the tree that was tested.
+  if [ "$(tree_id)" = "$tree_at_start" ]; then
+    mkdir -p "$repo/.test-output/passed"
+    printf '%s %s\n' "$tree_at_start" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$(pass_file "$1")"
+  else
+    echo "run.sh: the working tree changed while layer $1 ran; the pass was not recorded" >&2
+  fi
+}
+
 # ------------------------------------------------------------ one layer
 
 run_layer() { # <layer>
@@ -162,7 +193,20 @@ run_layer() { # <layer>
 # ------------------------------------------------------------ main
 
 check_host
-case "$layer_arg" in b3|all) check_binder ;; esac
+
+tree_at_start="$(tree_id)"
+layers=("$layer_arg")
+[ "$layer_arg" != all ] || layers=(a b4 b1 b2 b3)
+todo=()
+for layer in "${layers[@]}"; do
+  if [ "$only_changed" -eq 1 ] && has_pass "$layer"; then
+    echo "run.sh: layer $layer already passed on this tree ($(cut -d' ' -f2 "$(pass_file "$layer")")); skipped" >&2
+  else
+    todo+=("$layer")
+  fi
+done
+[ "${#todo[@]}" -gt 0 ] || exit 0
+case " ${todo[*]} " in *" b3 "*) check_binder ;; esac
 
 mkdir -p "$repo/.test-output"
 exec 9>"$repo/.test-output/.lock"
@@ -177,13 +221,9 @@ if [ -n "$(compose --profile '*' ps -a -q 2>/dev/null || true)" ]; then cleanup;
 for vol in "${cache_volumes[@]}"; do docker volume inspect "$vol" >/dev/null 2>&1 || docker volume create "$vol" >/dev/null; done
 compute_tags
 
-if [ "$layer_arg" = all ]; then
-  for layer in a b4 b1 b2 b3; do
-    echo "run.sh: ===== layer $layer =====" >&2
-    rc=0; run_layer "$layer" || rc=$?
-    [ "$rc" -eq 0 ] || exit "$rc"
-  done
-else
-  rc=0; run_layer "$layer_arg" || rc=$?
-  exit "$rc"
-fi
+for layer in "${todo[@]}"; do
+  [ "$layer_arg" != all ] || echo "run.sh: ===== layer $layer =====" >&2
+  rc=0; run_layer "$layer" || rc=$?
+  [ "$rc" -eq 0 ] || exit "$rc"
+  record_pass "$layer"
+done
