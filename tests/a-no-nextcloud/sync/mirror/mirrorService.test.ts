@@ -25,6 +25,7 @@ function plan(over: Partial<MirrorPlan> = {}): MirrorPlan {
   return {
     ok: true, reason: undefined, skipCount: 0,
     downloads: [], deleteFiles: [], deleteDirs: [], remoteFiles: [],
+    skipped: [], remoteDirs: [], createDirs: [],
     ...over,
   } as MirrorPlan;
 }
@@ -45,6 +46,7 @@ function build(over: Partial<MirrorDeps> = {}, tracked: FileState[] = []) {
     status: [] as string[],
     progress: [] as Array<[number, number]>,
     complete: [] as Array<number[]>,
+    persisted: 0,
   };
   let processed = 0;
   let total = 0;
@@ -52,11 +54,12 @@ function build(over: Partial<MirrorDeps> = {}, tracked: FileState[] = []) {
   const client = {
     getFiles: async () => [] as RemoteFileInfo[],
     recalcChecksum: async () => null,
+    getDirectories: async () => [],
   } as unknown as IWebDAVClient;
 
   const deps: MirrorDeps = {
     app: {
-      vault: { getAllFolders: () => [] },
+      vault: { getAllFolders: () => [], adapter: { mkdir: async () => undefined, exists: async () => false } },
     } as unknown as MirrorDeps['app'],
     localAdapter: {
       stat: async () => ({ size: 10, mtime: 1000 }),
@@ -68,6 +71,9 @@ function build(over: Partial<MirrorDeps> = {}, tracked: FileState[] = []) {
       getAllFiles: () => tracked,
       deleteFile: (p: string) => { calls.deleteFile.push(p); },
       deleteDir: (p: string) => { calls.deleteDir.push(p); },
+      getAllDirs: () => [],
+      getDir: () => undefined,
+      setDir: () => { /* noop */ },
       setRemoteRootEtag: () => { /* noop */ },
       setSyncToken: () => { /* noop */ },
     } as unknown as MirrorDeps['stateDB'],
@@ -89,6 +95,7 @@ function build(over: Partial<MirrorDeps> = {}, tracked: FileState[] = []) {
     deletion: {
       processRemoteDeletion: async (p: string, s: SyncSessionSummary) => {
         calls.deleted.push(p); s.downloadedCount++;
+        return { status: 'deleted' as const };
       },
     } as unknown as DeletionService,
     localScanner: { collectLocalStats: async () => { /* noop */ } } as unknown as LocalScanner,
@@ -100,6 +107,7 @@ function build(over: Partial<MirrorDeps> = {}, tracked: FileState[] = []) {
     enumerateIncludedConfigPaths: async () => [],
     isSystemExcluded: () => false,
     connect: async () => client,
+    persist: async () => { calls.persisted++; },
     ...over,
   };
 
@@ -114,7 +122,7 @@ describe('MirrorService.applyRemoteMirror — the refusal gate', () => {
     );
     expect(calls.deleted).toEqual([]);
     expect(calls.downloaded).toEqual([]);
-    expect(result).toEqual({ downloaded: 0, deleted: 0, skipped: 0, errors: [] });
+    expect(result).toEqual({ downloaded: 0, deleted: 0, skipped: 0, createdDirs: 0, errors: [] });
   });
 
   it('reports the plan\'s skip count even on the refusal path', async () => {
@@ -208,6 +216,7 @@ describe('MirrorService.applyRemoteMirror — converging the state DB', () => {
     const { mirror, client, calls } = build();
     await mirror.applyRemoteMirror(client, plan({
       skipCount: 1, downloads: [], remoteFiles: [remote('same.md', { checksum: 'abc' })],
+      skipped: [{ path: 'same.md', size: 10, mtime: 1000 }],
     }));
     expect(calls.setFile).toEqual(['same.md']);
   });
@@ -233,6 +242,7 @@ describe('MirrorService.applyRemoteMirror — converging the state DB', () => {
     );
     await mirror.applyRemoteMirror(client, plan({
       remoteFiles: [remote('.obsidian/other.json'), remote('a.md')],
+      skipped: [{ path: 'a.md', size: 10, mtime: 1000 }],
     }));
     expect(calls.deleteFile).toEqual([]);            // not dropped
     expect(calls.setFile).toEqual(['a.md']);          // not tracked
@@ -248,6 +258,9 @@ describe('MirrorService.applyRemoteMirror — converging the state DB', () => {
         getAllFiles: () => [],
         deleteFile: () => { /* noop */ },
         deleteDir: () => { /* noop */ },
+        getAllDirs: () => [],
+        getDir: () => undefined,
+        setDir: () => { /* noop */ },
         setRemoteRootEtag: (e: string | null) => rootEtag.push(e),
         setSyncToken: (t: string) => tokens.push(t),
       } as unknown as MirrorDeps['stateDB'],

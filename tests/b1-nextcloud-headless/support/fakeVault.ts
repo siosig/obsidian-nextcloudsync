@@ -12,6 +12,10 @@ const dec = (a: ArrayBuffer): string => new TextDecoder().decode(a);
 // construct via the runtime class while satisfying the compile-time (real) types with a cast.
 const TFolderCtor = TFolder as unknown as { new (path: string): TFolder };
 const mkFolder = (path: string): TFolder => new TFolderCtor(path);
+// Same for files: the deletion path trashes only a genuine `TFile` and removes anything else outright, so a
+// plain object here would make every plugin deletion bypass the trash.
+const TFileCtor = TFile as unknown as { new (path: string): TFile };
+const mkFile = (path: string): TFile => new TFileCtor(path);
 
 function ancestorsOf(path: string): string[] {
   const out: string[] = [];
@@ -96,7 +100,7 @@ export class FakeVault {
         return [...self.allFolderPaths()].map((p) => mkFolder(p));
       },
       getAbstractFileByPath(p: string): TFile | TFolder | null {
-        if (store.has(p)) return { path: p } as unknown as TFile;
+        if (store.has(p)) return mkFile(p);
         if (self.folderExists(p)) return mkFolder(p);
         return null;
       },
@@ -139,6 +143,18 @@ export class FakeVault {
   readLocal(path: string): string | null { const e = this.store.get(path); return e ? dec(e.data) : null; }
   localExists(path: string): boolean { return this.store.has(path); }
   isTrashed(path: string): boolean { return this.trashed.has(path); }
+  // Makes trashing fail for these paths and for every folder that contains one of them (a folder cannot be
+  // removed while an entry in it cannot); returns the function that restores normal trashing.
+  failTrashFor(paths: readonly string[]): () => void {
+    const fm = this.app.fileManager as unknown as { trashFile: (file: TFile | TFolder) => Promise<void> };
+    const original = fm.trashFile;
+    fm.trashFile = async (file: TFile | TFolder): Promise<void> => {
+      const prefix = `${file.path}/`;
+      if (paths.some((p) => p === file.path || p.startsWith(prefix))) throw new Error('trash failed');
+      return original(file);
+    };
+    return () => { fm.trashFile = original; };
+  }
   deleteLocalTree(path: string): void {
     const prefix = `${path}/`;
     for (const f of [...this.store.keys()]) if (f === path || f.startsWith(prefix)) this.store.delete(f);

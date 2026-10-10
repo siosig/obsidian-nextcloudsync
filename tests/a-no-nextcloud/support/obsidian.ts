@@ -249,28 +249,7 @@ export interface FrontMatterInfo {
   contentStart: number;
 }
 
-// Only a leading `---` fenced block counts (a later `---` is a thematic break); CRLF and LF are both
-// accepted.
-export function getFrontMatterInfo(content: string): FrontMatterInfo {
-  const none: FrontMatterInfo = { exists: false, frontmatter: '', from: 0, to: 0, contentStart: 0 };
-  if (content == null) return none;
-  // Opening fence must be at the very start: `---` (optional trailing spaces) then a newline.
-  const open = /^---[^\S\r\n]*\r?\n/.exec(content);
-  if (!open) return none;
-  const from = open[0].length;
-  const rest = content.slice(from);
-  // Empty frontmatter: the closing fence immediately follows the opening one.
-  const immediate = /^---[^\S\r\n]*(?:\r?\n|$)/.exec(rest);
-  if (immediate) {
-    return { exists: true, frontmatter: '', from, to: from, contentStart: from + immediate[0].length };
-  }
-  // Otherwise the closing fence is the first `---` line after the opening fence.
-  const close = /\r?\n---[^\S\r\n]*(?:\r?\n|$)/.exec(rest);
-  if (!close) return none; // unterminated block: not valid frontmatter
-  const to = from + close.index;
-  const contentStart = from + close.index + close[0].length;
-  return { exists: true, frontmatter: content.slice(from, to), from, to, contentStart };
-}
+export { getFrontMatterInfo } from '../../fixtures/frontMatterInfo';
 
 // Scalars become one-element arrays; entries are string-coerced and trimmed, with a leading `#`
 // stripped. Null when absent. Duplicates are preserved (callers dedup).

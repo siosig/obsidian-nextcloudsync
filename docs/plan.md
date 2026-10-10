@@ -169,6 +169,24 @@ flowchart TD
   Q -- "both" --> CF["handleConflict()"]
 ```
 
+**Identical content is checked before the four-quadrant decision.** When the local file exists and either side is marked changed,
+the engine compares sizes and then the server checksum against the local hash (the local hash is the freshly computed one, or
+`base.localHash` when the stat signature matched and the file was not read). If they match, the file is recorded as converged
+(`convergedState()` plus the current stat signature) and nothing is transferred, whatever the baseline says. An ETag or a size alone never
+proves identity; only the SHA-256 does. The decision table (local file present):
+
+| Baseline present? | Stat signature | Remote changed | Local changed | Checksum and size match | Result |
+|---|---|---|---|---|---|
+| no | n/a | yes | yes | yes | Record convergence; no transfer |
+| no | n/a | yes | yes | no | `handleConflict()` |
+| yes | matches (file not read) | yes | no | yes | Record convergence; no read, no transfer |
+| yes | matches (file not read) | yes | no | no | `downloadFile()` |
+| yes | differs (file read) | yes | yes | yes | Record convergence; no transfer |
+| yes | differs (file read) | yes | yes | no | `handleConflict()` |
+| yes | differs (file read) | no | yes | yes | Record convergence; no transfer |
+| yes | differs (file read) | no | yes | no | `uploadFile()` (unchanged) |
+| yes | either | no | no | n/a | Unchanged behaviour (a size mismatch goes to `handleConflict()`, otherwise nothing happens) |
+
 ### §7.4 Upload, download and delete
 
 The `SyncEngine` methods below delegate to extracted services (see §17); the behaviour is described at the level of the operation.
@@ -177,12 +195,25 @@ The `SyncEngine` methods below delegate to extracted services (see §17); the be
   `uploadStrategy.upload(client, path, data, mtime, {ifMatchEtag})` → `releaseLock()` →
   `setFile(withLocalSignature(...))` → history `uploaded`. `FileLockedError` (423) ⇒ retry queue.
 - **`downloadFile()`** (`TransferService.downloadFile()`) — `client.downloadFile()` → `atomicWriteBinary()` → `setMtime(remote)` →
-  `sha256` → `setFile(withLocalSignature(...))`.
+  `sha256` → `setFile(withLocalSignature(...))`. **A fetched body that equals the local file is not written**: the state is recorded as
+  converged, and there is no write, no `setMtime` (the mtime stays, so no vault event fires), no history entry and no download count.
 - **Local deletion** `applyLocalDeletion()` (`DeletionService.applyLocalDeletion()`) — confirmed with the server checksum. Baseline match ⇒ delete the remote
   (to the trash); divergence ⇒ **restore** to local (the remote edit is not lost); no checksum ⇒ skip (the safe side).
 - **Remote deletion** `processRemoteDeletion()` (`DeletionService.processRemoteDeletion()`) — **a security boundary**: `isSystemExcluded()` comes first
   (a malicious server cannot make the client delete config / plugins / the active log) → Vault trash / raw remove →
   `deleteFile()`.
+
+`processRemoteDeletion()` returns a `RemoteDeletionOutcome` (`DeletionService.ts`), so a caller that must report failures (the mirror, §18.3)
+can tell what happened:
+
+| `status` | Meaning |
+|---|---|
+| `deleted` | The local file or folder was removed (Vault trash or raw remove) |
+| `absent` | There was nothing locally to remove |
+| `ignored` | The path is system-excluded; nothing was touched |
+| `failed` (with `message`) | The removal threw; the user was notified |
+
+An ordinary sync uses the return value for one thing only: when the removal `failed`, `SyncEngine.processRemoteDeletion()` clears the stored root ETag. The entry kept for the retry describes a file the server no longer has, and a short-circuited scan would rebuild the remote listing from State, see that file as still on the server and never retry. What the user sees is unchanged (the wrapper still returns `void`).
 
 ### §7.5 Renames and absence deletes
 
@@ -239,6 +270,22 @@ Action execution on the `SyncEngine` side (implemented in `ConflictApplier`):
 | `no-op` | inline | A tie (equal size/mtime). Touches neither side; not conflicted and not an error (FR-009). StateDB is unchanged, so it is re-evaluated next time |
 
 MergeEngine circuit breakers: (1) the conflict-region count exceeds `maxConflictRegions` (**fixed at 0 = unlimited**, so it does not fire in practice; guarded by `!== 0 &&` in `MergeEngine.ts`); (2) the merged length is under 50% of `max(local,remote)` (a content-loss guard, always active); (3) the **inflation guard (FR-005b)**: a clean candidate longer than the sum of both input bodies, or containing a run of two or more duplicated lines, is demoted to a conflict (a countermeasure for the reconcile duplication bug that comes from an empty base; the reconcile clean path only). A frontmatter mismatch is always treated as a conflict (markers).
+
+`ConflictApplier.handleConflict()` runs its steps in this order:
+
+1. **Size limit** — a remote over the size limit is counted as a conflict encounter, flagged and returned.
+2. **Identity check** — `convergeIfIdentical()` reads the local file and hashes it. With a server checksum, the checksum decides.
+   Without one, and only when the sizes match, the remote body is fetched and compared byte for byte. If identical, the state and the
+   merge base are recorded as converged and the method returns: no summary count, no history entry, no write, no upload and
+   no conflict-encounter count. A body fetched for this comparison is **reused** by the later merge branch instead of being downloaded again.
+3. **Conflict-encounter count** — only a real conflict is counted.
+4. **Decision** — `ConflictResolver.decide()` and the action execution below.
+
+Markdown assembly goes through `splitMarkdown()` / `joinMarkdown()` in `MergeEngine`. `splitMarkdown()` returns the raw frontmatter block
+(everything up to `contentStart`, both fences and the closing fence's line terminator included), the inner frontmatter text, `lead` (the
+whitespace between the block and the body) and the body. Frontmatter equality is decided on the inner text, and an equal frontmatter keeps the local
+raw block byte for byte. The invariant is `fm + lead + body` equals the input for any input; `joinMarkdown(fm, lead, body)` puts the
+merged parts back together, adding a line break only when the block does not already end with one. `lead` follows the side that differs from the base (local when both differ).
 
 ## §9. Settings that change the algorithm
 
@@ -322,6 +369,8 @@ remoteFileId, isConflicted, localMtime?, localSize?, remoteMtime? }`.
   This is directory tracking independent of files (see §16). For backward compatibility with old state (pre-DP),
   `load()` applies `if (!this.state.directories) this.state.directories = {}`.
   Read through `getDir / setDir / deleteDir / getAllDirs`.
+- **Mirror persistence**: the mirror's `persist` saves, in this order, the state DB, the merge bases (flush) and the history. It runs in a
+  `finally`, so it also runs when some items failed; a failed save is appended to the result's errors instead of being thrown, so the result is not shown as a success.
 - `SyncSessionSummary` aggregates the counts (uploaded/downloaded/deleted/merged/conflicted/error) + `retriedFiles`
   + `errors[]` and is reflected in the Sync Status dialog and the debug log.
 
@@ -460,6 +509,7 @@ separate modules. `SyncEngine.ts` keeps orchestration and the per-file decision;
 | `src/sync/conflict/ConflictApplier.ts` | **Execution** of `ConflictResolver` decisions (write / prefer-local / prefer-remote) | Class |
 | `src/sync/directory/DirectoryReconciler.ts` | Directory 3-way reconciliation, the mass-delete breaker, and its resolution | Class |
 | `src/sync/watch/WatchOperations.ts` | Single-file / single-folder operations driven by watch | Class (**owns the in-flight and pending sets**) |
+| `src/sync/identity/contentIdentity.ts` | Proof that local and remote content are identical, and the converged baseline | Functions |
 | `src/sync/mirror/MirrorService.ts` | Mirror from remote (plan and apply) | Class |
 | `src/sync/SyncEngine.ts` | **Core loop** (3-point comparison, state transitions, plan execution), the **lifetime of the session**, the composition root, and delegation | Class |
 
@@ -590,6 +640,25 @@ listing that is wrong about many folders gives no reason to trust it for any sin
 
 **Excluded paths are touched on neither side.** The config folder is tracked by a separate mechanism, and dropping it here makes
 the next sync re-download the whole folder.
+
+**Folders** are converged by `planDirConvergence`, a pure function. It tracks only the remote folders that the vault reports as present now
+(re-read after the apply) and drops every other tracked folder: those gone from the remote and those still missing locally. The reason: a tracked
+folder that is missing locally is read by the next sync as a local deletion and is removed from the server.
+
+**Files are recorded only if they are still what the plan saw.** Each file to track is compared with the plan's `skipped` entries (path, size, mtime) and
+the current stat. A file that is not in `skipped`, has no stat, or differs in size or mtime is left for the next sync.
+
+**Local deletions that failed (`keepTracked`, `leftoverFileState`).** `planStateConvergence` and `planDirConvergence` take a trailing
+`keepTracked` set: paths that must stay tracked although the remote lacks them. The mirror fills it with the local leftovers whose deletion failed.
+A failure is judged only after **every** deletion has run, by checking whether the path still exists, because a path whose own deletion failed can
+still disappear with its parent folder. Only paths that still exist are reported as errors and kept; the others count as deleted.
+
+- **A leftover file** is recorded with `leftoverFileState`: its current content hash is stored as both the local hash and the remote id, so the
+  baseline reads "in sync at this content with a remote that no longer has it". The next full scan reads it as a remote deletion and retries
+  the removal (an edit made in the meantime is uploaded instead, as for any remote deletion of a locally edited file); it is never uploaded as new.
+- **A leftover folder** stays tracked. An untracked local-only folder would be created on the server by the next sync.
+
+**The state is saved in a `finally`** (see §12), so a partly failed mirror still persists what it converged.
 
 ### §18.4 What was decided not to separate (record of the decision gate)
 

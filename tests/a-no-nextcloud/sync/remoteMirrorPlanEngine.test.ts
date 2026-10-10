@@ -23,6 +23,7 @@ function makeEngine(over: {
   createThrows?: boolean;
   localFiles?: Array<{ path: string; content: Uint8Array }>;
   recalcChecksum?: jest.Mock;
+  getDirectories?: jest.Mock;
 }) {
   const feats: NextcloudFeatures = {
     isNextcloud: true, version: '30', hasChecksums: true, hasFilesLocking: false,
@@ -33,6 +34,7 @@ function makeEngine(over: {
   const client = {
     getFiles: over.getFiles ?? jest.fn(async () => [] as RemoteFileInfo[]),
     recalcChecksum: over.recalcChecksum ?? jest.fn(async () => null),
+    getDirectories: over.getDirectories ?? jest.fn(async () => []),
   };
   const localAdapter = {
     listVaultFiles: () => localFiles.map((f) => ({ path: f.path, size: f.content.byteLength, mtime: 0 })),
@@ -99,6 +101,21 @@ describe('[SPEC:MIR-1] SyncEngine.planRemoteMirror — connects on demand', () =
     expect(plan.ok).toBe(false);
     expect(plan.reason).toContain('Failed to list the remote');
     expect(plan.deleteFiles).toHaveLength(0);
+  });
+
+  it('[SPEC:MIR-6] returns ok:false with zero deletions or creations when the folder listing throws', async () => {
+    const getDirectories = jest.fn(async () => { throw new Error('boom'); });
+    const { engine } = makeEngine({
+      getDirectories,
+      localFiles: [{ path: 'keepme.md', content: new TextEncoder().encode('local only') }],
+    });
+    const plan = await engine.planRemoteMirror();
+
+    expect(plan.ok).toBe(false);
+    expect(plan.reason).toMatch(/^Failed to list the remote/);
+    expect(plan.deleteFiles).toHaveLength(0);
+    expect(plan.deleteDirs).toHaveLength(0);
+    expect(plan.createDirs).toHaveLength(0);
   });
 
   it('[SPEC:VRR-6] plans zero deletions when the vault folder itself is missing from the server', async () => {

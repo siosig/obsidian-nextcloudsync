@@ -63,7 +63,11 @@ const callUpload = (e: SyncEngine, path: string, r: RemoteFileInfo) =>
 
 describe('[SPEC:MB-5] download records base (Auto Merge File text)', () => {
   it('stores the downloaded body as base for a .md file', async () => {
-    const localAdapter = { atomicWriteBinary: jest.fn(), setMtime: jest.fn(), stat: jest.fn(async () => ({ size: 5, mtime: 0 })) };
+    // The local file holds different bytes of the same length, so the download really writes (docs/spec.md §5.3a).
+    const localAdapter = {
+      atomicWriteBinary: jest.fn(), setMtime: jest.fn(), stat: jest.fn(async () => ({ size: 5, mtime: 0 })),
+      readBinary: jest.fn(async () => toBuf('older')),
+    };
     const client = { downloadFile: jest.fn(async () => toBuf('hello')) };
     const { engine, baseStore } = await buildEngine(localAdapter, client);
     await callDownload(engine, remoteOf('note.md', 5));
@@ -73,7 +77,10 @@ describe('[SPEC:MB-5] download records base (Auto Merge File text)', () => {
 
 describe('[SPEC:MB-11] download does NOT record base for non-Auto-Merge files', () => {
   it('skips base for a .bin file', async () => {
-    const localAdapter = { atomicWriteBinary: jest.fn(), setMtime: jest.fn(), stat: jest.fn(async () => ({ size: 3, mtime: 0 })) };
+    const localAdapter = {
+      atomicWriteBinary: jest.fn(), setMtime: jest.fn(), stat: jest.fn(async () => ({ size: 3, mtime: 0 })),
+      readBinary: jest.fn(async () => toBuf('old')),
+    };
     const client = { downloadFile: jest.fn(async () => toBuf('bin')) };
     const { engine, baseStore } = await buildEngine(localAdapter, client);
     await callDownload(engine, remoteOf('image.bin', 3));

@@ -35,6 +35,7 @@ import { withLocalSignature } from '../data/localSignature';
 import { TransferService } from './transfer/TransferService';
 import { VersionService } from './versions/VersionService';
 import { remoteIdOf } from './remoteIdentity';
+import { checksumProvesIdentical, convergedState } from './identity/contentIdentity';
 import { DeletionService } from './deletion/DeletionService';
 import { ResolutionService } from './resolution/ResolutionService';
 import { ConflictApplier } from './conflict/ConflictApplier';
@@ -268,6 +269,11 @@ export class SyncEngine {
       },
       enumerateIncludedConfigPaths: () => this.configSync.enumerateIncludedPaths(),
       isSystemExcluded: (p) => this.isSystemExcluded(p),
+      persist: async () => {
+        await opts.stateDB.save();
+        await opts.baseStore?.flush();
+        await opts.historyStore?.save();
+      },
       connect: async () => (await this.ensureClient()).client,
       logger: opts.logger,
     });
@@ -860,17 +866,6 @@ export class SyncEngine {
       // (issue #23). Hash it and treat it as changed unless provably equal, so the both-changed arm resolves it as a conflict.
       const buf = await this.opts.localAdapter.readBinary(remote.path);
       localHash = await sha256(buf);
-      if (idType === 'sha256' && localHash === remoteId) {
-        // Provably the same bytes: only the record was missing, so seed it. Identity comes from the server checksum only (an ETag
-        // cannot be recomputed locally); without a checksum, conflict resolution compares the real bytes.
-        void this.opts.logger?.log(`sync: untracked file matches remote checksum → seeding state, no transfer → ${remote.path}`);
-        this.opts.stateDB.setFile(await this.withLocalSignature({
-          path: remote.path, localHash, remoteId, idType,
-          size: localStat.size, mtime: remote.lastModified || localStat.mtime,
-          remoteFileId: remote.fileId, isConflicted: false,
-        }, remote.lastModified));
-        return;
-      }
       localChanged = true;
     } else {
       localChanged = false;
@@ -879,6 +874,14 @@ export class SyncEngine {
     // Previously synced but gone locally: this device deleted it. Propagate rather than re-download (which resurrects it).
     if (!localStat && base) {
       await this.applyLocalDeletion(remote, base, remoteId, idType, summary);
+      return;
+    }
+
+    // Identical content is never transferred, whatever the baseline says (docs/spec.md §5.3a).
+    if (localStat && (remoteChanged || localChanged)
+        && localStat.size === remote.size && checksumProvesIdentical(remote, localHash)) {
+      void this.opts.logger?.log(`sync: content identical to the remote (checksum) → state converged, no transfer → ${remote.path}`);
+      this.opts.stateDB.setFile(await this.withLocalSignature(convergedState(remote, localHash, localStat), remote.lastModified));
       return;
     }
 
@@ -1015,8 +1018,11 @@ export class SyncEngine {
   }
 
 
-  private processRemoteDeletion(path: string, summary: SyncSessionSummary): Promise<void> {
-    return this.deletion.processRemoteDeletion(path, summary);
+  private async processRemoteDeletion(path: string, summary: SyncSessionSummary): Promise<void> {
+    const outcome = await this.deletion.processRemoteDeletion(path, summary);
+    // The entry kept for the retry describes a file the server no longer has. A short-circuit would rebuild the
+    // listing from State, report it as still on the server, and never retry (docs/spec.md §8a.5).
+    if (outcome.status === 'failed') this.opts.stateDB.setRemoteRootEtag(null);
   }
 
   private async processLocalModifications(

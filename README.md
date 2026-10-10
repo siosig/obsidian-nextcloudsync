@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (1.0.10)
+## What's new in this release (1.0.11-beta.2)
 
-- **Clearer error when the Server URL subfolder is missing (1.0.10)** — if the Server URL ends in a subfolder that does not exist in Nextcloud, the sync used to fail with a bare `HTTP 409 (MKCOL)`. The notice and the Sync Status listing now say that a parent folder is missing and that the subfolder must be created in Nextcloud first (the plugin does not create it). The README explains this too. Sync behavior is unchanged.
+- **A file "Mirror from remote" could not delete is no longer uploaded (1.0.11-beta.2)** — when the mirror could not move a local-only file or folder to the trash, it used to report success, and the next sync uploaded that file (or created that folder) on the server. The mirror now shows each item it could not delete, with the reason, and counts only what was really deleted. The item stays off the server: the next sync does not upload it and tries the deletion again. A file you edit after the mirror is kept and synced as your edit. A deletion that fails during an ordinary sync is now also retried on the very next sync; it could previously wait for many syncs.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 

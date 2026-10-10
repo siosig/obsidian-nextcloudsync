@@ -22,6 +22,7 @@ Xvfb, and the Nextcloud, WebDAV and Android services are containers too.
 
 ```
 bash tests/docker/run.sh <a|b1|b2|b3|b4|all>     # `all` = a, b4, b1, b2, b3 in that order
+bash tests/docker/run.sh --changed <layer|all>   # skip a layer that already passed on exactly this working tree
 ```
 
 **Host prerequisites**: Docker with Compose 2.23.1 or newer. `b3` and `all` also need the kernel's
@@ -40,6 +41,8 @@ What the entry point guarantees:
 
 - The repository working tree is left untouched. The only host path written is the git-ignored
   `.test-output/`; a run that passes deletes its own subdirectory, a failed run keeps it for diagnostics.
+- A layer that passes is recorded in `.test-output/passed/<layer>` together with the identity of the working
+  tree it ran on (see "Reusing a recorded pass" below).
 - Containers, networks and the per-run volumes are removed when the run ends, however it ends. Only two
   cache volumes (`ncs-suite-cache-obsidian`, `ncs-suite-cache-obsidian-android`) and the images stay.
 - One run at a time (a second one exits with 3).
@@ -80,7 +83,22 @@ same `storage_mtime` second, and the test uploaded without an mtime, so about on
 "stale" etag was still current. MD-3 now sends distinct mtimes, as the sync engine always does, and
 asserts that the etag really changed before the conditional upload.
 
-**Release gating**: a beta release requires `bash tests/docker/run.sh all` to pass (exit 3 aborts it too);
+**Reusing a recorded pass**: the identity of the working tree is a hash over every tracked or
+untracked-but-not-ignored file, by path and content. Committing or merging the same files does not change it;
+changing, adding or removing any such file does. `--changed` skips a layer whose recorded pass carries the
+identity of the current tree and runs the others, so the layers that passed while a change was being written are
+not run again for the release of that same tree. Without `--changed` every requested layer runs. A pass is
+recorded only when the tree is the same at the end of the layer as at the start, and only the latest pass of
+each layer is kept. The record does not expire: it says nothing about a newer Obsidian or Nextcloud image, so
+run without `--changed` when the environment, not the code, is what changed.
+
+The pre-push hook uses the same record: it runs `bash tests/docker/run.sh --changed a`, so a push of a tree whose
+layer a already passed runs no tests, and a push that does run them leaves a record for the next one (a release
+pushes the branch and then the tag, on the same tree). Where the suite cannot run (exit 2 or 3: no Docker, or
+another run holds the lock) the hook falls back to `pnpm test`, which records nothing.
+
+**Release gating**: a beta release requires every layer to have passed on the tree being released:
+`bash tests/docker/run.sh --changed all` must exit 0 (exit 3 aborts it too);
 a stable release runs no tests, because it promotes code whose every layer already passed at the beta.
 
 **Measured cycle times** (this suite's own host, 16 vCPU, warm caches unless noted):
