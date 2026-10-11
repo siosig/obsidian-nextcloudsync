@@ -40,6 +40,7 @@ const BASELINE: { heading: string | null; rows: string[] }[] = [
     heading: 'Sync',
     rows: [
       'Startup sync delay (seconds)',
+      'Startup sync notifications',
       'Sync interval (minutes)',
       'Network timeout (seconds)',
       'Network concurrency',
@@ -65,7 +66,7 @@ const BASELINE: { heading: string | null; rows: string[] }[] = [
   { heading: 'Maintenance', rows: ['Reset vault index', 'Mirror from remote', 'Last session summary'] },
 ];
 
-const STATIC_ROW_COUNT = BASELINE.reduce((n, s) => n + s.rows.length, 0); // 27
+const STATIC_ROW_COUNT = BASELINE.reduce((n, s) => n + s.rows.length, 0); // 28
 
 function makeHost(over: Partial<SettingDefinitionsHost> = {}): SettingDefinitionsHost {
   return {

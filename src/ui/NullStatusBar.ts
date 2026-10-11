@@ -1,6 +1,7 @@
 import { IStatusBar } from './StatusBarItem';
 
-// Injected on mobile (no status bar, no progress shown) so call sites need no platform branching.
+// A status surface that shows nothing: used for a silent sync (startup sync with notifications disabled),
+// so the sync still runs but produces no toast. Stateless, so one instance is reusable.
 export class NullStatusBar implements IStatusBar {
   setStatus(): void { /* no-op */ }
   setProgress(): void { /* no-op */ }

@@ -545,7 +545,9 @@ export default class ObsidianNextcloudsync extends Plugin {
     // 0 = no startup sync; 1-10 = seconds to wait.
     if (this.settings.startupSyncDelaySeconds > 0) {
       const delayMs = this.settings.startupSyncDelaySeconds * 1000;
-      window.setTimeout(() => { void this.syncEngine?.syncManual(); }, delayMs);
+      window.setTimeout(() => {
+        void this.syncEngine?.syncManual({ silent: !this.settings.startupSyncNotificationsEnabled });
+      }, delayMs);
     }
   }
 

@@ -71,6 +71,8 @@ export interface DavSyncSettings {
   watchOnChangeEnabled: boolean;
   /** Startup sync delay in seconds, 0-10; 0 = no startup sync. */
   startupSyncDelaySeconds: number;
+  /** Show the syncing/completion toast during the startup sync on mobile. Desktop has no toast, so it is inert there. */
+  startupSyncNotificationsEnabled: boolean;
   /** Number of concurrent WebDAV requests. Derived from device RAM on first run if not persisted. */
   networkConcurrency: number;
   /** Sync only on Wi-Fi; ignored on iOS (no network-type API). */
@@ -120,6 +122,7 @@ export const DEFAULT_SETTINGS: DavSyncSettings = {
   maxFileSizeMB: 0, // desktop default; mobile gets a cap in loadSettings()
   watchOnChangeEnabled: true,
   startupSyncDelaySeconds: 1,
+  startupSyncNotificationsEnabled: true,
   networkConcurrency: 16, // overridden on first run by autoNetworkConcurrency()
   // Mobile's first run flips this ON (metered data).
   syncOnWifiOnly: false,

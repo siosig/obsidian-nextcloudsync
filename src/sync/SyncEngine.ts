@@ -44,6 +44,7 @@ import { WatchOperations } from './watch/WatchOperations';
 import { MirrorService } from './mirror/MirrorService';
 import { SyncHistoryStore } from '../data/SyncHistoryStore';
 import { IStatusBar } from '../ui/StatusBarItem';
+import { NullStatusBar } from '../ui/NullStatusBar';
 import { WebDAVFactory } from '../network/WebDAVFactory';
 import { IWebDAVClient } from '../network/IWebDAVClient';
 import { RenameTracker } from './RenameTracker';
@@ -124,6 +125,9 @@ export class SyncEngine {
 
   private readonly mirror: MirrorService;
   private syncProgress = { processed: 0, total: 0 };
+  // Status surface for the sync currently running; swapped to a no-op for a silent sync (startup sync with
+  // notifications off). Watch mode and the mirror keep their own injected statusBar, so they are unaffected.
+  private activeStatusBar: IStatusBar;
   // Monotonic; read as a delta around one watch operation to learn whether it touched a conflict.
   // Summary counters cannot say: conflicts settled by a deterministic strategy count as plain uploads/downloads.
   private conflictEncounters = 0;
@@ -138,6 +142,7 @@ export class SyncEngine {
   private readonly remoteListing: RemoteListingSource;
 
   constructor(private readonly opts: SyncEngineOptions) {
+    this.activeStatusBar = opts.statusBar;
     this.configSync = new ConfigSyncResolver({
       configDir: opts.configDir,
       settings: opts.settings,
@@ -308,7 +313,7 @@ export class SyncEngine {
     return isCellularBlocked(this.opts.settings.syncOnWifiOnly, Platform.isIosApp, conn?.type);
   }
 
-  async syncManual(opts: { manual?: boolean } = {}): Promise<void> {
+  async syncManual(opts: { manual?: boolean; silent?: boolean } = {}): Promise<void> {
     // Mobile has no status bar; NoticeStatusBar surfaces state there. The early returns below need explicit
     // notices because they exit before any toast exists.
     void this.opts.logger?.log(`sync: start (manual=${opts.manual === true})`);
@@ -325,6 +330,7 @@ export class SyncEngine {
     // Set the balking flag synchronously (before any await) so a concurrent call still balks.
     this.running = true;
     this.cancelled = false;
+    this.activeStatusBar = opts.silent === true ? new NullStatusBar() : this.opts.statusBar;
     const run = this.runSyncSession();
     this.currentRun = run;
     try {
@@ -352,7 +358,7 @@ export class SyncEngine {
       void this.opts.logger?.log('sync: connecting (ensureClient)');
       await this.ensureClient();
       this.syncProgress = { processed: 0, total: 0 };
-      this.opts.statusBar.setStatus('syncing');
+      this.activeStatusBar.setStatus('syncing');
 
       const isFirstSync = !this.opts.stateDB.getSyncToken() && this.opts.stateDB.getAllFiles().length === 0;
 
@@ -389,7 +395,7 @@ export class SyncEngine {
         void this.opts.logger?.log(`sync: post-sync save failed — ${(persistErr as Error).message}`, 'error');
       }
       const conflictCount = this.opts.stateDB.countConflicted();
-      this.opts.statusBar.setSyncComplete(
+      this.activeStatusBar.setSyncComplete(
         summary.uploadedCount, summary.downloadedCount,
         conflictCount, summary.errorCount,
       );
@@ -747,7 +753,7 @@ export class SyncEngine {
 
     const eligible = remoteFiles.filter(f => !this.isSystemExcluded(f.path));
     this.syncProgress = { processed: 0, total: eligible.length };
-    if (eligible.length > 0) this.opts.statusBar.setProgress(0, eligible.length);
+    if (eligible.length > 0) this.activeStatusBar.setProgress(0, eligible.length);
     // Bounded parallel; uploads to the same directory are serialized to avoid 423s.
     await this.runFileBatch(
       eligible,
@@ -1206,7 +1212,7 @@ export class SyncEngine {
     const remoteMap = new Map(remoteFiles.map(f => [f.path, f]));
     const actionFiles = plan.uploads.length + plan.downloads.length + plan.conflicts.length;
     this.syncProgress = { processed: 0, total: actionFiles };
-    if (actionFiles > 0) this.opts.statusBar.setProgress(0, actionFiles);
+    if (actionFiles > 0) this.activeStatusBar.setProgress(0, actionFiles);
 
     await this.runFileBatch(
       plan.uploads,
@@ -1278,7 +1284,7 @@ export class SyncEngine {
   private tickProgress(): void {
     this.syncProgress.processed = Math.min(this.syncProgress.processed + 1, this.syncProgress.total);
     if (this.syncProgress.total > 0) {
-      this.opts.statusBar.setProgress(this.syncProgress.processed, this.syncProgress.total);
+      this.activeStatusBar.setProgress(this.syncProgress.processed, this.syncProgress.total);
     }
   }
 

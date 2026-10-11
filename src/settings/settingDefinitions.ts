@@ -249,6 +249,12 @@ function syncGroup(host: SettingDefinitionsHost): SettingDefinitionGroup {
       () => s.startupSyncDelaySeconds,
       (v) => { s.startupSyncDelaySeconds = v; },
     ),
+    {
+      name: 'Startup sync notifications',
+      desc: 'Show a "Syncing…" toast and a completion toast when the startup sync runs. Mobile only — desktop has no toast, so this is inert there.',
+      aliases: ['notification', 'toast', 'notice', 'startup sync', 'quiet'],
+      control: { type: 'toggle', key: 'startupSyncNotificationsEnabled' },
+    },
     slider(
       host,
       'Sync interval (minutes)',
