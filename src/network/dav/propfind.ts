@@ -124,6 +124,7 @@ export interface DavProps {
   size: number;
   // Epoch ms; 0 when absent or unparseable.
   lastModified: number;
+  creationTime?: number;
 }
 
 export function readDavProps(prop: Element): DavProps {
@@ -131,7 +132,9 @@ export function readDavProps(prop: Element): DavProps {
   const size = parseInt(prop.getElementsByTagNameNS(DAV_NS, 'getcontentlength')[0]?.textContent ?? '0', 10);
   const lastModifiedStr = prop.getElementsByTagNameNS(DAV_NS, 'getlastmodified')[0]?.textContent ?? '';
   const lastModified = lastModifiedStr ? new Date(lastModifiedStr).getTime() : 0;
-  return { etag, size, lastModified };
+  const creationStr = prop.getElementsByTagNameNS(DAV_NS, 'creationdate')[0]?.textContent ?? '';
+  const creationTime = creationStr ? Date.parse(creationStr) : NaN;
+  return { etag, size, lastModified, ...(Number.isFinite(creationTime) ? { creationTime } : {}) };
 }
 
 export interface OwncloudProps {

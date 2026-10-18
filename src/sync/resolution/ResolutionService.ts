@@ -136,7 +136,7 @@ export class ResolutionService {
 
     const lockToken = await this.deps.transfer.acquireLock(conn.client, path);
     try {
-      const outcome = await conn.uploadStrategy.upload(conn.client, path, localData, stat.mtime);
+      const outcome = await conn.uploadStrategy.upload(conn.client, path, localData, stat.mtime, { ctime: stat.ctime });
       if (outcome === 'skipped') throw new Error(`Upload skipped (over the size limit): ${path}`);
     } finally {
       await this.deps.transfer.releaseLock(conn.client, path, lockToken);
@@ -150,7 +150,7 @@ export class ResolutionService {
       path, localHash, remoteId: localHash, idType: 'sha256',
       size: stat.size, mtime: stat.mtime,
       remoteFileId: remote?.fileId ?? null, isConflicted: false,
-    }, remote?.lastModified));
+    }, stat.mtime));
     await this.deps.stateDB.save();
     await this.deps.historyStore?.save();
   }
@@ -168,7 +168,7 @@ export class ResolutionService {
     }
 
     const remoteData = await client.downloadFile(path);
-    await this.deps.localAdapter.atomicWriteBinary(path, remoteData);
+    await this.deps.localAdapter.atomicWriteBinary(path, remoteData, { ctime: remote.creationTime, mtime: remote.lastModified || undefined });
     if (remote.lastModified) await this.deps.localAdapter.setMtime(path, remote.lastModified);
 
     const localHash = await sha256(remoteData);
@@ -181,7 +181,7 @@ export class ResolutionService {
     this.deps.stateDB.setFile(await withLocalSignature(this.deps.localAdapter, {
       path, localHash, remoteId, idType: 'sha256',
       size: remote.size, mtime,
-      remoteFileId: remote.fileId, isConflicted: false,
+      remoteFileId: remote.fileId, isConflicted: false, remoteCtime: remote.creationTime,
     }, remote.lastModified));
     await this.deps.stateDB.save();
     await this.deps.historyStore?.save();
@@ -246,16 +246,18 @@ export class ResolutionService {
     const data = new TextEncoder().encode(content).buffer;
     const mtime = Date.now();
     const remote = await this.fetchRemoteInfo(conn.client, path);
+    const localCtime = (await this.deps.localAdapter.stat(path))?.ctime;
+    const ctime = side === 'remote' ? remote?.creationTime ?? localCtime : localCtime ?? remote?.creationTime;
 
     const lockToken = await this.deps.transfer.acquireLock(conn.client, path);
     try {
-      const outcome = await conn.uploadStrategy.upload(conn.client, path, data, mtime);
+      const outcome = await conn.uploadStrategy.upload(conn.client, path, data, mtime, { ctime });
       if (outcome === 'skipped') throw new Error(`Upload skipped (over the size limit): ${path}`);
     } finally {
       await this.deps.transfer.releaseLock(conn.client, path, lockToken);
     }
 
-    await this.deps.localAdapter.atomicWriteBinary(path, data);
+    await this.deps.localAdapter.atomicWriteBinary(path, data, { ctime, mtime });
     await this.deps.localAdapter.setMtime(path, mtime);
 
     const localHash = await sha256(data);
@@ -267,7 +269,7 @@ export class ResolutionService {
       path, localHash, remoteId: localHash, idType: 'sha256',
       size: data.byteLength, mtime,
       remoteFileId: remote?.fileId ?? null, isConflicted: false,
-    }, remote?.lastModified));
+    }, mtime));
     // Both sides now hold the clean content, so it is the new merge base and the snapshot is dropped.
     this.deps.mergeBase.record(path, content);
     this.dropCleanSnapshot(path);

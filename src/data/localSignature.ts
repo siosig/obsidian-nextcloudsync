@@ -12,6 +12,12 @@ export async function withLocalSignature(
   if (st) {
     fs.localMtime = st.mtime;
     fs.localSize = st.size;
+    if (st.ctime != null) {
+      fs.localCtime = st.ctime;
+      // Transfers now carry ctime in both directions. An explicit remote baseline
+      // supplied by reconciliation takes precedence over this post-transfer value.
+      fs.remoteCtime ??= st.ctime;
+    }
   }
   if (remoteMtime != null) fs.remoteMtime = remoteMtime;
   return fs;

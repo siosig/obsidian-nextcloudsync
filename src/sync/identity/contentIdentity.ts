@@ -24,5 +24,6 @@ export function convergedState(
     path: remote.path, localHash, remoteId, idType,
     size: localStat.size, mtime: remote.lastModified || localStat.mtime,
     remoteFileId: remote.fileId, isConflicted: false,
+    remoteCtime: remote.creationTime,
   };
 }

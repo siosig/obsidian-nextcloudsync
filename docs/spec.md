@@ -887,3 +887,12 @@ Only a `[SPEC:<id>]` tag (or `spec()`, which emits the same tag) counts as cover
 ## §21–§22. Internal structure
 
 Moved to docs/plan.md §17–§19.
+
+
+### Nextcloud file timestamps
+
+On a local filesystem that supports Obsidian's `ctime` and `mtime` write options, downloads restore the server's creation and modification timestamps. Nextcloud uploads send `X-OC-CTime` and `X-OC-MTime`; chunked uploads carry both on the final assembly MOVE. Ordinary rewrites preserve an existing local creation time. WebDAV creation time is compared at whole-second precision; local subsecond precision is retained when already equal at that precision.
+
+For identical content, timestamp-only changes reconcile each field against its own last converged local/remote baseline. A local-only change is pushed with an ETag-guarded PROPPATCH; a remote-only change is restored locally. Nextcloud's writable modification-time property is `DAV:lastmodified` (not the protected read property `DAV:getlastmodified`). A fresh file ETag invalidates directory listing caches after metadata updates. With no timestamp baseline, the existing remote timestamp wins. If both sides changed the same field to different values, synchronization reports an error and leaves both values intact; it does not infer intent from clock order. Old/plain-WebDAV listings without creation timestamps retain the previous behavior.
+
+Desktop scans also enumerate non-excluded visible directories to find hidden files below them, while normal file stats continue to come from the Vault index. Mobile keeps the previous root-dot traversal.

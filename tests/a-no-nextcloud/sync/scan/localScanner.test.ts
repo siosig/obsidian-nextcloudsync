@@ -64,12 +64,12 @@ describe('LocalScanner.scanLocalFiles', () => {
     expect(found.get('.archive/deep/older.md')).toEqual({ size: 4, mtime: 4 });
   });
 
-  it('does not walk ordinary folders with the adapter — that is what the Vault index is for', async () => {
+  it('visits ordinary desktop folders to discover their hidden children', async () => {
     const { scanner, listCalls } = build(FS);
     await scanner.scanLocalFiles();
-    // The root has to be listed to find the dot entries; 'notes' must not be.
+    // Ordinary-file stats stay cached, but hidden children require a directory listing.
     expect(listCalls).toContain('');
-    expect(listCalls).not.toContain('notes');
+    expect(listCalls).toContain('notes');
   });
 
   it('leaves the config folder to the config-sync route rather than walking into it', async () => {

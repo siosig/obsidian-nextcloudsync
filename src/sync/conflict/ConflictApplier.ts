@@ -21,6 +21,7 @@ import { isAnomalousRemoteContent } from '../../util/limits';
 import { FileLogger } from '../../util/FileLogger';
 import { sha256 } from '../../util/hash';
 import { bytesEqual, checksumProvesIdentical, convergedState } from '../identity/contentIdentity';
+import { reconcileFileTimes } from '../identity/fileTimes';
 import type { App } from 'obsidian';
 
 export interface Connection {
@@ -65,7 +66,7 @@ export class ConflictApplier {
 
     // Must precede any merge write: feeds the max(local, remote) mtime stamp and the size/mtime strategies.
     const localStatBefore = await this.deps.localAdapter.stat(path);
-    const identity = await this.convergeIfIdentical(conn, path, remote, localStatBefore);
+    const identity = await this.convergeIfIdentical(conn, path, remote, localStatBefore, base);
     if (identity.converged) return;
     this.deps.onConflictEncountered();
     const localMtimeBefore = localStatBefore?.mtime ?? 0;
@@ -144,6 +145,7 @@ export class ConflictApplier {
   private async convergeIfIdentical(
     conn: Connection, path: string, remote: RemoteFileInfo,
     localStat: { size: number; mtime: number } | null,
+    base?: FileState,
   ): Promise<{ converged: boolean; remoteData?: ArrayBuffer }> {
     if (!localStat) return { converged: false };
     const localData = await this.deps.localAdapter.readBinary(path);
@@ -157,10 +159,13 @@ export class ConflictApplier {
       identical = bytesEqual(localData, remoteData);
     }
     if (!identical) return { converged: false, remoteData };
+    // First-sync large files and listings without checksums reach this identity path rather than
+    // SyncEngine's checksum fast path. Reconcile before committing a new timestamp baseline.
+    await reconcileFileTimes(this.deps.localAdapter, conn.client, remote, base);
     this.deps.stateDB.setFile(await withLocalSignature(
       this.deps.localAdapter, convergedState(remote, localHash, localStat), remote.lastModified,
     ));
-    this.deps.mergeBase.record(path, new TextDecoder().decode(localData));
+    this.deps.mergeBase.record(path, localData);
     void this.deps.logger?.log(`conflict: content identical to the remote → state converged, no transfer → ${path}`);
     return { converged: true };
   }
@@ -183,7 +188,7 @@ export class ConflictApplier {
     try {
       const lockToken = await this.deps.transfer.acquireLock(conn.client, path);
       try {
-        const outcome = await conn.uploadStrategy.upload(conn.client, path, mergedData, maxMtime);
+        const outcome = await conn.uploadStrategy.upload(conn.client, path, mergedData, maxMtime, { ctime: (await this.deps.localAdapter.stat(path))?.ctime ?? remote.creationTime });
         if (outcome !== 'skipped') { summary.uploadedCount++; uploaded = true; this.deps.journal.recordHistory(path, 'uploaded'); }
       } finally {
         await this.deps.transfer.releaseLock(conn.client, path, lockToken);
@@ -212,7 +217,7 @@ export class ConflictApplier {
     // After a failed push localHash deliberately differs from the file; a signature would let the
     // local-unchanged fast path skip the re-hash that drives the retry.
     this.deps.stateDB.setFile(
-      uploaded ? await withLocalSignature(this.deps.localAdapter, nextState, remote.lastModified) : nextState,
+      uploaded ? await withLocalSignature(this.deps.localAdapter, nextState, maxMtime) : nextState,
     );
     const mergeDetail: SyncHistoryDetail = {
       localHash: mergedHash,
@@ -243,7 +248,7 @@ export class ConflictApplier {
     try {
       const lockToken = await this.deps.transfer.acquireLock(conn.client, path);
       try {
-        const outcome = await conn.uploadStrategy.upload(conn.client, path, localData, mtime);
+        const outcome = await conn.uploadStrategy.upload(conn.client, path, localData, mtime, { ctime: stat?.ctime });
         if (outcome === 'skipped') {
           // Skipped (e.g. size limit): leave the conflict unresolved.
           this.deps.queueRetry(path);
@@ -270,8 +275,8 @@ export class ConflictApplier {
       path, localHash, remoteId: localHash, idType: 'sha256',
       size: stat?.size ?? localData.byteLength, mtime,
       remoteFileId: remote.fileId, isConflicted: false,
-    }, remote.lastModified));
-    this.deps.mergeBase.record(path, new TextDecoder().decode(localData));
+    }, mtime));
+    this.deps.mergeBase.record(path, localData);
     void this.deps.logger?.log(`conflict: resolved by prefer-local (remote overwritten) → ${path}`);
   }
 
@@ -287,7 +292,7 @@ export class ConflictApplier {
       return;
     }
     try {
-      await this.deps.localAdapter.atomicWriteBinary(path, remoteData);
+      await this.deps.localAdapter.atomicWriteBinary(path, remoteData, { ctime: remote.creationTime, mtime: remote.lastModified || undefined });
       if (remote.lastModified) {
         await this.deps.localAdapter.setMtime(path, remote.lastModified);
       }
@@ -309,7 +314,7 @@ export class ConflictApplier {
       size: remote.size, mtime,
       remoteFileId: remote.fileId, isConflicted: false,
     }, remote.lastModified));
-    this.deps.mergeBase.record(path, new TextDecoder().decode(remoteData));
+    this.deps.mergeBase.record(path, remoteData);
     void this.deps.logger?.log(`conflict: resolved by prefer-remote (local overwritten) → ${path}`);
   }
 }

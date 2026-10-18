@@ -68,6 +68,7 @@ export class RemoteListingSource {
       etag: fs.idType === 'etag' ? fs.remoteId : null,
       size: fs.size,
       lastModified: fs.remoteMtime ?? fs.mtime,
+      creationTime: fs.remoteCtime,
     }));
   }
 

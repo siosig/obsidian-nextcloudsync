@@ -1,6 +1,7 @@
 import { DataAdapter, FileView, Notice, Platform, TFile, Vault, Workspace, normalizePath } from 'obsidian';
 
-export interface LocalFileEntry { path: string; size: number; mtime: number; }
+export interface LocalFileEntry { path: string; size: number; mtime: number; ctime?: number; }
+export interface FileTimes { ctime?: number; mtime?: number; }
 
 // Atomic-write temp suffix, kept short: the temp file lives in the target's own directory and each path component is
 // capped at NAME_MAX bytes (255 on ext4/F2FS), so the temp name must not inherit the target's length (see tmpPathFor).
@@ -119,14 +120,50 @@ export class LocalAdapter {
     }
   }
 
+  private async preserveCreationAfterMtime(path: string, times: FileTimes): Promise<void> {
+    const { ctime, mtime } = times;
+    if (ctime == null || mtime == null || ctime <= mtime) return;
+    const matches = (stat: Awaited<ReturnType<DataAdapter['stat']>>) => stat != null
+      && Math.floor(stat.ctime / 1000) === Math.floor(ctime / 1000)
+      && Math.floor(stat.mtime / 1000) === Math.floor(mtime / 1000);
+    if (matches(await this.adapter.stat(path))) return;
+
+    // Obsidian 1.14.4 applies ctime before mtime. Darwin clamps birthtime when an
+    // earlier mtime is applied afterwards. Use its existing native timestamp
+    // capability to apply creation time last, without rewriting the file again.
+    // These optional implementation capabilities are feature-detected; a future
+    // adapter without them must report failure rather than record false convergence.
+    const native = this.adapter as DataAdapter & {
+      getFullPath?: (path: string) => string;
+      fs?: { setTimes?: (path: string, ctime?: number, mtime?: number) => Promise<void> };
+      btime?: (path: string, ctime: number) => void | Promise<void>;
+    };
+    if (typeof native.getFullPath === 'function') {
+      const fullPath = native.getFullPath(path);
+      if (typeof native.fs?.setTimes === 'function') {
+        await native.fs.setTimes(fullPath, undefined, mtime);
+        await native.fs.setTimes(fullPath, ctime, undefined);
+      } else if (typeof native.btime === 'function') {
+        await native.btime(fullPath, ctime);
+      }
+    }
+    if (!matches(await this.adapter.stat(path))) {
+      throw new Error(`Filesystem did not preserve requested creation/modification time: ${path}`);
+    }
+  }
+
   // An open leaf is updated in place via Vault.modify (no delete event, so Obsidian never detaches it, issue #15);
   // otherwise tmp-write -> remove existing -> rename.
-  async atomicWrite(targetPath: string, content: string): Promise<void> {
+  async atomicWrite(targetPath: string, content: string, times: FileTimes = {}): Promise<void> {
     targetPath = normalizePath(targetPath);
+    const before = await this.adapter.stat(targetPath);
+    const options = { ...times, ctime: times.ctime ?? before?.ctime };
     const openFile = this.findOpenTFile(targetPath);
     if (openFile) {
       this.ignore(targetPath);
-      await this.vault!.modify(openFile, content);
+      if (options.ctime != null || options.mtime != null) await this.vault!.modify(openFile, content, options);
+      else await this.vault!.modify(openFile, content);
+      await this.preserveCreationAfterMtime(targetPath, options);
       return;
     }
     const tmpPath = tmpPathFor(targetPath);
@@ -135,12 +172,14 @@ export class LocalAdapter {
     let targetRemoved = false;
     try {
       await this.ensureParentDir(targetPath);
-      await this.adapter.write(tmpPath, content);
+      if (options.ctime != null || options.mtime != null) await this.adapter.write(tmpPath, content, options);
+      else await this.adapter.write(tmpPath, content);
       if (await this.adapter.exists(targetPath)) {
         await this.adapter.remove(targetPath);
         targetRemoved = true;
       }
       await this.adapter.rename(tmpPath, targetPath);
+      await this.preserveCreationAfterMtime(targetPath, options);
     } catch (err) {
       // If remove(targetPath) already succeeded before rename threw, tmpPath is the ONLY surviving copy of the new content:
       // clean up tmp only when the destructive remove() never happened.
@@ -152,12 +191,16 @@ export class LocalAdapter {
   }
 
   // Same open-file in-place path as atomicWrite (Vault.modifyBinary); otherwise tmp-write -> remove -> rename with read-back verification.
-  async atomicWriteBinary(targetPath: string, data: ArrayBuffer): Promise<void> {
+  async atomicWriteBinary(targetPath: string, data: ArrayBuffer, times: FileTimes = {}): Promise<void> {
     targetPath = normalizePath(targetPath);
+    const before = await this.adapter.stat(targetPath);
+    const options = { ...times, ctime: times.ctime ?? before?.ctime };
     const openFile = this.findOpenTFile(targetPath);
     if (openFile) {
       this.ignore(targetPath);
-      await this.vault!.modifyBinary(openFile, data);
+      if (options.ctime != null || options.mtime != null) await this.vault!.modifyBinary(openFile, data, options);
+      else await this.vault!.modifyBinary(openFile, data);
+      await this.preserveCreationAfterMtime(targetPath, options);
       return;
     }
     const tmpPath = tmpPathFor(targetPath);
@@ -166,12 +209,14 @@ export class LocalAdapter {
     let targetRemoved = false;
     try {
       await this.ensureParentDir(targetPath);
-      await this.adapter.writeBinary(tmpPath, data);
+      if (options.ctime != null || options.mtime != null) await this.adapter.writeBinary(tmpPath, data, options);
+      else await this.adapter.writeBinary(tmpPath, data);
       if (await this.adapter.exists(targetPath)) {
         await this.adapter.remove(targetPath);
         targetRemoved = true;
       }
       await this.adapter.rename(tmpPath, targetPath);
+      await this.preserveCreationAfterMtime(targetPath, options);
       // Read-back verification (docs/spec.md §9.2): fsync is unavailable through the adapter, so confirm the byte length;
       // a truncated write throws so the caller leaves Base unadvanced and re-syncs.
       const written = await this.adapter.stat(targetPath);
@@ -200,12 +245,27 @@ export class LocalAdapter {
     return this.adapter.exists(normalizePath(path));
   }
 
-  async stat(path: string): Promise<{ size: number; mtime: number } | null> {
+  async stat(path: string): Promise<{ size: number; mtime: number; ctime?: number } | null> {
     return this.adapter.stat(normalizePath(path));
   }
 
   async list(path: string): Promise<{ files: string[]; folders: string[] }> {
     return this.adapter.list(normalizePath(path));
+  }
+
+  async setFileTimes(path: string, times: FileTimes): Promise<void> {
+    const before = await this.stat(path);
+    if (!before) throw new Error(`Cannot set timestamps of missing file: ${path}`);
+    const wanted = { ctime: times.ctime ?? before.ctime, mtime: times.mtime ?? before.mtime };
+    const sameSecond = (a?: number, b?: number) => a != null && b != null && Math.floor(a / 1000) === Math.floor(b / 1000);
+    if (sameSecond(before.ctime, wanted.ctime) && sameSecond(before.mtime, wanted.mtime)) return;
+    // Obsidian's native write options can restore APFS birthtime; Node utimes cannot.
+    // Preserve bytes and open-leaf identity through the existing atomic-write path.
+    await this.atomicWriteBinary(path, await this.readBinary(path), wanted);
+    const after = await this.stat(path);
+    if (!after || (wanted.ctime != null && !sameSecond(after.ctime, wanted.ctime)) || !sameSecond(after.mtime, wanted.mtime)) {
+      throw new Error(`Filesystem did not preserve requested creation/modification time: ${path}`);
+    }
   }
 
   async setMtime(path: string, mtime: number): Promise<void> {
@@ -238,6 +298,6 @@ export class LocalAdapter {
   // The config folder is not Vault-tracked and is excluded (callers inject it). Returns [] when no Vault was injected (unit tests).
   listVaultFiles(): LocalFileEntry[] {
     if (!this.vault) return [];
-    return this.vault.getFiles().map((f) => ({ path: f.path, size: f.stat.size, mtime: f.stat.mtime }));
+    return this.vault.getFiles().map((f) => ({ path: f.path, size: f.stat.size, mtime: f.stat.mtime, ...(f.stat.ctime > 0 ? { ctime: f.stat.ctime } : {}) }));
   }
 }

@@ -31,12 +31,12 @@ describe('[SPEC:G5-1]: ChunkedUploadStrategy forwards ifMatchEtag to uploadChunk
     const client = fakeClient();
     const s = new ChunkedUploadStrategy(uploadConfig({ maxFileSizeMB: 100 }));
     const outcome = await s.upload(
-      client as unknown as IWebDAVClient, 'big.bin', data, 1000, { ifMatchEtag: 'remote-etag' },
+      client as unknown as IWebDAVClient, 'big.bin', data, 1000, { ifMatchEtag: 'remote-etag', ctime: 500 },
     );
     expect(outcome).toBe('uploaded');
     expect(client.uploadChunked).toHaveBeenCalledTimes(1);
     const [, , , forwardedOpts] = client.uploadChunked.mock.calls[0];
-    expect(forwardedOpts).toEqual({ ifMatchEtag: 'remote-etag' });
+    expect(forwardedOpts).toEqual({ ifMatchEtag: 'remote-etag', ctime: 500, mtime: 1000 });
   });
 });
 
@@ -76,5 +76,21 @@ describe('[SPEC:G5-1]: NextcloudClient.uploadChunked — assembling MOVE carries
     await new NextcloudClient(settings, 'pw', 'Vault').uploadChunked('Notes/big.bin', new ArrayBuffer(2), 10 * 1024 * 1024);
     const move = calls('MOVE')[0];
     expect(move.headers?.['If-Match']).toBeUndefined();
+  });
+});
+
+// Both upload paths must preserve original timestamps rather than server upload/assembly time.
+describe('Nextcloud original timestamps on upload', () => {
+  const mock = requestUrl as unknown as jest.Mock;
+  const settings = { ...DEFAULT_SETTINGS, serverUrl: 'https://nc/remote.php/dav/files/alice/', username: 'alice', deviceId: 'timestamps' };
+  beforeEach(() => { mock.mockReset(); mock.mockResolvedValue({ status: 201, text: '', json: {}, arrayBuffer: new ArrayBuffer(0), headers: {} }); });
+  test.each(['simple', 'chunked'])('%s sends whole-second creation and modification times', async kind => {
+    const client = new NextcloudClient(settings, 'pw', 'Vault');
+    const ctime = 1577808000123, mtime = 1646092800789;
+    if (kind === 'simple') await client.uploadFile('file.bin', new ArrayBuffer(2), mtime, { ctime });
+    else await client.uploadChunked('file.bin', new ArrayBuffer(2), 1024, { ctime, mtime });
+    const req = mock.mock.calls.map(c => c[0]).find(r => kind === 'simple' ? r.method === 'PUT' : r.method === 'MOVE');
+    expect(req.headers['X-OC-CTime']).toBe('1577808000');
+    expect(req.headers['X-OC-MTime']).toBe('1646092800');
   });
 });

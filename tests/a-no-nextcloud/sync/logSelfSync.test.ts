@@ -20,6 +20,7 @@ const DEBUG_LOG = debugLogPath('_logs', HOST);
 function makeObsidianLikeAdapter(target: string, onRemoveTarget: () => void) {
   const files = new Map<string, ArrayBuffer>();
   const adapter = {
+    stat: jest.fn(async () => null),
     mkdir: jest.fn(async () => undefined),
     writeBinary: jest.fn(async (p: string, d: ArrayBuffer) => { files.set(p, d); }),
     exists: jest.fn(async (p: string) => files.has(p)),

@@ -28,12 +28,13 @@ export function withinSafetyWindow(mtime: number, ref: number): boolean {
 // or `lastSync`. `clock` is accessors, not values, so the common early-return path never reads the state DB.
 export function isLocallyUnchanged(
   base: FileState,
-  stat: { mtime: number; size: number },
+  stat: { mtime: number; size: number; ctime?: number },
   clock: { now(): number; lastSyncTime(): number },
 ): boolean {
   if (base.localMtime == null || base.localSize == null) return false;
   if (stat.size !== base.localSize) return false;
   if (stat.mtime !== base.localMtime) return false;
+  if (stat.ctime != null && base.localCtime != null && stat.ctime !== base.localCtime) return false;
   const now = clock.now();
   const lastSync = clock.lastSyncTime();
   if (withinSafetyWindow(stat.mtime, now)) return false;

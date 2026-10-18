@@ -62,6 +62,7 @@ describe('[SPEC:G4-1] atomicWrite/atomicWriteBinary must not delete the sole sur
     const adapter = {
       mkdir: jest.fn(async () => undefined),
       write: jest.fn(async () => { throw new Error('disk full'); }),
+      stat: jest.fn(async () => null),
       exists: jest.fn(async (p: string) => files.has(p)),
       remove: jest.fn(async (p: string) => { files.delete(p); }),
       rename: jest.fn(async () => undefined),

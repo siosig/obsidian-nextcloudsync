@@ -163,6 +163,8 @@ export interface FileState {
    * reconciling hash (docs/spec.md §4.2).
    */
   localMtime?: number;
+  localCtime?: number;
+  remoteCtime?: number;
   /** Local size observed with `localMtime`. */
   localSize?: number;
   /** Server `lastModified` at the last converged state, separate from `localMtime`. */
@@ -208,6 +210,7 @@ export interface RemoteFileInfo {
   etag: string | null;
   size: number;
   lastModified: number;
+  creationTime?: number;
 }
 
 /** A remote directory; `fileId` (oc:fileid) is stable across MOVE and identifies it for rename detection. */

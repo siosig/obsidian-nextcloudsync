@@ -13,6 +13,8 @@ export interface UploadConfig {
 
 /** Optional per-upload hints. */
 export interface UploadOptions {
+  ctime?: number;
+  mtime?: number;
   /** Reuse this already-computed SHA-256 (hex) for the OC-Checksum header instead of re-hashing. */
   precomputedSha256?: string;
   /** Send `If-Match` with this ETag so a remote that changed since then answers 412. */

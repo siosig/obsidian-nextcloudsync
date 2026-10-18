@@ -55,8 +55,9 @@ export interface IWebDAVClient {
    */
   uploadFile(
     remotePath: string, data: ArrayBuffer, mtime?: number,
-    opts?: { precomputedSha256?: string; ifMatchEtag?: string | null },
+    opts?: { precomputedSha256?: string; ifMatchEtag?: string | null; ctime?: number; mtime?: number },
   ): Promise<void>;
+  setFileTimes?(path: string, times: { ctime?: number; mtime?: number }, ifMatchEtag?: string | null): Promise<RemoteFileInfo>;
   moveFile(oldPath: string, newPath: string): Promise<void>;
   deleteFile(path: string, expectedRemoteId: string): Promise<void>;
   getSyncToken(): Promise<string | null>;
@@ -85,7 +86,7 @@ export interface IWebDAVClient {
    */
   uploadChunked(
     remotePath: string, data: ArrayBuffer, chunkSizeBytes: number,
-    opts?: { precomputedSha256?: string; ifMatchEtag?: string | null },
+    opts?: { precomputedSha256?: string; ifMatchEtag?: string | null; ctime?: number; mtime?: number },
   ): Promise<void>;
 
   /** Acquires a file lock and returns the token. @throws FileLockedError on HTTP 423. */

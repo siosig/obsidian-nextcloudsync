@@ -12,12 +12,15 @@ export interface MergeBaseRecorderDeps {
 export class MergeBaseRecorder {
   constructor(private readonly deps: MergeBaseRecorderDeps) {}
 
-  record(path: string, content: string): void {
+  record(path: string, content: string | ArrayBuffer): void {
     if (!this.deps.baseStore) return;
     // Every Auto Merge File (body 3-way) and every markdown file (frontmatter set-merge needs a base to
     // detect deletions even when `md` is an Other File) gets a base.
     if (!isAutoMergeFileType(path, this.deps.autoMergeFileTypes()) && !isMarkdown(path)) return;
-    this.deps.baseStore.set(path, content);
+    // Decode only text files that actually need a merge base. Large binary attachments can exceed
+    // V8's string limit even when their ArrayBuffer fits comfortably in memory.
+    const text = typeof content === 'string' ? content : new TextDecoder().decode(content);
+    this.deps.baseStore.set(path, text);
     this.deps.baseStore.requestSave();
   }
 

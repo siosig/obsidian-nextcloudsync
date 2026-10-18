@@ -333,3 +333,17 @@ describe('ResolutionService.getUnresolvedConflictCount', () => {
     expect(await service.getUnresolvedConflictCount()).toBe(2);
   });
 });
+
+
+test.each(['local', 'remote'] as const)('clean %s resolution carries one chosen creation time to both sides', async side => {
+  const write = jest.fn(async (_path: string, _data: ArrayBuffer, _options?: { ctime?: number; mtime?: number }) => undefined);
+  const { service, conn } = build({ snapshots: { 'note.md': { local: 'clean local', remote: 'clean remote', localMtime: 1, remoteMtime: 2, localSize: 11, remoteSize: 12 } }, remoteInfos: [remote({ creationTime: 9000 })] }, {
+    localAdapter: { stat: async () => ({ size: 11, mtime: 1000, ctime: 5000 }), atomicWriteBinary: write, setMtime: async () => undefined } as unknown as ResolutionDeps['localAdapter'],
+  });
+  const upload = jest.spyOn(conn.uploadStrategy, 'upload').mockResolvedValue('uploaded');
+  if (side === 'local') await service.applyCleanLocal(conn, 'note.md');
+  else await service.applyCleanRemote(conn, 'note.md');
+  const expected = side === 'local' ? 5000 : 9000;
+  expect(upload.mock.calls[0][4]).toEqual({ ctime: expected });
+  expect(write.mock.calls[0][2]).toEqual(expect.objectContaining({ ctime: expected }));
+});
