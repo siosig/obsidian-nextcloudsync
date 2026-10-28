@@ -61,6 +61,7 @@ function buildRacy() {
     } as unknown as WatchDeps['localAdapter'],
     stateDB: {
       getFile: () => base,
+      getAllFiles: () => [],
       deleteFile: () => undefined,
       getDir: () => undefined,
       setDir: () => undefined,
@@ -103,6 +104,7 @@ function buildRacy() {
     },
     queueRetry: () => undefined,
     conflictEncounters: () => 0,
+    massDeleteLimit: () => 20,
     notify: () => undefined,
   };
 

@@ -1,7 +1,7 @@
 // Records what the engine writes ABOUT a sync (session summary, per-file history, error list) and owns the
 // run start time those records are grouped by. Unlike the leaf modules it holds state: a journal without
 // a current run is not a journal.
-import { SyncSessionSummary, SyncFileOp, SyncHistoryDetail } from '../../types';
+import { SyncSessionSummary, SyncFileOp, SyncHistoryDetail, SyncErrorDetail } from '../../types';
 import { SyncHistoryStore } from '../../data/SyncHistoryStore';
 import { FileLogger } from '../../util/FileLogger';
 
@@ -38,7 +38,7 @@ export class SyncJournal {
     summary: SyncSessionSummary,
     path: string,
     err: unknown,
-    skippedPaths?: { all: string[] },
+    skippedPaths?: SyncErrorDetail['skippedPaths'],
     dirBreakerSkipped?: { deleteRemote: string[]; trashLocal: string[] },
   ): void {
     summary.errorCount++;

@@ -31,6 +31,7 @@ function build(opts: { blocked: boolean; running?: boolean }): Harness {
   };
   const stateDB = {
     getFile: jest.fn(() => tracked),
+    getAllFiles: jest.fn(() => [tracked]),
     deleteFile: jest.fn(),
     getDir: jest.fn(() => ({ path: 'd', remoteFileId: null })),
     setDir: jest.fn(),
@@ -61,7 +62,7 @@ function build(opts: { blocked: boolean; running?: boolean }): Harness {
   const deps = {
     localAdapter, stateDB, historyStore, statusBar, journal, mergeBase, transfer, deletion, resolution,
     isSystemExcluded, isPluginPath: noPluginPath, connect, renameTracker, isBlockedByWifiOnly, isSyncRunning, processFile,
-    queueRetry, conflictEncounters, logger, notify,
+    queueRetry, conflictEncounters, massDeleteLimit: () => 20, logger, notify,
   } as unknown as WatchDeps;
 
   // Every port that would leave a trace. isSystemExcluded, isBlockedByWifiOnly and logger.log are
@@ -74,6 +75,7 @@ function build(opts: { blocked: boolean; running?: boolean }): Harness {
     stat: localAdapter.stat,
     readBinary: localAdapter.readBinary,
     getFile: stateDB.getFile,
+    getAllFiles: stateDB.getAllFiles,
     deleteFile: stateDB.deleteFile,
     getDir: stateDB.getDir,
     setDir: stateDB.setDir,

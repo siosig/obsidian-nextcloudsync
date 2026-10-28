@@ -26,6 +26,7 @@ function makeEngine(opts: { tracked?: DirState[]; settings?: DavSyncSettings } =
   const statusBar = { setStatus: jest.fn(), setProgress: jest.fn(), setSyncComplete: jest.fn(), setErrorCount: jest.fn() };
   const stateDB = {
     getDir: (p: string) => dirs.get(p),
+    getAllFiles: () => [],
     setDir: (d: DirState) => { dirs.set(d.path, d); },
     deleteDir: (p: string) => { dirs.delete(p); },
     getAllDirs: () => [...dirs.values()],

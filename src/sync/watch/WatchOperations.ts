@@ -33,6 +33,9 @@ import { AsyncMutex } from '../../util/AsyncMutex';
 // Operation names used in the "skipped on cellular" log line.
 type WatchOpName = 'sync' | 'delete' | 'rename' | 'folder-create' | 'folder-delete' | 'folder-rename';
 
+// Window over which watch-mode deletions count against the mass-delete limit (docs/spec.md §8).
+const DELETE_BURST_WINDOW_MS = 60_000;
+
 export interface Connection {
   client: IWebDAVClient;
   uploadStrategy: IUploadStrategy;
@@ -40,7 +43,7 @@ export interface Connection {
 
 export interface WatchDeps {
   localAdapter: Pick<LocalAdapter, 'stat' | 'readBinary'>;
-  stateDB: Pick<StateDB, 'getFile' | 'deleteFile' | 'getDir' | 'setDir' | 'deleteDir' | 'requestSave' | 'getLastSyncTime'>;
+  stateDB: Pick<StateDB, 'getFile' | 'getAllFiles' | 'deleteFile' | 'getDir' | 'setDir' | 'deleteDir' | 'requestSave' | 'getLastSyncTime'>;
   historyStore?: Pick<SyncHistoryStore, 'save'>;
   statusBar: IStatusBar;
   journal: SyncJournal;
@@ -66,6 +69,8 @@ export interface WatchDeps {
   queueRetry(path: string): void;
   // How many conflicts the engine has encountered so far (see notifyWatchOutcome).
   conflictEncounters(): number;
+  // The effective mass-delete limit for the current tracked set.
+  massDeleteLimit(): number;
   logger?: Pick<FileLogger, 'log'>;
   // Injected so the outcome rules can be exercised without an Obsidian runtime.
   notify?(message: string, timeout?: number): void;
@@ -87,6 +92,9 @@ export class WatchOperations {
   // harmless because the next full sync detects the same change, and persisting would add a second source of truth.
   private readonly pendingPaths = new Set<string>();
 
+  // Timestamps of files whose deletion watch mode recently pushed to the server.
+  private recentDeletions: number[] = [];
+
   constructor(private readonly deps: WatchDeps) {}
 
   // Guarded by the running check so it never fights a concurrent full sync, which owns the status during its run.
@@ -106,6 +114,19 @@ export class WatchOperations {
     if (!this.deps.isBlockedByWifiOnly()) return false;
     void this.deps.logger?.log(`watch: skipped ${op} ${target} — Wi-Fi only is on and the connection is cellular`);
     return true;
+  }
+
+  // Past the mass-delete limit within the window, deletions are no longer pushed one by one: the tracking is kept,
+  // so the next full sync sees the files as missing and its outbound breaker decides (docs/spec.md §8).
+  private deletionLimitReached(fileCount: number, target: string): boolean {
+    const now = Date.now();
+    this.recentDeletions = this.recentDeletions.filter(t => now - t < DELETE_BURST_WINDOW_MS);
+    if (this.recentDeletions.length + fileCount > this.deps.massDeleteLimit()) {
+      void this.deps.logger?.log(`watch: deletion of ${target} left to the next full sync, mass-delete limit reached`);
+      return true;
+    }
+    for (let i = 0; i < fileCount; i++) this.recentDeletions.push(now);
+    return false;
   }
 
   private withPathLock<T>(path: string, fn: () => Promise<T>): Promise<T> {
@@ -204,6 +225,7 @@ export class WatchOperations {
       void this.deps.logger?.log(`watch: full sync in progress → deletion of ${path} left to the running scan`);
       return;
     }
+    if (this.deletionLimitReached(1, path)) return;
     const conn = await this.deps.connect();
     const summary = this.deps.journal.newSummary();
     const conflictsBefore = this.deps.conflictEncounters();
@@ -278,6 +300,8 @@ export class WatchOperations {
       void this.deps.logger?.log(`watch: full sync in progress → folder deletion of ${path} left to the running scan`);
       return;
     }
+    const trackedInside = this.deps.stateDB.getAllFiles().filter(f => f.path.startsWith(`${path}/`)).length;
+    if (this.deletionLimitReached(trackedInside, path)) return;
     const conn = await this.deps.connect();
     this.begin();
     let succeeded = false;

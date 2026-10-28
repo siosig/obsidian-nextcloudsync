@@ -248,13 +248,13 @@ export class SyncStatusModal extends Modal {
         if (this.onResolveDirBreaker) this.addDirBreakerBulkResolveRow(list, skipped);
       } else if (e.skippedPaths) {
         // Same for the file (absence-deletion) breaker: report note only, no bulk-resolve action.
-        const all = e.skippedPaths.all;
+        const { all, direction } = e.skippedPaths;
         row.createDiv({
           text: 'Click to open a report note listing every skipped file.',
           cls: 'setting-item-description',
         });
         row.addEventListener('click', () => {
-          void this.openReportNote(FILE_BREAKER_REPORT_FILENAME, formatFileBreakerReportNote(all));
+          void this.openReportNote(FILE_BREAKER_REPORT_FILENAME, formatFileBreakerReportNote(all, direction));
         });
       } else if (e.path) {
         row.addEventListener('click', () => {

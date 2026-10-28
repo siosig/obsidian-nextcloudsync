@@ -92,6 +92,7 @@ function build(o: Opts = {}, over: Partial<WatchDeps> = {}) {
     } as unknown as WatchDeps['localAdapter'],
     stateDB: {
       getFile: () => o.base,
+      getAllFiles: () => (o.base ? [o.base] : []),
       deleteFile: (p: string) => { calls.deleteFile.push(p); },
       getDir: (p: string) => (o.trackedDirs?.includes(p) ? { path: p, remoteFileId: null } : undefined),
       setDir: (d: { path: string }) => { calls.setDir.push(d.path); },
@@ -140,6 +141,7 @@ function build(o: Opts = {}, over: Partial<WatchDeps> = {}) {
     },
     queueRetry: (p: string) => { calls.retries.push(p); },
     conflictEncounters: o.conflicts ?? (() => 0),
+    massDeleteLimit: () => 20,
     notify: (m: string) => { calls.notices.push(m); },
     ...over,
   };

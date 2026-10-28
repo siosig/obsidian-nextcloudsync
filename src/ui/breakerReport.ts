@@ -28,15 +28,21 @@ export function formatDirBreakerReportNote(skipped: { deleteRemote: string[]; tr
   return lines.join('\n');
 }
 
-export function formatFileBreakerReportNote(all: string[]): string {
+export function formatFileBreakerReportNote(all: string[], direction?: 'outbound'): string {
+  const intro = direction === 'outbound'
+    ? 'This note lists every file the mass-delete safety breaker refused to delete on the remote, because too ' +
+      'many tracked files went missing on this device at once. Nothing has been changed on the remote. To restore ' +
+      'the files, reset the vault index and sync; to delete them on the remote, set the mass-delete limit to 0 for one sync.'
+    : 'This note lists every file the mass-delete safety breaker refused to delete locally, because too ' +
+      'many appeared deleted on the remote at once (often a sign of a partial or failed remote ' +
+      'listing, not a real mass deletion). Nothing has been changed locally.';
+  const heading = direction === 'outbound' ? 'Missing on this device, still on the remote' : 'Appears deleted on the remote';
   const lines: string[] = [
     '# Nextcloud Sync — file mass-delete breaker report',
     '',
-    'This note lists every file the mass-delete safety breaker refused to delete locally, because too ' +
-      'many appeared deleted on the remote at once (often a sign of a partial or failed remote ' +
-      'listing, not a real mass deletion). Nothing has been changed locally.',
+    intro,
     '',
-    `## Appears deleted on the remote (${all.length})`,
+    `## ${heading} (${all.length})`,
     '',
     ...(all.length ? all.map((p) => `- ${p}`) : ['*(none)*']),
     '',

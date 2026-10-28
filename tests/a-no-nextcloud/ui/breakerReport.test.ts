@@ -39,6 +39,12 @@ describe('[SPEC:MDV-7] breaker report note formatting (feature 056)', () => {
     expect(note).not.toMatch(/…and \d+ more/);
   });
 
+  test('formatFileBreakerReportNote describes held local deletions for the outbound breaker', () => {
+    const note = formatFileBreakerReportNote(['a.md', 'b.md'], 'outbound');
+    expect(note).toContain('## Missing on this device, still on the remote (2)');
+    expect(note).not.toContain('Appears deleted on the remote');
+  });
+
   test('formatFileBreakerReportNote renders "(none)" placeholder for an empty list', () => {
     const note = formatFileBreakerReportNote([]);
     expect(note).toContain('(0)');

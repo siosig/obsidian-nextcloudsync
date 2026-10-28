@@ -22,6 +22,7 @@ function makeStateDB(seed?: FileState) {
   return {
     files,
     getFile: jest.fn((p: string) => files.get(p)),
+    getAllFiles: jest.fn(() => [...files.values()]),
     setFile: jest.fn((fs: FileState) => { files.set(fs.path, fs); }),
     deleteFile: jest.fn((p: string) => { files.delete(p); }),
     requestSave: jest.fn(),

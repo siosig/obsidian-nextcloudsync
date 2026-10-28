@@ -19,6 +19,7 @@ function makeFileEngine(base: FileState) {
   const statFile = jest.fn(async (p: string) => unchangedRemote(p, base.localHash));
   const stateDB = {
     getFile: (p: string) => files.get(p),
+    getAllFiles: () => [...files.values()],
     deleteFile: jest.fn((p: string) => { files.delete(p); }),
     requestSave: jest.fn(),
   };
@@ -35,6 +36,7 @@ function makeFolderEngine(dir: DirState) {
   const deleteCollection = jest.fn(async () => { throw new Error('500 Internal Server Error'); });
   const stateDB = {
     getDir: (p: string) => dirs.get(p),
+    getAllFiles: () => [],
     deleteDir: jest.fn((p: string) => { dirs.delete(p); }),
     requestSave: jest.fn(),
   };
@@ -69,6 +71,7 @@ describe('[SPEC:G1-2] SyncEngine.deleteSingleFile — remote delete failure must
     const statFile = jest.fn(async (p: string) => unchangedRemote(p, 'h1'));
     const stateDB = {
       getFile: (p: string) => files.get(p),
+      getAllFiles: () => [...files.values()],
       deleteFile: jest.fn((p: string) => { files.delete(p); }),
       requestSave: jest.fn(),
     };
@@ -100,6 +103,7 @@ describe('[SPEC:G1-2] SyncEngine.deleteSingleFolder — remote delete failure mu
     const deleteCollection = jest.fn(async () => undefined);
     const stateDB = {
       getDir: (p: string) => dirs.get(p),
+      getAllFiles: () => [],
       deleteDir: jest.fn((p: string) => { dirs.delete(p); }),
       requestSave: jest.fn(),
     };

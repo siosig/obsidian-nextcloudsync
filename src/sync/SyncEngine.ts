@@ -17,6 +17,7 @@ import {
   PreconditionFailedError,
   RemoteCompareResult,
   RemoteRootMissingError,
+  SyncErrorDetail,
 } from '../types';
 import { LocalAdapter } from '../data/LocalAdapter';
 import { StateDB } from '../data/StateDB';
@@ -140,6 +141,9 @@ export class SyncEngine {
   // Monotonic; read as a delta around one watch operation to learn whether it touched a conflict.
   // Summary counters cannot say: conflicts settled by a deterministic strategy count as plain uploads/downloads.
   private conflictEncounters = 0;
+  // Local deletions the outbound breaker held back this session; they stay tracked and are neither deleted on the
+  // server nor re-downloaded (docs/spec.md §8).
+  private outboundDeletionsHeld: ReadonlySet<string> = new Set();
   private renameTracker: RenameTracker | null = null;
   // Single source of truth for which config-folder paths sync (shared by isSystemExcluded, the remote filter
   // and the remote-deletion scope guard).
@@ -295,6 +299,7 @@ export class SyncEngine {
       processFile: (remote, summary) => this.processFileWithRetry(remote, summary),
       queueRetry: (p) => { this.retryQueue.push(p); },
       conflictEncounters: () => this.conflictEncounters,
+      massDeleteLimit: () => this.effectiveMassDeleteLimit(opts.stateDB.getAllFiles().length),
       logger: opts.logger,
     });
     this.remoteListing = new RemoteListingSource({
@@ -737,7 +742,7 @@ export class SyncEngine {
     summary: SyncSessionSummary,
     path: string,
     err: unknown,
-    skippedPaths?: { all: string[] },
+    skippedPaths?: SyncErrorDetail['skippedPaths'],
     dirBreakerSkipped?: { deleteRemote: string[]; trashLocal: string[] },
   ): void {
     this.journal.recordError(summary, path, err, skippedPaths, dirBreakerSkipped);
@@ -865,6 +870,7 @@ export class SyncEngine {
     summary.retriedFiles = this.retryQueue.splice(0);
 
     await this.preparePluginSession(client, remoteFiles);
+    await this.guardOutboundDeletions(summary);
     const eligible = remoteFiles.filter(f => !this.isSystemExcluded(f.path));
     this.syncProgress = { processed: 0, total: eligible.length };
     if (eligible.length > 0) this.opts.statusBar.setProgress(0, eligible.length);
@@ -998,6 +1004,7 @@ export class SyncEngine {
 
     // Previously synced but gone locally: this device deleted it. Propagate rather than re-download (which resurrects it).
     if (!localStat && base) {
+      if (this.outboundDeletionsHeld.has(remote.path)) return;
       await this.applyLocalDeletion(remote, base, remoteId, idType, summary);
       return;
     }
@@ -1197,6 +1204,33 @@ export class SyncEngine {
     if (outcome.status === 'failed') this.opts.stateDB.setRemoteRootEtag(null);
   }
 
+  // Outbound mass-delete breaker: a vault that suddenly lost many tracked files (bulk delete, failed mount, another
+  // tool) must not empty the server and, through it, every other device. Same limit as the absence-deletion breaker
+  // in processLocalModifications. Held paths stay tracked and are left for the user (docs/spec.md §8).
+  private async guardOutboundDeletions(summary: SyncSessionSummary): Promise<void> {
+    this.outboundDeletionsHeld = new Set();
+    const tracked = this.opts.stateDB.getAllFiles();
+    const candidates: string[] = [];
+    for (const { path } of tracked) {
+      if (this.isSystemExcluded(path) || this.plugins.isPluginPath(path)) continue;
+      if (!(await this.opts.localAdapter.stat(path))) candidates.push(path);
+    }
+    const limit = this.effectiveMassDeleteLimit(tracked.length);
+    if (candidates.length <= limit) return;
+
+    this.outboundDeletionsHeld = new Set(candidates);
+    void this.opts.logger?.log(`delete-remote: HELD ${candidates.length} local deletions, exceeds safety limit (${limit})`);
+    new Notice(
+      `${candidates.length} files are missing on this device and were not deleted on the server. `
+      + 'To restore them, reset the vault index and sync. To delete them on the server, set the mass-delete limit to 0 for one sync.',
+      15000,
+    );
+    // Recorded as an error so the status dialog lists the paths and the root-ETag short-circuit is invalidated.
+    this.recordError(summary, '(outbound mass-delete breaker)',
+      new Error(`Held ${candidates.length} local deletions, exceeds safety limit ${limit}`),
+      { all: candidates, direction: 'outbound' });
+  }
+
   private async processLocalModifications(
     remoteFiles: RemoteFileInfo[], summary: SyncSessionSummary, isFullScan = false,
   ): Promise<void> {
@@ -1277,7 +1311,7 @@ export class SyncEngine {
     // still present through the usual proof path: a listing that lost a file must not get it destroyed on the server (issue #46).
     // Watch mode shares it, so a scan and a single vault event decide identically.
     for (const path of missingPaths) {
-      if (localRenames.has(path)) continue;
+      if (localRenames.has(path) || this.outboundDeletionsHeld.has(path)) continue;
       const fileState = this.opts.stateDB.getFile(path);
       if (!fileState) continue;
       void this.opts.logger?.log(`delete-remote: locally deleted, propagating to server → ${path}`);

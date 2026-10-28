@@ -280,9 +280,13 @@ export type ConflictResolution =
 export interface SyncErrorDetail {
   path: string;
   message: string;
-  /** Full list of skipped deletion candidates; set only when the file-side mass-delete breaker fires. */
+  /**
+   * Full list of skipped deletion candidates; set only when a file-side mass-delete breaker fires. `direction`
+   * is 'outbound' for local deletions held back from the server, absent for remote deletions held back locally.
+   */
   skippedPaths?: {
     all: string[];
+    direction?: 'outbound';
   };
   /**
    * Full candidate paths split by category; set only when the directory mass-delete breaker fires
