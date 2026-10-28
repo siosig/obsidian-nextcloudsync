@@ -114,7 +114,7 @@ async function buildEngine(
 
   const logs: string[] = [];
   const logger = { log: jest.fn(async (m: string) => { logs.push(m); }) };
-  const statusBar = { setStatus: jest.fn(), setSyncComplete: jest.fn(), setProgress: jest.fn() };
+  const statusBar = { setStatus: jest.fn(), setSyncComplete: jest.fn(), setProgress: jest.fn(), setPhase: jest.fn() };
 
   const engine = new SyncEngine({
     app, settings: { ...DEFAULT_SETTINGS, syncOnWifiOnly: false },

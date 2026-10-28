@@ -4,6 +4,7 @@ import { IStatusBar } from './StatusBarItem';
 export class NullStatusBar implements IStatusBar {
   setStatus(): void { /* no-op */ }
   setProgress(): void { /* no-op */ }
+  setPhase(): void { /* no-op */ }
   setConflictCount(): void { /* no-op */ }
   setErrorCount(): void { /* no-op */ }
   setSyncComplete(): void { /* no-op */ }

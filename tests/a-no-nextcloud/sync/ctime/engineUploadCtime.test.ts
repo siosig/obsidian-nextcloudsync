@@ -37,7 +37,7 @@ async function runInitialUpload(support: CreationTimeSupport, remote: RemoteFile
   const { adapter, upload, client, size } = setup(support);
   const { engine } = await buildEngine(adapter as never, client, {}, { upload });
   // buildEngine's status bar is an empty object; executePlan reports progress through it.
-  (engine as unknown as { opts: { statusBar: unknown } }).opts.statusBar = { setProgress: jest.fn() };
+  (engine as unknown as { opts: { statusBar: unknown } }).opts.statusBar = { setProgress: jest.fn(), setPhase: jest.fn() };
   const localFiles: LocalStats = new Map([[PATH, { size, mtime: MTIME }]]);
   await (engine as unknown as Internals).executePlan(
     { uploads: [PATH], downloads: [], conflicts: [], deletes: [], unchanged: [] },

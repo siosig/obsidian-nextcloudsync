@@ -15,7 +15,7 @@ const LOCAL_MTIME = Date.UTC(2024, 5, 15);
 function makeEngine(localAdapter: unknown, stateDB: unknown) {
   const opts = {
     app: {}, settings: SETTINGS, localAdapter,
-    stateDB, statusBar: { setProgress: jest.fn() }, webdavFactory: {},
+    stateDB, statusBar: { setProgress: jest.fn(), setPhase: jest.fn() }, webdavFactory: {},
     pluginDir: '.obsidian/plugins/x', configDir: '.obsidian',
   };
   return new SyncEngine(opts as never);

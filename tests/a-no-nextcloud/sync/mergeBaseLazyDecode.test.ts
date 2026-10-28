@@ -181,7 +181,7 @@ async function runScenario(scenario: Scenario, path: string, throwOnDecode: bool
   const upload = jest.fn(async () => 'uploaded' as const);
   const client = { downloadFile: jest.fn(async () => remoteBytes), statFile: jest.fn(async () => null) };
   const { engine, stateDB, baseStore } = await buildEngine(adapter as never, client, {}, { upload });
-  (engine as unknown as { opts: { statusBar: unknown } }).opts.statusBar = { setProgress: jest.fn() };
+  (engine as unknown as { opts: { statusBar: unknown } }).opts.statusBar = { setProgress: jest.fn(), setPhase: jest.fn() };
   const e = engine as unknown as EngineInternals;
   const summary = makeSummary();
   const remote = remoteOf(path, scenario === 'S5' ? otherBody : body);

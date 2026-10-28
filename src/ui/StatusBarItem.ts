@@ -2,7 +2,10 @@ import { SyncStatus } from '../types';
 
 export interface IStatusBar {
   setStatus(status: SyncStatus, opts?: { automatic?: boolean }): void;
-  setProgress(processed: number, total: number): void;
+  // `label` names the step being counted; omitted, the bare count is shown as before.
+  setProgress(processed: number, total: number, label?: string): void;
+  // A step whose size is not known yet (first-sync listing/scan), so a long silent step does not look hung.
+  setPhase(label: string): void;
   setConflictCount(count: number): void;
   setErrorCount(count: number): void;
   setSyncComplete(uploadedCount: number, downloadedCount: number, conflictCount: number, errorCount: number): void;
@@ -36,9 +39,15 @@ export class StatusBarItem implements IStatusBar {
     this.render();
   }
 
-  setProgress(processed: number, total: number): void {
+  setProgress(processed: number, total: number, label?: string): void {
     this.status = 'syncing';
-    this.progressText = `${processed}/${total}`;
+    this.progressText = label ? `${label} ${processed}/${total}` : `${processed}/${total}`;
+    this.render();
+  }
+
+  setPhase(label: string): void {
+    this.status = 'syncing';
+    this.progressText = `${label}…`;
     this.render();
   }
 

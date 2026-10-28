@@ -300,7 +300,7 @@ describe('[SPEC:CPS-2] community plugin files in the engine', () => {
     };
     const engine = new SyncEngine({
       app, settings: { ...DEFAULT_SETTINGS, syncOnWifiOnly: false, syncConfigFolder: true, syncedCommunityPlugins: list },
-      localAdapter, stateDB, statusBar: { setStatus: jest.fn(), setSyncComplete: jest.fn(), setProgress: jest.fn() },
+      localAdapter, stateDB, statusBar: { setStatus: jest.fn(), setSyncComplete: jest.fn(), setProgress: jest.fn(), setPhase: jest.fn() },
       webdavFactory: { createClient: jest.fn(async () => ({ client, features: { isNextcloud: true } })) },
       pluginDir: PLUGIN_DIR, configDir: CONFIG_DIR,
     } as never);

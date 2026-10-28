@@ -23,7 +23,7 @@ function makeEngine(opts: { tracked?: DirState[]; settings?: DavSyncSettings } =
     moveFile: jest.fn(async () => undefined),
   };
   const features = { isNextcloud: true, version: '30', hasChecksums: true, hasFilesLocking: false, hasBulkUpload: false, hasAccountDav: true, syncToken: null };
-  const statusBar = { setStatus: jest.fn(), setProgress: jest.fn(), setSyncComplete: jest.fn(), setErrorCount: jest.fn() };
+  const statusBar = { setStatus: jest.fn(), setProgress: jest.fn(), setPhase: jest.fn(), setSyncComplete: jest.fn(), setErrorCount: jest.fn() };
   const stateDB = {
     getDir: (p: string) => dirs.get(p),
     setDir: (d: DirState) => { dirs.set(d.path, d); },

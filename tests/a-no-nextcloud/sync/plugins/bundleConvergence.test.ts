@@ -134,7 +134,7 @@ async function buildWorld(input: WorldInput) {
   };
   const engine = new SyncEngine({
     app, settings, localAdapter, stateDB,
-    statusBar: { setStatus: jest.fn(), setSyncComplete: jest.fn(), setProgress: jest.fn() },
+    statusBar: { setStatus: jest.fn(), setSyncComplete: jest.fn(), setProgress: jest.fn(), setPhase: jest.fn() },
     webdavFactory: { createClient: jest.fn(async () => ({ client, features: { isNextcloud: true } })) },
     pluginDir: PLUGIN_DIR, configDir: CONFIG_DIR,
   } as never);

@@ -177,7 +177,7 @@ async function buildHarness(o: HarnessOptions) {
   };
   const createClient = jest.fn(async () => ({ client, features }));
   const logger = { log: jest.fn() };
-  const statusBar = { setStatus: jest.fn(), setSyncComplete: jest.fn(), setProgress: jest.fn() };
+  const statusBar = { setStatus: jest.fn(), setSyncComplete: jest.fn(), setProgress: jest.fn(), setPhase: jest.fn() };
 
   const engine = new SyncEngine({
     app, settings: { ...DEFAULT_SETTINGS, syncOnWifiOnly: false },

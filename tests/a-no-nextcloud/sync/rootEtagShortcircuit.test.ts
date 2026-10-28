@@ -373,7 +373,7 @@ describe('[SPEC:CPS-16] sync-scope fingerprint and the root-ETag short-circuit',
       },
       fileManager: { trashFile: jest.fn(async () => undefined) },
     };
-    const statusBar = { setStatus: jest.fn(), setSyncComplete: jest.fn(), setProgress: jest.fn() };
+    const statusBar = { setStatus: jest.fn(), setSyncComplete: jest.fn(), setProgress: jest.fn(), setPhase: jest.fn() };
     const engine = new SyncEngine({
       app, settings, localAdapter, stateDB: db, statusBar,
       webdavFactory: { createClient: jest.fn(async () => ({ client, features: { isNextcloud: true } })) },

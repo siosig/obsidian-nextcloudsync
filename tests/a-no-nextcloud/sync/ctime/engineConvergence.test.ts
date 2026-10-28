@@ -198,7 +198,7 @@ describe('SyncEngine creation-time convergence (C5, initial sync unchanged)', ()
     const hash = await sha256(toBuf(BODY));
     const size = new TextEncoder().encode(BODY).length;
     const { engine } = await buildEngine(rig.adapter as never, rig.client, {}, { upload: rig.upload });
-    (engine as unknown as { opts: { statusBar: unknown } }).opts.statusBar = { setProgress: jest.fn() };
+    (engine as unknown as { opts: { statusBar: unknown } }).opts.statusBar = { setProgress: jest.fn(), setPhase: jest.fn() };
     const plan: Plan = { uploads: [], downloads: [], conflicts: [], deletes: [], unchanged: [PATH] };
     const local = new Map([[PATH, { size, mtime: MTIME }]]);
     for (const creationTime of serverSeries) {

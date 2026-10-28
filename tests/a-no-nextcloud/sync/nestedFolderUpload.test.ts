@@ -294,7 +294,7 @@ async function buildHarness(o: HarnessOptions) {
     hasBulkUpload: false, hasAccountDav: true, syncToken: null,
   };
   const logger = { log: jest.fn() };
-  const statusBar = { setStatus: jest.fn(), setSyncComplete: jest.fn(), setProgress: jest.fn() };
+  const statusBar = { setStatus: jest.fn(), setSyncComplete: jest.fn(), setProgress: jest.fn(), setPhase: jest.fn() };
 
   const engine = new SyncEngine({
     app, settings: { ...SETTINGS },

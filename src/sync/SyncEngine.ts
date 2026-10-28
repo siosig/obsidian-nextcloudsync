@@ -768,6 +768,10 @@ export class SyncEngine {
 
   private async initialSync(summary: SyncSessionSummary): Promise<void> {
     const client = this.client!;
+    // A first sync of a large vault runs for minutes before any transfer, so every step is named in the status bar
+    // to show the plugin is working, not hung.
+    const bar = this.opts.statusBar;
+    bar.setPhase('Listing server');
     // With nothing tracked, a missing vault folder just means the server has nothing; the first upload creates the hierarchy
     // (also covers the re-seed path).
     let remoteFiles: RemoteFileInfo[];
@@ -779,12 +783,17 @@ export class SyncEngine {
       remoteFiles = [];
     }
     await this.preparePluginSession(client, remoteFiles);
+    bar.setPhase('Scanning vault');
     const localFiles = await this.scanLocalFiles();
 
     // Server-computed checksums (no download) let identical files count as unchanged rather than conflicts.
-    await this.remoteListing.resolveRemoteChecksums(client, remoteFiles, localFiles);
+    await this.remoteListing.resolveRemoteChecksums(
+      client, remoteFiles, localFiles, (done, total) => bar.setProgress(done, total, 'Checking server'),
+    );
 
-    const plan = await this.buildInitialPlan(localFiles, remoteFiles);
+    const plan = await this.buildInitialPlan(
+      localFiles, remoteFiles, (done, total) => bar.setProgress(done, total, 'Comparing'),
+    );
     // With no recorded state, every local file the server lacks is an UPLOAD, including files deleted on another device
     // (resurrection path); the plan is logged for that reason.
     void this.opts.logger?.log(
@@ -797,6 +806,7 @@ export class SyncEngine {
     await this.executePlan(plan, remoteFiles, summary, localFiles);
 
     // A complete listing, so directory create/delete can be reconciled.
+    bar.setPhase('Syncing folders');
     await this.reconcileDirectories(summary);
 
     const token = await client.getSyncToken();
@@ -1345,14 +1355,17 @@ export class SyncEngine {
   private async buildInitialPlan(
     localFiles: Map<string, { size: number; mtime: number }>,
     remoteFiles: RemoteFileInfo[],
+    onProgress?: (done: number, total: number) => void,
   ): Promise<InitialSyncPlan> {
     const uploads: string[] = [];
     const downloads: string[] = [];
     const conflicts: string[] = [];
     const unchanged: string[] = [];
     const remoteMap = new Map(remoteFiles.map(f => [f.path, f]));
+    let compared = 0;
 
     for (const [path, lf] of localFiles) {
+      onProgress?.(compared++, localFiles.size);
       const remote = remoteMap.get(path);
       if (!remote) { if (!this.pluginSkips(path, 'local-only')) uploads.push(path); continue; }
       if (remote.size !== lf.size) { conflicts.push(path); continue; }
@@ -1363,6 +1376,7 @@ export class SyncEngine {
       if (localHash === remote.checksum) unchanged.push(path);
       else conflicts.push(path);
     }
+    if (localFiles.size > 0) onProgress?.(localFiles.size, localFiles.size);
     for (const remote of remoteFiles) {
       if (this.isSystemExcluded(remote.path)) continue;
       if (!localFiles.has(remote.path) && !this.pluginSkips(remote.path, 'remote-only')) downloads.push(remote.path);
@@ -1376,7 +1390,8 @@ export class SyncEngine {
   ): Promise<void> {
     // The caller already scanned the vault, so reuse the stat map; hashing is deferred to upload time.
     const remoteMap = new Map(remoteFiles.map(f => [f.path, f]));
-    const actionFiles = plan.uploads.length + plan.downloads.length + plan.conflicts.length;
+    // Unchanged files count too: seeding them can still touch the server (creation-time alignment).
+    const actionFiles = plan.uploads.length + plan.downloads.length + plan.conflicts.length + plan.unchanged.length;
     this.syncProgress = { processed: 0, total: actionFiles };
     if (actionFiles > 0) this.opts.statusBar.setProgress(0, actionFiles);
 
@@ -1418,7 +1433,7 @@ export class SyncEngine {
     for (const path of plan.unchanged) {
       const lf = localFiles.get(path);
       const remote = remoteMap.get(path);
-      if (!lf || !remote) continue;
+      if (!lf || !remote) { this.tickProgress(); continue; }
       const mtime = remote.lastModified || lf.mtime;
       // Classified unchanged only after localHash === remote.checksum, so the checksum is the content hash for both sides.
       this.opts.stateDB.setFile(await this.withLocalSignature({
@@ -1426,6 +1441,7 @@ export class SyncEngine {
         size: lf.size, mtime, remoteFileId: remote.fileId, isConflicted: false,
       }, remote.lastModified));
       await this.creationTime.align(this.client!, remote);
+      this.tickProgress();
     }
 
     await this.resolvePlannedConflicts(cf.rest, remoteMap, summary);

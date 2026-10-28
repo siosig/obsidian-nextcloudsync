@@ -207,7 +207,7 @@ describe('SyncEngine.executePlan — reuses the scan (P0-C / FR-010, no double h
     (engine as unknown as { client: unknown }).client = {};
     (engine as unknown as { uploadStrategy: unknown }).uploadStrategy = { upload: jest.fn(async () => 'skipped') };
     (engine as unknown as { opts: { stateDB: unknown } }).opts.stateDB = { setFile: jest.fn() };
-    (engine as unknown as { opts: { statusBar: unknown } }).opts.statusBar = { setProgress: jest.fn() };
+    (engine as unknown as { opts: { statusBar: unknown } }).opts.statusBar = { setProgress: jest.fn(), setPhase: jest.fn() };
 
     const localFiles: LocalFiles = new Map([['a.md', { size: 0, mtime: 1 }]]);
     await (engine as unknown as {

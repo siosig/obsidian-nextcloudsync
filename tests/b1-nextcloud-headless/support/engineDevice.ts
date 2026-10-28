@@ -16,7 +16,7 @@ const PLUGIN_DIR = '.obsidian/plugins/nextcloud-sync';
 const CONFIG_DIR = '.obsidian';
 
 const noopStatusBar = {
-  setStatus(): void {}, setProgress(): void {}, setConflictCount(): void {},
+  setStatus(): void {}, setProgress(): void {}, setPhase(): void {}, setConflictCount(): void {},
   setErrorCount(): void {}, setSyncComplete(): void {},
 };
 

@@ -108,6 +108,26 @@ describe('RemoteListingSource.resolveRemoteChecksums', () => {
     expect(files[0].checksum).toBeNull();
   });
 
+  it('reports progress per file, failures included, ending at the total', async () => {
+    const recalc = jest.fn(async (path: string) => { if (path === 'b.md') throw new Error('x'); return 'sum'; });
+    const { source } = build();
+    const onProgress = jest.fn();
+    await source.resolveRemoteChecksums(
+      client(recalc), [remote('a.md'), remote('b.md')],
+      new Map([['a.md', { size: 1, mtime: 1 }], ['b.md', { size: 1, mtime: 1 }]]), onProgress,
+    );
+    expect(onProgress.mock.calls[0]).toEqual([0, 2]);
+    expect(onProgress).toHaveBeenLastCalledWith(2, 2);
+    expect(onProgress).toHaveBeenCalledTimes(3);
+  });
+
+  it('reports nothing when no file needs a checksum', async () => {
+    const onProgress = jest.fn();
+    const { source } = build();
+    await source.resolveRemoteChecksums(client(jest.fn()), [remote('a.md', 'have')], new Map([['a.md', { size: 1, mtime: 1 }]]), onProgress);
+    expect(onProgress).not.toHaveBeenCalled();
+  });
+
   it('runs in batches of the configured concurrency', async () => {
     let inFlight = 0;
     let peak = 0;

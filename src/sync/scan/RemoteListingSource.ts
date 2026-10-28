@@ -87,9 +87,13 @@ export class RemoteListingSource {
     client: IWebDAVClient,
     remoteFiles: RemoteFileInfo[],
     localFiles: Map<string, { size: number; mtime: number }>,
+    onProgress?: (done: number, total: number) => void,
   ): Promise<void> {
     const targets = remoteFiles.filter(rf => !rf.checksum && localFiles.has(rf.path));
     const concurrency = Math.max(1, this.deps.networkConcurrency());
+    // One server-side hash per file: on a large first sync this is the longest silent step, hence the progress.
+    let done = 0;
+    if (targets.length > 0) onProgress?.(0, targets.length);
     for (let i = 0; i < targets.length; i += concurrency) {
       const batch = targets.slice(i, i + concurrency);
       await Promise.all(batch.map(async (rf) => {
@@ -97,6 +101,7 @@ export class RemoteListingSource {
           const sum = await client.recalcChecksum(rf.path);
           if (sum) rf.checksum = sum;
         } catch { /* leave null; falls back to conflict resolution */ }
+        onProgress?.(++done, targets.length);
       }));
     }
   }

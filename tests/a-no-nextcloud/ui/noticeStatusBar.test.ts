@@ -72,6 +72,22 @@ describe('NoticeStatusBar', () => {
     expect(lastNotice().message).toBe('🔄 2/4');
   });
 
+  it('a labelled setProgress names the step in the same toast', () => {
+    bar.setStatus('syncing');
+    bar.setProgress(40, 900, 'Comparing');
+    expect(NoticeMock.instances).toHaveLength(1);
+    expect(lastNotice().message).toBe('🔄 Comparing 40/900');
+  });
+
+  it('setPhase shows the step even for an automatic sync, in the same toast', () => {
+    bar.setStatus('syncing', { automatic: true });
+    expect(NoticeMock.instances).toHaveLength(0);
+    bar.setPhase('Listing server');
+    bar.setPhase('Scanning vault');
+    expect(NoticeMock.instances).toHaveLength(1);
+    expect(lastNotice().message).toBe('🔄 Scanning vault…');
+  });
+
   it('C3: errors render "🔴 2 errors — ↑1 ↓0" and dismiss after 10s', () => {
     bar.setStatus('syncing');
     bar.setSyncComplete(1, 0, 0, 2);

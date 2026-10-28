@@ -25,11 +25,20 @@ export class NoticeStatusBar implements IStatusBar {
     this.ensureNotice('🔄 Syncing…');
   }
 
-  setProgress(processed: number, total: number): void {
+  setProgress(processed: number, total: number, label?: string): void {
+    this.show(label ? `🔄 ${label} ${processed}/${total}` : `🔄 ${processed}/${total}`);
+  }
+
+  // Only the first sync reports phases, and it is long enough to be worth a toast even when automatic.
+  setPhase(label: string): void {
+    this.show(`🔄 ${label}…`);
+  }
+
+  private show(text: string): void {
     this.quiet = false;
     this.clearDismiss();
     this.ensureNotice('🔄 Syncing…');
-    this.notice?.setMessage(`🔄 ${processed}/${total}`);
+    this.notice?.setMessage(text);
   }
 
   setConflictCount(count: number): void {

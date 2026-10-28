@@ -94,7 +94,7 @@ function makeEngine(opts: {
     setSyncToken,
   };
   const statusBar = {
-    setStatus: jest.fn(), setProgress: jest.fn(), setSyncComplete: jest.fn(), setErrorCount: jest.fn(),
+    setStatus: jest.fn(), setProgress: jest.fn(), setPhase: jest.fn(), setSyncComplete: jest.fn(), setErrorCount: jest.fn(),
   };
   const engine = new SyncEngine({
     app, settings: settings(), localAdapter: adapter,
@@ -513,7 +513,7 @@ async function makePluginMirrorWorld(input: { remote: Record<string, string>; lo
   const awaiting = new Set<string>();
   const engine = new SyncEngine({
     app, settings: { ...DEFAULT_SETTINGS, syncOnWifiOnly: false, syncConfigFolder: true, syncedCommunityPlugins: ['p'] },
-    localAdapter, stateDB, statusBar: { setStatus: jest.fn(), setSyncComplete: jest.fn(), setProgress: jest.fn() },
+    localAdapter, stateDB, statusBar: { setStatus: jest.fn(), setSyncComplete: jest.fn(), setProgress: jest.fn(), setPhase: jest.fn() },
     webdavFactory: { createClient: jest.fn(async () => ({ client, features: { isNextcloud: true } })) },
     pluginDir: PLUGIN_DIR, configDir: CONFIG_DIR, pluginsAwaitingRestart: awaiting,
   } as never);
