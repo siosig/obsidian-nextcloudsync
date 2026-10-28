@@ -166,7 +166,7 @@ describe('SyncEngine.handleConflict — strategy actions (feature 037)', () => {
     const summary = makeSummary();
     await h.invoke(undefined, summary);
 
-    expect(h.atomicWriteBinary).toHaveBeenCalledTimes(1);
+    expect(h.atomicWriteBinary).toHaveBeenCalledTimes(2); // the conflict copy, then the overwrite
     expect(h.upload).not.toHaveBeenCalled();
     expect(summary.downloadedCount).toBe(1);
     const arg = h.setFile.mock.calls[0][0] as FileState;
@@ -183,7 +183,7 @@ describe('SyncEngine.handleConflict — strategy actions (feature 037)', () => {
     const summary = makeSummary();
     await h.invoke(undefined, summary);
 
-    expect(h.atomicWriteBinary).toHaveBeenCalledTimes(1);
+    expect(h.atomicWriteBinary).toHaveBeenCalledTimes(2); // the conflict copy, then the overwrite
     expect(h.upload).not.toHaveBeenCalled();
     expect(summary.downloadedCount).toBe(1);
   });
@@ -282,7 +282,7 @@ describe('SyncEngine.handleConflict — strategy actions (feature 037)', () => {
       { localMtime: 1500, remoteMtime: 3000 });
     const s2 = makeSummary();
     await resolved.invoke(base, s2);
-    expect(resolved.atomicWriteBinary).toHaveBeenCalledTimes(1);
+    expect(resolved.atomicWriteBinary).toHaveBeenCalledTimes(2); // the conflict copy, then the overwrite
     expect(s2.downloadedCount).toBe(1);
     expect((resolved.setFile.mock.calls[0][0] as FileState).isConflicted).toBe(false);
   });

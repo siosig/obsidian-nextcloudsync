@@ -5,7 +5,7 @@
 // a state pairing the new local hash with the old remote id reads as "converged" to the next sync,
 // so the merge never reaches the other devices. Real strategies are driven through the real
 // ConflictResolver rather than a stubbed decision.
-import { ConflictApplier, ConflictDeps } from '../../../../src/sync/conflict/ConflictApplier';
+import { ConflictApplier, ConflictDeps, conflictCopyPath } from '../../../../src/sync/conflict/ConflictApplier';
 import { SyncJournal } from '../../../../src/sync/session/SyncJournal';
 import { MergeBaseRecorder } from '../../../../src/sync/session/MergeBaseRecorder';
 import { TransferService } from '../../../../src/sync/transfer/TransferService';
@@ -684,5 +684,67 @@ describe('[SPEC:CPS-6] plugin conflict rules', () => {
     expect(calls.wroteBinaryMtime).toEqual([4242]);
     expect(written).toHaveBeenCalledTimes(1);
     expect(written).toHaveBeenCalledWith(PLUGIN_JS);
+  });
+});
+
+describe('ConflictApplier — the losing local body of a whole-file pick is kept as a conflict copy', () => {
+  const nonMergeable = { autoMergeFileTypes: [], otherFileStrategy: 'latest-mtime' as const };
+
+  it('names the copy after the file, keeping its folder and extension', () => {
+    const at = new Date(2026, 9, 28, 15, 30, 12);
+    expect(conflictCopyPath('dir/a.canvas', at)).toBe('dir/a (conflict 2026-10-28 153012).canvas');
+    expect(conflictCopyPath('Makefile', at)).toBe('Makefile (conflict 2026-10-28 153012)');
+    expect(conflictCopyPath('.env', at)).toBe('.env (conflict 2026-10-28 153012)');
+  });
+
+  it('prefer-remote writes the local body to a conflict copy before overwriting the file', async () => {
+    const { applier, conn, calls } = build({
+      config: nonMergeable,
+      local: { content: 'older local', mtime: 1000, size: 5 },
+      remoteBody: 'newer remote',
+    });
+    const written: Record<string, string> = {};
+    const write = jest.fn(async (p: string, d: ArrayBuffer) => { written[p] = new TextDecoder().decode(d); });
+    (applier as unknown as { deps: ConflictDeps }).deps.localAdapter.atomicWriteBinary = write;
+
+    await applier.handleConflict(
+      conn, 'a.txt', base('a.txt'), remoteInfo({ path: 'a.txt', lastModified: 9000, size: 12 }), 'r', 'etag', summary(),
+    );
+
+    const copy = Object.keys(written).find(p => /^a \(conflict \d{4}-\d{2}-\d{2} \d{6}\)\.txt$/.test(p));
+    expect(copy).toBeDefined();
+    expect(written[copy!]).toBe('older local');
+    expect(written['a.txt']).toBe('newer remote');
+    expect(write.mock.calls[0][0]).toBe(copy);
+    expect(calls.history).toContain('remote-wins:a.txt');
+  });
+
+  it('leaves the local file untouched and conflicted when the copy cannot be written', async () => {
+    const { applier, conn, calls, diskContent } = build({
+      config: nonMergeable,
+      local: { content: 'older local', mtime: 1000, size: 5 },
+      remoteBody: 'newer remote',
+    });
+    (applier as unknown as { deps: ConflictDeps }).deps.localAdapter.atomicWriteBinary = jest.fn(async () => {
+      throw new Error('ENOSPC');
+    });
+    const s = summary();
+
+    await applier.handleConflict(
+      conn, 'a.txt', base('a.txt'), remoteInfo({ path: 'a.txt', lastModified: 9000, size: 12 }), 'r', 'etag', s,
+    );
+
+    expect(diskContent()).toBe('older local');
+    expect(calls.setFile[0]).toMatchObject({ isConflicted: true });
+    expect(s.downloadedCount).toBe(0);
+  });
+
+  it('prefer-local keeps no copy: the server keeps the overwritten version in its history', async () => {
+    const { applier, conn, calls } = build({
+      config: nonMergeable,
+      local: { content: 'newer local', mtime: 5000, size: 30 },
+    });
+    await applier.handleConflict(conn, 'a.txt', base('a.txt'), remoteInfo({ path: 'a.txt', lastModified: 1000 }), 'r', 'etag', summary());
+    expect(calls.wroteBinary).toEqual([]);
   });
 });

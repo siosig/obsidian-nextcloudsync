@@ -54,6 +54,18 @@ export interface ConflictDeps {
   logger?: Pick<FileLogger, 'log'>;
 }
 
+// Where a whole-file pick keeps the losing local body: next to the file, named after it, in local time.
+export function conflictCopyPath(path: string, at: Date): string {
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  const stamp = `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} `
+    + `${pad(at.getHours())}${pad(at.getMinutes())}${pad(at.getSeconds())}`;
+  const dot = path.lastIndexOf('.');
+  const hasExt = dot > path.lastIndexOf('/') + 1;
+  const stem = hasExt ? path.slice(0, dot) : path;
+  const ext = hasExt ? path.slice(dot) : '';
+  return `${stem} (conflict ${stamp})${ext}`;
+}
+
 export class ConflictApplier {
   constructor(private readonly deps: ConflictDeps) {}
 
@@ -123,7 +135,26 @@ export class ConflictApplier {
       decision = resolver.decide(path, '', '', '', ctx);
     }
 
+    // Prefer-remote overwrites a local edit that never reached the server, so nothing else could restore it.
+    // Prefer-local needs no copy: Nextcloud keeps the overwritten remote body in its version history.
+    if (decision.action === 'prefer-remote') {
+      try {
+        await this.keepLocalCopy(path);
+      } catch (err) {
+        this.deps.journal.recordError(summary, path, err);
+        if (base) this.deps.stateDB.setFile({ ...base, isConflicted: true });
+        void this.deps.logger?.log(`conflict: conflict copy failed (${(err as Error).message}), local left untouched: ${path}`);
+        return;
+      }
+    }
+
     await this.applyDecision(conn, path, base, remote, remoteId, idType, summary, decision, remoteData);
+  }
+
+  private async keepLocalCopy(path: string): Promise<void> {
+    const copy = conflictCopyPath(path, new Date());
+    await this.deps.localAdapter.atomicWriteBinary(copy, await this.deps.localAdapter.readBinary(path));
+    void this.deps.logger?.log(`conflict: local body kept as ${copy}`);
   }
 
   private decideByPluginRule(

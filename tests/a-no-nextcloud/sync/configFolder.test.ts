@@ -188,7 +188,7 @@ describe('[SPEC:CSF-12] config JSON conflict resolves via Other File / latest-mt
     const h = harness(1000, 2000);
     const summary = makeSummary();
     await h.invoke(undefined, summary);
-    expect(h.atomicWriteBinary).toHaveBeenCalledTimes(1);
+    expect(h.atomicWriteBinary).toHaveBeenCalledTimes(2); // the conflict copy, then the overwrite
     expect(summary.downloadedCount).toBe(1);
   });
 
