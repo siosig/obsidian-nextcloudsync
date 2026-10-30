@@ -4,6 +4,7 @@ import { CONFIG_SYNC_CATEGORIES } from '../sync/ConfigSyncResolver';
 import { SLIDER_LIMITS } from './sliderLimits';
 import { SERVER_URL_DESC, SIGN_IN_HELP, SIGN_IN_MANUAL_DIVIDER } from './settingsCopy';
 import { isSupportedNextcloudVersion } from '../util/version';
+import { LoginFlowV2 } from '../auth/LoginFlowV2';
 
 // The settings tab as data: Obsidian 1.13.0 builds its settings search index only from `getSettingDefinitions()`
 // (obsidian.d.ts:6570-6586), so an imperative display() would be invisible to search.
@@ -206,7 +207,7 @@ function nextcloudGroup(host: SettingDefinitionsHost): SettingDefinitionGroup {
     notice(host, 'Sign-in help', SIGN_IN_HELP),
     {
       name: 'Log in via browser (Nextcloud) — recommended',
-      desc: 'Easiest path: approve once in your browser and it fills Username and stores an App password for you, so you can skip the two manual fields. Requires the server URL above (only its host part). Polls up to ~3 minutes. Falls back to manual entry on non-Nextcloud servers.',
+      desc: `Easiest path: approve once in your browser and it fills Username and stores an App password for you, so you can skip the two manual fields. Requires the server URL above (only its host part). Waits up to ${LoginFlowV2.POLL_DEADLINE_MS / 60_000} minutes for approval. Falls back to manual entry on non-Nextcloud servers.`,
       aliases: ['login', 'sign in', 'oauth', 'browser', 'authorize'],
       disabled: () => host.settings.serverUrl.trim().length === 0,
       action: () => { void host.startLoginFlow(); },

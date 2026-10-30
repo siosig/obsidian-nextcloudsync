@@ -222,7 +222,7 @@ export class NextcloudSyncSettingTab extends PluginSettingTab implements Setting
       void this.plugin.logger.log('login: start() ok (loginUrl received)');
       const opened = window.open(init.loginUrl, '_blank');
       void this.plugin.logger.log(`login: window.open → ${opened ? 'opened' : 'BLOCKED (returned null)'}`);
-      new Notice('Waiting for browser approval… (up to 3 minutes)', 8000);
+      new Notice(`Waiting for browser approval… (up to ${LoginFlowV2.POLL_DEADLINE_MS / 60_000} minutes)`, 8000);
 
       void this.plugin.logger.log('login: polling started');
       const result = await LoginFlowV2.poll(init);
