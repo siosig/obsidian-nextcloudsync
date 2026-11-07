@@ -276,7 +276,7 @@ function makeEnv(init: EnvInit = {}) {
 type Env = ReturnType<typeof makeEnv>;
 
 async function prepared(env: Env): Promise<void> {
-  env.coordinator.begin();
+  env.coordinator.begin('manual');
   await env.coordinator.prepare(env.client, env.remoteFiles);
 }
 
@@ -291,7 +291,7 @@ describe('[SPEC:CPS-8] PluginSyncCoordinator gate', () => {
 
   it('is closed after begin() and before prepare()', () => {
     const env = makeEnv({ listed: ['p'] });
-    env.coordinator.begin();
+    env.coordinator.begin('manual');
     expect(env.coordinator.isPluginFileIncluded('p', 'main.js')).toBe(false);
     expect(env.coordinator.isPluginFileIncluded('p', 'data.json')).toBe(false);
     expect(env.coordinator.includedPluginIds()).toEqual([]);
@@ -402,7 +402,7 @@ describe('[SPEC:CPS-5] PluginSyncCoordinator directions', () => {
   it('returns null from directionFor outside the session, before prepare and for an unlisted id', async () => {
     const env = makeEnv({ listed: ['p'], ...localNewer });
     expect(env.coordinator.directionFor('p')).toBeNull();
-    env.coordinator.begin();
+    env.coordinator.begin('manual');
     expect(env.coordinator.directionFor('p')).toBeNull();
     await env.coordinator.prepare(env.client, env.remoteFiles);
     expect(env.coordinator.directionFor('p')).toBe('local');

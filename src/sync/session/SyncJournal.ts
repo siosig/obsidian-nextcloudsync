@@ -1,7 +1,7 @@
 // Records what the engine writes ABOUT a sync (session summary, per-file history, error list) and owns the
 // run start time those records are grouped by. Unlike the leaf modules it holds state: a journal without
 // a current run is not a journal.
-import { SyncSessionSummary, SyncFileOp, SyncHistoryDetail } from '../../types';
+import { SyncSessionSummary, SyncFileOp, SyncHistoryDetail, OversizeSkip } from '../../types';
 import { SyncHistoryStore } from '../../data/SyncHistoryStore';
 import { FileLogger } from '../../util/FileLogger';
 
@@ -30,7 +30,24 @@ export class SyncJournal {
       uploadedCount: 0, downloadedCount: 0, deletedCount: 0,
       mergedCount: 0, conflictedCount: 0,
       errorCount: 0, retriedFiles: [], pluginsNeedingRestart: [], errors: [],
+      oversizeSkippedPaths: new Set(),
     };
+  }
+
+  /**
+   * Records an over-the-limit skip in `summary`. The first record of a path in a summary adds it to
+   * `summary.oversizeSkippedPaths` and logs one line; later records of the same path do nothing.
+   * Never notifies (docs/spec.md §9.4a).
+   */
+  recordOversizeSkip(summary: SyncSessionSummary, skip: OversizeSkip): void {
+    if (summary.oversizeSkippedPaths.has(skip.path)) return;
+    summary.oversizeSkippedPaths.add(skip.path);
+    const msg = `size-limit: skipped ${skip.direction} (${skip.sizeBytes}B > ${skip.limitMB}MB) → ${skip.path}`;
+    try {
+      void Promise.resolve(this.deps.logger?.log(msg)).catch(() => undefined);
+    } catch {
+      /* Logging must never affect a sync. */
+    }
   }
 
   // An empty path means a session-level error.

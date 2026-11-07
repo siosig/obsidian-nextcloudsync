@@ -20,7 +20,7 @@ import type { PluginConflictRule } from '../../../../src/sync/plugins/PluginSync
 function summary(): SyncSessionSummary {
   return {
     startedAt: 0, completedAt: null, uploadedCount: 0, downloadedCount: 0, deletedCount: 0,
-    mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], pluginsNeedingRestart: [], errors: [],
+    mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], pluginsNeedingRestart: [], errors: [], oversizeSkippedPaths: new Set(),
   };
 }
 
@@ -77,7 +77,8 @@ function build(o: Opts = {}, over: Partial<ConflictDeps> = {}) {
     rootEtag: [] as Array<string | null>,
     conflicts: 0,
     reads: 0,
-    warned: [] as string[],
+    // Every line the applier or the journal logs, in call order.
+    logs: [] as string[],
     // Fourth argument (ctime) seen by each binary write, in call order.
     wroteBinaryCtime: [] as Array<number | undefined>,
     // Ordered trace of stat / write / setFile / align calls.
@@ -100,6 +101,10 @@ function build(o: Opts = {}, over: Partial<ConflictDeps> = {}) {
     },
   } as unknown as IUploadStrategy;
 
+  // One logger shared by the applier and the real journal: the over-the-limit skip line comes from the
+  // journal, the conflict line from the applier.
+  const logger = { log: async (message: string): Promise<void> => { calls.logs.push(message); } };
+
   const deps: ConflictDeps = {
     app: {} as unknown as ConflictDeps['app'],
     localAdapter: {
@@ -121,7 +126,7 @@ function build(o: Opts = {}, over: Partial<ConflictDeps> = {}) {
       setRemoteRootEtag: (e: string | null) => { calls.rootEtag.push(e); },
     } as unknown as ConflictDeps['stateDB'],
     baseStore: { get: () => o.mergeBase ?? '' } as unknown as ConflictDeps['baseStore'],
-    journal: Object.assign(new SyncJournal({}), {
+    journal: Object.assign(new SyncJournal({ logger }), {
       recordHistory: (p: string, op: string) => { calls.history.push(`${op}:${p}`); },
     }) as unknown as SyncJournal,
     mergeBase: {
@@ -131,7 +136,6 @@ function build(o: Opts = {}, over: Partial<ConflictDeps> = {}) {
     } as unknown as MergeBaseRecorder,
     transfer: {
       isRemoteOverSizeLimit: () => o.oversize === true,
-      warnDownloadSkipped: (p: string) => { calls.warned.push(p); },
       acquireLock: async () => null,
       releaseLock: async () => { /* noop */ },
     } as unknown as TransferService,
@@ -147,6 +151,7 @@ function build(o: Opts = {}, over: Partial<ConflictDeps> = {}) {
     pluginConflictRule: noPluginConflictRule,
     resolverConfig: () => ({ ...CONFIG, ...o.config }),
     maxFileSizeMB: () => 100,
+    logger,
     queueRetry: (p: string) => { calls.retries.push(p); },
     onConflictEncountered: () => { calls.conflicts++; },
     ...over,
@@ -161,12 +166,15 @@ function build(o: Opts = {}, over: Partial<ConflictDeps> = {}) {
 }
 
 describe('ConflictApplier.handleConflict — the size guard', () => {
-  it('skips the whole conflict when the remote is over the cap, and does NOT queue a retry', async () => {
+  it('skips the whole conflict when the remote is over the cap, and does NOT queue a retry [SPEC:OSN-1]', async () => {
     // Re-fetching would fail the same way every sync; raising the cap self-heals it instead.
     const { applier, conn, calls } = build({ oversize: true });
     const s = summary();
     await applier.handleConflict(conn, 'note.md', base(), remoteInfo(), 'r', 'etag', s);
-    expect(calls.warned).toEqual(['note.md']);
+    // Recorded in the summary (the session notice is built from it), never notified from here.
+    expect([...s.oversizeSkippedPaths]).toEqual(['note.md']);
+    expect(calls.logs.filter((l) => l === 'conflict: oversized remote not fetched, kept local as conflicted → note.md')).toHaveLength(1);
+    expect(calls.logs.filter((l) => l === 'size-limit: skipped download (20B > 100MB) → note.md')).toHaveLength(1);
     expect(calls.retries).toEqual([]);
     expect(calls.wrote).toEqual([]);
     expect(s.conflictedCount).toBe(0); // not counted — nothing was decided
@@ -325,12 +333,17 @@ describe('ConflictApplier.resolveByWrite — a failed push must not read as conv
     expect(calls.mergeBase).toEqual([]); // markers are never a merge base
   });
 
-  it('treats a skipped upload as not uploaded', async () => {
+  it('treats a skipped upload as not uploaded, and records the over-the-limit skip [SPEC:OSN-1]', async () => {
     const { applier, conn, calls } = build({ upload: 'skipped' });
     const s = summary();
     await applier.resolveByWrite(conn, ...CLEAN_ARGS, s);
     expect(s.uploadedCount).toBe(0);
     expect(calls.setFile[0].isConflicted).toBe(true);
+    expect(s.oversizeSkippedPaths.has('note.md')).toBe(true);
+    // The merged body ('merged body\n') is 12 bytes; the cap is the 100 MB the fake reports.
+    expect(calls.logs.filter((l) => l.startsWith('size-limit: skipped upload ('))).toEqual([
+      'size-limit: skipped upload (12B > 100MB) → note.md',
+    ]);
   });
 });
 
@@ -547,13 +560,18 @@ describe('ConflictApplier.resolveByPreferLocal / resolveByPreferRemote — failu
     expect(calls.setFile).toEqual([]); // nothing claimed as converged
   });
 
-  it('prefer-local: a skipped upload queues a retry without recording an error', async () => {
+  it('prefer-local: a skipped upload queues a retry without recording an error, and records the over-the-limit skip [SPEC:OSN-1]', async () => {
     const { applier, conn, calls } = build({ upload: 'skipped' });
     const s = summary();
     await applier.resolveByPreferLocal(conn, 'note.md', remoteInfo(), s);
     expect(s.errorCount).toBe(0);
     expect(calls.retries).toEqual(['note.md']);
     expect(calls.setFile).toEqual([]);
+    expect(s.oversizeSkippedPaths.has('note.md')).toBe(true);
+    // The local body ('local body\n') is 11 bytes; the cap is the 100 MB the fake reports.
+    expect(calls.logs.filter((l) => l.startsWith('size-limit: skipped upload ('))).toEqual([
+      'size-limit: skipped upload (11B > 100MB) → note.md',
+    ]);
   });
 
   it('prefer-remote: refuses an EMPTY body for a file advertised as non-empty', async () => {

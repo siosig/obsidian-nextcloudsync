@@ -2,7 +2,7 @@
 import type { LocalAdapter } from '../../data/LocalAdapter';
 import type { StateDB } from '../../data/StateDB';
 import type { IWebDAVClient } from '../../network/IWebDAVClient';
-import type { DavSyncSettings, FileState, RemoteFileInfo, SyncStrategy } from '../../types';
+import type { DavSyncSettings, FileState, RemoteFileInfo, SyncStrategy, SyncTrigger } from '../../types';
 import type { FileLogger } from '../../util/FileLogger';
 import { sha256 } from '../../util/hash';
 import { normalizePluginIdList } from '../../util/settingsMigration';
@@ -58,7 +58,8 @@ export interface PluginSessionOutcome {
 }
 
 export interface PluginSessionPort {
-  begin(): void;
+  // `trigger` decides whether the "code file over the size limit" notice is shown (manual) or only logged (automatic).
+  begin(trigger: SyncTrigger): void;
   prepare(client: IWebDAVClient, remoteFiles: readonly RemoteFileInfo[]): Promise<void>;
   finish(): PluginSessionOutcome;
   discard(): void;
@@ -86,6 +87,7 @@ export interface PluginSyncCoordinatorOptions {
 }
 
 interface PluginSessionState {
+  readonly trigger: SyncTrigger;
   readonly listed: readonly string[];
   catalog: PluginCatalog | null;
   directions: Map<string, BundleDirection>;
@@ -135,10 +137,11 @@ export class PluginSyncCoordinator implements PluginPathGate, LocalWritePort, Pl
 
   constructor(private readonly opts: PluginSyncCoordinatorOptions) {}
 
-  begin(): void {
+  begin(trigger: SyncTrigger): void {
     if (this.session !== null) this.log('plugins: begin() while a session is open; the previous session is discarded');
     const { settings, ownId } = this.opts;
     this.session = {
+      trigger,
       listed: settings.syncConfigFolder ? normalizePluginIdList(settings.syncedCommunityPlugins, ownId) : [],
       catalog: null,
       directions: new Map(),
@@ -288,10 +291,16 @@ export class PluginSyncCoordinator implements PluginPathGate, LocalWritePort, Pl
     const tooLarge = idsOf('too-large');
     if (tooLarge.length > 0 && !session.notified.tooLarge) {
       session.notified.tooLarge = true;
-      this.safeNotify(
-        `⚠️ Not syncing community plugins with a code file over the size limit: ${tooLarge.join(', ')}.`,
-        IGNORED_NOTICE_MS,
-      );
+      // Shown on manual syncs only; an automatic sync just logs it (docs/spec.md §9.4a). Either way it is not in the
+      // skipped-file count.
+      if (session.trigger === 'manual') {
+        this.safeNotify(
+          `⚠️ Not syncing community plugins with a code file over the size limit: ${tooLarge.join(', ')}.`,
+          IGNORED_NOTICE_MS,
+        );
+      } else {
+        this.log(`plugins: size-limit notice suppressed (automatic sync): ${tooLarge.join(', ')}`);
+      }
     }
     const tooNew = idsOf('min-app-version');
     if (tooNew.length > 0 && !session.notified.minAppVersion) {

@@ -5,8 +5,8 @@ export type UploadOutcome = 'uploaded' | 'skipped';
 
 /** Size limits an upload strategy applies. */
 export interface UploadConfig {
-  /** Absolute size cap (MB); files above it are skipped. `0` = unlimited. */
-  maxFileSizeMB: number;
+  /** Absolute size cap (MB), read on every upload so a settings change applies at once; files above it are skipped. `0` = unlimited. */
+  maxFileSizeMB(): number;
   /** Size (MB) above which a chunked upload is used instead of a single PUT. */
   uploadChunkThresholdMB: number;
 }

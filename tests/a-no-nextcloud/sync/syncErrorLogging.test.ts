@@ -12,7 +12,7 @@ function makeSummary(errors: SyncErrorDetail[]): SyncSessionSummary {
   return {
     startedAt: 0, completedAt: null, uploadedCount: 0, downloadedCount: 0,
     deletedCount: 0, mergedCount: 0, conflictedCount: 0,
-    errorCount: errors.length, retriedFiles: [], pluginsNeedingRestart: [], errors,
+    errorCount: errors.length, retriedFiles: [], pluginsNeedingRestart: [], errors, oversizeSkippedPaths: new Set(),
   };
 }
 

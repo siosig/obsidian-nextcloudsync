@@ -93,7 +93,7 @@ describe('SyncEngine.handleConflict — strategy actions (feature 037)', () => {
   function makeSummary(): SyncSessionSummary {
     return {
       startedAt: 0, completedAt: null, uploadedCount: 0, downloadedCount: 0,
-      deletedCount: 0, mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], pluginsNeedingRestart: [], errors: [],
+      deletedCount: 0, mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], pluginsNeedingRestart: [], errors: [], oversizeSkippedPaths: new Set(),
     };
   }
 
@@ -292,7 +292,7 @@ describe('SyncEngine.processRemoteDeletion — out-of-scope safety', () => {
   function makeSummary(): SyncSessionSummary {
     return {
       startedAt: 0, completedAt: null, uploadedCount: 0, downloadedCount: 0,
-      deletedCount: 0, mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], pluginsNeedingRestart: [], errors: [],
+      deletedCount: 0, mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], pluginsNeedingRestart: [], errors: [], oversizeSkippedPaths: new Set(),
     };
   }
 
@@ -380,7 +380,7 @@ describe('SyncEngine.processRemoteFile — stale conflict-flag clearing', () => 
   function makeSummary(): SyncSessionSummary {
     return {
       startedAt: 0, completedAt: null, uploadedCount: 0, downloadedCount: 0,
-      deletedCount: 0, mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], pluginsNeedingRestart: [], errors: [],
+      deletedCount: 0, mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], pluginsNeedingRestart: [], errors: [], oversizeSkippedPaths: new Set(),
     };
   }
 
@@ -442,7 +442,7 @@ describe('SyncEngine.processRemoteFile — divergent (corrupt) baseline detectio
   function makeSummary(): SyncSessionSummary {
     return {
       startedAt: 0, completedAt: null, uploadedCount: 0, downloadedCount: 0,
-      deletedCount: 0, mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], pluginsNeedingRestart: [], errors: [],
+      deletedCount: 0, mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], pluginsNeedingRestart: [], errors: [], oversizeSkippedPaths: new Set(),
     };
   }
 

@@ -32,6 +32,7 @@ import {
 import { LocalScanner } from './scan/LocalScanner';
 import { RemoteListingSource } from './scan/RemoteListingSource';
 import { SyncJournal } from './session/SyncJournal';
+import { OversizeSkipNotifier } from './session/OversizeSkipNotifier';
 import { MergeBaseRecorder } from './session/MergeBaseRecorder';
 import { withLocalSignature } from '../data/localSignature';
 import { TransferService } from './transfer/TransferService';
@@ -136,6 +137,8 @@ export class SyncEngine {
   private readonly watch: WatchOperations;
 
   private readonly mirror: MirrorService;
+  // Turns each session's over-the-size-limit skip tally into the one end-of-sync notice (docs/spec.md §9.4a).
+  private readonly oversizeSkips: OversizeSkipNotifier;
   private syncProgress = { processed: 0, total: 0 };
   // Monotonic; read as a delta around one watch operation to learn whether it touched a conflict.
   // Summary counters cannot say: conflicts settled by a deterministic strategy count as plain uploads/downloads.
@@ -303,6 +306,11 @@ export class SyncEngine {
       networkConcurrency: () => Math.max(1, this.opts.settings.networkConcurrency),
       logger: opts.logger,
     });
+    this.oversizeSkips = new OversizeSkipNotifier({
+      maxFileSizeMB: () => this.opts.settings.maxFileSizeMB,
+      notify: (m, t) => { new Notice(m, t); },
+      logger: opts.logger,
+    });
     this.mirror = new MirrorService({
       app: opts.app,
       localAdapter: opts.localAdapter,
@@ -319,6 +327,7 @@ export class SyncEngine {
         begin: (total) => { this.syncProgress = { processed: 0, total }; },
         tick: () => { this.tickProgress(); return this.syncProgress.processed; },
       },
+      oversizeSkips: this.oversizeSkips,
       enumerateIncludedConfigPaths: () => this.configSync.enumerateIncludedPaths(),
       isSystemExcluded: (p) => this.isSystemExcluded(p),
       persist: async () => {
@@ -365,7 +374,7 @@ export class SyncEngine {
       this.features = features;
       // Chunked upload needs the account-only uploads namespace, which a public link share lacks (docs/spec.md §3);
       // the threshold is platform-derived (docs/spec.md §15.1.2).
-      const uploadConfig = { maxFileSizeMB: this.opts.settings.maxFileSizeMB, uploadChunkThresholdMB: chunkThresholdMB(Platform.isMobile) };
+      const uploadConfig = { maxFileSizeMB: () => this.opts.settings.maxFileSizeMB, uploadChunkThresholdMB: chunkThresholdMB(Platform.isMobile) };
       this.uploadStrategy = (FIXED.chunkedUploadEnabled && features.isNextcloud && features.hasAccountDav)
         ? new ChunkedUploadStrategy(uploadConfig)
         : new SimpleUploadStrategy(uploadConfig);
@@ -424,7 +433,7 @@ export class SyncEngine {
       // skipped and the engine would balk forever as "already running".
       void this.opts.logger?.log('sync: connecting (ensureClient)');
       await this.ensureClient();
-      this.plugins.begin();
+      this.plugins.begin(manual ? 'manual' : 'automatic');
       this.invalidateRootEtagOnScopeChange();
       this.syncProgress = { processed: 0, total: 0 };
       this.opts.statusBar.setStatus('syncing', { automatic: !manual });
@@ -463,6 +472,8 @@ export class SyncEngine {
         conflictCount, summary.errorCount,
       );
       // Result display is owned by the status bar surface (StatusBarItem / NoticeStatusBar) via setSyncComplete.
+      // The one skip-count notice of a manual sync comes after the result, so it is the last thing shown (docs/spec.md §9.4a).
+      this.oversizeSkips.sessionFinished(summary, manual ? 'manual' : 'automatic');
     }
   }
 
@@ -1140,14 +1151,6 @@ export class SyncEngine {
     return this.transfer.releaseLock(this.client!, path, token);
   }
 
-  private isRemoteOverSizeLimit(remote: RemoteFileInfo): boolean {
-    return this.transfer.isRemoteOverSizeLimit(remote);
-  }
-
-  private warnDownloadSkipped(path: string, sizeBytes: number): void {
-    this.transfer.warnDownloadSkipped(path, sizeBytes);
-  }
-
   private downloadFile(
     remote: RemoteFileInfo, remoteId: string,
     idType: FileState['idType'], summary: SyncSessionSummary,
@@ -1395,7 +1398,14 @@ export class SyncEngine {
           const before = await this.opts.localAdapter.stat(path);
           const ctime = uploadCreationTimeMs(before?.ctime, remoteMap.get(path)?.creationTime ?? 0);
           const outcome = await this.uploadStrategy!.upload(this.client!, path, data, lf.mtime, { precomputedSha256: localHash, ctime });
-          if (outcome === 'skipped') { this.tickProgress(); return; }
+          if (outcome === 'skipped') {
+            // Over the size limit: counted for the end-of-sync notice (docs/spec.md §9.4a). This batch bypasses uploadFile.
+            this.journal.recordOversizeSkip(summary, {
+              path, sizeBytes: data.byteLength, limitMB: this.opts.settings.maxFileSizeMB, direction: 'upload',
+            });
+            this.tickProgress();
+            return;
+          }
           summary.uploadedCount++;
           this.recordHistory(path, 'uploaded');
           const stat = await this.opts.localAdapter.stat(path);

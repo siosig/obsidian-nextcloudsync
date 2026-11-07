@@ -17,7 +17,7 @@ import { passThroughLocalWrite } from '../../support/pluginPorts';
 function summary(): SyncSessionSummary {
   return {
     startedAt: 0, completedAt: null, uploadedCount: 0, downloadedCount: 0, deletedCount: 0,
-    mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], pluginsNeedingRestart: [], errors: [],
+    mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], pluginsNeedingRestart: [], errors: [], oversizeSkippedPaths: new Set(),
   };
 }
 
@@ -52,7 +52,7 @@ function build(o: Opts = {}, over: Partial<TransferDeps> = {}) {
     history: [] as string[],
     retries: [] as string[],
     mergeBase: [] as string[],
-    notices: [] as string[],
+    logs: [] as string[],
     downloads: 0,
   };
   let onDisk = o.localContent ?? 'local body';
@@ -97,7 +97,8 @@ function build(o: Opts = {}, over: Partial<TransferDeps> = {}) {
       setFile: (f: FileState) => { calls.order.push('setFile'); calls.setFile.push(f); },
     } as unknown as TransferDeps['stateDB'],
     localWrite: passThroughLocalWrite,
-    journal: Object.assign(new SyncJournal({}), {
+    // The real journal records the oversize skip and writes its one log line through this logger.
+    journal: Object.assign(new SyncJournal({ logger: { log: async (m: string) => { calls.logs.push(m); } } }), {
       recordHistory: (p: string, op: string) => { calls.history.push(`${op}:${p}`); },
     }) as unknown as SyncJournal,
     mergeBase: {
@@ -111,7 +112,6 @@ function build(o: Opts = {}, over: Partial<TransferDeps> = {}) {
     // recording the local hash and makes no extra request after an upload.
     clientReportsChecksums: () => true,
     queueRetry: (p: string) => { calls.retries.push(p); },
-    notify: (m: string) => { calls.notices.push(m); },
     ...over,
   };
 
@@ -160,13 +160,19 @@ describe('TransferService.uploadFile', () => {
     expect(calls.setFile[0]).toMatchObject({ localMtime: 1234 });
   });
 
-  it('records nothing when the strategy skipped the upload', async () => {
+  it('records nothing when the strategy skipped the upload [SPEC:OSN-1]', async () => {
     const { transfer, client, uploadStrategy, calls } = build({ upload: 'skipped' });
     const s = summary();
     await transfer.uploadFile(client, uploadStrategy, 'note.md', 'h', 'r', 'etag', remote(), s);
     expect(s.uploadedCount).toBe(0);
     expect(calls.setFile).toEqual([]);
     expect(calls.retries).toEqual([]); // a size skip is permanent, not transient
+    // The skip itself is recorded once for the end-of-sync notice: the path joins the summary set and one
+    // log line carries the direction, the measured size and the limit.
+    expect(s.oversizeSkippedPaths.has('note.md')).toBe(true);
+    expect(calls.logs.filter((l) => l.startsWith('size-limit: skipped upload ('))).toEqual([
+      'size-limit: skipped upload (10B > 100MB) → note.md',
+    ]);
   });
 
   it('propagates an upload failure rather than recording a half-success', async () => {
@@ -237,7 +243,7 @@ describe('TransferService.downloadFile', () => {
     expect(calls.setFile[0].localHash).toBe(await sha256(body));
   });
 
-  it('skips an oversized remote BEFORE the GET, permanently and without an error', async () => {
+  it('skips an oversized remote BEFORE the GET, permanently and without an error [SPEC:OSN-1]', async () => {
     // Re-fetching would fail the same way every sync until the cap is raised, which self-heals.
     const { transfer, client, calls } = build({ oversize: true });
     const s = summary();
@@ -246,7 +252,12 @@ describe('TransferService.downloadFile', () => {
     expect(calls.wrote).toEqual([]);
     expect(calls.retries).toEqual([]);
     expect(s.errorCount).toBe(0);
-    expect(calls.notices[0]).toContain('too large to download');
+    // Recorded for the end-of-sync notice instead of a per-file notice (remote() is 11 B; the oversize cap
+    // is 0.000001 MB).
+    expect(s.oversizeSkippedPaths.has('note.md')).toBe(true);
+    expect(calls.logs.filter((l) => l.startsWith('size-limit: skipped download ('))).toEqual([
+      'size-limit: skipped download (11B > 0.000001MB) → note.md',
+    ]);
   });
 
   it('refuses an EMPTY body for a file advertised as non-empty, keeping local intact', async () => {

@@ -107,6 +107,7 @@ function build(over: Partial<MirrorDeps> = {}, tracked: FileState[] = []) {
       begin: (t: number) => { processed = 0; total = t; },
       tick: () => { processed = Math.min(processed + 1, total); return processed; },
     },
+    oversizeSkips: { sessionFinished: jest.fn() },
     enumerateIncludedConfigPaths: async () => [],
     isSystemExcluded: () => false,
     connect: async () => client,
