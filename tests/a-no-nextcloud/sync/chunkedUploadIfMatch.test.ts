@@ -20,8 +20,9 @@ function fakeClient(): FakeClient {
   };
 }
 
-function uploadConfig(over: Partial<UploadConfig>): UploadConfig {
-  return { maxFileSizeMB: 0, uploadChunkThresholdMB: 0.0000001, ...over };
+function uploadConfig(over: { maxFileSizeMB?: number; uploadChunkThresholdMB?: number }): UploadConfig {
+  const max = over.maxFileSizeMB ?? 0;
+  return { maxFileSizeMB: () => max, uploadChunkThresholdMB: over.uploadChunkThresholdMB ?? 0.0000001 };
 }
 
 const data = new ArrayBuffer(10);

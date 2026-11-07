@@ -210,12 +210,15 @@ describe('SyncEngine.executePlan — reuses the scan (P0-C / FR-010, no double h
     (engine as unknown as { opts: { statusBar: unknown } }).opts.statusBar = { setProgress: jest.fn() };
 
     const localFiles: LocalFiles = new Map([['a.md', { size: 0, mtime: 1 }]]);
+    const summary = { uploadedCount: 0, oversizeSkippedPaths: new Set<string>() };
     await (engine as unknown as {
       executePlan(p: unknown, r: unknown[], s: unknown, l: unknown): Promise<void>;
     }).executePlan(
       { uploads: ['a.md'], downloads: [], conflicts: [], unchanged: [], deletes: [] },
-      [], { uploadedCount: 0 }, localFiles,
+      [], summary, localFiles,
     );
     expect(scanSpy).not.toHaveBeenCalled();
+    // The stubbed strategy reports 'skipped' (over the size limit), which the first-sync upload site records.
+    expect([...summary.oversizeSkippedPaths]).toEqual(['a.md']);
   });
 });

@@ -301,7 +301,7 @@ function syncGroup(host: SettingDefinitionsHost): SettingDefinitionGroup {
     slider(
       host,
       'Maximum file size (MB)',
-      'Files larger than this are skipped with a warning, in both directions (upload and download). 0 = unlimited. On mobile a low limit avoids out-of-memory crashes.',
+      'Files larger than this are skipped in both directions (upload and download). After a manual sync, one notice tells how many files were skipped; automatic syncs only log them. 0 = unlimited. On mobile a low limit avoids out-of-memory crashes.',
       ['size limit', 'large files', 'skip', 'attachment'],
       SLIDER_LIMITS.maxFileSize,
       () => s.maxFileSizeMB,

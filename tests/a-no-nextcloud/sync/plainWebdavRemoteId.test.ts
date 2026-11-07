@@ -33,7 +33,7 @@ function memoryAdapter(): DataAdapter {
 
 const summary = (): SyncSessionSummary => ({
   startedAt: 0, completedAt: null, uploadedCount: 0, downloadedCount: 0, deletedCount: 0,
-  mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], pluginsNeedingRestart: [], errors: [],
+  mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], pluginsNeedingRestart: [], errors: [], oversizeSkippedPaths: new Set(),
 });
 
 // A remote file as the plain client reports it: an ETag and always a null checksum.

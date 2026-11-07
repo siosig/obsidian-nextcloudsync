@@ -131,7 +131,7 @@ function makeEnv(init: EnvInit = {}) {
 type Env = ReturnType<typeof makeEnv>;
 
 async function prepared(env: Env): Promise<void> {
-  env.coordinator.begin();
+  env.coordinator.begin('manual');
   await env.coordinator.prepare(env.client, env.remoteFiles);
 }
 

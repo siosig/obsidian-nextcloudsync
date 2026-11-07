@@ -3,6 +3,8 @@
 // PROPFIND-advertised size exceeds the cap is skipped (no body fetched) across every remote-body
 // path — normal download, delete-vs-edit restore, conflict, compare, manual pull. This prevents the
 // Android OOM (issue #8) where requestUrl base64-encodes the whole body in memory.
+// The download-side skips (DSG-1..DSG-3) show no toast of their own: each is recorded once in
+// `summary.oversizeSkippedPaths` and counted in the per-sync notice (docs/spec.md §9.4a).
 import { DataAdapter, Notice } from 'obsidian';
 import { SyncEngine } from '../../../src/sync/SyncEngine';
 import { StateDB } from '../../../src/data/StateDB';
@@ -27,7 +29,7 @@ function makeStateAdapter(files: Record<string, string> = {}): DataAdapter {
 
 function makeSummary(): SyncSessionSummary {
   return { startedAt: 0, completedAt: null, uploadedCount: 0, downloadedCount: 0, deletedCount: 0,
-    mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], pluginsNeedingRestart: [], errors: [] };
+    mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], pluginsNeedingRestart: [], errors: [], oversizeSkippedPaths: new Set() };
 }
 
 const remoteOf = (path: string, size: number, over: Partial<RemoteFileInfo> = {}): RemoteFileInfo =>
@@ -56,7 +58,7 @@ const callDownload = (engine: SyncEngine, remote: RemoteFileInfo, summary: SyncS
 
 beforeEach(() => { notices().length = 0; });
 
-describe('[SPEC:DSG-1] sync download skips an oversized remote before the GET', () => {
+describe('[SPEC:DSG-1][SPEC:OSN-1] sync download skips an oversized remote before the GET', () => {
   it('does not fetch, does not write, does not advance Base, no retry, no error', async () => {
     const atomicWriteBinary = jest.fn();
     const { engine, stateDB } = await buildEngine(20, { atomicWriteBinary, stat: jest.fn() });
@@ -75,11 +77,12 @@ describe('[SPEC:DSG-1] sync download skips an oversized remote before the GET', 
     expect((engine as unknown as { retryQueue: string[] }).retryQueue).not.toContain('big.bin');
     expect(stateDB.getFile('big.bin')?.remoteId).toBe('e-old');  // Base NOT advanced
     expect(stateDB.getFile('big.bin')?.isConflicted).toBe(false);
-    expect(notices().at(-1)?.message).toMatch(/too large to download/i);
+    expect(notices()).toHaveLength(0);                           // no per-file toast
+    expect(summary.oversizeSkippedPaths.has('big.bin')).toBe(true);
   });
 });
 
-describe('[SPEC:DSG-2] delete-vs-edit restore routes through the same guard', () => {
+describe('[SPEC:DSG-2][SPEC:OSN-1] delete-vs-edit restore routes through the same guard', () => {
   it('does not fetch the oversized remote when restoring a remotely-edited deleted file', async () => {
     const { engine, stateDB } = await buildEngine(20, { atomicWriteBinary: jest.fn(), stat: jest.fn() });
     // serverHash (remote.checksum) differs from base.localHash → restore branch → downloadFile().
@@ -96,10 +99,12 @@ describe('[SPEC:DSG-2] delete-vs-edit restore routes through the same guard', ()
 
     expect(client.downloadFile).not.toHaveBeenCalled();
     expect(client.deleteFile).not.toHaveBeenCalled();
+    expect(summary.oversizeSkippedPaths.has('big.bin')).toBe(true);
+    expect(notices()).toHaveLength(0);                           // no per-file toast
   });
 });
 
-describe('[SPEC:DSG-3] conflict (both changed) with oversized remote (FR-010)', () => {
+describe('[SPEC:DSG-3][SPEC:OSN-1] conflict (both changed) with oversized remote (FR-010)', () => {
   it('skips the merge download, keeps local, flags conflicted, no retry, no error', async () => {
     const { engine, stateDB } = await buildEngine(20, { stat: jest.fn(), read: jest.fn(), readBinary: jest.fn() });
     const base: FileState = { path: 'big.bin', localHash: 'lh', remoteId: 'rh', idType: 'sha256', size: 1, mtime: 1, remoteFileId: 'f', isConflicted: false };
@@ -117,7 +122,8 @@ describe('[SPEC:DSG-3] conflict (both changed) with oversized remote (FR-010)', 
     expect(stateDB.getFile('big.bin')?.remoteId).toBe('rh');       // Base NOT advanced
     expect(summary.errorCount).toBe(0);
     expect((engine as unknown as { retryQueue: string[] }).retryQueue).not.toContain('big.bin');
-    expect(notices().at(-1)?.message).toMatch(/too large to download/i);
+    expect(notices()).toHaveLength(0);                             // no per-file toast
+    expect(summary.oversizeSkippedPaths.has('big.bin')).toBe(true);
   });
 });
 

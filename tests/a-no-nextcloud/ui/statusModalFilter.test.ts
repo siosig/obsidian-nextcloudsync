@@ -24,6 +24,7 @@ function makeReport(): SyncStatusReport {
       errorCount: 1,
       retriedFiles: [], pluginsNeedingRestart: [],
       errors: [{ path: 'err.md', message: 'boom' }],
+      oversizeSkippedPaths: new Set(),
     },
     conflictedFiles: ['c.md'],
     retryFiles: ['r.md'],

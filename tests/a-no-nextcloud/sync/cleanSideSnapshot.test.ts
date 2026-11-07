@@ -23,7 +23,7 @@ function fakeAdapter(): DataAdapter {
 
 function makeSummary(): SyncSessionSummary {
   return { startedAt: 0, completedAt: null, uploadedCount: 0, downloadedCount: 0, deletedCount: 0,
-    mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], pluginsNeedingRestart: [], errors: [] };
+    mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], pluginsNeedingRestart: [], errors: [], oversizeSkippedPaths: new Set() };
 }
 
 const PATH = 'note.md';

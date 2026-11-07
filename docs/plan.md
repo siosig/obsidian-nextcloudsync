@@ -223,8 +223,10 @@ The `SyncEngine` methods below delegate to extracted services (see §17); the be
 
 - **`uploadFile()`** (`TransferService.uploadFile()`) — stat → readBinary → `acquireLock()` (when Files Locking is in use) →
   `uploadStrategy.upload(client, path, data, mtime, {ifMatchEtag})` → `releaseLock()` →
-  `setFile(withLocalSignature(...))` → history `uploaded`. `FileLockedError` (423) ⇒ retry queue.
-- **`downloadFile()`** (`TransferService.downloadFile()`) — `client.downloadFile()` → `atomicWriteBinary(path, data, remote.lastModified)` →
+  `setFile(withLocalSignature(...))` → history `uploaded`. `FileLockedError` (423) ⇒ retry queue. A `'skipped'` outcome (over the size
+  limit) is recorded with `SyncJournal.recordOversizeSkip` and the method returns without a retry (docs/spec.md §9.4a).
+- **`downloadFile()`** (`TransferService.downloadFile()`) — a remote over the size limit is recorded the same way and not fetched
+  (docs/spec.md §9.4); otherwise `client.downloadFile()` → `atomicWriteBinary(path, data, remote.lastModified)` →
   `sha256` → `setFile(withLocalSignature(...))`. **A fetched body that equals the local file is not written**: the state is recorded as
   converged, and there is no write (the mtime stays, so no vault event fires), no history entry and no download count.
 - **Modification time of a write** (docs/spec.md §9.6) — `LocalAdapter.atomicWrite()` / `atomicWriteBinary()` take an optional `mtime` and pass it
@@ -380,11 +382,15 @@ flowchart TD
   P -- yes --> Ch["ChunkedUploadStrategy"]
   P -- no  --> Si["SimpleUploadStrategy"]
   Ch --> D{"size vs settings"}
-  D -- "> maxFileSizeMB" --> Skip["skip (Notice)"]
+  D -- "> maxFileSizeMB" --> Skip["skip (recorded in the session tally)"]
   D -- "> chunkThresholdMB(isMobile) = 50/20" --> CU["chunked: MKCOL → PUT chunks (10MB) → MOVE .file assemble → PROPFIND checksum verify"]
   D -- else --> PUT["single PUT"]
   Si --> PUT2["single PUT (size ceiling check; skip if exceeded)"]
 ```
+
+- **Size ceiling** (`UploadConfig.maxFileSizeMB()`): both strategies read the limit through a function on every upload, so a changed
+  setting applies at once, and return `'skipped'` without any notice. The caller records the skip (`SyncJournal.recordOversizeSkip`);
+  after a manual sync `OversizeSkipNotifier.sessionFinished` turns the tally into one notice (docs/spec.md §9.4a).
 
 - **Single PUT** (`NextcloudClient.uploadFile`): `OC-Checksum` + `X-OC-MTime` + an optional `If-Match`
   (optimistic concurrency control → 412 ⇒ conflict). Directory creation is reactive: PUT first, and on `409` the parent is
@@ -575,10 +581,11 @@ separate modules. `SyncEngine.ts` keeps orchestration and the per-file decision;
 | `src/sync/policy/index.ts` | `isSystemExcluded` / `isLocallyUnchanged` / `withinSafetyWindow` / `isTextEligible` / `parentDir` / `isDotName` | **Pure functions only** (no classes) |
 | `src/sync/scan/LocalScanner.ts` | `scanLocalFiles` / `collectLocalStats` (dot-path completion inside) | Class (dependency injection) |
 | `src/sync/scan/RemoteListingSource.ts` | `obtainFullScanListing` (root-ETag short-circuit) / `rebuildRemote*FromState` / `resolveRemoteChecksums` | Class |
-| `src/sync/session/SyncJournal.ts` | Summary creation, history recording, error recording, log output of session errors | Class (**owns the run start time**) |
+| `src/sync/session/SyncJournal.ts` | Summary creation, history recording, error recording, log output of session errors, the over-the-size-limit skip tally (`recordOversizeSkip`) | Class (**owns the run start time**) |
+| `src/sync/session/OversizeSkipNotifier.ts` | `sessionFinished`: the one skip-count notice after a manual session (nothing for an automatic one), and its text | Class (dependency injection; never throws) |
 | `src/sync/session/MergeBaseRecorder.ts` | Decision on whether a merge base may be recorded (made before a byte body is decoded), and the save request | Class |
 | `src/data/localSignature.ts` | Stamping the post-write stat signature (`withLocalSignature`) | Free function |
-| `src/sync/transfer/TransferService.ts` | Single `uploadFile` / `downloadFile`, locking, size guard | Class (**owns the held locks**) |
+| `src/sync/transfer/TransferService.ts` | Single `uploadFile` / `downloadFile`, locking, size guard (records the skip, shows no notice) | Class (**owns the held locks**) |
 | `src/sync/versions/VersionService.ts` | Nextcloud version listing and restore | Class |
 | `src/sync/deletion/DeletionService.ts` | Deletion propagation (local→remote / remote→local), proven deletion of files absent from the listing | Class |
 | `src/sync/deletion/subtreeTracking.ts` | Dropping the tracking under a trashed folder from all three stores at once | Pure function |
@@ -588,7 +595,7 @@ separate modules. `SyncEngine.ts` keeps orchestration and the per-file decision;
 | `src/sync/watch/WatchOperations.ts` | Single-file / single-folder operations driven by watch | Class (**owns the in-flight and pending sets**) |
 | `src/sync/identity/contentIdentity.ts` | Proof that local and remote content are identical, and the converged baseline | Functions |
 | `src/sync/mirror/MirrorService.ts` | Mirror from remote (plan and apply) | Class |
-| `src/sync/plugins/PluginSyncCoordinator.ts` | Community-plugin session: catalog, per-plugin direction, `fileAction`, `conflictRuleFor`, restart set and notices | Class (**owns the session state and the awaiting-restart set**); implements `PluginPathGate`, `LocalWritePort`, `PluginSessionPort` |
+| `src/sync/plugins/PluginSyncCoordinator.ts` | Community-plugin session: catalog, per-plugin direction, `fileAction`, `conflictRuleFor`, restart set and notices (the size-limit notice only on a manual session, chosen by `begin(trigger)`) | Class (**owns the session state and the awaiting-restart set**); implements `PluginPathGate`, `LocalWritePort`, `PluginSessionPort` |
 | `src/util/creationTime.ts` | Valid-value check, aligned target, `writeCreationTimeMs` / `uploadCreationTimeMs`, `planCreationTimeAlignment` | **Pure functions only** |
 | `src/sync/ctime/CreationTimeAligner.ts` | **Execution** of the creation-time plan (local and server fix, State record); port `CreationTimePort` | Class (dependency injection) |
 | `src/data/creationTimeProbe.ts` | One-time classification of the platform (`settable` / `readOnly` / `untrusted`) | Free function |
@@ -601,7 +608,8 @@ separate modules. `SyncEngine.ts` keeps orchestration and the per-file decision;
   replacement done by `ensureClient` (holding one would grab a stale client).
 - **Values that change during the engine's lifetime are passed through accessors.** The two times of `isLocallyUnchanged` (`Date.now()` /
   `getLastSyncTime()`), `isNextcloud` (the capability arrives after connect), `networkConcurrency` /
-  `maxFileSizeMB` / `autoMergeFileTypes` (settings), and `isCancelled`.
+  `maxFileSizeMB` / `autoMergeFileTypes` (settings), and `isCancelled`. This includes `UploadConfig.maxFileSizeMB`, which the
+  upload strategies call on every upload instead of keeping the value read when the client connected.
   For the times, **lazy evaluation is itself the specification**: passing a value would touch the state DB for every file
   even on the most frequent early return.
 - **Mutable state lives with its "owner".** The state of the core loop and the session (`running` / `cancelled` /
