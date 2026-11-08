@@ -11,6 +11,14 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [1.0.14] - 2026-11-09
+
+### Changed
+- **One skipped-file notice, only after a manual sync.** Files over the "Maximum file size" limit used to raise a separate notice for each file, during automatic syncs too. Now a manual sync shows a single notice with the number of skipped files once it finishes. Automatic syncs show nothing and write the count to the log. The notice about plugin files over the limit follows the same rule. The limit setting is read at upload time, so a changed limit applies right away. There is no new setting.
+
+### Fixed
+- **The browser sign-in wait is shown correctly.** The "Log in via browser" notice and the setting description said the flow waits up to 3 minutes. The flow has waited up to 20 minutes since 0.7.41, so the text now shows the real limit. Only the wording changes; sign-in behaviour is the same and there is no setting.
+
 ## [1.0.13] - 2026-10-27
 
 ### Added
@@ -510,6 +518,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[1.0.14]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.14
 [1.0.13]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.13
 [1.0.12]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.12
 [1.0.11]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.11
