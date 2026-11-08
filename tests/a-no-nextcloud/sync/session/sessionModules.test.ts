@@ -76,7 +76,7 @@ describe('SyncJournal — recording errors', () => {
   function summary(): SyncSessionSummary {
     return {
       startedAt: 0, completedAt: null, uploadedCount: 0, downloadedCount: 0, deletedCount: 0,
-      mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], pluginsNeedingRestart: [], errors: [],
+      mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], pluginsNeedingRestart: [], errors: [], oversizeSkippedPaths: new Set(),
     };
   }
 
@@ -145,7 +145,7 @@ describe('SyncJournal.newSummary', () => {
     const s = j.newSummary();
     expect(s).toMatchObject({
       completedAt: null, uploadedCount: 0, downloadedCount: 0, deletedCount: 0,
-      mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], pluginsNeedingRestart: [], errors: [],
+      mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], pluginsNeedingRestart: [], errors: [], oversizeSkippedPaths: new Set(),
     });
     expect(s.startedAt).toBeGreaterThan(0);
   });

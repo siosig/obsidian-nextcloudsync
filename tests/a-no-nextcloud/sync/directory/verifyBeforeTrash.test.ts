@@ -13,7 +13,7 @@ import { TFolder } from '../../support/obsidian';
 
 const summary = (): SyncSessionSummary => ({
   startedAt: 0, completedAt: null, uploadedCount: 0, downloadedCount: 0, deletedCount: 0,
-  mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], pluginsNeedingRestart: [], errors: [],
+  mergedCount: 0, conflictedCount: 0, errorCount: 0, retriedFiles: [], pluginsNeedingRestart: [], errors: [], oversizeSkippedPaths: new Set(),
 });
 
 // A vault with one tracked folder that the remote listing does NOT mention; `exists` is what the server says when asked directly.

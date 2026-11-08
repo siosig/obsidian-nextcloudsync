@@ -14,7 +14,7 @@ function initSummary(): SyncSessionSummary {
     startedAt: Date.now(), completedAt: null,
     uploadedCount: 0, downloadedCount: 0, deletedCount: 0,
     mergedCount: 0, conflictedCount: 0,
-    errorCount: 0, retriedFiles: [], pluginsNeedingRestart: [], errors: [],
+    errorCount: 0, retriedFiles: [], pluginsNeedingRestart: [], errors: [], oversizeSkippedPaths: new Set(),
   };
 }
 

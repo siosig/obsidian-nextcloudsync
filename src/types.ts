@@ -65,7 +65,7 @@ export interface DavSyncSettings {
   /** WebDAV request timeout in seconds. */
   networkTimeoutSeconds: number;
   deviceId: string;
-  /** Absolute file-size cap (MB). Files exceeding this are skipped with a warning. 0 = unlimited. */
+  /** Absolute file-size cap (MB). Files exceeding this are skipped (see docs/spec.md §9.4a). 0 = unlimited. */
   maxFileSizeMB: number;
   /** Watch mode: sync local edits immediately. */
   watchOnChangeEnabled: boolean;
@@ -326,6 +326,19 @@ export interface SyncHistoryEntry extends SyncHistoryDetail {
   runStartedAt?: number;
 }
 
+/** Who started a sync: "Sync now" and Mirror from remote are manual; startup, resume, interval and watch are automatic (docs/spec.md §11). */
+export type SyncTrigger = 'manual' | 'automatic';
+
+export type OversizeSkipDirection = 'upload' | 'download';
+
+/** One file skipped because it is over `maxFileSizeMB` (docs/spec.md §9.4a). */
+export interface OversizeSkip {
+  path: string;
+  sizeBytes: number;
+  limitMB: number;
+  direction: OversizeSkipDirection;
+}
+
 export interface SyncSessionSummary {
   startedAt: number;
   completedAt: number | null;
@@ -342,6 +355,8 @@ export interface SyncSessionSummary {
   pluginsNeedingRestart: string[];
   /** Per-error details behind errorCount, shown in the sync status dialog. */
   errors: SyncErrorDetail[];
+  /** Paths skipped over the size limit in this session; deduplicated, never persisted (docs/spec.md §9.4a). */
+  oversizeSkippedPaths: Set<string>;
 }
 
 export type SyncStatus = 'idle' | 'syncing' | 'error' | 'conflict';

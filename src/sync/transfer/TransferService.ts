@@ -1,7 +1,6 @@
 // One upload, one download, and the locking and size guards around them. It decides nothing about WHICH files
 // move, only how a single file crosses. The WebDAV client and upload strategy are PARAMETERS, never fields:
 // SyncEngine creates both lazily and can replace them, so a captured one would go stale.
-import { Notice } from 'obsidian';
 import { FileState, RemoteFileInfo, SyncSessionSummary } from '../../types';
 import { FileLockedError, FeatureUnsupportedError, NetworkError } from '../../types';
 import { LocalAdapter } from '../../data/LocalAdapter';
@@ -42,8 +41,6 @@ export interface TransferDeps {
   // An outbound port, not a call back into the sync loop: transfer says a file needs another attempt, not when.
   queueRetry(path: string): void;
   logger?: Pick<FileLogger, 'log'>;
-  // Injected so the size guard can be tested without an Obsidian runtime.
-  notify?(message: string): void;
 }
 
 export class TransferService {
@@ -87,7 +84,13 @@ export class TransferService {
       await this.releaseLock(client, path, token);
     }
 
-    if (outcome === 'skipped') return; // Over the size limit; the strategy already warned, no retry needed.
+    if (outcome === 'skipped') {
+      // Over the size limit: recorded for the end-of-sync count (docs/spec.md §9.4a), no retry.
+      this.deps.journal.recordOversizeSkip(summary, {
+        path, sizeBytes: data.byteLength, limitMB: this.deps.maxFileSizeMB(), direction: 'upload',
+      });
+      return;
+    }
     summary.uploadedCount++;
     // Record the state the server holds now, not before the PUT. Both strategies send `OC-Checksum: SHA256:<localHash>`
     // and Nextcloud returns it as oc:checksums, so the remote id IS localHash; keeping the pre-upload id would make
@@ -127,10 +130,12 @@ export class TransferService {
   ): Promise<void> {
     // Skip oversized remote files BEFORE the GET, covering the normal download and the local-delete-vs-remote-edit
     // restore. Local and Base stay untouched and no retry is queued: the skip is permanent until the cap is
-    // raised, then the next reconcile downloads it. Not an error (docs/spec.md §9.4).
+    // raised, then the next reconcile downloads it. Not an error (docs/spec.md §9.4). Counted for the
+    // end-of-sync notice (docs/spec.md §9.4a).
     if (this.isRemoteOverSizeLimit(remote)) {
-      this.warnDownloadSkipped(remote.path, remote.size);
-      void this.deps.logger?.log(`download: SKIPPED over size limit (${remote.size}B > ${this.deps.maxFileSizeMB()}MB) → ${remote.path}`);
+      this.deps.journal.recordOversizeSkip(summary, {
+        path: remote.path, sizeBytes: remote.size, limitMB: this.deps.maxFileSizeMB(), direction: 'download',
+      });
       return;
     }
     const data = await client.downloadFile(remote.path);
@@ -186,13 +191,6 @@ export class TransferService {
   // it), so a large file would OOM the app (issue #8, docs/spec.md §9.4).
   isRemoteOverSizeLimit(remote: RemoteFileInfo): boolean {
     return isOverFileSizeLimit(remote.size, this.deps.maxFileSizeMB());
-  }
-
-  warnDownloadSkipped(path: string, sizeBytes: number): void {
-    const sizeMB = sizeBytes / 1024 / 1024;
-    const message = `⚠️ File too large to download: ${path} (${sizeMB.toFixed(1)} MB > ${this.deps.maxFileSizeMB()} MB)`;
-    if (this.deps.notify) this.deps.notify(message);
-    else new Notice(message);
   }
 
   // Returns null if locking is disabled/unsupported; on 423 retries with backoff, then throws FileLockedError.

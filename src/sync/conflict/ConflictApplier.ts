@@ -66,9 +66,11 @@ export class ConflictApplier {
     // conflicted. No retry, since it would fail identically until the cap is raised.
     if (this.deps.transfer.isRemoteOverSizeLimit(remote)) {
       this.deps.onConflictEncountered();
-      this.deps.transfer.warnDownloadSkipped(path, remote.size);
+      this.deps.journal.recordOversizeSkip(summary, {
+        path, sizeBytes: remote.size, limitMB: this.deps.maxFileSizeMB(), direction: 'download',
+      });
       if (base) this.deps.stateDB.setFile({ ...base, isConflicted: true });
-      void this.deps.logger?.log(`conflict: remote over size limit (${remote.size}B > ${this.deps.maxFileSizeMB()}MB), skipped → ${path}`);
+      void this.deps.logger?.log(`conflict: oversized remote not fetched, kept local as conflicted → ${path}`);
       return;
     }
 
@@ -228,7 +230,13 @@ export class ConflictApplier {
         const outcome = await conn.uploadStrategy.upload(conn.client, path, mergedData, mergeMtime, {
           ctime: uploadCreationTimeMs(before?.ctime, remote.creationTime),
         });
-        if (outcome !== 'skipped') { summary.uploadedCount++; uploaded = true; this.deps.journal.recordHistory(path, 'uploaded'); }
+        if (outcome !== 'skipped') {
+          summary.uploadedCount++; uploaded = true; this.deps.journal.recordHistory(path, 'uploaded');
+        } else {
+          this.deps.journal.recordOversizeSkip(summary, {
+            path, sizeBytes: mergedData.byteLength, limitMB: this.deps.maxFileSizeMB(), direction: 'upload',
+          });
+        }
       } finally {
         await this.deps.transfer.releaseLock(conn.client, path, lockToken);
       }
@@ -292,6 +300,9 @@ export class ConflictApplier {
         });
         if (outcome === 'skipped') {
           // Skipped (e.g. size limit): leave the conflict unresolved.
+          this.deps.journal.recordOversizeSkip(summary, {
+            path, sizeBytes: localData.byteLength, limitMB: this.deps.maxFileSizeMB(), direction: 'upload',
+          });
           this.deps.queueRetry(path);
           return;
         }

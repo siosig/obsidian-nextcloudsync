@@ -1,4 +1,6 @@
+import { Notice } from '../support/obsidian';
 import { ChunkedUploadStrategy } from '../../../src/sync/upload/ChunkedUploadStrategy';
+import { SimpleUploadStrategy } from '../../../src/sync/upload/SimpleUploadStrategy';
 import { UploadConfig } from '../../../src/sync/upload/IUploadStrategy';
 import { NetworkError } from '../../../src/types';
 import { IWebDAVClient } from '../../../src/network/IWebDAVClient';
@@ -15,20 +17,23 @@ function fakeClient(): FakeClient {
   };
 }
 
-function uploadConfig(over: Partial<UploadConfig>): UploadConfig {
-  return { maxFileSizeMB: 0, uploadChunkThresholdMB: 50, ...over };
+function uploadConfig(over: { maxFileSizeMB?: number; uploadChunkThresholdMB?: number }): UploadConfig {
+  const max = over.maxFileSizeMB ?? 0;
+  return { maxFileSizeMB: () => max, uploadChunkThresholdMB: over.uploadChunkThresholdMB ?? 50 };
 }
 
 const data = new ArrayBuffer(10); // about 9.5e-6 MB
 
 describe('ChunkedUploadStrategy', () => {
-  it('skips files larger than maxFileSizeMB', async () => {
+  it('[SPEC:OSN-1] skips files larger than maxFileSizeMB without a notice', async () => {
+    Notice.instances.length = 0;
     const client = fakeClient();
     const s = new ChunkedUploadStrategy(uploadConfig({ maxFileSizeMB: 0.0000001 }));
     const outcome = await s.upload(client as unknown as IWebDAVClient, 'big.bin', data);
     expect(outcome).toBe('skipped');
     expect(client.uploadFile).not.toHaveBeenCalled();
     expect(client.uploadChunked).not.toHaveBeenCalled();
+    expect(Notice.instances.length).toBe(0);
   });
 
   it('uses chunked upload above the chunk threshold', async () => {
@@ -79,5 +84,17 @@ describe('ChunkedUploadStrategy', () => {
     const s = new ChunkedUploadStrategy(uploadConfig({ uploadChunkThresholdMB: 100, maxFileSizeMB: 1000 }));
     await s.upload(client as unknown as IWebDAVClient, 'small.md', data, 1234, { ctime: 99 });
     expect(client.uploadFile).toHaveBeenCalledWith('small.md', data, 1234, { ctime: 99 });
+  });
+});
+
+describe('[SPEC:OSN-1] SimpleUploadStrategy', () => {
+  it('skips files larger than maxFileSizeMB without a notice', async () => {
+    Notice.instances.length = 0;
+    const client = fakeClient();
+    const s = new SimpleUploadStrategy(uploadConfig({ maxFileSizeMB: 0.0000001 }));
+    const outcome = await s.upload(client as unknown as IWebDAVClient, 'big.bin', data);
+    expect(outcome).toBe('skipped');
+    expect(client.uploadFile).not.toHaveBeenCalled();
+    expect(Notice.instances.length).toBe(0);
   });
 });
