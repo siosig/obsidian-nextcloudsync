@@ -31,10 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (1.0.14)
+## What's new in this release (1.0.15-beta.1)
 
-- **One skipped-file notice, only after a manual sync (1.0.14)** — files over the "Maximum file size" limit used to raise a separate notice for each file, during automatic syncs too. Now a manual sync shows a single notice with the number of skipped files once it finishes. Automatic syncs show nothing and write the count to the log. The notice about plugin files over the limit follows the same rule. The limit setting is read at upload time, so a changed limit applies right away. There is no new setting.
-- **The browser sign-in wait is shown correctly (1.0.14)** — the "Log in via browser" notice and the setting description said the flow waits up to 3 minutes. The flow has waited up to 20 minutes since 0.7.41, so the text now shows the real limit. Only the wording changes; sign-in behaviour is the same and there is no setting.
+- **The README now says which servers are supported (1.0.15-beta.1)** — Nextcloud is the only supported server. Other WebDAV servers can connect, but their behaviour is not guaranteed. A server that answers Nextcloud's probes, such as ownCloud, is treated as Nextcloud and does not fall back to plain WebDAV. Only the documentation changes; sync behaviour is the same and there is no setting.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
