@@ -6,7 +6,7 @@ The only cost you pay is waiting for the initial Vault index to complete on firs
 
 - **Your writing is never lost** — the merge logic keeps your Vault in a clean, consistent state even when the same note is edited on multiple devices at once.
 - **Sync fades into the background** — Nextcloud's fast differential sync means you'll stop noticing sync time altogether.
-- **Works beyond Nextcloud too** — with slightly reduced features, it works against any standard WebDAV server as well.
+- **Built and tested for Nextcloud** — other WebDAV servers can connect, but they are not supported and may not work (see Requirements).
 
 ---
 
@@ -54,7 +54,7 @@ For the full version history of every release, see the **[changelog](CHANGELOG.m
 | Server unavailable | Cryptic errors / partial writes | **Maintenance-mode detection** (`/status.php`) and parsed Nextcloud error messages |
 | Capability awareness | None | **Capabilities probing** (`/ocs/.../capabilities`) — features light up only when the server supports them (Progressive Enhancement) |
 
-If you point it at a non-Nextcloud WebDAV server, it automatically disables the Nextcloud-only features and falls back to standard recursive WebDAV sync — so it still works, just without the extras.
+If you point it at a WebDAV server that is not detected as Nextcloud, it disables the Nextcloud-only features and falls back to standard recursive WebDAV sync. A server that answers Nextcloud's probes, such as ownCloud, is treated as Nextcloud and does not fall back. Neither case is supported: the plugin is tested against Nextcloud, and testing it against every server that speaks WebDAV is not realistic, so it may not work there.
 
 ---
 
@@ -72,7 +72,7 @@ If you point it at a non-Nextcloud WebDAV server, it automatically disables the 
 - **Periodic auto-sync** with a configurable interval (set to `0` for manual-only), plus a **Sync now** command.
 - **Sync on file change (watch mode)** — optionally sync immediately after you create, edit, delete, or rename a file **or folder** (file edits are debounced ~2s after you stop typing; deletes, renames and folder operations propagate right away). The status bar shows when a change is being pushed. Toggle on/off in settings; works alongside the periodic interval. Available on desktop and mobile — off by default on mobile, where it runs only while Obsidian is open and anything it misses is sent on the next sync. Paused on cellular when **Sync on Wi-Fi only** is on.
 - **Resilient retries** — failed files are skipped, queued, and retried next sync with exponential backoff; a dropped Wi-Fi connection resumes automatically.
-- **Standard WebDAV fallback** — works against any WebDAV server (recursive), Nextcloud features auto-disabled.
+- **Standard WebDAV fallback** — on a server that is not detected as Nextcloud, the plugin syncs over plain recursive WebDAV with the Nextcloud features disabled. Best effort only, not supported (see Requirements).
 - **Filter the sync-status dialog by status** — the status dialog has a checkbox row (Uploaded, Downloaded, Deleted, Merged, Conflicted, Local wins, Remote wins, Error) so you can focus on, say, only conflicts. All on by default; your selection is saved and persists across Obsidian restarts, and applies to every section.
 - **Compare a file with its remote version** — right-click any file in the explorer (on mobile: long-press, or run the *Compare with remote* command) to open a popup comparing local vs remote modification time, checksum (with a match/mismatch badge), and a line diff. On narrow screens the diff stacks vertically. Resolve the difference right there with **push** (overwrite remote with local) or **pull** (overwrite local with remote), each behind a confirmation.
 - **Per-device logging** — one opt-in log file, `nextcloud-debug_<device>.txt`, written to the vault root and named per device so multiple devices never overwrite one another (another device's log can even sync into this vault for side-by-side comparison). Each line is timestamped and carries the plugin version, and a full settings snapshot is written when logging turns on; every sync operation is recorded. Useful for troubleshooting on mobile where there's no console. Note: Obsidian hides `.txt` files unless *Settings → Files & Links → Detect all file extensions* is on, and they never appear in Quick Switcher — you can also open the file from your OS or Nextcloud. Turn logging off and delete the file when finished.
@@ -109,7 +109,7 @@ Mobile is supported, with a few platform-aware differences (desktop behaviour is
 ## Requirements
 
 - **Obsidian** `1.13.0` or later. Desktop (Electron) and mobile (iOS / Android) are supported. **This is a change in 1.0.0** — earlier releases required `1.11.4`. The settings tab now uses Obsidian's declarative settings API, which is what makes the plugin's settings findable in Obsidian's own settings search; that API arrived in `1.13.0`, and below it the settings screen would come up empty. Obsidian will not offer 1.0.0 to older installs, so they stay on `0.7.44` until they update Obsidian.
-- **Nextcloud** Hub 26 "Winter" (server `33`) or later is **recommended** for the Nextcloud-specific features. Older Nextcloud servers are no longer blocked — they still connect and sync, but the settings screen shows a recommendation banner and some features may degrade. Plain WebDAV servers fall back to core sync.
+- **Nextcloud** Hub 26 "Winter" (server `33`) or later is **recommended** for the Nextcloud-specific features. Older Nextcloud servers are no longer blocked — they still connect and sync, but the settings screen shows a recommendation banner and some features may degrade. Nextcloud is the only supported server. Other WebDAV servers can connect, but their behaviour is not guaranteed: a plain WebDAV server falls back to core sync, and a Nextcloud-compatible server such as ownCloud is treated as Nextcloud without being tested against a real instance.
 - A Nextcloud account. You can authenticate with **Login Flow v2** (recommended) or a manually issued **app password** (never your main password).
 
 ---
@@ -310,7 +310,7 @@ These tests exist specifically to prevent sync-inconsistency states — **data l
 - **Config folder sync is opt-in.** Enable **Sync config folder** in settings to sync `.obsidian/` config across devices, chosen with two toggles: **Bookmarks** and **Other settings** (appearance, themes & snippets, hotkeys, and core-plugin settings). **This plugin's own folder and its sync-state database never sync** (device-specific state). Community plugins sync only when you pick them with **Choose plugins…** (`manifest.json`, `main.js`, `styles.css` and `data.json` only; **Dangerous**, as it copies executable code to your other devices). A synced change to core-plugin settings may require an Obsidian restart on the other device to take effect.
 - Designed primarily for Markdown / text Vaults; single files in the hundreds-of-MB range are beyond the v1 design target.
 - Keep the Vault on local storage — don't double-manage it with another cloud sync (e.g. iCloud Drive) at the same time.
-- Nextcloud-specific features require a compatible server version; older or non-Nextcloud servers transparently fall back to core WebDAV sync.
+- Nextcloud-specific features require a compatible Nextcloud version; on an older Nextcloud some of them may degrade. Servers other than Nextcloud are not supported: a plain WebDAV server falls back to core WebDAV sync, a Nextcloud-compatible server such as ownCloud is treated as Nextcloud, and in both cases the behaviour is not guaranteed.
 
 ---
 
