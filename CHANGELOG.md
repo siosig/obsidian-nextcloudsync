@@ -11,6 +11,11 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [1.0.15] - 2026-11-12
+
+### Changed
+- **The README now says which servers are supported.** Nextcloud is the only supported server. Other WebDAV servers can connect, but their behaviour is not guaranteed. A server that answers Nextcloud's probes, such as ownCloud, is treated as Nextcloud and does not fall back to plain WebDAV. Only the documentation changes; sync behaviour is the same and there is no setting.
+
 ## [1.0.14] - 2026-11-09
 
 ### Changed
@@ -518,6 +523,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[1.0.15]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.15
 [1.0.14]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.14
 [1.0.13]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.13
 [1.0.12]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.12

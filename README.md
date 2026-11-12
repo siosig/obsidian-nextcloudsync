@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (1.0.15-beta.1)
+## What's new in this release (1.0.15)
 
-- **The README now says which servers are supported (1.0.15-beta.1)** — Nextcloud is the only supported server. Other WebDAV servers can connect, but their behaviour is not guaranteed. A server that answers Nextcloud's probes, such as ownCloud, is treated as Nextcloud and does not fall back to plain WebDAV. Only the documentation changes; sync behaviour is the same and there is no setting.
+- **The README now says which servers are supported (1.0.15)** — Nextcloud is the only supported server. Other WebDAV servers can connect, but their behaviour is not guaranteed. A server that answers Nextcloud's probes, such as ownCloud, is treated as Nextcloud and does not fall back to plain WebDAV. Only the documentation changes; sync behaviour is the same and there is no setting.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
