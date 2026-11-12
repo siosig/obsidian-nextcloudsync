@@ -11,6 +11,11 @@
 
 > 英語版（原文）は [`CHANGELOG.md`](CHANGELOG.md) を参照してください。
 
+## [1.0.16] - 2026-11-13
+
+### 変更
+- **開発・テスト用の依存を、セキュリティ勧告の修正版に更新しました。** ビルドとテストの道具（Appium と Android 用ドライバー、およびそれらが使ういくつかのパッケージ）を、修正が公開された版に上げました。これらのパッケージはプラグインに同梱されないので、プラグインのコードと同期の動作は変わりません。設定項目はありません。
+
 ## [1.0.15] - 2026-11-12
 
 ### 変更
@@ -523,6 +528,7 @@ Nextcloud 特化同期エンジンの初回公開リリース（0.2.0 〜 0.2.1�
 - **Dry-run でのコンフリクト結果の明確化** — 初回同期プレビューがコンフリクト解決の結果を説明し、各コンフリクトファイルをクリックするとマージ後の内容（変更前後）をプレビューできます。
 - **汎用 WebDAV より高速な同期** — 内容ハッシュと Nextcloud の `sync-token` を突き合わせ、毎回リモートツリー全体を再帰的に走査するのではなく、実際に変更された分だけを転送します。更新日時ベースの WebDAV プラグインより同期が明確に速くなります。
 
+[1.0.16]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.16
 [1.0.15]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.15
 [1.0.14]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.14
 [1.0.13]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.13

@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (1.0.16-beta.1)
+## What's new in this release (1.0.16)
 
-- **Development and test dependencies updated for security advisories (1.0.16-beta.1)** — The build and test tooling (Appium and its Android driver, plus several packages they pull in) moves to versions with the published fixes. These packages are not bundled into the plugin, so the plugin code and sync behaviour are unchanged and there is no setting.
+- **Development and test dependencies updated for security advisories (1.0.16)** — The build and test tooling (Appium and its Android driver, plus several packages they pull in) moves to versions with the published fixes. These packages are not bundled into the plugin, so the plugin code and sync behaviour are unchanged and there is no setting.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
