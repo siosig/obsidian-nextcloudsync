@@ -1,6 +1,6 @@
 // Direct tests for MirrorService.
 //
-// No [SPEC:...] tags: MIR-* stays with the engine-level suites.
+// MIR-* stays with the engine-level suites; only the CTE-5 case below carries a tag.
 //
 // Mirror is a one-way reset, so the thing worth pinning is what it refuses to do. A plan that could
 // not be built reliably must produce ZERO deletions — never "the server listed nothing, so delete
@@ -17,6 +17,7 @@ import { RemoteListingSource } from '../../../../src/sync/scan/RemoteListingSour
 import { MirrorPlan } from '../../../../src/sync/mirrorPlan';
 import { FileState, RemoteFileInfo, SyncSessionSummary } from '../../../../src/types';
 import { IWebDAVClient } from '../../../../src/network/IWebDAVClient';
+import { CERT_TRUST_FAQ_TITLE, withCertTrustGuidance } from '../../../../src/network/certTrust';
 
 const remote = (path: string, over: Partial<RemoteFileInfo> = {}): RemoteFileInfo => ({
   path, fileId: `fid-${path}`, checksum: null, etag: '"e"', size: 10, lastModified: 1000, ...over,
@@ -281,6 +282,17 @@ describe('MirrorService.planRemoteMirror — a plan that cannot be trusted delet
     const p = await mirror.planRemoteMirror();
     expect(p.ok).toBe(false);
     expect(p.reason).toContain('offline');
+    expect(p.deleteFiles).toEqual([]);
+    expect(p.deleteDirs).toEqual([]);
+  });
+
+  it('[SPEC:CTE-5] returns an unusable plan whose reason carries the certificate guidance', async () => {
+    const err = withCertTrustGuidance(new Error('net::ERR_CERT_AUTHORITY_INVALID')) as Error;
+    expect(err.message).toContain(CERT_TRUST_FAQ_TITLE);
+    const { mirror } = build({ connect: async () => { throw err; } });
+    const p = await mirror.planRemoteMirror();
+    expect(p.ok).toBe(false);
+    expect(p.reason).toBe(`Not connected to the server: ${err.message}`);
     expect(p.deleteFiles).toEqual([]);
     expect(p.deleteDirs).toEqual([]);
   });

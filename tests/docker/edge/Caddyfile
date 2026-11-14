@@ -10,3 +10,15 @@ https://nc.test {
     header_up X-Forwarded-Proto https
   }
 }
+https://untrusted.test {
+  tls /run/suite/probe-untrusted.crt /run/secrets/suite_probe_untrusted_key
+  respond "ok" 200
+}
+https://expired.test {
+  tls /run/suite/probe-expired.crt /run/secrets/suite_probe_expired_key
+  respond "ok" 200
+}
+https://wrongname.test {
+  tls /run/suite/tls.crt /run/secrets/suite_tls_key
+  respond "ok" 200
+}

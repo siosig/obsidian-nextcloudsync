@@ -1,9 +1,12 @@
-import { requestUrl } from 'obsidian';
+import { requestUrl, RequestUrlResponse } from 'obsidian';
 import { LoginFlowInit, LoginFlowResult, LoginFlowError } from '../types';
 import { onAppResume } from '../util/appResume';
+import { withCertTrustGuidance } from '../network/certTrust';
 
 // Nextcloud Login Flow v2: start() POSTs /index.php/login/v2, the user approves in a browser, poll() collects the app password.
-// All requests go through Obsidian's requestUrl (no fetch).
+// All requests go through Obsidian's requestUrl (no fetch). A rejection is rethrown through withCertTrustGuidance (docs/spec.md §11.3).
+// Each request is a try/catch around its own `await requestUrl(...)`, not a helper that wraps the promise: an extra promise hop
+// would delay the poll loop's wake-up setup past the app-resume signal (LF-1).
 
 // Default app-resume signal (issue #34): mobile suspends the webview's timers while the browser holds the foreground,
 // so the poll loop needs a second way to be woken.
@@ -22,12 +25,17 @@ export class LoginFlowV2 {
 
   static async start(serverBaseUrl: string): Promise<LoginFlowInit> {
     const base = serverBaseUrl.replace(/\/$/, '');
-    const res = await requestUrl({
-      url: `${base}/index.php/login/v2`,
-      method: 'POST',
-      headers: { 'User-Agent': 'Obsidian Nextcloud Sync' },
-      throw: false,
-    });
+    let res: RequestUrlResponse;
+    try {
+      res = await requestUrl({
+        url: `${base}/index.php/login/v2`,
+        method: 'POST',
+        headers: { 'User-Agent': 'Obsidian Nextcloud Sync' },
+        throw: false,
+      });
+    } catch (err) {
+      throw withCertTrustGuidance(err);
+    }
     if (res.status === 404 || res.status === 405) {
       throw new LoginFlowError('unsupported');
     }
@@ -40,13 +48,18 @@ export class LoginFlowV2 {
   }
 
   static async pollOnce(init: LoginFlowInit): Promise<LoginFlowResult> {
-    const res = await requestUrl({
-      url: init.pollEndpoint,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `token=${encodeURIComponent(init.pollToken)}`,
-      throw: false,
-    });
+    let res: RequestUrlResponse;
+    try {
+      res = await requestUrl({
+        url: init.pollEndpoint,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `token=${encodeURIComponent(init.pollToken)}`,
+        throw: false,
+      });
+    } catch (err) {
+      throw withCertTrustGuidance(err);
+    }
     if (res.status === 404) return { status: 'pending' };
     if (res.status < 200 || res.status >= 300) return { status: 'pending' };
     const ok = this.parseSuccess(res.json);
