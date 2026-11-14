@@ -11,6 +11,11 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [1.0.17] - 2026-11-14
+
+### Changed
+- **Clearer error when the server certificate is not trusted.** When a request fails because the device does not trust the server's certificate (on Android, `Trust anchor for certification path not found`; on desktop, `net::ERR_CERT_AUTHORITY_INVALID`), the failure message now says that no plugin setting can fix this and what to do instead, and points to a new FAQ entry that explains which certificates each platform accepts. Other failures keep their messages, and there is no setting.
+
 ## [1.0.16] - 2026-11-13
 
 ### Changed
@@ -528,6 +533,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[1.0.17]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.17
 [1.0.16]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.16
 [1.0.15]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.15
 [1.0.14]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.14
