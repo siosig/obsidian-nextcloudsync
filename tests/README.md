@@ -56,6 +56,11 @@ What the entry point guarantees:
   from memory, and masked in any diagnostics. The repo-root `.env` is never read or mounted.
 - Tests trust the per-run CA instead of switching certificate checks off (Node, the desktop Electron
   and the Android system trust store).
+- Three more servers, `untrusted.test`, `expired.test` and `wrongname.test`, are aliases of the edge
+  proxy and exist only for the `CTE-7` and `CTE-8` contract tests. The `untrusted.test` certificate is
+  issued by a CA that is created for each run and thrown away, and it is never added to any trust store.
+  The `expired.test` certificate is issued by the run's CA but has already expired. `wrongname.test`
+  serves the `nc.test` certificate unchanged, so the name does not match.
 
 ### Android and the host kernel
 

@@ -467,6 +467,9 @@ remoteFileId, isConflicted, localMtime?, localSize?, remoteMtime? }`.
 | `FileLockedError` (423) | Lock retry (bounded) → retry queue |
 | `SyncTokenExpiredError` (410) | Fall back to a full PROPFIND |
 | `FeatureUnsupportedError` | Graceful degradation (for example, versions on plain WebDAV) |
+| `CertTrustError` (untrusted server certificate) | Thrown at the request boundary in place of the runtime's rejection; message `<original> — <guidance>`. Extends `Error`, not `NetworkError`, so it is handled exactly like the plain rejection it replaces (no retry-queue change) |
+
+The classification and the guidance text live in `src/network/certTrust.ts`; `requestUrlWithGuidance` in `src/network/requestWithTimeout.ts` applies them at the request boundary. The two login-flow requests (`src/auth/LoginFlowV2.ts`) call `withCertTrustGuidance` in a `try`/`catch` around their own `requestUrl` call instead of using that wrapper, so a successful response takes the same number of promise hops as before: the poll loop's wake-up on app resume (`LF-1`) depends on that timing.
 
 Cancellation has two phases: `requestStop()` sets `cancelled` (queued workers become no-ops), and
 `abortAndWait()` joins `currentRun` before a maintenance reset. `finally` always persists state and history.

@@ -91,6 +91,8 @@ ensure_image() { # <service> <image-name> <tag>
     # placeholders here and have no effect on the image.
     SUITE_CA_HASH=build-only SUITE_CA_CERT_PEM= SUITE_TLS_CERT_PEM= SUITE_TLS_KEY_PEM= \
     SUITE_NC_ADMIN_PASSWORD= SUITE_NC_USER2_PASSWORD= SUITE_NC_DB_PASSWORD= \
+    SUITE_PROBE_UNTRUSTED_CERT_PEM= SUITE_PROBE_UNTRUSTED_KEY_PEM= \
+    SUITE_PROBE_EXPIRED_CERT_PEM= SUITE_PROBE_EXPIRED_KEY_PEM= \
       compose build "$service" >&2 || die 2 "building image $name:$tag failed"
     docker image ls --format '{{.Repository}}:{{.Tag}}' "$name" | grep -v ":$tag\$" | xargs -r docker image rm >/dev/null 2>&1 || true
   fi
@@ -124,6 +126,7 @@ load_run_material() {
   done < <(docker run --rm --network none -v "$suite/runner/bin:/b:ro" --entrypoint bash "ncs-suite-runner:$SUITE_RUNNER_TAG" /b/gen-run-material.sh) \
     || die 2 "generating the run material failed"
   [ -n "${SUITE_NC_ADMIN_PASSWORD:-}" ] || die 2 "run material is incomplete"
+  [ -n "${SUITE_PROBE_EXPIRED_KEY_PEM:-}" ] || die 2 "run material is incomplete"
 }
 
 mask_secrets() { # stdin -> stdout

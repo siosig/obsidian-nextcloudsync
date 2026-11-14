@@ -568,6 +568,14 @@ export const CLAUSES: Clause[] = [
   { id: 'SU-2', source: 'docs/spec.md §11.2', layer: 'a' },
   { id: 'SU-3', source: 'docs/spec.md §11.2', layer: 'b-1' },
   { id: 'SU-4', source: 'docs/spec.md §11.2', layer: 'a' },
+  { id: 'CTE-1', source: 'docs/spec.md §11.3', layer: 'a' },
+  { id: 'CTE-2', source: 'docs/spec.md §11.3', layer: 'a' },
+  { id: 'CTE-3', source: 'docs/spec.md §11.3', layer: 'a' },
+  { id: 'CTE-4', source: 'docs/spec.md §11.3', layer: 'a' },
+  { id: 'CTE-5', source: 'docs/spec.md §11.3', layer: 'a' },
+  { id: 'CTE-6', source: 'docs/spec.md §11.3', layer: 'a' },
+  { id: 'CTE-7', source: 'docs/spec.md §11.3', layer: 'b-2' },
+  { id: 'CTE-8', source: 'docs/spec.md §11.3', layer: 'b-3' },
   // SWC: lint gate resync with the reviewer
   // C1 (lint gate follows the reviewer-equivalent plugin version, `pnpm lint` exits 0) is a whole-gate
   // outcome, not a unit-testable value: the SWC-1/SWC-3 static checks plus a manual `pnpm lint` run cover it.
