@@ -110,6 +110,7 @@ Mobile is supported, with a few platform-aware differences (desktop behaviour is
 - **Obsidian** `1.13.0` or later. Desktop (Electron) and mobile (iOS / Android) are supported. **This is a change in 1.0.0** — earlier releases required `1.11.4`. The settings tab now uses Obsidian's declarative settings API, which is what makes the plugin's settings findable in Obsidian's own settings search; that API arrived in `1.13.0`, and below it the settings screen would come up empty. Obsidian will not offer 1.0.0 to older installs, so they stay on `0.7.44` until they update Obsidian.
 - **Nextcloud** Hub 26 "Winter" (server `33`) or later is **recommended** for the Nextcloud-specific features. Older Nextcloud servers are no longer blocked — they still connect and sync, but the settings screen shows a recommendation banner and some features may degrade. Nextcloud is the only supported server. Other WebDAV servers can connect, but their behaviour is not guaranteed: a plain WebDAV server falls back to core sync, and a Nextcloud-compatible server such as ownCloud is treated as Nextcloud without being tested against a real instance.
 - A Nextcloud account. You can authenticate with **Login Flow v2** (recommended) or a manually issued **app password** (never your main password).
+- **Server certificate**: the server's HTTPS certificate must be trusted by the device running Obsidian. On Android this in practice means a publicly trusted certificate. See "Server certificate not trusted" in the [FAQ](#faq).
 
 ---
 
@@ -191,6 +192,29 @@ This plugin does not resolve the lock automatically and has no in-app "unlock" a
 A 409 on `MKCOL` means a parent folder is missing on the server. The usual cause is a Server URL such as `https://<host>/remote.php/dav/files/<user>/Test` where `Test` does not exist in Nextcloud yet: the plugin creates the vault folder *inside* `Test` but does not create `Test` itself, because a mistyped path would otherwise be created silently and put your vault in the wrong place. The notice and the Sync Status result listing now say this next to the error.
 
 To fix it, create the subfolder in Nextcloud (for example in the web interface) or correct the Server URL, then sync again.
+
+---
+
+**Server certificate not trusted (`Trust anchor for certification path not found` / `net::ERR_CERT_AUTHORITY_INVALID`) — can I use a self-signed or private-CA certificate?**
+
+The error looks like this. On Android: `Request Failed. SSLHandshakeException java.security.cert.CertPathValidatorException: Trust anchor for certification path not found.` On desktop: `net::ERR_CERT_AUTHORITY_INVALID`. Both mean the device running Obsidian does not trust the HTTPS certificate your Nextcloud server presents, typically because it is self-signed or issued by a private CA.
+
+The cause is that all of the plugin's network traffic goes through Obsidian's `requestUrl`, and this API has no way to supply a CA or to skip the check. So this cannot be fixed from the plugin settings.
+
+What works where:
+
+- **Android:** Obsidian does not trust CA certificates that you install on the device, so in practice you need a publicly trusted certificate.
+- **Desktop:** a certificate that the operating system trusts works, and a private CA works once it is in the OS trust store.
+  - **Linux (other than Flatpak and Snap):** add the CA to the NSS database in `~/.pki/nssdb` with `certutil` (from `libnss3-tools`). If the database does not exist yet, create it first with `mkdir -p ~/.pki/nssdb` and `certutil -d sql:$HOME/.pki/nssdb -N --empty-password`. Then add your CA certificate (here `ca.crt`) with `certutil -d sql:$HOME/.pki/nssdb -A -t "C,," -n my-ca -i ca.crt` and restart Obsidian.
+  - **Windows and macOS:** the CA would go into the operating system's trust store, but this has not been tested here (not verified).
+  - **Flatpak and Snap:** not verified.
+- **iOS:** not verified, so whether a private CA works there is not stated.
+
+How to fix it: use a publicly trusted certificate. Let's Encrypt with the DNS-01 challenge can issue one without exposing your server to the internet. Another way is a tunnel or VPN service that terminates TLS with a trusted certificate. A VPN alone does not fix this: the name you reach over the VPN still needs a trusted certificate. If you already use a public certificate and still see this error, check that the server (reverse proxy) sends the full certificate chain, including the intermediate certificates (with Let's Encrypt, `fullchain.pem`). Android does not fill in intermediate certificates that the server leaves out.
+
+There is no way to turn off certificate verification, and doing so is not recommended.
+
+An expired certificate (`net::ERR_CERT_DATE_INVALID`) or a name mismatch (`net::ERR_CERT_COMMON_NAME_INVALID`) is a different problem that this entry does not cover; the notice shows no guidance for it.
 
 ---
 

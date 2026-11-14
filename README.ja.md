@@ -110,6 +110,7 @@ Nextcloud と判定されない WebDAV サーバーを指定した場合は、Ne
 - **Obsidian** `1.13.0` 以降。デスクトップ（Electron）とモバイル（iOS / Android）に対応します。**1.0.0 での変更点です** — 従来は `1.11.4` 以降でした。設定タブが Obsidian の宣言的設定 API を使うようになり、これによって本プラグインの設定が Obsidian の設定検索から引けるようになりました。この API は `1.13.0` で追加されたもので、それ未満では設定画面が空になってしまいます。古い環境には Obsidian が 1.0.0 を配信しないため、Obsidian を更新するまで `0.7.44` のままになります。
 - Nextcloud 固有機能には **Nextcloud** Hub 26 「Winter」（サーバー `33`）以降を**推奨**します。これより古い Nextcloud サーバーはもはやブロックされません — 接続・同期は可能ですが、設定画面に推奨バナーが表示され、一部の機能が制限される場合があります。サポート対象は Nextcloud だけです。ほかの WebDAV サーバーにも接続できますが、動作は保証しません。素の WebDAV サーバーはコア同期にフォールバックし、ownCloud などの Nextcloud 互換サーバーは、実機で検証しないまま Nextcloud として扱います。
 - Nextcloud アカウント。**Login Flow v2**（推奨）または手動発行の**アプリパスワード**（メインパスワードは決して使わない）で認証できます。
+- **サーバー証明書**: サーバーの HTTPS 証明書が、Obsidian を動かす端末に信頼されている必要があります。Android では実用上、公的に信頼される証明書が要ります。詳しくは [FAQ](#faq) の「Server certificate not trusted」を参照してください。
 
 ---
 
@@ -190,6 +191,46 @@ Obsidian モバイルでは **Create new vault** を選びます。*Set up Obsid
 `MKCOL` の 409 は、サーバー上に親フォルダが無いことを意味します。典型的な原因は、`https://<host>/remote.php/dav/files/<user>/Test` のような Server URL を設定したのに、`Test` が Nextcloud 上にまだ無い場合です。プラグインは `Test` の**中に** Vault 用のフォルダを作成しますが、`Test` 自体は作成しません。打ち間違えたパスが黙って作られ、Vault が意図しない場所に置かれるのを避けるためです。通知や Sync Status の結果一覧には、エラーと併せてこの旨が表示されるようになりました。
 
 対処するには、Nextcloud 上（Web 画面など）でサブフォルダを作成するか、Server URL を修正してから、もう一度同期してください。
+
+---
+
+**サーバー証明書が信頼されない（Server certificate not trusted）: `Trust anchor for certification path not found` や `net::ERR_CERT_AUTHORITY_INVALID` が出ます。自己署名や私的 CA の証明書は使えますか？**
+
+サーバーの HTTPS 証明書を、Obsidian を動かしている端末が信頼していないときに出るエラーです。Android では次のエラーになります。
+
+```
+Request Failed. SSLHandshakeException java.security.cert.CertPathValidatorException: Trust anchor for certification path not found.
+```
+
+デスクトップでは `net::ERR_CERT_AUTHORITY_INVALID` と表示されます。
+
+プラグインの通信はすべて Obsidian の `requestUrl` を通ります。この API には、信頼する CA を指定する手段も、証明書の検証を無効にする手段もありません。そのため、この問題はプラグインの設定では直せません。
+
+プラットフォームごとの可否は次のとおりです。
+
+- **Android:** ユーザーが端末に追加した CA を Obsidian は信頼しません。実用上は、公的に信頼される証明書が必要です。
+- **デスクトップ:** OS が信頼している証明書であれば使えます。私的 CA の証明書も、その CA を OS の信頼ストアに入れれば通ります。
+  - Linux（Flatpak・Snap 以外）では、`libnss3-tools` の `certutil` で CA を `~/.pki/nssdb` に登録し、Obsidian を再起動します。
+    ```bash
+    certutil -d sql:$HOME/.pki/nssdb -A -t "C,," -n my-ca -i ca.crt
+    ```
+    `~/.pki/nssdb` がまだ無い場合は、先に次の 2 つを実行してください。
+    ```bash
+    mkdir -p ~/.pki/nssdb
+    certutil -d sql:$HOME/.pki/nssdb -N --empty-password
+    ```
+  - Windows・macOS は、OS の信頼ストアに CA を入れる方法を想定していますが、未確認です。Flatpak・Snap 版の Obsidian も未確認です。
+- **iOS:** 未確認です。使えるかどうかは断定できません。
+
+直す方法は次のとおりです。
+
+- 公的に信頼される証明書を使います。Let's Encrypt の DNS-01 チャレンジなら、サーバーをインターネットに公開しなくても取得できます。
+- 信頼された証明書で TLS を終端するトンネルや VPN を使います。VPN だけでは解決しません。VPN 越しに到達するサーバー名に、信頼された証明書が必要です。
+- 公的な証明書を使っているのにこのエラーが出るときは、サーバー（リバースプロキシ）が中間証明書を含む完全な証明書チェーン（full certificate chain。たとえば Let's Encrypt の `fullchain.pem`）を送っているかを確認してください。Android は、送られてこなかった中間証明書を補いません。
+
+証明書の検証を無効にする方法はありません。無効にすることもお勧めしません。
+
+証明書の期限切れ（`net::ERR_CERT_DATE_INVALID`）や、名前の不一致（`net::ERR_CERT_COMMON_NAME_INVALID`）は別の問題で、この項の対象外です。これらの失敗には、通知にこの項への案内が付きません。
 
 ---
 
