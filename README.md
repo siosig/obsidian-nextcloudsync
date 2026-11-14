@@ -31,9 +31,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (1.0.16)
+## What's new in this release (1.0.17-beta.1)
 
-- **Development and test dependencies updated for security advisories (1.0.16)** — The build and test tooling (Appium and its Android driver, plus several packages they pull in) moves to versions with the published fixes. These packages are not bundled into the plugin, so the plugin code and sync behaviour are unchanged and there is no setting.
+- **Clearer error when the server certificate is not trusted (1.0.17-beta.1)** — When a request fails because the device does not trust the server's certificate (on Android, `Trust anchor for certification path not found`; on desktop, `net::ERR_CERT_AUTHORITY_INVALID`), the failure message now says that no plugin setting can fix this and what to do instead, and points to a new FAQ entry that explains which certificates each platform accepts. Other failures keep their messages, and there is no setting.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
