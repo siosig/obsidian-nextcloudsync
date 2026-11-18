@@ -45,7 +45,7 @@ const LISTING = `<?xml version="1.0" encoding="utf-8"?>
 describe('StandardWebDAVClient — no creation time on plain WebDAV [SPEC:CT-14]', () => {
   beforeEach(() => mockRequestUrl.mockReset());
 
-  const client = () => new StandardWebDAVClient(settings, 'pw', 'Vault');
+  const client = () => new StandardWebDAVClient(settings, () => 'pw', 'Vault');
 
   it('[SPEC:CT-14] uploadFile ignores opts.ctime and sends no X-OC-CTime header', async () => {
     mockRequestUrl.mockImplementation(() => res(201));

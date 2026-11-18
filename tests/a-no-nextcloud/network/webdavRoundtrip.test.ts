@@ -22,7 +22,7 @@ describe('NextcloudClient.uploadFile — P1-B round-trip reduction', () => {
   it('sends If-Match with the provided etag and maps 412 to PreconditionFailedError', async () => {
     mockRequestUrl.mockImplementation(() => res(412));
     await expect(
-      new NextcloudClient(settings, 'pw', 'Vault').uploadFile('Notes/a.md', new ArrayBuffer(2), 1000, { ifMatchEtag: 'etag-xyz' }),
+      new NextcloudClient(settings, () => 'pw', 'Vault').uploadFile('Notes/a.md', new ArrayBuffer(2), 1000, { ifMatchEtag: 'etag-xyz' }),
     ).rejects.toBeInstanceOf(PreconditionFailedError);
     const put = calls('PUT')[0];
     expect(put.headers?.['If-Match']).toBe('"etag-xyz"');
@@ -30,7 +30,7 @@ describe('NextcloudClient.uploadFile — P1-B round-trip reduction', () => {
 
   it('does NOT pre-probe directories on the happy path (PUT succeeds, no MKCOL)', async () => {
     mockRequestUrl.mockImplementation(() => res(201));
-    await new NextcloudClient(settings, 'pw', 'Vault').uploadFile('Notes/a.md', new ArrayBuffer(2), 1000);
+    await new NextcloudClient(settings, () => 'pw', 'Vault').uploadFile('Notes/a.md', new ArrayBuffer(2), 1000);
     expect(calls('PUT')).toHaveLength(1);
     expect(calls('MKCOL')).toHaveLength(0); // reactive: only created on a 409
   });
@@ -42,7 +42,7 @@ describe('NextcloudClient.uploadFile — P1-B round-trip reduction', () => {
       if (req.method === 'MKCOL') return res(201);
       return res(201);
     });
-    await new NextcloudClient(settings, 'pw', 'Vault').uploadFile('Deep/Nested/a.md', new ArrayBuffer(2));
+    await new NextcloudClient(settings, () => 'pw', 'Vault').uploadFile('Deep/Nested/a.md', new ArrayBuffer(2));
     expect(calls('PUT')).toHaveLength(2);        // first 409, retry 201
     expect(calls('MKCOL').length).toBeGreaterThan(0); // ancestors created
   });
@@ -56,14 +56,14 @@ describe('NextcloudClient.uploadFile — P1-B round-trip reduction', () => {
       if (req.method === 'MKCOL') return res(201);
       return res(201);
     });
-    await new NextcloudClient(settings, 'pw', 'Vault').uploadFile('Deep/Nested/a.md', new ArrayBuffer(2));
+    await new NextcloudClient(settings, () => 'pw', 'Vault').uploadFile('Deep/Nested/a.md', new ArrayBuffer(2));
     expect(calls('PUT')).toHaveLength(2);        // first 404, retry 201
     expect(calls('MKCOL').length).toBeGreaterThan(0);
   });
 
   it('reuses precomputedSha256 for the OC-Checksum header', async () => {
     mockRequestUrl.mockImplementation(() => res(201));
-    await new NextcloudClient(settings, 'pw', 'Vault').uploadFile('a.md', new ArrayBuffer(2), undefined, { precomputedSha256: 'deadbeef' });
+    await new NextcloudClient(settings, () => 'pw', 'Vault').uploadFile('a.md', new ArrayBuffer(2), undefined, { precomputedSha256: 'deadbeef' });
     expect(calls('PUT')[0].headers?.['OC-Checksum']).toBe('SHA256:deadbeef');
   });
 });
@@ -73,12 +73,12 @@ describe('NextcloudClient.deleteFile — blind delete (P1-B)', () => {
 
   it('treats 404 as success (already gone)', async () => {
     mockRequestUrl.mockImplementation(() => res(404));
-    await expect(new NextcloudClient(settings, 'pw', 'Vault').deleteFile('gone.md', 'rid')).resolves.toBeUndefined();
+    await expect(new NextcloudClient(settings, () => 'pw', 'Vault').deleteFile('gone.md', 'rid')).resolves.toBeUndefined();
   });
 
   it('still throws on a real failure (500)', async () => {
     mockRequestUrl.mockImplementation(() => res(500));
-    await expect(new NextcloudClient(settings, 'pw', 'Vault').deleteFile('x.md', 'rid')).rejects.toBeInstanceOf(NetworkError);
+    await expect(new NextcloudClient(settings, () => 'pw', 'Vault').deleteFile('x.md', 'rid')).rejects.toBeInstanceOf(NetworkError);
   });
 });
 
@@ -97,7 +97,7 @@ describe('NextcloudClient — remote URL encoding is platform-independent (featu
   });
   afterEach(() => { Platform.isIosApp = originalIsIosApp; });
 
-  const client = () => new NextcloudClient(settings, 'pw', 'Vault');
+  const client = () => new NextcloudClient(settings, () => 'pw', 'Vault');
 
   it('PUT (upload) percent-encodes the path', async () => {
     mockRequestUrl.mockImplementation(() => res(201));
@@ -161,14 +161,14 @@ describe('NextcloudClient — Server URL normalization (feature 065)', () => {
   it('encodes a space in the configured Server URL', async () => {
     const s = { ...settings, serverUrl: 'https://nc/remote.php/dav/files/alice/My Folder/' };
     mockRequestUrl.mockImplementation(() => res(201));
-    await new NextcloudClient(s, 'pw', 'Vault').uploadFile('a.md', new ArrayBuffer(2));
+    await new NextcloudClient(s, () => 'pw', 'Vault').uploadFile('a.md', new ArrayBuffer(2));
     expect(calls('PUT')[0].url).toBe('https://nc/remote.php/dav/files/alice/My%20Folder/Vault/a.md');
   });
 
   it('leaves an already-encoded Server URL alone (no %2520)', async () => {
     const s = { ...settings, serverUrl: 'https://nc/remote.php/dav/files/alice/My%20Folder/' };
     mockRequestUrl.mockImplementation(() => res(201));
-    await new NextcloudClient(s, 'pw', 'Vault').uploadFile('a.md', new ArrayBuffer(2));
+    await new NextcloudClient(s, () => 'pw', 'Vault').uploadFile('a.md', new ArrayBuffer(2));
     expect(calls('PUT')[0].url).toBe('https://nc/remote.php/dav/files/alice/My%20Folder/Vault/a.md');
   });
 });
@@ -186,7 +186,7 @@ describe('NextcloudClient — NetworkError carries the HTTP method (feature 065)
   ])('%s failure surfaces as "HTTP <status> (%s)"', async (method, run, status) => {
     mockRequestUrl.mockImplementation((req: { method: string }) =>
       req.method === 'MKCOL' ? res(201) : res(status as number));
-    const err = await run(new NextcloudClient(settings, 'pw', 'Vault')).catch((e: unknown) => e);
+    const err = await run(new NextcloudClient(settings, () => 'pw', 'Vault')).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(NetworkError);
     expect((err as NetworkError).method).toBe(method);
     expect((err as NetworkError).message).toBe(`HTTP ${status} (${method})`);

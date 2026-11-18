@@ -14,7 +14,7 @@ const settings: DavSyncSettings = {
 const res = (status: number, headers: Record<string, string> = {}) =>
   Promise.resolve({ status, text: '', json: {}, arrayBuffer: new ArrayBuffer(0), headers });
 
-const client = () => new StandardWebDAVClient(settings, 'pw', 'Vault');
+const client = () => new StandardWebDAVClient(settings, () => 'pw', 'Vault');
 
 // [SPEC:NET-3] StandardWebDAVClient.reqReadonly() retries a transient req() rejection (timeout / connection failure)
 // up to 2x for read-only PROPFIND/GET only. Writes (PUT/DELETE/MOVE) never retry: a timed-out write may have already

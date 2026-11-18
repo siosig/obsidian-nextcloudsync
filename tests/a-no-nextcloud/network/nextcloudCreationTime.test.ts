@@ -33,7 +33,7 @@ function callsOf(method: string): Call[] {
 }
 
 function makeClient(): NextcloudClient {
-  return new NextcloudClient(settings, 'app-pw', 'Vault');
+  return new NextcloudClient(settings, () => 'app-pw', 'Vault');
 }
 
 function listing(creation: string | null): string {

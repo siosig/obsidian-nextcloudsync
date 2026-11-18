@@ -63,7 +63,7 @@ function serveProbes(opts: {
 }
 
 const create = (serverUrl = 'https://cloud.example.com/remote.php/dav/files/alice/') =>
-  new WebDAVFactory(app, settingsFor(serverUrl), 'pw').createClient();
+  new WebDAVFactory(app, settingsFor(serverUrl), () => 'pw').createClient();
 
 describe('[SPEC:SD-1] server-type detection decides which client is used', () => {
   beforeEach(() => mockRequestUrl.mockReset());
@@ -175,7 +175,7 @@ describe('[SPEC:SD-1] server-type detection decides which client is used', () =>
     expect(features.isNextcloud).toBe(false);
     expect(features.hasAccountDav).toBe(false);
 
-    await expect(new NextcloudClient(settingsFor('https://dav.example.com/dav/'), 'pw', 'Vault').connect()).resolves.toMatchObject({
+    await expect(new NextcloudClient(settingsFor('https://dav.example.com/dav/'), () => 'pw', 'Vault').connect()).resolves.toMatchObject({
       isNextcloud: false,
     });
   });

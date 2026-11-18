@@ -1,5 +1,5 @@
 import { App, Plugin, Notice, Platform, TFile, TFolder, TAbstractFile, debounce } from 'obsidian';
-import { DavSyncSettings, DEFAULT_SETTINGS, FeatureUnsupportedError } from './types';
+import { AppPasswordReader, DavSyncSettings, DEFAULT_SETTINGS, FeatureUnsupportedError } from './types';
 import { NextcloudSyncSettingTab } from './settings/SettingTab';
 import { SyncEngine } from './sync/SyncEngine';
 import { VersionHistoryModal } from './ui/VersionHistoryModal';
@@ -558,8 +558,9 @@ export default class ObsidianNextcloudsync extends Plugin {
       ? new NoticeStatusBar()
       : new StatusBarItem(statusBarEl = this.addStatusBarItem(), () => this.openSyncStatus());
     this.statusBarEl = statusBarEl;
-    const password = loadAppPassword(this.app, this.settings.passwordSecretId);
-    const webdavFactory = new WebDAVFactory(this.app, this.settings, password, (m) => void this.logger.log(`net: ${m}`));
+    // Read live on every use, so selecting another secret or rewriting its value applies from the next sync (docs/spec.md §15.2).
+    const readAppPassword: AppPasswordReader = () => loadAppPassword(this.app, this.settings.passwordSecretId);
+    const webdavFactory = new WebDAVFactory(this.app, this.settings, readAppPassword, (m) => void this.logger.log(`net: ${m}`));
 
     this.syncEngine = new SyncEngine({
       app: this.app,
@@ -571,6 +572,7 @@ export default class ObsidianNextcloudsync extends Plugin {
       statusBar,
       historyStore,
       webdavFactory,
+      readAppPassword,
       pluginDir,
       configDir: this.app.vault.configDir,
       pluginsAwaitingRestart: this.pluginsAwaitingRestart,

@@ -554,6 +554,8 @@ export type VaultRootOutcome = 'created' | 'exists';
 export class MaintenanceModeError extends Error {
   constructor() { super('Nextcloud is in maintenance mode'); this.name = 'MaintenanceModeError'; }
 }
+/** Resolves the app password at the moment it is used; returns null (or '') when none is configured. Never caches. */
+export type AppPasswordReader = () => string | null;
 export class CredentialsNotFoundError extends Error {
   constructor() { super('App password not found in credentials'); this.name = 'CredentialsNotFoundError'; }
 }

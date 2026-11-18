@@ -18,7 +18,7 @@ const settings: DavSyncSettings = {
 const res = (status: number, body: Partial<{ text: string; json: unknown }> = {}) =>
   Promise.resolve({ status, text: body.text ?? '', json: body.json ?? {}, arrayBuffer: new ArrayBuffer(0), headers: {} });
 
-const client = () => new NextcloudClient(settings, 'pw', 'Vault');
+const client = () => new NextcloudClient(settings, () => 'pw', 'Vault');
 
 describe('[SPEC:SCR-1] the sync-collection REPORT is never sent', () => {
   beforeEach(() => mockRequestUrl.mockReset());

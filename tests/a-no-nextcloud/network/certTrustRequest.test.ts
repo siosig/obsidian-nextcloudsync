@@ -143,7 +143,7 @@ describe('[SPEC:CTE-3] an untrusted-issuer failure reaches the caller as CertTru
     it('StandardWebDAVClient.statFile retries twice and then rejects with CertTrustError carrying the guidance once', async () => {
       mockRequestUrl.mockImplementation(() => Promise.reject(new Error(DESKTOP_TEXT)));
 
-      const outcome = rejectionOf(new StandardWebDAVClient(settings, 'pw', 'Vault').statFile('Notes/a.md'));
+      const outcome = rejectionOf(new StandardWebDAVClient(settings, () => 'pw', 'Vault').statFile('Notes/a.md'));
       await jest.advanceTimersByTimeAsync(1000); // 1st backoff -> retry #1
       await jest.advanceTimersByTimeAsync(2000); // 2nd backoff -> retry #2
       const caught = await outcome;
@@ -157,7 +157,7 @@ describe('[SPEC:CTE-3] an untrusted-issuer failure reaches the caller as CertTru
       mockRequestUrl.mockImplementation(() => Promise.reject(new Error(DESKTOP_TEXT)));
       const lines: string[] = [];
 
-      const client = new NextcloudClient(settings, 'pw', 'Vault', (msg) => {
+      const client = new NextcloudClient(settings, () => 'pw', 'Vault', (msg) => {
         lines.push(msg);
       });
       const outcome = rejectionOf(client.statFile('Notes/a.md'));

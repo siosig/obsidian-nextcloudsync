@@ -16,6 +16,8 @@ import {
   RemoteDirCreateError,
   ServerLockedError,
   VaultRootOutcome,
+  AppPasswordReader,
+  CredentialsNotFoundError,
 } from '../types';
 import { IWebDAVClient } from './IWebDAVClient';
 import { DavSyncSettings } from '../types';
@@ -29,7 +31,7 @@ export class StandardWebDAVClient implements IWebDAVClient {
 
   constructor(
     private readonly settings: DavSyncSettings,
-    private readonly appPassword: string,
+    private readonly readAppPassword: AppPasswordReader,
     // Remote base folder (usually the Vault name); '' = directly under the files root.
     private readonly remoteBase: string = '',
   ) {}
@@ -45,7 +47,10 @@ export class StandardWebDAVClient implements IWebDAVClient {
   }
 
   private get authHeader(): string {
-    const credentials = `${this.settings.username}:${this.appPassword}`;
+    const password = this.readAppPassword();
+    // Read on every request so a changed secret applies without a restart (docs/spec.md §15.2).
+    if (!password) throw new CredentialsNotFoundError();
+    const credentials = `${this.settings.username}:${password}`;
     const bytes = new TextEncoder().encode(credentials);
     let binary = '';
     for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);

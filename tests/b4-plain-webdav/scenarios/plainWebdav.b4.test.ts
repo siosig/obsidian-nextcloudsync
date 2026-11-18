@@ -20,7 +20,7 @@ async function connectInOwnFolder(
 ): Promise<{ client: IWebDAVClient; features: NextcloudFeatures; vault: string }> {
   const vault = uniqueRunFolder();
   const app = { vault: { getName: () => vault } } as never;
-  const { client, features } = await new WebDAVFactory(app, settingsFor(env), env.password).createClient();
+  const { client, features } = await new WebDAVFactory(app, settingsFor(env), () => env.password).createClient();
   return { client, features, vault };
 }
 

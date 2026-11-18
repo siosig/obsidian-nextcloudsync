@@ -91,7 +91,7 @@ describe('IWebDAVClient.statFile (C-0)', () => {
 
   describe('NextcloudClient.statFile', () => {
     function makeClient(): NextcloudClient {
-      return new NextcloudClient(settings, 'app-pw', 'Vault');
+      return new NextcloudClient(settings, () => 'app-pw', 'Vault');
     }
 
     it('returns a RemoteFileInfo with checksum/etag/size/lastModified/fileId on a 207 single-file response', async () => {
@@ -142,7 +142,7 @@ describe('IWebDAVClient.statFile (C-0)', () => {
 
   describe('StandardWebDAVClient.statFile', () => {
     function makeClient(): StandardWebDAVClient {
-      return new StandardWebDAVClient(settings, 'pw', 'Vault');
+      return new StandardWebDAVClient(settings, () => 'pw', 'Vault');
     }
 
     it('returns a RemoteFileInfo with etag/size/lastModified on a 207 single-file response (checksum/fileId are always null, unsupported by plain WebDAV)', async () => {

@@ -468,8 +468,11 @@ remoteFileId, isConflicted, localMtime?, localSize?, remoteMtime? }`.
 | `SyncTokenExpiredError` (410) | Fall back to a full PROPFIND |
 | `FeatureUnsupportedError` | Graceful degradation (for example, versions on plain WebDAV) |
 | `CertTrustError` (untrusted server certificate) | Thrown at the request boundary in place of the runtime's rejection; message `<original> — <guidance>`. Extends `Error`, not `NetworkError`, so it is handled exactly like the plain rejection it replaces (no retry-queue change) |
+| `CredentialsNotFoundError` (no app password) | Thrown when the app password resolves to nothing or an empty value: at the start of every sync in `SyncEngine.ensureClient`, in `WebDAVFactory.createClient`, and whenever a client builds its `Authorization` header (`authHeader`). The sync fails before any request is sent. `WebDAVFactory.createClient` rethrows it instead of falling back to the standard client, since a local state says nothing about the server type (docs/spec.md §15.2) |
 
 The classification and the guidance text live in `src/network/certTrust.ts`; `requestUrlWithGuidance` in `src/network/requestWithTimeout.ts` applies them at the request boundary. The two login-flow requests (`src/auth/LoginFlowV2.ts`) call `withCertTrustGuidance` in a `try`/`catch` around their own `requestUrl` call instead of using that wrapper, so a successful response takes the same number of promise hops as before: the poll loop's wake-up on app resume (`LF-1`) depends on that timing.
+
+The app password is never held by a client or the factory: `main.ts` (`initSyncEngine`) builds one `AppPasswordReader` (`() => string | null`, backed by `loadAppPassword` and the current `passwordSecretId`) and passes it to `WebDAVFactory` (which hands it to both clients) and to `SyncEngine` (`readAppPassword`); each call to it resolves the secret again. `SyncEngine.ensureClient` calls it at the start of every sync and remembers the value the cached connection was made with (`connectedPassword`). When the value differs, it rebuilds the connection, because `NextcloudClient.connect()` does not throw on a 401 and a connection made under a failed sign-in can cache features derived from that failure. The previous `client` and `features` stay in place until `WebDAVFactory.createClient` has returned a replacement; only then are `client`, `features`, `connectedPassword` and the upload strategy replaced, in one synchronous block. A concurrent caller (the version list, the plugin picker) therefore always sees a usable client, and a failed rebuild leaves the previous connection and the previous `connectedPassword` untouched, so the next call retries it. With an unchanged password the cached connection is reused (docs/spec.md §15.2).
 
 Cancellation has two phases: `requestStop()` sets `cancelled` (queued workers become no-ops), and
 `abortAndWait()` joins `currentRun` before a maintenance reset. `finally` always persists state and history.
@@ -827,7 +830,7 @@ Sync:     SyncEngine (capability detection, 3-point comparison, state decision, 
           sync/conflict/ (ConflictApplier) / sync/resolution/ (Compare, forced resolution, clean-side)
           sync/deletion/ / sync/directory/ / sync/watch/ / sync/versions/ / sync/mirror/
           merge/ (MergeEngine, ReconcileTextStrategy, Diff3Strategy)
-Network:  WebDAVFactory / NextcloudClient (extended PROPFIND, sync-token, OCS, chunk, lock, versions) / StandardWebDAVClient / serverUrl (parseServerUrl: probe root and public-share detection)
+Network:  WebDAVFactory (clients take an AppPasswordReader and read the app password on every request) / NextcloudClient (extended PROPFIND, sync-token, OCS, chunk, lock, versions) / StandardWebDAVClient / serverUrl (parseServerUrl: probe root and public-share detection)
           network/dav/ (pure functions that read PROPFIND responses)
 Data:     LocalAdapter (atomic, IgnoreList) / StateDB (per device, atomic, recovery) / MergeBaseStore (per device, 3-way base) / SyncHistoryStore
 Core:     main.ts (initialisation, DI, lifecycle, command registration)

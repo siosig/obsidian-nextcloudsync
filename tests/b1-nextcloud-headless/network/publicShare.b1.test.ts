@@ -34,7 +34,7 @@ describeLive('public link share connects as Nextcloud', (getEnv) => {
       const { client, features } = await new WebDAVFactory(
         { vault: { getName: () => remoteBase } } as never,
         makeSettings(shareEnv),
-        shareEnv.appPassword,
+        () => shareEnv.appPassword,
       ).createClient();
       expect(client).toBeInstanceOf(NextcloudClient);
       expect(features).toMatchObject({

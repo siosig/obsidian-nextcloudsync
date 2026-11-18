@@ -8,7 +8,7 @@ import { CleanSideStore } from '../../../src/data/CleanSideStore';
 import { NextcloudClient } from '../../../src/network/NextcloudClient';
 import type { CreationTimeSupport } from '../../../src/data/creationTimeProbe';
 import { IWebDAVClient } from '../../../src/network/IWebDAVClient';
-import { DavSyncSettings, DEFAULT_SETTINGS, NextcloudFeatures } from '../../../src/types';
+import { AppPasswordReader, DavSyncSettings, DEFAULT_SETTINGS, NextcloudFeatures } from '../../../src/types';
 import { LiveEnv } from './env';
 import { FakeVault } from './fakeVault';
 
@@ -34,6 +34,7 @@ export interface Device {
 export function makeDevice(
   env: LiveEnv, remoteBase: string, deviceId: string, over: Partial<DavSyncSettings> = {},
   vault: FakeVault = new FakeVault(), creationTimeSupport: CreationTimeSupport = 'settable',
+  readAppPassword: AppPasswordReader = () => env.appPassword,
 ): Device {
   const settings: DavSyncSettings = {
     ...DEFAULT_SETTINGS,
@@ -48,7 +49,7 @@ export function makeDevice(
   const baseStore = new MergeBaseStore(vault.adapter, PLUGIN_DIR, deviceId);
   // Clean-side snapshot store wired as in production, so b1 exercises force-resolution recovery across devices.
   const cleanSideStore = new CleanSideStore(vault.adapter, PLUGIN_DIR, deviceId);
-  const client = new NextcloudClient(settings, env.appPassword, remoteBase);
+  const client = new NextcloudClient(settings, readAppPassword, remoteBase);
   const webdavFactory = {
     async createClient(): Promise<{ client: IWebDAVClient; features: NextcloudFeatures }> {
       const features = await client.connect();
@@ -64,6 +65,7 @@ export function makeDevice(
     cleanSideStore,
     statusBar: noopStatusBar,
     webdavFactory,
+    readAppPassword,
     pluginDir: PLUGIN_DIR,
     configDir: CONFIG_DIR,
   } as never);

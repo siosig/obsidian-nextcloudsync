@@ -30,7 +30,7 @@ describeLive('Layer A — connection/auth (CN)', (getEnv) => {
 
   it('[SPEC:CN-2] auth failure yields NetworkError(401)', async () => {
     const env = getEnv();
-    const bad = new NextcloudClient(makeSettings(env), 'definitely-wrong-password', ws.remoteBase);
+    const bad = new NextcloudClient(makeSettings(env), () => 'definitely-wrong-password', ws.remoteBase);
     await expect(bad.getFiles('')).rejects.toMatchObject({ status: 401 });
   });
 
@@ -41,7 +41,7 @@ describeLive('Layer A — connection/auth (CN)', (getEnv) => {
   it('[SPEC:CN-4] unreachable host rejects', async () => {
     const env = getEnv();
     const badUrl = env.serverUrl.replace(/^https?:\/\/[^/]+/, 'https://nonexistent.invalid');
-    const c = new NextcloudClient(makeSettings(env, { serverUrl: badUrl }), env.appPassword, ws.remoteBase);
+    const c = new NextcloudClient(makeSettings(env, { serverUrl: badUrl }), () => env.appPassword, ws.remoteBase);
     await expect(c.connect()).rejects.toBeDefined();
   });
 

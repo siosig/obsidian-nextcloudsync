@@ -88,3 +88,26 @@ describe('[SPEC:DEP-3] cleared SecretComponent selection', () => {
     expect(plugin.settings.passwordSecretId).toBe('');
   });
 });
+
+describe('[SPEC:APW-4] a live reader keeps the legacy fallback order', () => {
+  it('falls back to the legacy value, then follows the secret as it changes', () => {
+    const secrets = new Map<string, string>();
+    const app = {
+      secretStorage: { getSecret: (id: string) => secrets.get(id) ?? null },
+      loadLocalStorage: jest.fn(() => 'legacy-pw'),
+    } as unknown as App;
+    const settings = { passwordSecretId: 'my-secret' };
+    const reader = () => loadAppPassword(app, settings.passwordSecretId);
+
+    // (a) No secret stored: the legacy localStorage value is used.
+    expect(reader()).toBe('legacy-pw');
+
+    // (b) The same reader picks up a secret stored later.
+    secrets.set('my-secret', 'new-pw');
+    expect(reader()).toBe('new-pw');
+
+    // (c) An empty secret counts as missing and falls back to the legacy value.
+    secrets.set('my-secret', '');
+    expect(reader()).toBe('legacy-pw');
+  });
+});

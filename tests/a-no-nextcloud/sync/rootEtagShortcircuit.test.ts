@@ -237,7 +237,7 @@ describe('[SPEC:ES-1..ES-10] root-ETag short-circuit', () => {
         status: 207, json: {}, arrayBuffer: new ArrayBuffer(0), headers: {},
         text: '<d:multistatus xmlns:d="DAV:"><d:response><d:href>/x/</d:href><d:propstat><d:prop><d:getetag>"abc123"</d:getetag></d:prop></d:propstat></d:response></d:multistatus>',
       });
-      const etag = await new NextcloudClient(settings, 'pw', 'Vault').getRootEtag();
+      const etag = await new NextcloudClient(settings, () => 'pw', 'Vault').getRootEtag();
       expect(etag).toBe('abc123');
       const call = mockRequestUrl.mock.calls[0][0];
       expect(call.method).toBe('PROPFIND');
@@ -246,12 +246,12 @@ describe('[SPEC:ES-1..ES-10] root-ETag short-circuit', () => {
 
     it('NextcloudClient.getRootEtag returns null on 404 (folder not created yet)', async () => {
       mockRequestUrl.mockResolvedValueOnce({ status: 404, text: '', json: {}, arrayBuffer: new ArrayBuffer(0), headers: {} });
-      expect(await new NextcloudClient(settings, 'pw', 'Vault').getRootEtag()).toBeNull();
+      expect(await new NextcloudClient(settings, () => 'pw', 'Vault').getRootEtag()).toBeNull();
     });
 
     it('NextcloudClient.getRootEtag returns null when the request throws (never propagates)', async () => {
       mockRequestUrl.mockRejectedValueOnce(new Error('network down'));
-      expect(await new NextcloudClient(settings, 'pw', 'Vault').getRootEtag()).toBeNull();
+      expect(await new NextcloudClient(settings, () => 'pw', 'Vault').getRootEtag()).toBeNull();
     });
 
     it('NextcloudClient.getRootEtag returns null on 207 without a getetag', async () => {
@@ -259,11 +259,11 @@ describe('[SPEC:ES-1..ES-10] root-ETag short-circuit', () => {
         status: 207, json: {}, arrayBuffer: new ArrayBuffer(0), headers: {},
         text: '<d:multistatus xmlns:d="DAV:"><d:response><d:href>/x/</d:href><d:propstat><d:prop></d:prop></d:propstat></d:response></d:multistatus>',
       });
-      expect(await new NextcloudClient(settings, 'pw', 'Vault').getRootEtag()).toBeNull();
+      expect(await new NextcloudClient(settings, () => 'pw', 'Vault').getRootEtag()).toBeNull();
     });
 
     it('StandardWebDAVClient.getRootEtag returns null without any network call', async () => {
-      const etag = await new StandardWebDAVClient(settings, 'pw', 'Vault').getRootEtag();
+      const etag = await new StandardWebDAVClient(settings, () => 'pw', 'Vault').getRootEtag();
       expect(etag).toBeNull();
       expect(mockRequestUrl).not.toHaveBeenCalled();
     });
