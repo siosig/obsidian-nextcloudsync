@@ -62,8 +62,8 @@ describe('[SPEC:SU-1] MKCOL 409 carries the missing-subfolder hint', () => {
   });
 
   it.each([
-    ['NextcloudClient', () => new NextcloudClient(settings, 'pw', 'Vault')],
-    ['StandardWebDAVClient', () => new StandardWebDAVClient(settings, 'pw', 'Vault')],
+    ['NextcloudClient', () => new NextcloudClient(settings, () => 'pw', 'Vault')],
+    ['StandardWebDAVClient', () => new StandardWebDAVClient(settings, () => 'pw', 'Vault')],
   ])('%s: createVaultRoot rejects with the hint when the vault-folder MKCOL answers 409', async (_name, makeClient) => {
     mockRequestUrl.mockImplementation(() => res(409));
     const error = await makeClient().createVaultRoot().then(() => null, (e: unknown) => e);
@@ -73,8 +73,8 @@ describe('[SPEC:SU-1] MKCOL 409 carries the missing-subfolder hint', () => {
   });
 
   it.each([
-    ['NextcloudClient', () => new NextcloudClient(settings, 'pw', 'Vault')],
-    ['StandardWebDAVClient', () => new StandardWebDAVClient(settings, 'pw', 'Vault')],
+    ['NextcloudClient', () => new NextcloudClient(settings, () => 'pw', 'Vault')],
+    ['StandardWebDAVClient', () => new StandardWebDAVClient(settings, () => 'pw', 'Vault')],
   ])('%s: createDirectory surfaces the hint through RemoteDirCreateError', async (_name, makeClient) => {
     mockRequestUrl.mockImplementation(() => res(409));
     const error = await makeClient().createDirectory('F').then(() => null, (e: unknown) => e);
@@ -113,7 +113,7 @@ describe('[SPEC:SU-2] no hint for anything but a MKCOL 409', () => {
 
   it('a 409 on another method (PUT) is not given the hint', async () => {
     mockRequestUrl.mockImplementation(() => res(409));
-    const client = new NextcloudClient(settings, 'pw', 'Vault');
+    const client = new NextcloudClient(settings, () => 'pw', 'Vault');
     // The retry path re-issues MKCOLs and fails at the first level; whatever is thrown for the PUT itself must not claim the hint.
     const error = await client.uploadFile('a.md', new ArrayBuffer(4)).then(() => null, (e: unknown) => e);
     expect(error).toBeInstanceOf(NetworkError);
@@ -123,7 +123,7 @@ describe('[SPEC:SU-2] no hint for anything but a MKCOL 409', () => {
 
   it('the chunked-upload session MKCOL (dav/uploads) answering 409 keeps its bare message', async () => {
     mockRequestUrl.mockImplementation(() => res(409));
-    const client = new NextcloudClient(settings, 'pw', 'Vault');
+    const client = new NextcloudClient(settings, () => 'pw', 'Vault');
     const error = await client.uploadChunked('a.md', new ArrayBuffer(4), 1024).then(() => null, (e: unknown) => e);
 
     expect(error).toBeInstanceOf(NetworkError);

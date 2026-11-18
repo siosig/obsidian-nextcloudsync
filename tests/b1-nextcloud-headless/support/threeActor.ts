@@ -37,7 +37,7 @@ export function makeThreeActors(
   const m = makeDevice(env, remoteBase, `M-${suffix}`, over);
   const nfs = new NextcloudFs(remoteBase);
   const viewClient = new NextcloudClient(
-    { ...d.settings } as DavSyncSettings, env.appPassword, remoteBase,
+    { ...d.settings } as DavSyncSettings, () => env.appPassword, remoteBase,
   );
   let viewConnected = false;
 

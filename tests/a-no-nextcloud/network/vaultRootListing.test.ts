@@ -102,8 +102,8 @@ const STD_ROOT_DEPTH1_MULTISTATUS = `<?xml version="1.0" encoding="utf-8"?>
 </d:multistatus>`;
 
 const CLIENTS: ReadonlyArray<[string, (base: string) => IWebDAVClient]> = [
-  ['NextcloudClient', (base) => new NextcloudClient(settings, 'pw', base)],
-  ['StandardWebDAVClient', (base) => new StandardWebDAVClient(settings, 'pw', base)],
+  ['NextcloudClient', (base) => new NextcloudClient(settings, () => 'pw', base)],
+  ['StandardWebDAVClient', (base) => new StandardWebDAVClient(settings, () => 'pw', base)],
 ];
 
 describe('vault root: listing (C-1) and creation (C-2)', () => {
@@ -122,7 +122,7 @@ describe('vault root: listing (C-1) and creation (C-2)', () => {
     it(`${spec('VRR-7')} NextcloudClient.getFiles('') throws RemoteRootMissingError on a root 404`, async () => {
       mockRequestUrl.mockImplementation(() => res(404));
 
-      await expect(new NextcloudClient(settings, 'pw', 'Vault').getFiles('')).rejects.toThrow(RemoteRootMissingError);
+      await expect(new NextcloudClient(settings, () => 'pw', 'Vault').getFiles('')).rejects.toThrow(RemoteRootMissingError);
     });
 
     it(`${spec('VRR-7')} the thrown root-404 error stays a NetworkError with status 404`, async () => {
@@ -130,7 +130,7 @@ describe('vault root: listing (C-1) and creation (C-2)', () => {
       // classifying it exactly as before — the new type only ADDS a discriminator for the engine.
       mockRequestUrl.mockImplementation(() => res(404));
 
-      const error: unknown = await new NextcloudClient(settings, 'pw', 'Vault').getFiles('').catch((e: unknown) => e);
+      const error: unknown = await new NextcloudClient(settings, () => 'pw', 'Vault').getFiles('').catch((e: unknown) => e);
 
       expect(error).toBeInstanceOf(RemoteRootMissingError);
       expect(error).toBeInstanceOf(NetworkError);
@@ -140,20 +140,20 @@ describe('vault root: listing (C-1) and creation (C-2)', () => {
     it(`${spec('VRR-7')} NextcloudClient.getFiles('sub') still returns [] on a 404 (sub-paths are out of scope)`, async () => {
       mockRequestUrl.mockImplementation(() => res(404));
 
-      await expect(new NextcloudClient(settings, 'pw', 'Vault').getFiles('sub')).resolves.toEqual([]);
+      await expect(new NextcloudClient(settings, () => 'pw', 'Vault').getFiles('sub')).resolves.toEqual([]);
     });
 
     it(`${spec('VRR-7')} NextcloudClient.getFiles('') returns [] on a 207 with no children (genuinely empty)`, async () => {
       // "The folder is there and holds nothing" keeps driving absence deletion; "the folder is not there" must not.
       mockRequestUrl.mockImplementation(() => res(207, EMPTY_ROOT_MULTISTATUS));
 
-      await expect(new NextcloudClient(settings, 'pw', 'Vault').getFiles('')).resolves.toEqual([]);
+      await expect(new NextcloudClient(settings, () => 'pw', 'Vault').getFiles('')).resolves.toEqual([]);
     });
 
     it(`${spec('VRR-7')} StandardWebDAVClient.getFiles('') throws RemoteRootMissingError when the top-level PROPFIND is 404`, async () => {
       mockRequestUrl.mockImplementation(() => res(404));
 
-      await expect(new StandardWebDAVClient(settings, 'pw', 'Vault').getFiles('')).rejects.toThrow(RemoteRootMissingError);
+      await expect(new StandardWebDAVClient(settings, () => 'pw', 'Vault').getFiles('')).rejects.toThrow(RemoteRootMissingError);
     });
 
     it(`${spec('VRR-7')} StandardWebDAVClient tolerates a 404 on a subfolder met while recursing and still lists the rest`, async () => {
@@ -163,7 +163,7 @@ describe('vault root: listing (C-1) and creation (C-2)', () => {
       mockRequestUrl.mockImplementation((params: CapturedRequest) =>
         params.url === `${URL_BASE}/Vault` ? res(207, STD_ROOT_DEPTH1_MULTISTATUS) : res(404));
 
-      const files = await new StandardWebDAVClient(settings, 'pw', 'Vault').getFiles('');
+      const files = await new StandardWebDAVClient(settings, () => 'pw', 'Vault').getFiles('');
 
       expect(files.map((f) => f.path)).toEqual(['top.md']);
     });

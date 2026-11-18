@@ -57,7 +57,7 @@ const LOCKDISCOVERY_NO_OWNER = `<?xml version="1.0"?>
 </D:multistatus>`;
 
 function makeClient(): NextcloudClient {
-  return new NextcloudClient(settings, 'app-pw', 'Vault');
+  return new NextcloudClient(settings, () => 'app-pw', 'Vault');
 }
 
 describe('NextcloudClient — 423 lockdiscovery lookup (feature 090)', () => {

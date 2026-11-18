@@ -12,7 +12,7 @@ describeLive('Layer A — standard WebDAV fallback (ST)', (getEnv) => {
   beforeAll(() => {
     const env = getEnv();
     ws = makeIsolatedWorkspace(env.syncFolder);
-    std = new StandardWebDAVClient(makeSettings(env), env.appPassword, ws.remoteBase);
+    std = new StandardWebDAVClient(makeSettings(env), () => env.appPassword, ws.remoteBase);
   });
 
   it('[SPEC:ST-1] Nextcloud-only features throw FeatureUnsupportedError', async () => {

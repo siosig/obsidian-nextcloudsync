@@ -47,8 +47,8 @@ const UNREADABLE_BODIES: ReadonlyArray<[string, string]> = [
 ];
 
 const CLIENTS: ReadonlyArray<[string, (base: string) => IWebDAVClient]> = [
-  ['NextcloudClient', (base) => new NextcloudClient(settings, 'pw', base)],
-  ['StandardWebDAVClient', (base) => new StandardWebDAVClient(settings, 'pw', base)],
+  ['NextcloudClient', (base) => new NextcloudClient(settings, () => 'pw', base)],
+  ['StandardWebDAVClient', (base) => new StandardWebDAVClient(settings, () => 'pw', base)],
 ];
 
 describe('IWebDAVClient — an unreadable listing is a failure, not an empty one (feature 087)', () => {
@@ -100,7 +100,7 @@ describe('IWebDAVClient — an unreadable listing is a failure, not an empty one
 
   describe('[SPEC:ULG-10] [SPEC:ULG-11] Nextcloud-specific calls', () => {
     function nc(): NextcloudClient {
-      return new NextcloudClient(settings, 'app-pw', 'Vault');
+      return new NextcloudClient(settings, () => 'app-pw', 'Vault');
     }
 
     it.each(UNREADABLE_BODIES)('getChanges throws for %s instead of an empty change set', async (_label, body) => {
@@ -139,7 +139,7 @@ describe('IWebDAVClient — an unreadable listing is a failure, not an empty one
           <d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat>
         </d:response>
       </d:multistatus>`;
-      const client = new StandardWebDAVClient(settings, 'pw', 'Vault');
+      const client = new StandardWebDAVClient(settings, () => 'pw', 'Vault');
       mockRequestUrl
         .mockReturnValueOnce(res(207, ROOT_WITH_SUBFOLDER)) // root: 1 file + 1 subfolder — looks fine
         .mockReturnValueOnce(res(207, '')); // recursing into the subfolder: unreadable
@@ -155,7 +155,7 @@ describe('IWebDAVClient — an unreadable listing is a failure, not an empty one
       const lateMarker = 'LATEMARKER'; // padded out past 256 characters — must never reach the message
       const longBody = `<html><body>502 Bad Gateway ${earlyMarker} ${'y'.repeat(400)}${lateMarker}</body></html>`;
       mockRequestUrl.mockReturnValueOnce(res(207, longBody));
-      const err: unknown = await new NextcloudClient(settings, 'pw', 'Vault').getFiles('').catch((e: unknown) => e);
+      const err: unknown = await new NextcloudClient(settings, () => 'pw', 'Vault').getFiles('').catch((e: unknown) => e);
       const e = err as RemoteListingUnreadableError;
 
       expect(e.message).not.toContain('\n');
@@ -170,7 +170,7 @@ describe('IWebDAVClient — an unreadable listing is a failure, not an empty one
     it('counts bytes, not characters, for a multi-byte body', async () => {
       const body = `<html>${'\u30ce'.repeat(10)}</html>`; // each U+30CE (katakana NO) is 3 bytes in UTF-8
       mockRequestUrl.mockReturnValueOnce(res(207, body));
-      const err: unknown = await new NextcloudClient(settings, 'pw', 'Vault').getFiles('').catch((e: unknown) => e);
+      const err: unknown = await new NextcloudClient(settings, () => 'pw', 'Vault').getFiles('').catch((e: unknown) => e);
       expect((err as RemoteListingUnreadableError).bodyLength).toBe(new TextEncoder().encode(body).length);
       expect((err as RemoteListingUnreadableError).bodyLength).toBeGreaterThan(body.length);
     });

@@ -164,7 +164,7 @@ describeLive('Layer B — creation time: PROPPATCH, two-device convergence, publ
 
 async function makeShareListing(shareEnv: LiveEnv): Promise<RemoteFileInfo[]> {
   const settings = { ...DEFAULT_SETTINGS, serverUrl: shareEnv.serverUrl, username: shareEnv.username, deviceId: 'CT19-LIST' };
-  const c = new NextcloudClient(settings, shareEnv.appPassword, 'vault-ct19');
+  const c = new NextcloudClient(settings, () => shareEnv.appPassword, 'vault-ct19');
   await c.connect();
   return c.getFiles('');
 }

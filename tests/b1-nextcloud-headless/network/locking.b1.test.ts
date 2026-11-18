@@ -59,7 +59,7 @@ describeLive('Layer A — locking (LK)', (getEnv) => {
     const name = `lk4-${Math.random().toString(36).slice(2, 8)}.md`;
     const client2 = new NextcloudClient(
       { ...DEFAULT_SETTINGS, serverUrl: u2.serverUrl, username: u2.username },
-      u2.password,
+      () => u2.password,
       '',
     );
 

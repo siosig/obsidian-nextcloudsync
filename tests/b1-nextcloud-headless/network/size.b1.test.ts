@@ -65,7 +65,7 @@ describeLive('Layer A — size boundary (SZ)', (getEnv) => {
 
   it('[SPEC:SZ-7] standard WebDAV client → single PUT', async () => {
     const env = getEnv();
-    const std = new StandardWebDAVClient(makeSettings(env), env.appPassword, ws.remoteBase);
+    const std = new StandardWebDAVClient(makeSettings(env), () => env.appPassword, ws.remoteBase);
     const strat = new SimpleUploadStrategy({ maxFileSizeMB: () => 0, uploadChunkThresholdMB: 0 });
     const data = bytesBuf(3 * MB);
     expect(await strat.upload(std, 'sz7.bin', data)).toBe('uploaded');

@@ -53,7 +53,7 @@ describeLive('Layer A — server lock detection on 423 (SL, feature 090)', (getE
     const name = `sl1-${Math.random().toString(36).slice(2, 8)}.md`;
     const client2 = new NextcloudClient(
       { ...DEFAULT_SETTINGS, serverUrl: u2.serverUrl, username: u2.username },
-      u2.password,
+      () => u2.password,
       '',
     );
 
