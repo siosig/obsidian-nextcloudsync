@@ -13,7 +13,7 @@ const VERSION = { versionId: '1', href: '', lastModified: 0, size: 0 };
 function publicShareClient(): NextcloudClient {
   return new NextcloudClient(
     { ...DEFAULT_SETTINGS, serverUrl: 'https://cloud.example.com/public.php/webdav/', username: 'TOKEN' },
-    'pw',
+    () => 'pw',
     'Vault',
   );
 }
@@ -52,7 +52,7 @@ describe('[SPEC:SD-6] a public link share never reaches the account-only DAV nam
   it('the guard does not block an account URL', async () => {
     const client = new NextcloudClient(
       { ...DEFAULT_SETTINGS, serverUrl: 'https://cloud.example.com/remote.php/dav/files/alice/', username: 'alice' },
-      'pw',
+      () => 'pw',
       'Vault',
     );
     mockRequestUrl.mockResolvedValue({

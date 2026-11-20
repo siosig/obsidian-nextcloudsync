@@ -20,7 +20,7 @@ const settings: DavSyncSettings = {
 const res = (status: number, text = '') =>
   Promise.resolve({ status, text, json: {}, arrayBuffer: new ArrayBuffer(0), headers: {} });
 
-const client = () => new StandardWebDAVClient(settings, 'pw', 'Vault');
+const client = () => new StandardWebDAVClient(settings, () => 'pw', 'Vault');
 
 const LOCK_OWNER = 'Alice (Text app)';
 

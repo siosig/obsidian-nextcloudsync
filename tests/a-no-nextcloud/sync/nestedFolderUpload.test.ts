@@ -271,7 +271,7 @@ async function buildHarness(o: HarnessOptions) {
   const stateDB = new StateDB(makeStateAdapter(), PLUGIN_DIR, 'dev1');
   await stateDB.load();
   const local = makeLocalAdapter({ ...o.localFiles });
-  const client = new NextcloudClient(SETTINGS, 'pw', BASE);
+  const client = new NextcloudClient(SETTINGS, () => 'pw', BASE);
 
   const trashed: string[] = [];
   const app = {

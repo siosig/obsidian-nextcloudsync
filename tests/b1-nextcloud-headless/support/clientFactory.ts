@@ -19,7 +19,7 @@ export function makeClient(
   remoteBase: string,
   overrides?: Partial<DavSyncSettings>,
 ): NextcloudClient {
-  return new NextcloudClient(makeSettings(env, overrides), env.appPassword, remoteBase);
+  return new NextcloudClient(makeSettings(env, overrides), () => env.appPassword, remoteBase);
 }
 
 // Mirrors NextcloudClient's own base URL derivation (trailing slash stripped).

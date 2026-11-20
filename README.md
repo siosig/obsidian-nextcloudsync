@@ -27,13 +27,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-> ⚠️ **Heads-up: settings are being streamlined.** Over the next few days, options with little practical value will be progressively removed so the plugin stays simple and hard to misconfigure. Sensible behaviour is derived automatically instead. If a setting you used to see is gone, that is intentional — the plugin now picks the right value for you.
+## What's new in this release (1.0.18-beta.1)
 
----
-
-## What's new in this release (1.0.17)
-
-- **Clearer error when the server certificate is not trusted (1.0.17)** — When a request fails because the device does not trust the server's certificate (on Android, `Trust anchor for certification path not found`; on desktop, `net::ERR_CERT_AUTHORITY_INVALID`), the failure message now says that no plugin setting can fix this and what to do instead, and points to a new FAQ entry that explains which certificates each platform accepts. Other failures keep their messages, and there is no setting.
+- **A changed app password applies without a restart (1.0.18-beta.1)** — Selecting another secret for the app password, rewriting the value of the selected secret, or entering the password for the first time after Obsidian started now applies from the next sync. Previously the password read at start-up kept being used, so syncs failed with HTTP 401 until Obsidian or the plugin was restarted. When the password changes, the plugin reconnects so that nothing detected under a failed sign-in is kept. There is no new setting.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 

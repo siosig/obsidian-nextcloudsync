@@ -64,7 +64,7 @@ describe('[SPEC:G5-1]: NextcloudClient.uploadChunked — assembling MOVE carries
       return res(201); // MKCOL, chunk PUT, and the abort-cleanup DELETE all succeed
     });
     await expect(
-      new NextcloudClient(settings, 'pw', 'Vault').uploadChunked('Notes/big.bin', new ArrayBuffer(2), 10 * 1024 * 1024, { ifMatchEtag: 'etag-xyz' }),
+      new NextcloudClient(settings, () => 'pw', 'Vault').uploadChunked('Notes/big.bin', new ArrayBuffer(2), 10 * 1024 * 1024, { ifMatchEtag: 'etag-xyz' }),
     ).rejects.toBeInstanceOf(PreconditionFailedError);
     const move = calls('MOVE')[0];
     expect(move.headers?.['If-Match']).toBe('"etag-xyz"');
@@ -74,7 +74,7 @@ describe('[SPEC:G5-1]: NextcloudClient.uploadChunked — assembling MOVE carries
     // Everything succeeds (201); the final PROPFIND checksum-verify step gets a non-207 status
     // (also 201 here) so it short-circuits without a mismatch — see verifyRemoteChecksum().
     mockRequestUrl.mockImplementation(() => res(201));
-    await new NextcloudClient(settings, 'pw', 'Vault').uploadChunked('Notes/big.bin', new ArrayBuffer(2), 10 * 1024 * 1024);
+    await new NextcloudClient(settings, () => 'pw', 'Vault').uploadChunked('Notes/big.bin', new ArrayBuffer(2), 10 * 1024 * 1024);
     const move = calls('MOVE')[0];
     expect(move.headers?.['If-Match']).toBeUndefined();
   });

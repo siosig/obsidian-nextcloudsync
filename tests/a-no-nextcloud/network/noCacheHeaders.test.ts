@@ -29,7 +29,7 @@ describe('downloadFile requestUrl headers (no-cache)', () => {
 
   it('NextcloudClient.downloadFile sends Cache-Control: no-store and Pragma: no-cache', async () => {
     mockRequestUrl.mockReturnValueOnce(res(200, { arrayBuffer: new TextEncoder().encode('hello').buffer }));
-    const client = new NextcloudClient(settings, 'app-pw', 'Vault');
+    const client = new NextcloudClient(settings, () => 'app-pw', 'Vault');
     await client.downloadFile('note.md');
     const call = mockRequestUrl.mock.calls[0][0];
     expect(call.method).toBe('GET');
@@ -38,7 +38,7 @@ describe('downloadFile requestUrl headers (no-cache)', () => {
 
   it('StandardWebDAVClient.downloadFile sends Cache-Control: no-store and Pragma: no-cache', async () => {
     mockRequestUrl.mockReturnValueOnce(res(200, { arrayBuffer: new TextEncoder().encode('hello').buffer }));
-    const client = new StandardWebDAVClient(settings, 'pw', 'Vault');
+    const client = new StandardWebDAVClient(settings, () => 'pw', 'Vault');
     await client.downloadFile('note.md');
     const call = mockRequestUrl.mock.calls[0][0];
     expect(call.method).toBe('GET');
@@ -76,7 +76,7 @@ describe('T008: NextcloudClient remaining methods send NO_CACHE_HEADERS', () => 
   beforeEach(() => mockRequestUrl.mockReset());
 
   function makeClient(diag?: (msg: string) => void): NextcloudClient {
-    return new NextcloudClient(settings, 'app-pw', 'Vault', diag);
+    return new NextcloudClient(settings, () => 'app-pw', 'Vault', diag);
   }
 
   it('connect() sends NO_CACHE_HEADERS on the status/capabilities/sync-token calls', async () => {
@@ -240,7 +240,7 @@ describe('T009: StandardWebDAVClient remaining methods send NO_CACHE_HEADERS', (
   beforeEach(() => mockRequestUrl.mockReset());
 
   function makeClient(): StandardWebDAVClient {
-    return new StandardWebDAVClient(settings, 'pw', 'Vault');
+    return new StandardWebDAVClient(settings, () => 'pw', 'Vault');
   }
 
   it('connect() sends NO_CACHE_HEADERS on the PROPFIND call', async () => {
@@ -336,25 +336,25 @@ describe('StandardWebDAVClient — remote URL encoding is platform-independent (
 
   it('PUT (upload) percent-encodes the path', async () => {
     mockRequestUrl.mockReturnValue(res(201));
-    await new StandardWebDAVClient(settings, 'pw', 'Vault').uploadFile(RAW_PATH, new ArrayBuffer(2), 1000);
+    await new StandardWebDAVClient(settings, () => 'pw', 'Vault').uploadFile(RAW_PATH, new ArrayBuffer(2), 1000);
     expect(urlsOf('PUT')[0]?.url).toBe(ENCODED);
   });
 
   it('GET (download) percent-encodes the path', async () => {
     mockRequestUrl.mockReturnValue(res(200));
-    await new StandardWebDAVClient(settings, 'pw', 'Vault').downloadFile(RAW_PATH);
+    await new StandardWebDAVClient(settings, () => 'pw', 'Vault').downloadFile(RAW_PATH);
     expect(urlsOf('GET')[0]?.url).toBe(ENCODED);
   });
 
   it('DELETE percent-encodes the path', async () => {
     mockRequestUrl.mockReturnValue(res(204));
-    await new StandardWebDAVClient(settings, 'pw', 'Vault').deleteFile(RAW_PATH, 'rid');
+    await new StandardWebDAVClient(settings, () => 'pw', 'Vault').deleteFile(RAW_PATH, 'rid');
     expect(urlsOf('DELETE')[0]?.url).toBe(ENCODED);
   });
 
   it('MOVE percent-encodes BOTH the request url and the Destination header', async () => {
     mockRequestUrl.mockReturnValue(res(201));
-    await new StandardWebDAVClient(settings, 'pw', 'Vault').moveFile('a.md', RAW_PATH);
+    await new StandardWebDAVClient(settings, () => 'pw', 'Vault').moveFile('a.md', RAW_PATH);
     const move = urlsOf('MOVE')[0];
     expect(move?.url).toBe('https://nc/remote.php/dav/files/alice/Vault/a.md');
     expect(move?.headers?.Destination).toBe(ENCODED);
@@ -362,7 +362,7 @@ describe('StandardWebDAVClient — remote URL encoding is platform-independent (
 
   it('never emits a raw space or a double-encoded %25 on any request', async () => {
     mockRequestUrl.mockReturnValue(res(201));
-    const client = new StandardWebDAVClient(settings, 'pw', 'Vault');
+    const client = new StandardWebDAVClient(settings, () => 'pw', 'Vault');
     await client.uploadFile(RAW_PATH, new ArrayBuffer(2), 1000);
     await client.moveFile('a.md', RAW_PATH);
     const urls = mockRequestUrl.mock.calls.flatMap((c) => [c[0].url, c[0].headers?.Destination ?? '']);
@@ -374,7 +374,7 @@ describe('StandardWebDAVClient — remote URL encoding is platform-independent (
 
   it('[SPEC:URE-5] a failed transfer names the HTTP method that failed', async () => {
     mockRequestUrl.mockReturnValue(res(404));
-    const err = await new StandardWebDAVClient(settings, 'pw', 'Vault')
+    const err = await new StandardWebDAVClient(settings, () => 'pw', 'Vault')
       .downloadFile(RAW_PATH).catch((e: unknown) => e);
     expect((err as NetworkError).method).toBe('GET');
     expect((err as NetworkError).message).toBe('HTTP 404 (GET)');

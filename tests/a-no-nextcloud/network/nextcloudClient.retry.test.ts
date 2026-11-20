@@ -14,7 +14,7 @@ const settings: DavSyncSettings = {
 const res = (status: number, headers: Record<string, string> = {}) =>
   Promise.resolve({ status, text: '', json: {}, arrayBuffer: new ArrayBuffer(0), headers });
 
-const client = () => new NextcloudClient(settings, 'pw', 'Vault');
+const client = () => new NextcloudClient(settings, () => 'pw', 'Vault');
 
 // [SPEC:NET-3] NextcloudClient.reqReadonly() retries a transient req() rejection (timeout / connection failure)
 // up to 2x, only for read-only PROPFIND/GET. req() rejects only when no HTTP response arrived (any status resolves),

@@ -111,8 +111,8 @@ function fakeServer() {
   };
 }
 
-const nextcloud = (): IWebDAVClient => new NextcloudClient(settings, 'pw', 'Vault');
-const standard = (): IWebDAVClient => new StandardWebDAVClient(settings, 'pw', 'Vault');
+const nextcloud = (): IWebDAVClient => new NextcloudClient(settings, () => 'pw', 'Vault');
+const standard = (): IWebDAVClient => new StandardWebDAVClient(settings, () => 'pw', 'Vault');
 
 beforeEach(() => {
   mockRequestUrl.mockReset();
@@ -346,8 +346,8 @@ describe.each([
     // may reset tracking and re-seed, so a transient 423 on a level above it must not take that answer away.
     // A nested remote base gives the vault folder an ancestor; with a single-segment base there is nothing to attempt.
     const nested = _name === 'NextcloudClient'
-      ? new NextcloudClient(settings, 'pw', 'Docs/Vault')
-      : new StandardWebDAVClient(settings, 'pw', 'Docs/Vault');
+      ? new NextcloudClient(settings, () => 'pw', 'Docs/Vault')
+      : new StandardWebDAVClient(settings, () => 'pw', 'Docs/Vault');
     let vaultMkcols = 0;
     mockRequestUrl.mockImplementation((req: FakeRequest) => {
       if (req.method !== 'MKCOL') return res(200);

@@ -17,6 +17,8 @@ import {
   PreconditionFailedError,
   RemoteCompareResult,
   RemoteRootMissingError,
+  AppPasswordReader,
+  CredentialsNotFoundError,
 } from '../types';
 import { LocalAdapter } from '../data/LocalAdapter';
 import { StateDB } from '../data/StateDB';
@@ -89,6 +91,8 @@ interface SyncEngineOptions {
   statusBar: IStatusBar;
   historyStore?: SyncHistoryStore;
   webdavFactory: WebDAVFactory;
+  // Resolves the app password at the start of every sync, so a cleared secret fails before any request (docs/spec.md §15.2).
+  readAppPassword?: AppPasswordReader;
   pluginDir: string;
   configDir: string;
   // Host-owned predicate for this device's active log files, which must stay out of sync (docs/spec.md §9.1).
@@ -110,6 +114,9 @@ export class SyncEngine {
   private retryQueue: string[] = [];
   private client: IWebDAVClient | null = null;
   private features: NextcloudFeatures | null = null;
+  // The password the cached connection was made with; a different one rebuilds the connection (docs/spec.md §15.2).
+  // Kept in memory only, never written to settings or logs.
+  private connectedPassword: string | null = null;
   private uploadStrategy: IUploadStrategy | null = null;
   // Balking flag: a second syncManual() call returns immediately.
   private running = false;
@@ -368,10 +375,19 @@ export class SyncEngine {
   }
 
   private async ensureClient(): Promise<{ client: IWebDAVClient; features: NextcloudFeatures }> {
-    if (!this.client || !this.features) {
+    const read = this.opts.readAppPassword;
+    const password = read ? read() : null;
+    if (read && !password) throw new CredentialsNotFoundError();
+    // A connection made under another password may carry features derived from a failed authentication
+    // (Nextcloud's connect() does not throw on 401), so rebuild it (docs/spec.md §15.2). The previous connection
+    // stays in place until the replacement exists: a concurrent caller keeps a usable client, and a failed
+    // reconnect leaves it for the next attempt.
+    const rebuild = !!read && !!this.client && password !== this.connectedPassword;
+    if (!this.client || !this.features || rebuild) {
       const { client, features } = await this.opts.webdavFactory.createClient();
       this.client = client;
       this.features = features;
+      this.connectedPassword = password;
       // Chunked upload needs the account-only uploads namespace, which a public link share lacks (docs/spec.md §3);
       // the threshold is platform-derived (docs/spec.md §15.1.2).
       const uploadConfig = { maxFileSizeMB: () => this.opts.settings.maxFileSizeMB, uploadChunkThresholdMB: chunkThresholdMB(Platform.isMobile) };

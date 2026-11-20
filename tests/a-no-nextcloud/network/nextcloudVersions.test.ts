@@ -16,7 +16,7 @@ const settings: DavSyncSettings = {
 };
 
 function makeClient(): NextcloudClient {
-  return new NextcloudClient(settings, 'app-pw', 'Vault');
+  return new NextcloudClient(settings, () => 'app-pw', 'Vault');
 }
 
 describe('NextcloudClient versions', () => {

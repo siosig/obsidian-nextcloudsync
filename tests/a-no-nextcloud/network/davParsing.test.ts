@@ -63,7 +63,7 @@ function replyByUrl(pick: (url: string) => string): void {
 }
 
 function nextcloud(remoteBase = ''): NextcloudClient {
-  return new NextcloudClient(settings(), 'pw', remoteBase);
+  return new NextcloudClient(settings(), () => 'pw', remoteBase);
 }
 
 describe('NextcloudClient.getFiles — keeps files, drops folders', () => {
@@ -196,7 +196,7 @@ describe('the anti-ANR yield survives the extraction', () => {
 
 describe('StandardWebDAVClient.parseListing — a plain server has no oc: properties', () => {
   function standard(remoteBase = ''): StandardWebDAVClient {
-    return new StandardWebDAVClient(settings(), 'pw', remoteBase);
+    return new StandardWebDAVClient(settings(), () => 'pw', remoteBase);
   }
 
   it('separates files from folders, then walks into each folder', async () => {
