@@ -11,6 +11,11 @@ and folded into the next stable entry.
 
 > A Japanese translation is available at [`CHANGELOG.ja.md`](CHANGELOG.ja.md).
 
+## [1.0.18] - 2026-11-21
+
+### Fixed
+- **A changed app password applies without a restart.** Selecting another secret for the app password, rewriting the value of the selected secret, or entering the password for the first time after Obsidian started now applies from the next sync. Previously the password read at start-up kept being used, so syncs failed with HTTP 401 until Obsidian or the plugin was restarted. When the password changes, the plugin reconnects so that nothing detected under a failed sign-in is kept. There is no new setting.
+
 ## [1.0.17] - 2026-11-14
 
 ### Changed
@@ -533,6 +538,7 @@ Initial public releases (0.2.0 – 0.2.1) of the Nextcloud-specific sync engine:
 - **Clearer conflict outcomes in the dry-run** — the first-sync preview now explains what conflict resolution will produce, and each conflicted file is clickable to preview the exact merged before/after result.
 - **Faster than generic WebDAV** — by diffing content hashes against Nextcloud's `sync-token`, each sync transfers only what actually changed instead of recursively walking the entire remote tree on every run, so syncs complete noticeably faster than modification-time-based WebDAV plugins.
 
+[1.0.18]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.18
 [1.0.17]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.17
 [1.0.16]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.16
 [1.0.15]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.15

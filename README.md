@@ -27,9 +27,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (1.0.18-beta.1)
+## What's new in this release (1.0.18)
 
-- **A changed app password applies without a restart (1.0.18-beta.1)** — Selecting another secret for the app password, rewriting the value of the selected secret, or entering the password for the first time after Obsidian started now applies from the next sync. Previously the password read at start-up kept being used, so syncs failed with HTTP 401 until Obsidian or the plugin was restarted. When the password changes, the plugin reconnects so that nothing detected under a failed sign-in is kept. There is no new setting.
+- **A changed app password applies without a restart (1.0.18)** — Selecting another secret for the app password, rewriting the value of the selected secret, or entering the password for the first time after Obsidian started now applies from the next sync. Previously the password read at start-up kept being used, so syncs failed with HTTP 401 until Obsidian or the plugin was restarted. When the password changes, the plugin reconnects so that nothing detected under a failed sign-in is kept. There is no new setting.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 

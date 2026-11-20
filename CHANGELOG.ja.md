@@ -11,6 +11,11 @@
 
 > 英語版（原文）は [`CHANGELOG.md`](CHANGELOG.md) を参照してください。
 
+## [1.0.18] - 2026-11-21
+
+### 修正
+- **アプリパスワードの変更が再起動なしで反映されるようにしました。** アプリパスワードのシークレットを選び直したとき、選んでいるシークレットの値を書き換えたとき、Obsidian の起動後に初めてパスワードを入力したときに、次の同期から新しいパスワードが使われるようになりました。これまでは起動時に読んだパスワードを使い続けるため、Obsidian かプラグインを再起動するまで HTTP 401 で同期が失敗していました。パスワードが変わったときは接続し直すので、認証に失敗した状態で検出した内容は残りません。設定項目の追加はありません。
+
 ## [1.0.17] - 2026-11-14
 
 ### 変更
@@ -533,6 +538,7 @@ Nextcloud 特化同期エンジンの初回公開リリース（0.2.0 〜 0.2.1�
 - **Dry-run でのコンフリクト結果の明確化** — 初回同期プレビューがコンフリクト解決の結果を説明し、各コンフリクトファイルをクリックするとマージ後の内容（変更前後）をプレビューできます。
 - **汎用 WebDAV より高速な同期** — 内容ハッシュと Nextcloud の `sync-token` を突き合わせ、毎回リモートツリー全体を再帰的に走査するのではなく、実際に変更された分だけを転送します。更新日時ベースの WebDAV プラグインより同期が明確に速くなります。
 
+[1.0.18]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.18
 [1.0.17]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.17
 [1.0.16]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.16
 [1.0.15]: https://github.com/siosig/obsidian-nextcloudsync/releases/tag/1.0.15
