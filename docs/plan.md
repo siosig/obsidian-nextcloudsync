@@ -162,7 +162,8 @@ flowchart TD
 - **Hashing is the heaviest step and is avoided as far as possible.** `isLocallyUnchanged()` skips the hash when the stored **stat signature**
   (`localMtime` + `localSize`) equals the current stat. However, if the mtime is within
   `SIGNATURE_SAFETY_WINDOW_MS = 2000ms` of "now" or of the "last sync" (a filesystem-granularity guard), the file is hashed once and the
-  signature is regenerated.
+  signature is regenerated. A recorded signature can be trusted only because of the invariant in §7.4: it is taken before the read that produced the
+  recorded hash, or right after this device's own write.
 - In the initial plan, files larger than `MAX_HASH_SIZE = 20MB` are **not** hashed. They go straight to conflict
   resolution (a mobile OOM guard).
 
@@ -186,7 +187,7 @@ flowchart TD
 **Identical content is checked before the four-quadrant decision.** When the local file exists and either side is marked changed,
 the engine compares sizes and then the server checksum against the local hash (the local hash is the freshly computed one, or
 `base.localHash` when the stat signature matched and the file was not read). If they match, the file is recorded as converged
-(`convergedState()` plus the current stat signature) and nothing is transferred, whatever the baseline says. An ETag or a size alone never
+(`convergedState()` plus the stat signature taken before the hash was read, §7.4) and nothing is transferred, whatever the baseline says. An ETag or a size alone never
 proves identity; only the SHA-256 does. The decision table (local file present):
 
 | Baseline present? | Stat signature | Remote changed | Local changed | Checksum and size match | Result |
@@ -221,14 +222,57 @@ plugin, by the pure `decideBundleDirection()` from the manifest versions, the ch
 
 The `SyncEngine` methods below delegate to extracted services (see §17); the behaviour is described at the level of the operation.
 
-- **`uploadFile()`** (`TransferService.uploadFile()`) — stat → readBinary → `acquireLock()` (when Files Locking is in use) →
-  `uploadStrategy.upload(client, path, data, mtime, {ifMatchEtag})` → `releaseLock()` →
-  `setFile(withLocalSignature(...))` → history `uploaded`. `FileLockedError` (423) ⇒ retry queue. A `'skipped'` outcome (over the size
+- **`uploadFile()`** (`TransferService.uploadFile()`) — stat → readBinary → `sha256` of the bytes just read (`sentHash`) → `acquireLock()`
+  (when Files Locking is in use) → `uploadStrategy.upload(client, path, data, mtime, {ifMatchEtag, precomputedSha256: sentHash})` →
+  `releaseLock()` → `setFile(withPreReadSignature(..., stat))` with `localHash = sentHash` → history `uploaded`. The `localHash` argument
+  is the classification-time hash and is only logged when it differs from `sentHash`: the baseline and the `OC-Checksum` header carry the
+  hash of the body that was sent (the local-signature invariant below). `FileLockedError` (423) ⇒ retry queue. A `'skipped'` outcome (over the size
   limit) is recorded with `SyncJournal.recordOversizeSkip` and the method returns without a retry (docs/spec.md §9.4a).
-- **`downloadFile()`** (`TransferService.downloadFile()`) — a remote over the size limit is recorded the same way and not fetched
-  (docs/spec.md §9.4); otherwise `client.downloadFile()` → `atomicWriteBinary(path, data, remote.lastModified)` →
-  `sha256` → `setFile(withLocalSignature(...))`. **A fetched body that equals the local file is not written**: the state is recorded as
-  converged, and there is no write (the mtime stays, so no vault event fires), no history entry and no download count.
+- **`downloadFile(client, remote, remoteId, idType, summary, expected)`** (`TransferService.downloadFile()`) — a remote over the size limit
+  is recorded the same way and not fetched (docs/spec.md §9.4); otherwise `client.downloadFile()` → a stat of the local file → the local bytes
+  are read only when they decide something (the re-check of a `present` expectation, or the identical-body test when the sizes match) →
+  `atomicWriteBinary(path, data, remote.lastModified)` → `sha256` → `setFile(withLocalSignature(...))`. **A fetched body that equals the
+  local file is not written**: the state is recorded as converged from the stat taken before that read (`withPreReadSignature`), and there is
+  no write (the mtime stays, so no vault event fires), no history entry and no download count. **A local file that no longer matches
+  `expected` is not written either** (the local-expectation re-check below).
+- **Local signature invariant** (docs/spec.md §5.3b; `src/data/localSignature.ts`) — the `localMtime` / `localSize` recorded next to a
+  `localHash` come from a stat taken **before** the read that produced that hash. Three helpers carry the rule:
+
+  | Helper | Use |
+  |---|---|
+  | `withPreReadSignature(fs, sig, remoteMtime?)` | Pure. Returns a copy of `fs` stamped with `sig` (a `LocalSignature`: `{ mtime, size }`, taken before the read). Used for every record whose hash came from reading the file: upload, identical-body and checksum convergence, the initial plan's `unchanged` paths, prefer-local, the forced push, the mirror |
+  | `withLocalSignature(localAdapter, fs, remoteMtime?)` | Stats **now**. Valid only immediately after this device's own write: the download, the prefer-remote write, the forced pull, the clean-side write (`applyCleanSide`), the version restore. Never after a read that hashed or uploaded the bytes |
+  | `withoutLocalSignature(fs)` | Pure. Drops the signature (keys stay present, set to `undefined`) so the next sync reads and hashes the file |
+
+  A stat taken after the read could describe bytes newer than the hash; the next sync would then see a matching signature and treat a real
+  edit as unchanged. Taking the stat first reverses the error: a save that lands during the read, the PUT or the hash leaves a signature that
+  no longer matches the file, so the next sync detects the change and uploads it. The paths that stat before they read are
+  `TransferService.uploadFile`, the identical-body branch of `downloadFile`, `SyncEngine.processRemoteFile` (checksum convergence),
+  `SyncEngine.buildInitialPlan` (the stat is kept per path in `unchangedSignatures` and used by `executePlan`), the initial-sync upload
+  batch of `executePlan`, `ConflictApplier.convergeIfIdentical` and `resolveByPreferLocal`, `ConflictApplier.resolveByWrite` (the stat taken right
+  after its own write and before it reads the merged body back), `ResolutionService.pushLocalToRemote` (the forced push) and
+  `MirrorService.applyRemoteMirror`.
+- **Local expectation** (`src/sync/transfer/localExpectation.ts`) — what a remote-to-local write assumed about the local file when the sync
+  classified the path. `LocalExpectation` is a discriminated union: `absent` (the file did not exist), `present` with the content `hash` it
+  had, or `overwrite` (the user asked to replace it). The pure `localStillAsDecided(expected, localPresent, localBytes)` is the re-check,
+  made **after the remote body was fetched and before it is written**: `overwrite` is always true; `absent` is true while the file is
+  still absent; `present` is true only when the file still exists and its `sha256` still equals the hash (content, never the stat
+  signature, so an mtime-only change or a change reverted before the write does not defer). Callers build the expectation with
+  `EXPECT_ABSENT`, `EXPECT_OVERWRITE`, `expectPresent(hash)` or `expectLocal(localPresent, hash)`:
+
+  | Caller | Expectation |
+  |---|---|
+  | `SyncEngine.processRemoteFile` remote-only branch, and the plugin-file `'download'` action | `expectLocal(localStat !== null, localHash)` |
+  | Initial-sync downloads (`executePlan`) and the restore of a remote edit over a local deletion (`DeletionService.applyLocalDeletion`) | `EXPECT_ABSENT` |
+  | `ConflictApplier.handleConflict` (merge or marker write, prefer-remote) | `expectLocal(localStatBefore !== null, hash read before the decision)`, re-read through `localStillAsExpected` right before the write |
+  | `MirrorService.applyRemoteMirror` | `EXPECT_OVERWRITE` (an explicit replace: no re-check). Compare "use remote", the forced pull and the version restore also write without a re-check |
+
+  On a mismatch `deferChangedDuringTransfer(deps, path, what)` (`what` is `'download'` or `'conflict'`) writes nothing: it logs, keeps the baseline's hash, remote id
+  and merge base, drops only the signature (`withoutLocalSignature`) and calls `queueRetry(path)`. It records no error, no history entry and no
+  summary count, and a deferred conflict does not call `onConflictEncountered` (`ConflictApplier.handleConflict` counts the encounter only when
+  the decision was applied). A non-empty retry queue clears the stored root ETag at the end of the session (docs/spec.md §8a.5), so the next sync is a real scan
+  that classifies the path again, normally as a change on both sides. The window between the re-check and the write remains: Obsidian's adapter has
+  no compare-and-swap (docs/spec.md §5.3b).
 - **Modification time of a write** (docs/spec.md §9.6) — `LocalAdapter.atomicWrite()` / `atomicWriteBinary()` take an optional `mtime` and pass it
   as Obsidian's `DataWriteOptions.mtime` to the same write call (`adapter.write`/`writeBinary` on the tmp file, or `Vault.modify`/`modifyBinary`
   for a file open in a leaf). There is no separate mtime step and no platform branch, so desktop and mobile take one path. Without a
@@ -432,7 +476,8 @@ flowchart LR
 `FileState = { path, localHash, remoteId, idType('sha256'|'etag'|'size'), size, mtime,
 remoteFileId, isConflicted, localMtime?, localSize?, remoteMtime? }`.
 
-- `localMtime`/`localSize` = the **stat signature** that backs the no-hash fast path (§6).
+- `localMtime`/`localSize` = the **stat signature** that backs the no-hash fast path (§6). It describes the bytes `localHash` was computed from:
+  it comes from a stat taken before the read, or right after this device's own write (§7.4). A record with no signature is hashed on the next sync.
 - `remoteId` + `idType` express how "did the remote change" is decided (checksum > etag > size).
 - `fileIdIndex` (remoteFileId → path) makes rename detection O(1).
 - **Atomic write** to `<pluginDir>/state-<deviceId>.json` (tmp → remove → rename), serialised by a save mutex. In watch mode
@@ -465,6 +510,7 @@ remoteFileId, isConflicted, localMtime?, localSize?, remoteMtime? }`.
 | `PreconditionFailedError` (If-Match 412) | Promoted to a conflict (download + resolve). A lost-update overwrite is never made |
 | `ConflictError` (MOVE 412) | The rename target already exists → swallowed (log only) |
 | `FileLockedError` (423) | Lock retry (bounded) → retry queue |
+| A local file that changed while its remote body was in flight | Not an error. `deferChangedDuringTransfer` writes nothing, drops the stat signature and adds the path to `retryQueue`; no error, history entry, summary count or notice (§7.4) |
 | `SyncTokenExpiredError` (410) | Fall back to a full PROPFIND |
 | `FeatureUnsupportedError` | Graceful degradation (for example, versions on plain WebDAV) |
 | `CertTrustError` (untrusted server certificate) | Thrown at the request boundary in place of the runtime's rejection; message `<original> — <guidance>`. Extends `Error`, not `NetworkError`, so it is handled exactly like the plain rejection it replaces (no retry-queue change) |
@@ -590,13 +636,14 @@ separate modules. `SyncEngine.ts` keeps orchestration and the per-file decision;
 | `src/sync/session/SyncJournal.ts` | Summary creation, history recording, error recording, log output of session errors, the over-the-size-limit skip tally (`recordOversizeSkip`) | Class (**owns the run start time**) |
 | `src/sync/session/OversizeSkipNotifier.ts` | `sessionFinished`: the one skip-count notice after a manual session (nothing for an automatic one), and its text | Class (dependency injection; never throws) |
 | `src/sync/session/MergeBaseRecorder.ts` | Decision on whether a merge base may be recorded (made before a byte body is decoded), and the save request | Class |
-| `src/data/localSignature.ts` | Stamping the post-write stat signature (`withLocalSignature`) | Free function |
-| `src/sync/transfer/TransferService.ts` | Single `uploadFile` / `downloadFile`, locking, size guard (records the skip, shows no notice) | Class (**owns the held locks**) |
+| `src/data/localSignature.ts` | The `LocalSignature` type and the three ways a record gets its stat signature: `withPreReadSignature` (a stat taken before the read), `withLocalSignature` (a stat right after this device's own write), `withoutLocalSignature` (drop it) (§7.4) | Free functions (the first and last are pure) |
+| `src/sync/transfer/TransferService.ts` | Single `uploadFile` / `downloadFile`, locking, size guard (records the skip, shows no notice), the local-expectation re-check before a write | Class (**owns the held locks**) |
+| `src/sync/transfer/localExpectation.ts` | `LocalExpectation` (`absent` / `present(hash)` / `overwrite`), its constructors, the re-check `localStillAsDecided`, and `deferChangedDuringTransfer` (log, drop the signature, queue a retry) (§7.4) | Pure functions plus one small side-effecting deferral; holds no state |
 | `src/sync/versions/VersionService.ts` | Nextcloud version listing and restore | Class |
 | `src/sync/deletion/DeletionService.ts` | Deletion propagation (local→remote / remote→local), proven deletion of files absent from the listing | Class |
 | `src/sync/deletion/subtreeTracking.ts` | Dropping the tracking under a trashed folder from all three stores at once | Pure function |
 | `src/sync/resolution/ResolutionService.ts` | Compare with remote, forced resolution (push/pull), clean-side snapshot | Class |
-| `src/sync/conflict/ConflictApplier.ts` | **Execution** of `ConflictResolver` decisions (write / prefer-local / prefer-remote) | Class |
+| `src/sync/conflict/ConflictApplier.ts` | **Execution** of `ConflictResolver` decisions (write / prefer-local / prefer-remote), with the local-expectation re-check before a write or prefer-remote | Class |
 | `src/sync/directory/DirectoryReconciler.ts` | Directory 3-way reconciliation, the mass-delete breaker, and its resolution | Class |
 | `src/sync/watch/WatchOperations.ts` | Single-file / single-folder operations driven by watch | Class (**owns the in-flight and pending sets**) |
 | `src/sync/identity/contentIdentity.ts` | Proof that local and remote content are identical, and the converged baseline | Functions |
@@ -642,6 +689,8 @@ graph TD
   Mirror[mirror/MirrorService] --> Transfer
   Mirror --> Deletion
   Conflict --> Transfer
+  Transfer --> Expect[transfer/localExpectation]
+  Conflict --> Expect
   Conflict --> Resolution[resolution/ResolutionService]
   Watch --> Transfer
   Watch --> Deletion
@@ -815,7 +864,13 @@ The creation time (docs/spec.md §9.7) follows the same decision/execution split
   The WebDAV client is a parameter, not a field (§17.1).
 - **Outcomes**: a local fix on a file being edited is deferred and the stored root ETag is cleared so the next sync retries. An `ineffective` local
   result or a `rejected` server result records the target as `ctimeLocalAttempt` / `ctimeRemoteAttempt`; an applied fix removes the record (a
-  local fix also refreshes the stored `localMtime` / `localSize`). A thrown server error clears the root ETag.
+  local fix does not take a new `localMtime` / `localSize` from a post-set stat; see the next item). A thrown server error clears the root ETag.
+- **Signature after a local fix** (`CreationTimeAligner.alignLocal`; §7.4): the recorded hash was read before the fix, so a re-stat after
+  the set must not become the signature (a save landing during the set would look unchanged). `alignLocal` stats the file before the set (`pre`) and
+  after it (`fresh`) and only compares them; it never copies `fresh` into the record. The record keeps its signature only when the signature equals
+  `pre` (the file did not change since the record) and `fresh` does not differ from `pre` in `mtime` or `size` (the set keeps both). Otherwise
+  (no `pre`, a signature that differs from `pre`, or a `fresh` that differs from `pre`) `withoutLocalSignature` drops the signature and the next sync
+  reads the content.
 - **Callers**: `TransferService`, `ConflictApplier`, `ResolutionService` and the engine call `align` after a path where the body was not sent.
   They receive it only as the `CreationTimePort` (§17.2). The platform classification (`settable` / `readOnly` / `untrusted`) is computed once by
   `probeCreationTimeSupport` (`src/data/creationTimeProbe.ts`) and cached by `LocalAdapter`.

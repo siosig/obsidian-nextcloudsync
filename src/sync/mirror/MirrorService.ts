@@ -14,10 +14,11 @@ import { MergeBaseRecorder } from '../session/MergeBaseRecorder';
 import type { OversizeSkipNotifier } from '../session/OversizeSkipNotifier';
 import type { PluginSessionPort } from '../plugins/PluginSyncCoordinator';
 import { TransferService } from '../transfer/TransferService';
+import { EXPECT_OVERWRITE } from '../transfer/localExpectation';
 import { DeletionService } from '../deletion/DeletionService';
 import { LocalScanner } from '../scan/LocalScanner';
 import { RemoteListingSource } from '../scan/RemoteListingSource';
-import { withLocalSignature } from '../../data/localSignature';
+import { withPreReadSignature } from '../../data/localSignature';
 import { FileLogger } from '../../util/FileLogger';
 import { sha256 } from '../../util/hash';
 import { partitionPluginManifestsLast } from '../plugins/pluginPaths';
@@ -219,11 +220,12 @@ export class MirrorService {
           }
           const existing = this.deps.stateDB.getFile(remote.path);
           const localHash = remote.checksum ?? existing?.localHash ?? remoteId;
-          this.deps.stateDB.setFile(await withLocalSignature(this.deps.localAdapter, {
+          // nowStat is the signature source: it matched the plan and no read follows (docs/spec.md §5.3b).
+          this.deps.stateDB.setFile(withPreReadSignature({
             path: remote.path, localHash, remoteId, idType,
             size: remote.size, mtime: remote.lastModified || (existing?.mtime ?? 0),
             remoteFileId: remote.fileId, isConflicted: false,
-          }, remote.lastModified));
+          }, nowStat, remote.lastModified));
         }
         // Also clears entries whose local file was already absent but still tracked.
         for (const path of toDrop) {
@@ -241,9 +243,8 @@ export class MirrorService {
             localHash = '';
           }
           const remoteFileId = this.deps.stateDB.getFile(path)?.remoteFileId ?? null;
-          this.deps.stateDB.setFile(await withLocalSignature(
-            this.deps.localAdapter, leftoverFileState(path, localHash, st, remoteFileId),
-          ));
+          // st was taken before the read above, so the signature is never newer than the hashed bytes (docs/spec.md §5.3b).
+          this.deps.stateDB.setFile(withPreReadSignature(leftoverFileState(path, localHash, st, remoteFileId), st));
         }
         const localDirsNow = new Set(this.readLocalDirs());
         const dirs = planDirConvergence(
@@ -294,7 +295,7 @@ export class MirrorService {
       const idType: FileState['idType'] = remote.checksum ? 'sha256' : (remote.etag ? 'etag' : 'size');
       try {
         const before = summary.downloadedCount;
-        await this.deps.transfer.downloadFile(client, remote, remoteId, idType, summary);
+        await this.deps.transfer.downloadFile(client, remote, remoteId, idType, summary, EXPECT_OVERWRITE);
         if (summary.downloadedCount > before) result.downloaded++;
       } catch (err) {
         result.errors.push({ path: remote.path, message: (err as Error).message });

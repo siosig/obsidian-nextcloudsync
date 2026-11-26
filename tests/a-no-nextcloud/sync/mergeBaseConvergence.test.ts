@@ -2,6 +2,7 @@
 // only for Auto Merge File types. (docs/spec.md §6.2)
 import { DataAdapter } from 'obsidian';
 import { SyncEngine } from '../../../src/sync/SyncEngine';
+import { EXPECT_OVERWRITE, type LocalExpectation } from '../../../src/sync/transfer/localExpectation';
 import { StateDB } from '../../../src/data/StateDB';
 import { DEFAULT_SETTINGS, FileState, RemoteFileInfo, SyncSessionSummary } from '../../../src/types';
 
@@ -55,8 +56,8 @@ async function buildEngine(localAdapter: Record<string, unknown>, client: Record
 }
 
 const callDownload = (e: SyncEngine, r: RemoteFileInfo) =>
-  (e as unknown as { downloadFile: (r: RemoteFileInfo, id: string, t: string, s: SyncSessionSummary) => Promise<void> })
-    .downloadFile(r, 'e', 'etag', makeSummary());
+  (e as unknown as { downloadFile: (r: RemoteFileInfo, id: string, t: string, s: SyncSessionSummary, x: LocalExpectation) => Promise<void> })
+    .downloadFile(r, 'e', 'etag', makeSummary(), EXPECT_OVERWRITE);
 const callUpload = (e: SyncEngine, path: string, r: RemoteFileInfo) =>
   (e as unknown as { uploadFile: (p: string, h: string, id: string, t: string, r: RemoteFileInfo, s: SyncSessionSummary) => Promise<void> })
     .uploadFile(path, 'lh', 'e', 'etag', r, makeSummary());

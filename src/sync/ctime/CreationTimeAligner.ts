@@ -4,6 +4,7 @@
 import type { FileState, RemoteFileInfo } from '../../types';
 import type { LocalAdapter, LocalStat } from '../../data/LocalAdapter';
 import type { StateDB } from '../../data/StateDB';
+import { withoutLocalSignature } from '../../data/localSignature';
 import type { IWebDAVClient } from '../../network/IWebDAVClient';
 import type { FileLogger } from '../../util/FileLogger';
 import { planCreationTimeAlignment } from '../../util/creationTime';
@@ -55,6 +56,8 @@ export class CreationTimeAligner implements CreationTimePort {
       stateDB.setRemoteRootEtag(null);
       return;
     }
+    // Taken before the set: the recorded hash was read before this stat (docs/spec.md §5.3b).
+    const pre = await localAdapter.stat(path);
     let result: 'applied' | 'ineffective' | 'absent';
     try {
       result = await localAdapter.setCreationTime(path, seconds * 1000);
@@ -73,7 +76,13 @@ export class CreationTimeAligner implements CreationTimePort {
     const fresh = await localAdapter.stat(path);
     this.patchState(path, (s) => {
       const { ctimeLocalAttempt: _dropped, ...rest } = s;
-      return fresh ? { ...rest, localMtime: fresh.mtime, localSize: fresh.size } : rest;
+      // docs/plan.md §7.4: the recorded hash was read before `pre`, so the record keeps its signature only when the file
+      // did not change since the record and the set left it as `pre` (the set keeps mtime). A post-set stat that differs
+      // may hide a save during the set, so drop the signature and let the next sync read the content.
+      const unchanged = pre !== null && rest.localMtime === pre.mtime && rest.localSize === pre.size;
+      if (!unchanged) return withoutLocalSignature(rest);
+      const moved = fresh !== null && (fresh.mtime !== pre.mtime || fresh.size !== pre.size);
+      return moved ? withoutLocalSignature(rest) : rest;
     });
   }
 

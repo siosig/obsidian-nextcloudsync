@@ -15,7 +15,10 @@ import { SyncJournal } from '../session/SyncJournal';
 import { MergeBaseRecorder } from '../session/MergeBaseRecorder';
 import { TransferService } from '../transfer/TransferService';
 import { ResolutionService } from '../resolution/ResolutionService';
-import { withLocalSignature } from '../../data/localSignature';
+import { withLocalSignature, withPreReadSignature } from '../../data/localSignature';
+import {
+  deferChangedDuringTransfer, expectLocal, localStillAsDecided, type LocalExpectation,
+} from '../transfer/localExpectation';
 import { isMarkdown } from '../../util/mergeableExtensions';
 import { isAnomalousRemoteContent } from '../../util/limits';
 import { FileLogger } from '../../util/FileLogger';
@@ -78,54 +81,68 @@ export class ConflictApplier {
     const localStatBefore = await this.deps.localAdapter.stat(path);
     const identity = await this.convergeIfIdentical(conn, path, remote, localStatBefore);
     if (identity.converged) return;
-    this.deps.onConflictEncountered();
     const localMtimeBefore = localStatBefore?.mtime ?? 0;
     const localSizeBefore = localStatBefore?.size ?? 0;
+    // What this decision assumes about the local file: re-checked right before any write derived from the remote
+    // body, so a save landing while the remote body was in flight is never overwritten (docs/spec.md §5.3b).
+    const expected = expectLocal(localStatBefore !== null, identity.localHash ?? '');
 
-    // Config-folder JSON has no special branch: its extension is not in autoMergeFileTypes, so it falls to
-    // `otherFileStrategy` (default latest-mtime), which never writes markers (docs/spec.md §6.1).
-    const resolver = new ConflictResolver(this.deps.app, this.deps.localAdapter, this.deps.resolverConfig());
-    const ctx = {
-      localSize: localSizeBefore,
-      remoteSize: remote.size,
-      localMtime: localMtimeBefore,
-      remoteMtime: remote.lastModified || 0,
-    };
+    // A deferred conflict is re-evaluated next sync, so only a decided one counts as encountered.
+    let outcome: 'applied' | 'deferred' = 'applied';
+    try {
+      // Config-folder JSON has no special branch: its extension is not in autoMergeFileTypes, so it falls to
+      // `otherFileStrategy` (default latest-mtime), which never writes markers (docs/spec.md §6.1).
+      const resolver = new ConflictResolver(this.deps.app, this.deps.localAdapter, this.deps.resolverConfig());
+      const ctx = {
+        localSize: localSizeBefore,
+        remoteSize: remote.size,
+        localMtime: localMtimeBefore,
+        remoteMtime: remote.lastModified || 0,
+      };
 
-    // Plugin files never enter text merge: the coordinator's rule decides without reading the local body.
-    const rule = this.deps.pluginConflictRule(path);
-    if (rule !== null) {
-      const ruled = this.decideByPluginRule(rule, path, ctx);
-      await this.applyDecision(conn, path, base, remote, remoteId, idType, summary, ruled, identity.remoteData);
-      return;
-    }
-
-    // `merge` and every markdown file need both sides' text; the other strategies decide from size/mtime,
-    // so their remote download is deferred until required.
-    let remoteData: ArrayBuffer | undefined = identity.remoteData;
-    let decision: ConflictResolution;
-    if (resolver.strategyFor(path) === 'merge' || isMarkdown(path)) {
-      const localContent = await this.deps.localAdapter.read(path);
-      remoteData = remoteData ?? await conn.client.downloadFile(remote.path);
-      const remoteContent = new TextDecoder().decode(remoteData);
-      // The stored last-synced body is the 3-way base, so shared blocks are not duplicated. Empty when none
-      // is known yet; the expansion guard prevents a corrupt write and the next convergence seeds it.
-      const mergeBaseContent = this.deps.baseStore?.get(path) ?? '';
-      // A lone half-marker is merged normally and self-heals; log the re-entrancy-guard bypass.
-      if (hasOrphanMarker(localContent) || hasOrphanMarker(remoteContent)) {
-        void this.deps.logger?.log(`conflict: orphan marker detected, bypassing re-entrancy guard (self-heal) → ${path}`);
+      // Plugin files never enter text merge: the coordinator's rule decides without reading the local body.
+      const rule = this.deps.pluginConflictRule(path);
+      if (rule !== null) {
+        const ruled = this.decideByPluginRule(rule, path, ctx);
+        outcome = await this.applyDecision(
+          conn, path, base, remote, remoteId, idType, summary, ruled, identity.remoteData, expected, undefined,
+        );
+        return;
       }
-      decision = resolver.decide(path, mergeBaseContent, localContent, remoteContent, ctx);
-      // Only a marker write overwrites both clean sides, so capture them before resolveByWrite runs; force
-      // resolution later restores a clean version from them (docs/spec.md §6.4).
-      if (decision.action === 'write' && !decision.clean) {
-        this.deps.resolution.captureCleanSides(path, localContent, remoteContent, localMtimeBefore, localSizeBefore, remote);
-      }
-    } else {
-      decision = resolver.decide(path, '', '', '', ctx);
-    }
 
-    await this.applyDecision(conn, path, base, remote, remoteId, idType, summary, decision, remoteData);
+      // `merge` and every markdown file need both sides' text; the other strategies decide from size/mtime,
+      // so their remote download is deferred until required.
+      let remoteData: ArrayBuffer | undefined = identity.remoteData;
+      let decision: ConflictResolution;
+      let capture: (() => void) | undefined;
+      if (resolver.strategyFor(path) === 'merge' || isMarkdown(path)) {
+        const localContent = await this.deps.localAdapter.read(path);
+        remoteData = remoteData ?? await conn.client.downloadFile(remote.path);
+        const remoteContent = new TextDecoder().decode(remoteData);
+        // The stored last-synced body is the 3-way base, so shared blocks are not duplicated. Empty when none
+        // is known yet; the expansion guard prevents a corrupt write and the next convergence seeds it.
+        const mergeBaseContent = this.deps.baseStore?.get(path) ?? '';
+        // A lone half-marker is merged normally and self-heals; log the re-entrancy-guard bypass.
+        if (hasOrphanMarker(localContent) || hasOrphanMarker(remoteContent)) {
+          void this.deps.logger?.log(`conflict: orphan marker detected, bypassing re-entrancy guard (self-heal) → ${path}`);
+        }
+        decision = resolver.decide(path, mergeBaseContent, localContent, remoteContent, ctx);
+        // Only a marker write overwrites both clean sides, so capture them before resolveByWrite runs; force
+        // resolution later restores a clean version from them (docs/spec.md §6.4). Run only once the local file
+        // is confirmed unchanged: a deferred write buries nothing.
+        capture = decision.action === 'write' && !decision.clean
+          ? () => this.deps.resolution.captureCleanSides(path, localContent, remoteContent, localMtimeBefore, localSizeBefore, remote)
+          : undefined;
+      } else {
+        decision = resolver.decide(path, '', '', '', ctx);
+      }
+
+      outcome = await this.applyDecision(
+        conn, path, base, remote, remoteId, idType, summary, decision, remoteData, expected, capture,
+      );
+    } finally {
+      if (outcome !== 'deferred') this.deps.onConflictEncountered();
+    }
   }
 
   private decideByPluginRule(
@@ -145,7 +162,9 @@ export class ConflictApplier {
     path: string, base: FileState | undefined, remote: RemoteFileInfo,
     remoteId: string, idType: FileState['idType'], summary: SyncSessionSummary,
     decision: ConflictResolution, fetched: ArrayBuffer | undefined,
-  ): Promise<void> {
+    expected: LocalExpectation,
+    beforeWrite?: () => void,
+  ): Promise<'applied' | 'deferred'> {
     let remoteData = fetched;
     switch (decision.action) {
       case 'safe-hold':
@@ -155,7 +174,7 @@ export class ConflictApplier {
         summary.conflictedCount++;
         this.deps.journal.recordHistory(path, 'conflicted');
         void this.deps.logger?.log(`conflict: non-text under merge → safe-hold, both sides untouched → ${path}`);
-        return;
+        return 'applied';
 
       case 'no-op':
         // A tie leaves both sides and the StateDB untouched and unflagged; the next sync re-evaluates.
@@ -164,29 +183,45 @@ export class ConflictApplier {
         // An armed root-ETag short-circuit would misread it as a local-only change and upload over the other
         // device's edit; clearing the ETag forces a real scan (docs/spec.md §8a.5).
         this.deps.stateDB.setRemoteRootEtag(null);
-        return;
+        return 'applied';
 
       case 'prefer-local':
         await this.resolveByPreferLocal(conn, path, remote, summary);
-        return;
+        return 'applied';
 
       case 'prefer-remote':
         if (!remoteData) remoteData = await conn.client.downloadFile(remote.path);
+        if (!(await this.localStillAsExpected(path, expected))) {
+          deferChangedDuringTransfer(this.deps, path, 'conflict');
+          return 'deferred';
+        }
         await this.resolveByPreferRemote(path, remote, remoteData, remoteId, idType, summary, conn.client);
-        return;
+        return 'applied';
 
       case 'write':
+        if (!(await this.localStillAsExpected(path, expected))) {
+          deferChangedDuringTransfer(this.deps, path, 'conflict');
+          return 'deferred';
+        }
+        beforeWrite?.();
         await this.resolveByWrite(conn, path, decision.content, decision.clean, remote, remoteId, idType, summary);
-        return;
+        return 'applied';
     }
+  }
+
+  // Re-reads the local file right before a remote-derived write (docs/spec.md §5.3b).
+  private async localStillAsExpected(path: string, expected: LocalExpectation): Promise<boolean> {
+    const st = await this.deps.localAdapter.stat(path);
+    const bytes = st && expected.kind === 'present' ? await this.deps.localAdapter.readBinary(path) : null;
+    return localStillAsDecided(expected, st !== null, bytes);
   }
 
   // Proof of identity is the server checksum, or the fetched body when the server has none and the sizes match.
   private async convergeIfIdentical(
     conn: Connection, path: string, remote: RemoteFileInfo,
     localStat: LocalStat | null,
-  ): Promise<{ converged: boolean; remoteData?: ArrayBuffer }> {
-    if (!localStat) return { converged: false };
+  ): Promise<{ converged: boolean; remoteData?: ArrayBuffer; localHash: string | null }> {
+    if (!localStat) return { converged: false, localHash: null };
     const localData = await this.deps.localAdapter.readBinary(path);
     const localHash = await sha256(localData);
     let remoteData: ArrayBuffer | undefined;
@@ -197,14 +232,16 @@ export class ConflictApplier {
       remoteData = await conn.client.downloadFile(remote.path);
       identical = bytesEqual(localData, remoteData);
     }
-    if (!identical) return { converged: false, remoteData };
-    this.deps.stateDB.setFile(await withLocalSignature(
-      this.deps.localAdapter, convergedState(remote, localHash, localStat), remote.lastModified,
+    if (!identical) return { converged: false, remoteData, localHash };
+    // localStat was taken before the read that produced localHash, so the signature is never newer than the hashed
+    // bytes (docs/spec.md §5.3b).
+    this.deps.stateDB.setFile(withPreReadSignature(
+      convergedState(remote, localHash, localStat), localStat, remote.lastModified,
     ));
     this.deps.mergeBase.recordBytes(path, localData);
     await this.deps.creationTime?.align(conn.client, remote, localStat);
     void this.deps.logger?.log(`conflict: content identical to the remote → state converged, no transfer → ${path}`);
-    return { converged: true };
+    return { converged: true, localHash };
   }
 
   async resolveByWrite(
@@ -219,6 +256,9 @@ export class ConflictApplier {
     await this.deps.localAdapter.atomicWrite(
       path, content, mergeMtime, writeCreationTimeMs(before?.ctime, remote.creationTime),
     );
+    // Taken right after our own write and before the read below, so the recorded signature is never newer than the
+    // bytes that were hashed and uploaded (docs/spec.md §5.3b).
+    const written = await this.deps.localAdapter.stat(path);
 
     // Without this push the merge stays local-only and every later sync re-detects the same conflict.
     const mergedData = await this.deps.localAdapter.readBinary(path);
@@ -248,7 +288,6 @@ export class ConflictApplier {
       }
     }
 
-    const stat = await this.deps.localAdapter.stat(path);
     const prior = this.deps.stateDB.getFile(path);
     const nextState: FileState = {
       path,
@@ -256,7 +295,7 @@ export class ConflictApplier {
       localHash: uploaded ? mergedHash : (prior?.localHash ?? ''),
       remoteId: uploaded ? mergedHash : remoteId,
       idType: uploaded ? 'sha256' : idType,
-      size: stat?.size ?? 0, mtime: mergeMtime,
+      size: written?.size ?? 0, mtime: mergeMtime,
       remoteFileId: remote.fileId,
       // Stays true after a failed upload even for a clean merge, or the next sync reads the state as converged.
       isConflicted: !clean || !uploaded,
@@ -264,13 +303,13 @@ export class ConflictApplier {
     // After a failed push localHash deliberately differs from the file; a signature would let the
     // local-unchanged fast path skip the re-hash that drives the retry.
     this.deps.stateDB.setFile(
-      uploaded ? await withLocalSignature(this.deps.localAdapter, nextState, remote.lastModified) : nextState,
+      uploaded && written ? withPreReadSignature(nextState, written, remote.lastModified) : nextState,
     );
     const mergeDetail: SyncHistoryDetail = {
       localHash: mergedHash,
       remoteId: uploaded ? mergedHash : remoteId,
       remoteIdType: uploaded ? 'sha256' : idType,
-      localSize: stat?.size ?? 0,
+      localSize: written?.size ?? 0,
       remoteSize: remote.size,
     };
     if (clean) {
@@ -323,11 +362,14 @@ export class ConflictApplier {
       localHash, remoteId: localHash, remoteIdType: 'sha256',
       localSize: stat?.size ?? localData.byteLength, remoteSize: remote.size,
     });
-    this.deps.stateDB.setFile(await withLocalSignature(this.deps.localAdapter, {
+    const resolved: FileState = {
       path, localHash, remoteId: localHash, idType: 'sha256',
       size: stat?.size ?? localData.byteLength, mtime,
       remoteFileId: remote.fileId, isConflicted: false,
-    }, remote.lastModified));
+    };
+    // `stat` is the one taken before the read above, so the signature is never newer than the uploaded bytes
+    // (docs/spec.md §5.3b).
+    this.deps.stateDB.setFile(stat ? withPreReadSignature(resolved, stat, remote.lastModified) : resolved);
     this.deps.mergeBase.recordBytes(path, localData);
     void this.deps.logger?.log(`conflict: resolved by prefer-local (remote overwritten) → ${path}`);
   }

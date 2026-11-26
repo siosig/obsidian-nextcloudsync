@@ -2,6 +2,7 @@
 // the same content for the ones that do (MB-16). Section B: MergeBaseRecorder.recordBytes in isolation.
 // Later sections (engine-level, per call site) are appended below by follow-up tasks.
 import { MergeBaseRecorder } from '../../../src/sync/session/MergeBaseRecorder';
+import { EXPECT_OVERWRITE, type LocalExpectation } from '../../../src/sync/transfer/localExpectation';
 import { buildEngine, makeSummary, remoteOf, toBuf } from '../support/engineHarness';
 import { spec } from '../support/specRef';
 import type { RemoteFileInfo, SyncSessionSummary } from '../../../src/types';
@@ -159,12 +160,15 @@ const SCENARIOS: Scenario[] = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7'];
 
 interface EngineInternals {
   uploadFile(p: string, h: string, id: string, t: string, r: RemoteFileInfo, s: SyncSessionSummary): Promise<void>;
-  downloadFile(r: RemoteFileInfo, id: string, t: string, s: SyncSessionSummary): Promise<void>;
+  downloadFile(r: RemoteFileInfo, id: string, t: string, s: SyncSessionSummary, x: LocalExpectation): Promise<void>;
   handleConflict(p: string, b: undefined, r: RemoteFileInfo, id: string, t: string, s: SyncSessionSummary): Promise<void>;
   resolveByPreferLocal(p: string, r: RemoteFileInfo, s: SyncSessionSummary): Promise<void>;
   resolveByPreferRemote(p: string, r: RemoteFileInfo, d: ArrayBuffer, id: string, t: string, s: SyncSessionSummary): Promise<void>;
   executePlan(
-    plan: { uploads: string[]; downloads: string[]; conflicts: string[]; deletes: string[]; unchanged: string[] },
+    plan: {
+      uploads: string[]; downloads: string[]; conflicts: string[]; deletes: string[]; unchanged: string[];
+      unchangedSignatures: Map<string, { mtime: number; size: number }>;
+    },
     remoteFiles: RemoteFileInfo[], summary: SyncSessionSummary, localFiles: Map<string, { size: number; mtime: number }>,
   ): Promise<void>;
 }
@@ -189,13 +193,13 @@ async function runScenario(scenario: Scenario, path: string, throwOnDecode: bool
   const drive = (): Promise<void> => {
     switch (scenario) {
       case 'S1': return e.uploadFile(path, 'lh', 'e', 'etag', remoteOf(path, body), summary);
-      case 'S2': return e.downloadFile(remote, 'e', 'etag', summary);
-      case 'S3': return e.downloadFile(remote, 'e', 'etag', summary);
+      case 'S2': return e.downloadFile(remote, 'e', 'etag', summary, EXPECT_OVERWRITE);
+      case 'S3': return e.downloadFile(remote, 'e', 'etag', summary, EXPECT_OVERWRITE);
       case 'S4': return e.handleConflict(path, undefined, remote, 'e', 'etag', summary);
       case 'S5': return e.resolveByPreferLocal(path, remote, summary);
       case 'S6': return e.resolveByPreferRemote(path, remote, toBuf(body), 'e', 'etag', summary);
       case 'S7': return e.executePlan(
-        { uploads: [path], downloads: [], conflicts: [], deletes: [], unchanged: [] }, [], summary,
+        { uploads: [path], downloads: [], conflicts: [], deletes: [], unchanged: [], unchangedSignatures: new Map() }, [], summary,
         new Map([[path, { size: toBuf(body).byteLength, mtime: 1_000 }]]));
     }
   };

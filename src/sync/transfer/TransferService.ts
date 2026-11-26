@@ -9,7 +9,7 @@ import { IWebDAVClient } from '../../network/IWebDAVClient';
 import { IUploadStrategy } from '../upload/IUploadStrategy';
 import { SyncJournal } from '../session/SyncJournal';
 import { MergeBaseRecorder } from '../session/MergeBaseRecorder';
-import { withLocalSignature } from '../../data/localSignature';
+import { withLocalSignature, withPreReadSignature } from '../../data/localSignature';
 import { FileLogger } from '../../util/FileLogger';
 import { FIXED } from '../../util/fixedSyncConfig';
 import { isAnomalousRemoteContent, isOverFileSizeLimit } from '../../util/limits';
@@ -17,6 +17,7 @@ import { sha256 } from '../../util/hash';
 import { remoteIdOf } from '../remoteIdentity';
 import { uploadCreationTimeMs, writeCreationTimeMs } from '../../util/creationTime';
 import { bytesEqual } from '../identity/contentIdentity';
+import { LocalExpectation, localStillAsDecided, deferChangedDuringTransfer } from './localExpectation';
 import type { LocalWritePort } from '../plugins/PluginSyncCoordinator';
 import type { CreationTimePort } from '../ctime/CreationTimeAligner';
 
@@ -60,6 +61,13 @@ export class TransferService {
 
     const data = await this.deps.localAdapter.readBinary(path);
 
+    // The file can be saved again between classification and this read, so `localHash` may describe older bytes
+    // than `data`. Record, and send as the checksum, the hash of the bytes actually sent (docs/spec.md §5.3b).
+    const sentHash = await sha256(data);
+    if (sentHash !== localHash) {
+      void this.deps.logger?.log(`upload: "${path}" changed after it was classified → recording the body actually sent`);
+    }
+
     // A path locked by someone else is skipped and queued for retry.
     let token: string | null;
     try {
@@ -79,6 +87,7 @@ export class TransferService {
       outcome = await uploadStrategy.upload(client, path, data, stat.mtime, {
         ifMatchEtag: remote.etag,
         ctime: uploadCreationTimeMs(stat.ctime, remote.creationTime),
+        precomputedSha256: sentHash,
       });
     } finally {
       await this.releaseLock(client, path, token);
@@ -92,11 +101,11 @@ export class TransferService {
       return;
     }
     summary.uploadedCount++;
-    // Record the state the server holds now, not before the PUT. Both strategies send `OC-Checksum: SHA256:<localHash>`
-    // and Nextcloud returns it as oc:checksums, so the remote id IS localHash; keeping the pre-upload id would make
+    // Record the state the server holds now, not before the PUT. Both strategies send `OC-Checksum: SHA256:<sentHash>`
+    // and Nextcloud returns it as oc:checksums, so the remote id IS sentHash; keeping the pre-upload id would make
     // every later sync download the file just uploaded. Only true where the client can read a checksum back: on
     // plain WebDAV the next PROPFIND yields an ETag, so ask the server and record that instead.
-    let uploadedRemoteId = localHash;
+    let uploadedRemoteId = sentHash;
     let uploadedIdType: FileState['idType'] = 'sha256';
     if (!this.deps.clientReportsChecksums()) {
       // A failed or empty stat keeps the sha256 values on purpose: recording nothing would strand the baseline
@@ -110,15 +119,17 @@ export class TransferService {
       }
     }
     this.deps.journal.recordHistory(path, 'uploaded', undefined, {
-      localHash, remoteId: uploadedRemoteId, remoteIdType: uploadedIdType,
+      localHash: sentHash, remoteId: uploadedRemoteId, remoteIdType: uploadedIdType,
       localSize: stat.size, remoteSize: remote.size,
     });
 
-    this.deps.stateDB.setFile(await withLocalSignature(this.deps.localAdapter, {
-      path, localHash, remoteId: uploadedRemoteId, idType: uploadedIdType,
+    // The signature is the stat taken before the read, never a re-stat after the PUT: a save that landed during
+    // the PUT must leave a signature that no longer matches the file, so the next sync uploads it (docs/plan.md §7.4).
+    this.deps.stateDB.setFile(withPreReadSignature({
+      path, localHash: sentHash, remoteId: uploadedRemoteId, idType: uploadedIdType,
       size: stat.size, mtime: stat.mtime,
       remoteFileId: remote.fileId, isConflicted: false,
-    }, remote.lastModified));
+    }, stat, remote.lastModified));
     // The remote now equals the uploaded body, so it is the new merge base.
     this.deps.mergeBase.recordBytes(path, data);
   }
@@ -127,6 +138,7 @@ export class TransferService {
     client: IWebDAVClient,
     remote: RemoteFileInfo, remoteId: string,
     idType: FileState['idType'], summary: SyncSessionSummary,
+    expected: LocalExpectation,
   ): Promise<void> {
     // Skip oversized remote files BEFORE the GET, covering the normal download and the local-delete-vs-remote-edit
     // restore. Local and Base stay untouched and no retry is queued: the skip is permanent until the cap is
@@ -150,19 +162,32 @@ export class TransferService {
       void this.deps.logger?.log(`download: REFUSED anomalous remote (size ${remote.size}≠${data.byteLength}) → kept local, queued retry → ${remote.path}`);
       return;
     }
-    // A fetched body equal to the local file is not written (docs/spec.md §5.3a): the mtime stays and no vault event fires.
+    // The stat is taken BEFORE the read, so the signature recorded below is never newer than the bytes compared
+    // (docs/spec.md §5.3b, docs/plan.md §7.4). The bytes are read when they decide something: the re-check of a
+    // 'present' expectation, or the identical-body test (only possible when the sizes match).
     const localStat = await this.deps.localAdapter.stat(remote.path);
-    if (localStat && localStat.size === data.byteLength
-        && bytesEqual(await this.deps.localAdapter.readBinary(remote.path), data)) {
+    const needBytes = localStat !== null && (expected.kind === 'present' || localStat.size === data.byteLength);
+    const localData = needBytes ? await this.deps.localAdapter.readBinary(remote.path) : null;
+    // A fetched body equal to the local file is not written (docs/spec.md §5.3a): the mtime stays and no vault event fires.
+    if (localStat !== null && localData !== null && localData.byteLength === data.byteLength && bytesEqual(localData, data)) {
       const sameHash = await sha256(data);
-      this.deps.stateDB.setFile(await withLocalSignature(this.deps.localAdapter, {
+      this.deps.stateDB.setFile(withPreReadSignature({
         path: remote.path, localHash: sameHash, remoteId, idType,
         size: remote.size, mtime: remote.lastModified || localStat.mtime,
         remoteFileId: remote.fileId, isConflicted: false,
-      }, remote.lastModified));
+      }, localStat, remote.lastModified));
       this.deps.mergeBase.recordBytes(remote.path, data);
       void this.deps.logger?.log(`download: body identical to the local file → state converged, no write → ${remote.path}`);
       await this.deps.creationTime?.align(client, remote, localStat);
+      return;
+    }
+    // The local file must still be what the classification assumed; otherwise an edit saved during the GET would be
+    // overwritten. Nothing is written: the next sync re-classifies the path (docs/spec.md §5.3b).
+    if (expected.kind !== 'overwrite' && !(await localStillAsDecided(expected, localStat !== null, localData))) {
+      deferChangedDuringTransfer(
+        { stateDB: this.deps.stateDB, queueRetry: (p) => this.deps.queueRetry(p), logger: this.deps.logger },
+        remote.path, 'download',
+      );
       return;
     }
     const writeMtime = this.deps.localWrite.mtimeFor(remote.path, remote.lastModified || undefined);

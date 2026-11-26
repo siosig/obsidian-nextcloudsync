@@ -15,6 +15,7 @@ import { FileState, RemoteFileInfo, SyncSessionSummary } from '../../../../src/t
 import { IWebDAVClient } from '../../../../src/network/IWebDAVClient';
 import { IUploadStrategy } from '../../../../src/sync/upload/IUploadStrategy';
 import { passThroughLocalWrite, noPluginConflictRule } from '../../support/pluginPorts';
+import { sha256 } from '../../../../src/util/hash';
 import type { PluginConflictRule } from '../../../../src/sync/plugins/PluginSyncCoordinator';
 
 function summary(): SyncSessionSummary {
@@ -53,11 +54,23 @@ interface Opts {
   // Make the upload fail (transient) or report 'skipped'.
   upload?: 'ok' | 'skipped' | 'throw';
   oversize?: boolean;
+  // Side-effect hooks that let a test change the local file at an exact point, as a user saving in Obsidian would.
+  // They mutate the `local` object passed above: `stat` reads it on every call.
+  onUpload?: () => void;      // while the PUT is in flight
+  onWrite?: () => void;       // right after atomicWrite lands the merged text
+  afterRead?: () => void;     // right after readBinary returned the bytes
+  // While a remote GET is in flight. `save` is a user saving the file in Obsidian: it replaces the local body
+  // (and makes a missing file exist) without going through the adapter's write methods.
+  onDownload?: (save: (content: string) => void) => void;
+  // The local file does not exist until the first `save`.
+  absent?: boolean;
 }
 
 function build(o: Opts = {}, over: Partial<ConflictDeps> = {}) {
   const local = o.local ?? { content: 'local body\n', mtime: 1000, size: 10 };
   let onDisk = local.content;
+  let exists = o.absent !== true;
+  const save = (content: string): void => { onDisk = content; exists = true; };
 
   const calls = {
     wrote: [] as string[],
@@ -89,13 +102,17 @@ function build(o: Opts = {}, over: Partial<ConflictDeps> = {}) {
   };
 
   const client = {
-    downloadFile: async () => new TextEncoder().encode(o.remoteBody ?? 'remote body\n').buffer,
+    downloadFile: async () => {
+      o.onDownload?.(save);
+      return new TextEncoder().encode(o.remoteBody ?? 'remote body\n').buffer;
+    },
   } as unknown as IWebDAVClient;
 
   const uploadStrategy = {
     upload: async (_c: unknown, _p: string, _d: ArrayBuffer, mtime?: number, opts?: { ctime?: number }) => {
       calls.uploadMtime.push(mtime);
       calls.uploadOpts.push(opts);
+      o.onUpload?.();
       if (o.upload === 'throw') throw new Error('transient');
       return o.upload === 'skipped' ? 'skipped' : 'uploaded';
     },
@@ -108,12 +125,20 @@ function build(o: Opts = {}, over: Partial<ConflictDeps> = {}) {
   const deps: ConflictDeps = {
     app: {} as unknown as ConflictDeps['app'],
     localAdapter: {
-      stat: async () => { calls.events.push('stat'); return { size: local.size, mtime: local.mtime, ctime: local.ctime }; },
+      stat: async () => {
+        calls.events.push('stat');
+        return exists ? { size: local.size, mtime: local.mtime, ctime: local.ctime } : null;
+      },
       read: async () => { calls.reads++; return onDisk; },
-      readBinary: async () => new TextEncoder().encode(onDisk).buffer,
+      readBinary: async () => {
+        const bytes = new TextEncoder().encode(onDisk).buffer;
+        o.afterRead?.();
+        return bytes;
+      },
       atomicWrite: async (p: string, c: string, mtime?: number, ctime?: number) => {
         calls.events.push('write');
         calls.wrote.push(p); calls.wroteMtime.push(mtime); calls.wroteCtime.push(ctime); onDisk = c;
+        o.onWrite?.();
       },
       atomicWriteBinary: async (p: string, d: ArrayBuffer, mtime?: number, ctime?: number) => {
         calls.events.push('write');
@@ -519,9 +544,10 @@ describe('ConflictApplier.convergeIfIdentical — creation time [SPEC:CT-6]', ()
   it('accepts a null local stat without converging or aligning [SPEC:CT-6]', async () => {
     const { applier, conn, calls } = build();
     const priv = applier as unknown as {
-      convergeIfIdentical(c: unknown, p: string, r: RemoteFileInfo, s: null): Promise<{ converged: boolean }>;
+      convergeIfIdentical(c: unknown, p: string, r: RemoteFileInfo, s: null): Promise<{ converged: boolean; localHash: string | null }>;
     };
-    expect(await priv.convergeIfIdentical(conn, 'note.md', remoteInfo(), null)).toEqual({ converged: false });
+    // localHash is null: nothing was read, so there is no hash to hand to the caller.
+    expect(await priv.convergeIfIdentical(conn, 'note.md', remoteInfo(), null)).toEqual({ converged: false, localHash: null });
     expect(calls.aligned).toEqual([]);
   });
 });
@@ -702,5 +728,308 @@ describe('[SPEC:CPS-6] plugin conflict rules', () => {
     expect(calls.wroteBinaryMtime).toEqual([4242]);
     expect(written).toHaveBeenCalledTimes(1);
     expect(written).toHaveBeenCalledWith(PLUGIN_JS);
+  });
+});
+
+describe('[SPEC:ETG-1] conflict uploads record a pre-read signature', () => {
+  // The signature must never be newer than the bytes that were hashed and sent: a save landing while the PUT is in
+  // flight has to look like a local change at the next sync, not be absorbed into the baseline.
+  const SAVED_MTIME = 9000;
+  const SAVED_SIZE = 99;
+
+  it('prefer-local: records the stat taken before the read, not the one after the PUT', async () => {
+    const local = { content: 'local body\n', mtime: 1000, size: 10 };
+    const { applier, conn, calls } = build({
+      local,
+      onUpload: () => { local.mtime = SAVED_MTIME; local.size = SAVED_SIZE; },
+    });
+    await applier.resolveByPreferLocal(conn, 'note.md', remoteInfo(), summary());
+    expect(calls.setFile).toHaveLength(1);
+    expect(calls.setFile[0]).toMatchObject({ localMtime: 1000, localSize: 10, remoteMtime: 2000, isConflicted: false });
+    // One stat only: the one before the read. Nothing re-stats after the PUT.
+    expect(calls.events.filter((e) => e === 'stat')).toHaveLength(1);
+  });
+
+  it('write: records the stat taken right after atomicWrite, not the one after the PUT', async () => {
+    const local = { content: 'local body\n', mtime: 1000, size: 10 };
+    const { applier, conn, calls } = build({
+      local,
+      upload: 'ok',
+      // The real write replaces the file: new mtime and size.
+      onWrite: () => { local.mtime = 7000; local.size = 12; },
+      onUpload: () => { local.mtime = SAVED_MTIME; local.size = SAVED_SIZE; },
+    });
+    await applier.resolveByWrite(conn, 'note.md', 'merged body\n', true, remoteInfo(), 'old-remote', 'etag', summary());
+    expect(calls.setFile).toHaveLength(1);
+    expect(calls.setFile[0]).toMatchObject({ localMtime: 7000, localSize: 12, size: 12, remoteMtime: 2000 });
+    // Two stats: before the write (creation time) and right after it. Nothing re-stats after the PUT.
+    expect(calls.events.filter((e) => e === 'stat')).toHaveLength(2);
+  });
+
+  it('write: a marker write that uploaded fine records the same post-write signature', async () => {
+    const local = { content: 'local body\n', mtime: 1000, size: 10 };
+    const { applier, conn, calls } = build({
+      local,
+      upload: 'ok',
+      onWrite: () => { local.mtime = 7000; local.size = 8; },
+      onUpload: () => { local.mtime = SAVED_MTIME; local.size = SAVED_SIZE; },
+    });
+    await applier.resolveByWrite(conn, 'note.md', 'markers\n', false, remoteInfo(), 'old-remote', 'etag', summary());
+    expect(calls.setFile[0]).toMatchObject({ localMtime: 7000, localSize: 8, isConflicted: true });
+  });
+
+  it('write: a failed PUT still records no signature, so the next sync re-hashes and re-pushes', async () => {
+    const local = { content: 'local body\n', mtime: 1000, size: 10 };
+    const { applier, conn, calls } = build({
+      local,
+      upload: 'throw',
+      onWrite: () => { local.mtime = 7000; local.size = 12; },
+    });
+    await applier.resolveByWrite(conn, 'note.md', 'merged body\n', true, remoteInfo(), 'old-remote', 'etag', summary());
+    expect(calls.setFile[0].localMtime).toBeUndefined();
+    expect(calls.setFile[0].localSize).toBeUndefined();
+    expect(calls.setFile[0].size).toBe(12);
+  });
+});
+
+describe('[SPEC:ETG-3] convergeIfIdentical records a pre-read signature', () => {
+  const SAVED_MTIME = 9000;
+  const SAVED_SIZE = 55;
+
+  it('checksum match: a save right after the read does not move the recorded signature', async () => {
+    const local = { content: 'x', mtime: 1000, size: 1 };
+    const checksum = await sha256(new TextEncoder().encode('x').buffer);
+    const { applier, conn, calls } = build({
+      local,
+      afterRead: () => { local.mtime = SAVED_MTIME; local.size = SAVED_SIZE; },
+    });
+    await applier.handleConflict(conn, 'note.md', base(), remoteInfo({ size: 1, checksum }), 'r', 'etag', summary());
+    expect(calls.conflicts).toBe(0);
+    expect(calls.setFile).toHaveLength(1);
+    expect(calls.setFile[0]).toMatchObject({ localHash: checksum, localMtime: 1000, localSize: 1, remoteMtime: 2000 });
+  });
+
+  it('body compare (no server checksum): the GET in between does not move the recorded signature either', async () => {
+    const local = { content: 'x', mtime: 1000, size: 1 };
+    const { applier, conn, calls } = build({
+      local,
+      remoteBody: 'x',
+      afterRead: () => { local.mtime = SAVED_MTIME; local.size = SAVED_SIZE; },
+    });
+    await applier.handleConflict(conn, 'note.md', base(), remoteInfo({ size: 1 }), 'r', 'etag', summary());
+    expect(calls.conflicts).toBe(0);
+    expect(calls.setFile).toHaveLength(1);
+    expect(calls.setFile[0]).toMatchObject({ localMtime: 1000, localSize: 1 });
+  });
+
+  it('returns the hash of the bytes it read, converged or not', async () => {
+    const priv = (applier: ConflictApplier) => applier as unknown as {
+      convergeIfIdentical(c: unknown, p: string, r: RemoteFileInfo, s: { size: number; mtime: number }): Promise<{
+        converged: boolean; localHash: string | null; remoteData?: ArrayBuffer;
+      }>;
+    };
+    const hash = await sha256(new TextEncoder().encode('x').buffer);
+    const stat = { size: 1, mtime: 1000 };
+
+    const same = build({ local: { content: 'x', mtime: 1000, size: 1 } });
+    const converged = await priv(same.applier).convergeIfIdentical(same.conn, 'note.md', remoteInfo({ size: 1, checksum: hash }), stat);
+    expect(converged).toEqual({ converged: true, localHash: hash });
+
+    const differ = build({ local: { content: 'x', mtime: 1000, size: 1 } });
+    const notConverged = await priv(differ.applier).convergeIfIdentical(
+      differ.conn, 'note.md', remoteInfo({ size: 1, checksum: 'other-checksum' }), stat,
+    );
+    expect(notConverged).toEqual({ converged: false, localHash: hash });
+    expect(differ.calls.setFile).toEqual([]);
+  });
+});
+
+describe('[SPEC:ETG-8] conflict writes re-check the local file', () => {
+  // A save landing while the remote body is in flight must never be overwritten: the write is skipped, the baseline
+  // keeps its hash, and the path is retried. A deferral is not an error and not a decided conflict.
+  const MD_BASE = 'aaa\nbase\nccc\n';
+  const MD_REMOTE = 'aaa\nremote\nccc\n';
+  const SAVED = 'aaa\nbase\nccc\nsaved while downloading\n';
+  const NO_MERGE: Partial<MergeConfig> = { autoMergeFileTypes: [], otherFileStrategy: 'latest-mtime' };
+  const DEFERRED_LOG = 'conflict: deferred \u2014 "note.md" changed locally during the transfer \u2192 re-evaluated next sync';
+
+  const expectDeferred = (calls: ReturnType<typeof build>['calls'], s: SyncSessionSummary, path: string): void => {
+    expect(calls.conflicts).toBe(0);
+    expect(calls.retries).toEqual([path]);
+    expect(calls.wrote).toEqual([]);
+    expect(calls.wroteBinary).toEqual([]);
+    expect(calls.uploadMtime).toEqual([]);
+    expect(calls.history).toEqual([]);
+    expect(calls.mergeBase).toEqual([]);
+    expect([s.uploadedCount, s.downloadedCount, s.mergedCount, s.conflictedCount, s.errorCount]).toEqual([0, 0, 0, 0, 0]);
+    // Only the signature is dropped: the baseline (the mock's stateDB returns the same one for any path) keeps its hash.
+    expect(calls.setFile).toHaveLength(1);
+    expect(calls.setFile[0]).toMatchObject({ localHash: 'base-hash', remoteId: 'old-remote' });
+    expect(calls.setFile[0].localMtime).toBeUndefined();
+    expect(calls.setFile[0].localSize).toBeUndefined();
+  };
+
+  it('(a) a clean merge is not written when the file was saved during the GET', async () => {
+    const { applier, conn, calls, diskContent } = build({
+      local: { content: MD_BASE, mtime: 1000, size: 14 },
+      remoteBody: MD_REMOTE,
+      mergeBase: MD_BASE,
+      upload: 'ok',
+      onDownload: (save) => save(SAVED),
+    });
+    const s = summary();
+    await applier.handleConflict(conn, 'note.md', base(), remoteInfo(), 'r', 'etag', s);
+    expectDeferred(calls, s, 'note.md');
+    expect(calls.logs).toContain(DEFERRED_LOG);
+    expect(diskContent()).toBe(SAVED);
+  });
+
+  it('(b) a marker write is not written, and nothing is captured, when the file was saved during the GET', async () => {
+    const { applier, conn, calls, diskContent } = build({
+      local: { content: 'aaa\nlocal\nccc\n', mtime: 1000, size: 15 },
+      remoteBody: MD_REMOTE,
+      mergeBase: MD_BASE,
+      upload: 'ok',
+      onDownload: (save) => save('aaa\nlocal\nccc\nsaved while downloading\n'),
+    });
+    const s = summary();
+    await applier.handleConflict(conn, 'note.md', base(), remoteInfo(), 'r', 'etag', s);
+    expectDeferred(calls, s, 'note.md');
+    expect(calls.captured).toEqual([]);
+    expect(diskContent()).toBe('aaa\nlocal\nccc\nsaved while downloading\n');
+  });
+
+  it('(c) prefer-remote does not overwrite a file saved during the GET made inside applyDecision', async () => {
+    const { applier, conn, calls, diskContent } = build({
+      config: NO_MERGE,
+      local: { content: 'older local', mtime: 1000, size: 11 },
+      remoteBody: 'newer remote',
+      onDownload: (save) => save('older local, edited'),
+    });
+    const s = summary();
+    await applier.handleConflict(conn, 'a.txt', base('a.txt'), remoteInfo({ path: 'a.txt', lastModified: 9000, size: 12 }), 'r', 'etag', s);
+    expectDeferred(calls, s, 'a.txt');
+    expect(diskContent()).toBe('older local, edited');
+  });
+
+  it('(c) prefer-remote re-checks when the body was already fetched by the identity comparison', async () => {
+    // No server checksum and equal sizes: the body is fetched while proving (non-)identity, before the decision.
+    const { applier, conn, calls, diskContent } = build({
+      config: NO_MERGE,
+      local: { content: 'older local', mtime: 1000, size: 11 },
+      remoteBody: 'other local',
+      onDownload: (save) => save('older local, edited'),
+    });
+    const s = summary();
+    await applier.handleConflict(conn, 'a.txt', base('a.txt'), remoteInfo({ path: 'a.txt', lastModified: 9000, size: 11 }), 'r', 'etag', s);
+    expectDeferred(calls, s, 'a.txt');
+    expect(diskContent()).toBe('older local, edited');
+  });
+
+  it('(c) a plugin rule that forces prefer-remote re-checks too', async () => {
+    const PLUGIN_JS = '.obsidian/plugins/p/main.js';
+    const { applier, conn, calls, diskContent } = build(
+      {
+        local: { content: 'local js', mtime: 5000, size: 8 },
+        remoteBody: 'remote js',
+        onDownload: (save) => save('local js, edited'),
+      },
+      { pluginConflictRule: () => ({ kind: 'force', action: 'prefer-remote' }) },
+    );
+    const s = summary();
+    await applier.handleConflict(conn, PLUGIN_JS, base(PLUGIN_JS), remoteInfo({ path: PLUGIN_JS, size: 9 }), 'r', 'etag', s);
+    expectDeferred(calls, s, PLUGIN_JS);
+    expect(diskContent()).toBe('local js, edited');
+  });
+
+  it('(c) a file that appeared during the GET is not overwritten when none existed at classification', async () => {
+    const { applier, conn, calls, diskContent } = build({
+      config: NO_MERGE,
+      absent: true,
+      onDownload: (save) => save('created by the user'),
+    });
+    const s = summary();
+    await applier.handleConflict(conn, 'a.txt', undefined, remoteInfo({ path: 'a.txt', lastModified: 9000, size: 12 }), 'r', 'etag', s);
+    expect(calls.conflicts).toBe(0);
+    expect(calls.retries).toEqual(['a.txt']);
+    expect(calls.wroteBinary).toEqual([]);
+    expect(diskContent()).toBe('created by the user');
+  });
+
+  it('(d) a file that is still absent after the GET is written and counted as before', async () => {
+    const { applier, conn, calls, diskContent } = build({ config: NO_MERGE, absent: true, remoteBody: 'newer remote' });
+    const s = summary();
+    await applier.handleConflict(conn, 'a.txt', undefined, remoteInfo({ path: 'a.txt', lastModified: 9000, size: 12 }), 'r', 'etag', s);
+    expect(calls.conflicts).toBe(1);
+    expect(calls.retries).toEqual([]);
+    expect(calls.wroteBinary).toEqual(['a.txt']);
+    expect(diskContent()).toBe('newer remote');
+  });
+
+  it('(d) an unchanged file resolves a clean merge exactly as before', async () => {
+    const { applier, conn, calls } = build({
+      local: { content: MD_BASE, mtime: 1000, size: 14 },
+      remoteBody: MD_REMOTE,
+      mergeBase: MD_BASE,
+      upload: 'ok',
+    });
+    const s = summary();
+    await applier.handleConflict(conn, 'note.md', base(), remoteInfo(), 'r', 'etag', s);
+    expect(calls.conflicts).toBe(1);
+    expect(calls.retries).toEqual([]);
+    expect(calls.wrote).toEqual(['note.md']);
+    expect(calls.captured).toEqual([]);
+    expect(s.mergedCount).toBe(1);
+  });
+
+  it('(d) an unchanged file still captures the clean sides before a marker write', async () => {
+    const { applier, conn, calls } = build({
+      local: { content: 'aaa\nlocal\nccc\n', mtime: 1000, size: 15 },
+      remoteBody: MD_REMOTE,
+      mergeBase: MD_BASE,
+      upload: 'ok',
+    });
+    await applier.handleConflict(conn, 'note.md', base(), remoteInfo(), 'r', 'etag', summary());
+    expect(calls.conflicts).toBe(1);
+    expect(calls.wrote).toEqual(['note.md']);
+    expect(calls.captured).toEqual(['note.md']);
+    // The capture runs once the re-check passed and before the marker text lands.
+    expect(calls.retries).toEqual([]);
+  });
+
+  it('(d) an unchanged file is overwritten by prefer-remote exactly as before', async () => {
+    const { applier, conn, calls, diskContent } = build({
+      config: NO_MERGE,
+      local: { content: 'older local', mtime: 1000, size: 11 },
+      remoteBody: 'newer remote',
+    });
+    const s = summary();
+    await applier.handleConflict(conn, 'a.txt', base('a.txt'), remoteInfo({ path: 'a.txt', lastModified: 9000, size: 12 }), 'r', 'etag', s);
+    expect(calls.conflicts).toBe(1);
+    expect(calls.wroteBinary).toEqual(['a.txt']);
+    expect(diskContent()).toBe('newer remote');
+    expect(s.downloadedCount).toBe(1);
+  });
+
+  it('(e) the encounter is still counted when the write itself throws', async () => {
+    const { applier, conn, calls } = build({
+      local: { content: MD_BASE, mtime: 1000, size: 14 },
+      remoteBody: MD_REMOTE,
+      mergeBase: MD_BASE,
+      upload: 'ok',
+      onWrite: () => { throw new Error('disk full'); },
+    });
+    await expect(applier.handleConflict(conn, 'note.md', base(), remoteInfo(), 'r', 'etag', summary())).rejects.toThrow('disk full');
+    expect(calls.conflicts).toBe(1);
+    expect(calls.retries).toEqual([]);
+  });
+
+  it('(e) the encounter is still counted when the GET throws before a decision', async () => {
+    const { applier, conn, calls } = build({
+      local: { content: MD_BASE, mtime: 1000, size: 14 },
+      onDownload: () => { throw new Error('network down'); },
+    });
+    await expect(applier.handleConflict(conn, 'note.md', base(), remoteInfo(), 'r', 'etag', summary())).rejects.toThrow('network down');
+    expect(calls.conflicts).toBe(1);
   });
 });

@@ -749,6 +749,17 @@ export const CLAUSES: Clause[] = [
   { id: 'ICN-5', source: 'docs/spec.md §5.3a (content that differs keeps its previous outcome: merge, whole-side pick, markers, safe-hold; a body fetched for the comparison is reused)', layer: 'a' },
   { id: 'ICN-6', source: 'docs/spec.md §5.3a (not counted: no summary counter moves, no history entry, no conflict encounter)', layer: 'a' },
   { id: 'ICN-7', source: 'docs/spec.md §5.3a (matrix: baseline state x proof x file kind; 1,600 identical notes with a stale baseline produce zero uploads)', layer: 'a' },
+  // ETG: edits saved while a transfer is in flight (docs/spec.md §5.3b).
+  { id: 'ETG-1', source: 'docs/spec.md §5.3b (an upload records the signature of a stat taken before the read and the hash of the bytes sent)', layer: 'a' },
+  { id: 'ETG-2', source: 'docs/spec.md §5.3b (the next watch cycle uploads an edit saved during the PUT, also at save + 2000 ms and + 1999 ms of real time)', layer: 'a' },
+  { id: 'ETG-3', source: 'docs/spec.md §5.3b (every convergence record takes its signature from a stat taken before the read)', layer: 'a' },
+  { id: 'ETG-4', source: 'docs/spec.md §5.3b (a transfer with no concurrent edit converges with zero transfers on the next sync)', layer: 'a' },
+  { id: 'ETG-5', source: 'docs/spec.md §5.3b (a download whose local file changed during the GET is not written: retry queued, signature dropped, hash and remote id kept, no error)', layer: 'a' },
+  { id: 'ETG-6', source: 'docs/spec.md §5.3b (an mtime-only change, a change reverted before the write, or no change is written; an identical body converges)', layer: 'a' },
+  { id: 'ETG-7', source: 'docs/spec.md §5.3b (an absent expectation does not overwrite a file created during the GET; a file deleted during the GET is not recreated)', layer: 'a' },
+  { id: 'ETG-8', source: 'docs/spec.md §5.3b (conflict merge/marker write and prefer-remote are re-checked; a deferral is not a conflict encounter and shows no notice; mirror overwrites without a re-check)', layer: 'a' },
+  { id: 'ETG-9', source: 'docs/spec.md §5.3b (a deferral converges on the next sync without losing the edit; an existing stranded record converges within two syncs)', layer: 'a' },
+  { id: 'ETG-10', source: 'docs/spec.md §5.3b (after an edit saved during an upload, an ETag-only listing or another device\'s change keeps the local edit)', layer: 'a' },
   // MBP: a markdown merge keeps unchanged parts byte for byte (docs/spec.md §6.2).
   { id: 'MBP-1', source: 'docs/spec.md §6.2 (identical inputs give byte-identical output: with/without frontmatter, blank lines after the fence, no trailing newline, CRLF, a blank line before the closing fence)', layer: 'a' },
   { id: 'MBP-2', source: 'docs/spec.md §6.2 (a body-only change keeps the frontmatter block and the separator bytes)', layer: 'a' },

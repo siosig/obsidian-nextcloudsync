@@ -41,13 +41,13 @@ State DB (the state at the time of the previous completed sync = Base) / Local /
 `PROPFIND` fetches `getetag` / `getcontentlength` / `getlastmodified` / `sync-token` / `oc:checksums` / `oc:fileid` in one request. Priority for determining `remoteId`: (1) `oc:checksums` SHA-256 (`sha256`) -> (2) ETag (`etag`) -> (3) size (`size`). **SHA-1 is not used** (the PROPFIND parser extracts only `SHA256:`; the value `'sha1'` remains in the `RemoteIdType` type but is not used to determine remoteId).
 
 ### §4.2 Local (mtime -> SHA-256)
-**mtime is not used as a decision condition.** mtime is only a first-pass filter for "should a hash be computed". The final decision compares SHA-256 with the State DB `localHash`.
+**mtime is not used as a decision condition.** mtime is only a first-pass filter for "should a hash be computed". The final decision compares SHA-256 with the State DB `localHash`. The stat signature (mtime + size) stored next to `localHash` describes the bytes that hash was computed from: it is taken before reading them (or right after this device wrote them), see §5.3b.
 
 ### §4.3 Rename detection
 Matching `oc:fileid` with a different path -> rename confirmed (reflected as MOVE). Without Nextcloud, it falls back to searching for a pair with the same size AND the same SHA-256.
 
 ### §4.4 Performance optimisation
-- The **stat signature** (mtime + size) is persisted and used for the "unchanged" fast path. Size alone is insufficient (there is a time-window hash fallback). `mtime` is kept separately from the signature. Backward-compatible migration exists.
+- The **stat signature** (mtime + size) is persisted and used for the "unchanged" fast path. Size alone is insufficient (there is a time-window hash fallback). `mtime` is kept separately from the signature. Backward-compatible migration exists. It is taken before the read that produced the recorded hash (§5.3b).
 - The initial sync reuses a single scan and compares sizes first. **Files larger than 20 MB (`MAX_HASH_SIZE`, a hard-coded constant in `src/util/limits.ts`, not a setting) skip the local pre-hash** (the hash is computed lazily at upload time).
 - If the server SHA-256 matches the baseline, no re-hash is needed (except for just-uploaded files).
 - The state store uses compact serialisation, debounced flush and a remote-id index for O(1) lookup.
@@ -119,6 +119,20 @@ Whichever row of either table applies, **§5.3a is applied first**: content that
 - **Order against the marker re-entry guard (§6.2)**: the identity check runs **before** the guard (`hasCompleteMarkerSet` -> `safe-hold`). This is safe because identical content leaves nothing to merge, neither side changes and nothing is sent, which is exactly the property the guard protects (markers are not stacked and a marker-laden body is not pushed). When the content is not identical the guard is unchanged.
 - **The case that cannot be proven**: with no server checksum, when only the local side reads as changed (and the identity cannot be shown without fetching the body), the file is uploaded as before. The check never adds a GET to that path.
 - Tests: `ICN-1` to `ICN-7`, `MIR-B1-7`.
+
+### §5.3b Edits saved while a transfer is in flight (`ETG-1` to `ETG-10`)
+
+- **Signature invariant**: the stat signature (`localMtime` / `localSize`) recorded next to a hash comes from a stat taken **before** the read that produced that hash. Only right after this device wrote the bytes may a post-write re-stat be used. An upload records the hash of the bytes it actually sent, not a hash re-read from disk afterwards. A signature taken after the read could describe bytes newer than the hash and make a later edit look unchanged.
+- **Consequence**: an edit saved while an upload is in flight leaves a baseline whose signature no longer matches the file, so the next sync (watch cycle or full sync) detects it and uploads it. An unchanged file still converges with zero transfers: the recorded signature and hash match the file, so nothing is read and nothing is sent.
+- **Re-check before every remote-to-local write**: after the remote body has been fetched and before it is written, the local file is compared **by content** with what the classification assumed: absent, present with a given hash, or an explicit overwrite.
+  - A mismatch is **not written**. The baseline keeps its hash, remote id and merge base; only the stat signature is dropped. The path is queued for retry.
+  - The next sync re-classifies the path, normally as a change on both sides (merge or conflict), so the local edit is never overwritten silently.
+  - **Covered**: the normal download, the plugin-file download, the initial-sync download, the restore of a remote edit over a local deletion, the conflict merge / marker write, and prefer-remote.
+  - **Not covered** (explicit replace commands, where the user asked for the overwrite): mirror from remote, compare "use remote", forced resolution, version restore.
+- **Not an error, no notice**: a deferral moves no summary counter, writes no history entry, records no error, is not counted as a conflict encounter and shows no notice. It is a retry, not a failure: until the next sync the path is listed under the retry queue of the Sync status dialog, the same list a file deferred while being edited appears in.
+- **Existing stranded records**: a file whose baseline pairs an old hash with a newer signature (written by an earlier version) is not overwritten when the remote changes, because the re-check compares content, not the signature. It converges within two syncs. While the remote does not change, the stranded edit is uploaded with the next local save of that file.
+- **Residual window**: Obsidian's adapter has no compare-and-swap, so a save in the short gap between the re-check and the write (its length grows with the file size and is not measured) is not detected.
+- Tests: `ETG-1` to `ETG-10`.
 
 ### §5.4 Triggers (mobile branching)
 | Trigger | desktop | mobile |

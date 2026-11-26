@@ -3,6 +3,7 @@ import { LocalAdapter } from '../../../src/data/LocalAdapter';
 import { RemoteFileInfo } from '../../../src/types';
 import { MAX_HASH_SIZE } from '../../../src/util/limits';
 import { TFile, Vault, DataAdapter } from 'obsidian';
+import { spec } from '../support/specRef';
 
 // Cast TFile to allow construction in tests (same pattern as LocalAdapter.test.ts).
 type MockTFileCtor = new (path: string, stat?: { ctime?: number; mtime?: number; size?: number }) => TFile;
@@ -89,14 +90,19 @@ describe('SyncEngine.buildInitialPlan — size-first lazy hash (Task 3)', () => 
     // readBinary returns an empty ArrayBuffer; emptyHash is its known SHA-256.
     const emptyHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
     const readBinary = jest.fn(async () => new ArrayBuffer(0));
-    const localAdapter = { readBinary };
-    const engine = makeEngine(localAdapter);
-    // Three files: one upload (no remote), one size-mismatch (conflict), one match (unchanged).
+    // The signature stat is taken right before the hash read (docs/spec.md §5.3b); the local files here are the plan input.
     const localFiles: LocalFiles = new Map([
       ['upload.md', { size: 10, mtime: 1 }],
       ['conflict.md', { size: 50, mtime: 1 }],
       ['match.md', { size: 0, mtime: 1 }],
     ]);
+    const stat = jest.fn(async (p: string) => {
+      const f = localFiles.get(p);
+      return f ? { size: f.size, mtime: f.mtime, ctime: 0 } : null;
+    });
+    const localAdapter = { readBinary, stat };
+    const engine = makeEngine(localAdapter);
+    // Three files: one upload (no remote), one size-mismatch (conflict), one match (unchanged).
     const plan = await (engine as unknown as {
       buildInitialPlan(l: LocalFiles, r: RemoteFileInfo[]): Promise<{ uploads: string[]; downloads: string[]; conflicts: string[]; unchanged: string[] }>;
     }).buildInitialPlan(localFiles, [
@@ -133,6 +139,52 @@ describe('SyncEngine.buildInitialPlan — size-first lazy hash (Task 3)', () => 
       buildInitialPlan(l: LocalFiles, r: RemoteFileInfo[]): Promise<{ uploads: string[]; downloads: string[]; conflicts: string[]; unchanged: string[] }>;
     }).buildInitialPlan(localFiles, [remote('big.bin', { size: bigSize, checksum: 'SOMESUM' })]);
     expect(plan.conflicts).toContain('big.bin');
+    expect(readBinary).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('SyncEngine.buildInitialPlan — signature of an unchanged path (docs/spec.md §5.3b)', () => {
+  const emptyHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+  type Plan = {
+    uploads: string[]; downloads: string[]; conflicts: string[]; unchanged: string[];
+    unchangedSignatures: Map<string, { mtime: number; size: number }>;
+  };
+  const remote = (path: string, over: Partial<RemoteFileInfo> = {}): RemoteFileInfo => ({
+    path, fileId: 'f', checksum: emptyHash, etag: 'e', size: 0, lastModified: 1, ...over,
+  });
+  const plan = (localAdapter: unknown, local: LocalFiles, remotes: RemoteFileInfo[]) =>
+    (makeEngine(localAdapter) as unknown as { buildInitialPlan(l: LocalFiles, r: RemoteFileInfo[]): Promise<Plan> })
+      .buildInitialPlan(local, remotes);
+
+  it(`${spec('ETG-3')} stats BEFORE the hash read and keeps that stat as the signature of an unchanged path`, async () => {
+    const readBinary = jest.fn(async () => new ArrayBuffer(0));
+    const stat = jest.fn(async () => ({ size: 0, mtime: 777 }));
+    const result = await plan({ readBinary, stat }, new Map([['m.md', { size: 0, mtime: 1 }]]), [remote('m.md')]);
+    expect(result.unchanged).toEqual(['m.md']);
+    // The scan's mtime (1) is not the signature: the fresh pre-read stat (777) is.
+    expect(result.unchangedSignatures).toEqual(new Map([['m.md', { mtime: 777, size: 0 }]]));
+    expect(stat.mock.invocationCallOrder[0]).toBeLessThan(readBinary.mock.invocationCallOrder[0]);
+  });
+
+  it(`${spec('ETG-3')} gives a conflict (hash differs) and a path that needs no hash no signature`, async () => {
+    const readBinary = jest.fn(async () => new ArrayBuffer(0));
+    const stat = jest.fn(async () => ({ size: 0, mtime: 5 }));
+    const result = await plan({ readBinary, stat }, new Map([
+      ['diff.md', { size: 0, mtime: 1 }], ['up.md', { size: 3, mtime: 1 }], ['size.md', { size: 4, mtime: 1 }],
+    ]), [remote('diff.md', { checksum: 'OTHER' }), remote('size.md', { size: 9 })]);
+    expect(result.conflicts).toEqual(expect.arrayContaining(['diff.md', 'size.md']));
+    expect(result.uploads).toEqual(['up.md']);
+    expect(result.unchanged).toEqual([]);
+    expect(result.unchangedSignatures.size).toBe(0);
+  });
+
+  it(`${spec('ETG-3')} drops a file that vanished between the scan and the stat from every bucket without reading it`, async () => {
+    const readBinary = jest.fn(async () => new ArrayBuffer(0));
+    const stat = jest.fn(async () => null);
+    const result = await plan({ readBinary, stat }, new Map([['gone.md', { size: 0, mtime: 1 }]]), [remote('gone.md')]);
+    expect([...result.uploads, ...result.downloads, ...result.conflicts, ...result.unchanged]).toEqual([]);
+    expect(result.unchangedSignatures.size).toBe(0);
     expect(readBinary).not.toHaveBeenCalled();
   });
 });
@@ -214,7 +266,7 @@ describe('SyncEngine.executePlan — reuses the scan (P0-C / FR-010, no double h
     await (engine as unknown as {
       executePlan(p: unknown, r: unknown[], s: unknown, l: unknown): Promise<void>;
     }).executePlan(
-      { uploads: ['a.md'], downloads: [], conflicts: [], unchanged: [], deletes: [] },
+      { uploads: ['a.md'], downloads: [], conflicts: [], unchanged: [], deletes: [], unchangedSignatures: new Map() },
       [], summary, localFiles,
     );
     expect(scanSpy).not.toHaveBeenCalled();
