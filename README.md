@@ -27,9 +27,9 @@ This plugin is still young and some behaviour can be rough around the edges. **P
 
 ---
 
-## What's new in this release (1.0.18)
+## What's new in this release (1.0.19-beta.1)
 
-- **A changed app password applies without a restart (1.0.18)** — Selecting another secret for the app password, rewriting the value of the selected secret, or entering the password for the first time after Obsidian started now applies from the next sync. Previously the password read at start-up kept being used, so syncs failed with HTTP 401 until Obsidian or the plugin was restarted. When the password changes, the plugin reconnects so that nothing detected under a failed sign-in is kept. There is no new setting.
+- **An edit saved while a file is being transferred is no longer lost (1.0.19-beta.1)** — If you saved a note while the plugin was uploading or downloading it, the edit could be left behind or replaced. After an upload, a later sync could skip the newer content, and a change from another device could then overwrite it without a conflict. During a download, the fetched content could overwrite the note you had just saved. Now the plugin checks the local file again right before it writes the remote content: if the note changed in the meantime, it writes nothing and compares the two sides again at the next sync, so your edit is kept or merged as a normal conflict. Nothing new appears in the settings, and no notice is shown for this check.
 
 For the full version history of every release, see the **[changelog](CHANGELOG.md)**.
 
