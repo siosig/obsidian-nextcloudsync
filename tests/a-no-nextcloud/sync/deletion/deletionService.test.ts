@@ -66,6 +66,8 @@ function build(o: Opts = {}, over: Partial<DeletionDeps> = {}) {
     markedOwn: [] as string[],
     history: [] as string[],
     downloads: [] as string[],
+    // The expectation (sixth argument) each restore download was started with.
+    expectations: [] as unknown[],
     stats: [] as string[],
     // Ordered log, so "ignore registered BEFORE trashFile" is checkable (FR-005).
     order: [] as string[],
@@ -132,7 +134,10 @@ function build(o: Opts = {}, over: Partial<DeletionDeps> = {}) {
       drop: (p: string) => { calls.droppedBase.push(p); },
     } as unknown as MergeBaseRecorder,
     transfer: {
-      downloadFile: async (_c: unknown, r: RemoteFileInfo) => { calls.downloads.push(r.path); },
+      downloadFile: async (_c: unknown, r: RemoteFileInfo, _id: unknown, _t: unknown, _s: unknown, expected: unknown) => {
+        calls.downloads.push(r.path);
+        calls.expectations.push(expected);
+      },
     } as unknown as TransferService,
     isSystemExcluded: o.excluded ?? (() => false),
     dropCleanSnapshot: (p: string) => { calls.droppedSnapshot.push(p); },
@@ -204,6 +209,17 @@ describe('DeletionService.applyLocalDeletion — proof before propagation', () =
       deletion.applyLocalDeletion(client, remote(), base(), 'rid', 'etag', summary()),
     ).rejects.toThrow();
     expect(calls.stateDeletes).toEqual([]);
+  });
+});
+
+describe('[SPEC:ETG-7] the restore download expects the local file to be absent', () => {
+  // docs/spec.md §5.3b: the file was deleted locally, so a file that appears while the remote body is fetched is the
+  // user's new work and must not be overwritten by the restore.
+  it('passes an absent expectation when it restores a remote edit over a local deletion', async () => {
+    const { deletion, client, calls } = build({ recalc: 'SOMEONE-ELSE-EDITED' });
+    await deletion.applyLocalDeletion(client, remote(), base(), 'rid', 'etag', summary());
+    expect(calls.downloads).toEqual(['note.md']);
+    expect(calls.expectations).toEqual([{ kind: 'absent' }]);
   });
 });
 

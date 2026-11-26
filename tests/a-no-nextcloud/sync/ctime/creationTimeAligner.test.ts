@@ -133,7 +133,9 @@ describe('CreationTimeAligner', () => {
       ['with', true],
       ['without', false],
     ])('applied %s a base: clears the record and refreshes the signature', async (_n, hasBase) => {
-      const h = makeHarness({ base: hasBase ? { ctimeLocalAttempt: 42, ctimeRemoteAttempt: 43 } : null, localResult: 'applied' });
+      // The recorded signature equals the pre-set stat (777, 11), so the post-set stat may refresh it.
+      const base = hasBase ? { ctimeLocalAttempt: 42, ctimeRemoteAttempt: 43, localMtime: 777, localSize: 11 } : null;
+      const h = makeHarness({ base, localResult: 'applied' });
       await h.aligner.align(h.client, remote(OLD), stOf(NEW));
       expect(h.setLocal).toHaveBeenCalledWith(PATH, OLD * 1000);
       expect(h.setRemote).not.toHaveBeenCalled();
@@ -200,6 +202,99 @@ describe('CreationTimeAligner', () => {
       const other = makeHarness({ base: { ctimeLocalAttempt: OLD + 50 } });
       await other.aligner.align(other.client, remote(OLD), stOf(NEW));
       expect(other.setLocal).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe(`${spec('ETG-3')} the local creation-time fix keeps the signature honest`, () => {
+    const PRE = { size: 11, mtime: 777, ctime: NEW * 1000 };
+    const POST = { size: 11, mtime: 999, ctime: OLD * 1000 };
+
+    it('keeps the signature when the record and the stat after the set both equal the stat before it', async () => {
+      const h = makeHarness({ base: { ctimeLocalAttempt: 42, localMtime: 777, localSize: 11, localHash: 'h0' } });
+      h.stat.mockResolvedValueOnce(PRE).mockResolvedValueOnce({ ...PRE, ctime: OLD * 1000 });
+      await h.aligner.align(h.client, remote(OLD), stOf(NEW));
+      expect(h.stat).toHaveBeenCalledTimes(2);
+      const saved = h.setFile.mock.calls[0][0] as FileState;
+      expect(saved.localMtime).toBe(777);
+      expect(saved.localSize).toBe(11);
+      expect(saved.localHash).toBe('h0');
+      expect('ctimeLocalAttempt' in saved).toBe(false);
+    });
+
+    it.each([
+      ['mtime', POST],
+      ['size', { size: 12, mtime: 777, ctime: OLD * 1000 }],
+    ])('drops the signature when the stat after the set differs in %s (a save may have landed during the set)', async (_k, after) => {
+      // The record equals the pre-set stat, but the file moved during the set: the recorded hash no longer describes it.
+      const h = makeHarness({ base: { ctimeLocalAttempt: 42, localMtime: 777, localSize: 11, localHash: 'h0' } });
+      h.stat.mockResolvedValueOnce(PRE).mockResolvedValueOnce(after);
+      await h.aligner.align(h.client, remote(OLD), stOf(NEW));
+      expect(h.setFile).toHaveBeenCalledTimes(1);
+      const saved = h.setFile.mock.calls[0][0] as FileState;
+      expect(saved.localMtime).toBeUndefined();
+      expect(saved.localSize).toBeUndefined();
+      expect(saved.localHash).toBe('h0');
+      expect('ctimeLocalAttempt' in saved).toBe(false);
+    });
+
+    it('stats before the set and again after it', async () => {
+      const h = makeHarness({ base: { localMtime: 777, localSize: 11 } });
+      await h.aligner.align(h.client, remote(OLD), stOf(NEW));
+      expect(h.stat).toHaveBeenCalledTimes(2);
+      const [first, second] = h.stat.mock.invocationCallOrder;
+      const [set] = h.setLocal.mock.invocationCallOrder;
+      expect(first).toBeLessThan(set);
+      expect(second).toBeGreaterThan(set);
+    });
+
+    it('drops the signature, keeps the hash and clears the attempt when the file changed after the record', async () => {
+      // Record (1, 2) differs from the pre-set stat (777, 11): an edit landed after the record was taken.
+      const h = makeHarness({ base: { ctimeLocalAttempt: 42, localMtime: 1, localSize: 2, localHash: 'h0' } });
+      h.stat.mockResolvedValueOnce(PRE).mockResolvedValueOnce(POST);
+      await h.aligner.align(h.client, remote(OLD), stOf(NEW));
+      expect(h.setFile).toHaveBeenCalledTimes(1);
+      const saved = h.setFile.mock.calls[0][0] as FileState;
+      expect(saved.localMtime).toBeUndefined();
+      expect(saved.localSize).toBeUndefined();
+      expect('ctimeLocalAttempt' in saved).toBe(false);
+      expect(saved.localHash).toBe('h0');
+    });
+
+    it('drops the signature when the stat before the set reports the file absent', async () => {
+      const h = makeHarness({ base: { ctimeLocalAttempt: 42, localMtime: 777, localSize: 11, localHash: 'h0' } });
+      h.stat.mockResolvedValueOnce(null).mockResolvedValueOnce(POST);
+      await h.aligner.align(h.client, remote(OLD), stOf(NEW));
+      expect(h.setFile).toHaveBeenCalledTimes(1);
+      const saved = h.setFile.mock.calls[0][0] as FileState;
+      expect(saved.localMtime).toBeUndefined();
+      expect(saved.localSize).toBeUndefined();
+      expect('ctimeLocalAttempt' in saved).toBe(false);
+      expect(saved.localHash).toBe('h0');
+    });
+
+    it('keeps the record untouched when the unchanged file is absent from the stat after the set', async () => {
+      const h = makeHarness({ base: { ctimeLocalAttempt: 42, localMtime: 777, localSize: 11 } });
+      h.stat.mockResolvedValueOnce(PRE).mockResolvedValueOnce(null);
+      await h.aligner.align(h.client, remote(OLD), stOf(NEW));
+      const saved = h.setFile.mock.calls[0][0] as FileState;
+      expect(saved.localMtime).toBe(777);
+      expect(saved.localSize).toBe(11);
+      expect('ctimeLocalAttempt' in saved).toBe(false);
+    });
+
+    it('does not stat before the set when the file is being edited', async () => {
+      const h = makeHarness({ base: {}, editing: true });
+      await h.aligner.align(h.client, remote(OLD), stOf(NEW));
+      expect(h.stat).not.toHaveBeenCalled();
+    });
+
+    it.each([['ineffective' as const], ['throw' as const]])('%s leaves the recorded signature alone', async (result) => {
+      const h = makeHarness({ base: { localMtime: 1, localSize: 2 }, localResult: result });
+      await h.aligner.align(h.client, remote(OLD), stOf(NEW));
+      const saved = h.setFile.mock.calls[0][0] as FileState;
+      expect(saved.localMtime).toBe(1);
+      expect(saved.localSize).toBe(2);
+      expect(saved.ctimeLocalAttempt).toBe(OLD);
     });
   });
 

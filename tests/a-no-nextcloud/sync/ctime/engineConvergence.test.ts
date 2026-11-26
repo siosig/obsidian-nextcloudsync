@@ -187,7 +187,10 @@ describe.each<Kind>(['C2', 'C3'])('SyncEngine creation-time convergence (%s)', (
 });
 
 describe('SyncEngine creation-time convergence (C5, initial sync unchanged)', () => {
-  type Plan = { uploads: string[]; downloads: string[]; conflicts: string[]; deletes: string[]; unchanged: string[] };
+  type Plan = {
+    uploads: string[]; downloads: string[]; conflicts: string[]; deletes: string[]; unchanged: string[];
+    unchangedSignatures: Map<string, { mtime: number; size: number }>;
+  };
   interface Internals {
     executePlan(plan: Plan, remote: RemoteFileInfo[], summary: SyncSessionSummary,
       local: Map<string, { size: number; mtime: number }>): Promise<void>;
@@ -199,7 +202,10 @@ describe('SyncEngine creation-time convergence (C5, initial sync unchanged)', ()
     const size = new TextEncoder().encode(BODY).length;
     const { engine } = await buildEngine(rig.adapter as never, rig.client, {}, { upload: rig.upload });
     (engine as unknown as { opts: { statusBar: unknown } }).opts.statusBar = { setProgress: jest.fn() };
-    const plan: Plan = { uploads: [], downloads: [], conflicts: [], deletes: [], unchanged: [PATH] };
+    const plan: Plan = {
+      uploads: [], downloads: [], conflicts: [], deletes: [], unchanged: [PATH],
+      unchangedSignatures: new Map([[PATH, { mtime: MTIME, size }]]),
+    };
     const local = new Map([[PATH, { size, mtime: MTIME }]]);
     for (const creationTime of serverSeries) {
       const remote = remoteOf(PATH, BODY, { checksum: hash, creationTime });
@@ -287,5 +293,22 @@ describe.each<['remote' | 'local']>([['remote'], ['local']])('SyncEngine creatio
     expect(rig.adapter.readBinary).not.toHaveBeenCalled();
     expect(rig.adapter.atomicWriteBinary).not.toHaveBeenCalled();
     expect(rig.upload).not.toHaveBeenCalled();
+  });
+});
+
+describe('SyncEngine identical-content convergence signature (docs/spec.md §5.3b)', () => {
+  it(`${spec('ETG-3')} records the stat taken before the read when a save lands right after the read`, async () => {
+    const rig = await makeRig('C2', OLDER);
+    rig.adapter.readBinary.mockImplementationOnce(async (p: string) => {
+      const bytes = toBuf(rig.adapter.files[p]);
+      rig.adapter.files[p] = `${BODY} edited`;
+      return bytes;
+    });
+    await rig.sync(undefined);
+    // The hash covers the bytes read; the signature must describe those bytes, so the saved edit is detected next time.
+    expect(rig.stateDB.getFile(PATH)).toMatchObject({
+      localHash: await sha256(toBuf(BODY)), localSize: BODY.length, localMtime: MTIME,
+    });
+    expect(rig.adapter.files[PATH]).toBe(`${BODY} edited`);
   });
 });

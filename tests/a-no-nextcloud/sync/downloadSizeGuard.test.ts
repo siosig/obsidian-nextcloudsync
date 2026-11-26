@@ -7,6 +7,7 @@
 // `summary.oversizeSkippedPaths` and counted in the per-sync notice (docs/spec.md §9.4a).
 import { DataAdapter, Notice } from 'obsidian';
 import { SyncEngine } from '../../../src/sync/SyncEngine';
+import { EXPECT_OVERWRITE, type LocalExpectation } from '../../../src/sync/transfer/localExpectation';
 import { StateDB } from '../../../src/data/StateDB';
 import { DEFAULT_SETTINGS, FileState, RemoteFileInfo, SyncSessionSummary } from '../../../src/types';
 
@@ -53,8 +54,8 @@ async function buildEngine(maxFileSizeMB: number, localAdapter: Record<string, u
 }
 
 const callDownload = (engine: SyncEngine, remote: RemoteFileInfo, summary: SyncSessionSummary) =>
-  (engine as unknown as { downloadFile: (r: RemoteFileInfo, id: string, t: string, s: SyncSessionSummary) => Promise<void> })
-    .downloadFile(remote, 'e-new', 'etag', summary);
+  (engine as unknown as { downloadFile: (r: RemoteFileInfo, id: string, t: string, s: SyncSessionSummary, x: LocalExpectation) => Promise<void> })
+    .downloadFile(remote, 'e-new', 'etag', summary, EXPECT_OVERWRITE);
 
 beforeEach(() => { notices().length = 0; });
 

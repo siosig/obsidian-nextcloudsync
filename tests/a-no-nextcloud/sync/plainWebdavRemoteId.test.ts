@@ -9,6 +9,7 @@ import { SyncJournal } from '../../../src/sync/session/SyncJournal';
 import { MergeBaseRecorder } from '../../../src/sync/session/MergeBaseRecorder';
 import { IWebDAVClient } from '../../../src/network/IWebDAVClient';
 import { IUploadStrategy } from '../../../src/sync/upload/IUploadStrategy';
+import { sha256 } from '../../../src/util/hash';
 import { passThroughLocalWrite } from '../support/pluginPorts';
 import {
   DEFAULT_SETTINGS, FileState, RemoteFileInfo, SyncSessionSummary,
@@ -17,6 +18,8 @@ import {
 const PLUGIN_DIR = '.obsidian/plugins/obsidian-nextcloudsync';
 const PATH = 'note.md';
 const BODY = 'hello';
+// What an upload records as the hash of its body: the sha256 of the bytes it sent (docs/spec.md §5.3b).
+const bodyHash = (): Promise<string> => sha256(new TextEncoder().encode(BODY).buffer);
 // An opaque validator, never a checksum.
 const PLAIN_ETAG = '"5f2b1a-3c9"';
 
@@ -85,7 +88,8 @@ async function recordAfterUpload(
   return { state: recorded, statCalls };
 }
 
-async function engineWithBase(base: FileState) {
+// `localBody` is what the vault holds at classification; a body other than BODY is a local edit since the upload.
+async function engineWithBase(base: FileState, localBody: string = BODY) {
   const stateDB = new StateDB(memoryAdapter(), PLUGIN_DIR, 'dev-1');
   await stateDB.load();
   stateDB.setFile(base);
@@ -93,8 +97,8 @@ async function engineWithBase(base: FileState) {
   const engine = new SyncEngine({
     app: {}, settings: { ...DEFAULT_SETTINGS },
     localAdapter: {
-      stat: async () => ({ size: BODY.length, mtime: 1000 }),
-      readBinary: async () => new TextEncoder().encode(BODY).buffer,
+      stat: async () => ({ size: localBody.length, mtime: 1000 }),
+      readBinary: async () => new TextEncoder().encode(localBody).buffer,
     },
     stateDB, statusBar: {}, webdavFactory: {}, pluginDir: PLUGIN_DIR, configDir: '.obsidian',
   } as never);
@@ -128,7 +132,7 @@ describe('[SPEC:PWR-1] what an upload records is what the next sync reads back',
     // Local changed, remote did not, but the remote reads as changed: both sides look changed and a merged
     // body is written over the file being edited.
     const { state: base } = await recordAfterUpload('h-local');
-    const { engine, calls } = await engineWithBase(base);
+    const { engine, calls } = await engineWithBase(base, `${BODY}, edited`);
     (engine as unknown as Record<string, unknown>).isLocallyUnchanged = () => false;
 
     await classify(engine, plainRemote(PLAIN_ETAG));
@@ -161,7 +165,7 @@ describe('[SPEC:PWR-2] the Nextcloud path must not pay for the plain-WebDAV fix'
     // Nextcloud stores the OC-Checksum we sent and returns it from PROPFIND, so the hash we already hold is
     // what the next classification reads.
     const { state } = await recordAfterUpload('h-local', { reportsChecksums: true });
-    expect(state.remoteId).toBe('h-local');
+    expect(state.remoteId).toBe(await bodyHash());
     expect(state.idType).toBe('sha256');
   });
 });
@@ -171,7 +175,7 @@ describe('[SPEC:PWR-3] when the server cannot be re-read', () => {
     // Recording nothing would leave the pre-upload baseline and the next sync would resolve a false conflict.
     // The fallback is one redundant download, after which the download path records the real remote id.
     const { state } = await recordAfterUpload('h-local', { statFile: async () => null });
-    expect(state.remoteId).toBe('h-local');
+    expect(state.remoteId).toBe(await bodyHash());
     expect(state.idType).toBe('sha256');
   });
 
@@ -179,6 +183,6 @@ describe('[SPEC:PWR-3] when the server cannot be re-read', () => {
     const { state } = await recordAfterUpload('h-local', {
       statFile: async () => { throw new Error('network went away'); },
     });
-    expect(state.remoteId).toBe('h-local');
+    expect(state.remoteId).toBe(await bodyHash());
   });
 });

@@ -11,6 +11,7 @@ import { IWebDAVClient } from '../../../../src/network/IWebDAVClient';
 import { IUploadStrategy } from '../../../../src/sync/upload/IUploadStrategy';
 import { passThroughLocalWrite } from '../../support/pluginPorts';
 import { spec } from '../../support/specRef';
+import { sha256 } from '../../../../src/util/hash';
 
 const remote = (over: Partial<RemoteFileInfo> = {}): RemoteFileInfo => ({
   path: 'note.md', fileId: 'fid', checksum: null, etag: '"e"', size: 11, lastModified: 2000, ...over,
@@ -31,11 +32,14 @@ interface Opts {
   snapshots?: Record<string, Snapshot>;
   conflicted?: string[];          // paths the state DB reports as conflicted
   localCtime?: number;            // creation time reported by the pre-write stat
+  // Runs inside the upload mock: the user saves the file while the PUT is in flight.
+  duringUpload?: (edit: (content: string, mtime: number) => void) => void;
 }
 
 function build(o: Opts = {}, over: Partial<ResolutionDeps> = {}) {
   const snaps = new Map<string, Snapshot>(Object.entries(o.snapshots ?? {}));
   let onDisk = o.localContent ?? null;
+  let diskMtime = 1000;
 
   const calls = {
     wroteBinary: [] as string[],
@@ -53,6 +57,7 @@ function build(o: Opts = {}, over: Partial<ResolutionDeps> = {}) {
     writeCtimes: [] as Array<number | undefined>,
     order: [] as string[],
     aligned: [] as unknown[][],
+    stats: 0,
   };
 
   const client = {
@@ -68,6 +73,7 @@ function build(o: Opts = {}, over: Partial<ResolutionDeps> = {}) {
       calls.uploads.push(p);
       calls.uploadMtimes.push(mtime);
       calls.uploadCtimes.push(opts?.ctime);
+      o.duringUpload?.((content, m) => { onDisk = content; diskMtime = m; });
       if (o.upload === 'throw') throw new Error('PUT failed');
       return o.upload === 'skipped' ? 'skipped' : 'uploaded';
     },
@@ -75,7 +81,10 @@ function build(o: Opts = {}, over: Partial<ResolutionDeps> = {}) {
 
   const deps: ResolutionDeps = {
     localAdapter: {
-      stat: async () => (onDisk == null ? null : { size: onDisk.length, mtime: 1000, ctime: o.localCtime }),
+      stat: async () => {
+        calls.stats++;
+        return onDisk == null ? null : { size: onDisk.length, mtime: diskMtime, ctime: o.localCtime };
+      },
       readBinary: async () => new TextEncoder().encode(onDisk ?? '').buffer,
       atomicWriteBinary: async (p: string, d: ArrayBuffer, mtime?: number, ctime?: number) => {
         calls.wroteBinary.push(p); calls.writeMtimes.push(mtime); calls.writeCtimes.push(ctime); onDisk = new TextDecoder().decode(d);
@@ -293,6 +302,46 @@ describe('ResolutionService.pushLocalToRemote creation time', () => {
     await service.pushLocalToRemote(conn, 'note.md');
     expect(calls.uploadCtimes).toHaveLength(1);
     expect(calls.uploadCtimes[0]).toBeUndefined();
+  });
+});
+
+describe('[SPEC:ETG-1] pushLocalToRemote records a pre-read signature', () => {
+  const SENT = 'sent body';
+  const SAVED = 'saved while the upload was in flight';
+
+  it('records the stat taken before the read when the file is saved during the PUT', async () => {
+    const { service, conn, calls } = build({ localContent: SENT, duringUpload: (edit) => edit(SAVED, 5000) });
+    await service.pushLocalToRemote(conn, 'note.md');
+    expect(calls.setFile).toHaveLength(1);
+    expect(calls.setFile[0].localMtime).toBe(1000);
+    expect(calls.setFile[0].localSize).toBe(SENT.length);
+    // The saved edit is longer, so a signature taken after the PUT could not have matched.
+    expect(calls.setFile[0].localSize).not.toBe(SAVED.length);
+  });
+
+  it('records the hash of the bytes it sent, not of the file after the PUT', async () => {
+    const { service, conn, calls } = build({ localContent: SENT, duringUpload: (edit) => edit(SAVED, 5000) });
+    await service.pushLocalToRemote(conn, 'note.md');
+    const sent = await sha256(new TextEncoder().encode(SENT).buffer);
+    expect(calls.setFile[0]).toMatchObject({ localHash: sent, remoteId: sent, idType: 'sha256', size: SENT.length, mtime: 1000 });
+  });
+
+  it('keeps the remote lastModified on the record', async () => {
+    const { service, conn, calls } = build({ localContent: SENT, remoteInfos: [remote({ lastModified: 4321 })] });
+    await service.pushLocalToRemote(conn, 'note.md');
+    expect(calls.setFile[0]).toMatchObject({ localMtime: 1000, localSize: SENT.length, remoteMtime: 4321 });
+  });
+
+  it('stats the file once, before the read, and never again after the PUT', async () => {
+    const { service, conn, calls } = build({ localContent: SENT });
+    await service.pushLocalToRemote(conn, 'note.md');
+    expect(calls.stats).toBe(1);
+  });
+
+  it('records nothing when the upload fails, so the next sync sees the unchanged baseline', async () => {
+    const { service, conn, calls } = build({ localContent: SENT, upload: 'throw', duringUpload: (edit) => edit(SAVED, 5000) });
+    await expect(service.pushLocalToRemote(conn, 'note.md')).rejects.toThrow(/PUT failed/);
+    expect(calls.setFile).toEqual([]);
   });
 });
 

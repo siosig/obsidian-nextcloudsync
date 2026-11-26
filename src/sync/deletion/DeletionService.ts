@@ -8,6 +8,7 @@ import { IWebDAVClient } from '../../network/IWebDAVClient';
 import { SyncJournal } from '../session/SyncJournal';
 import { MergeBaseRecorder } from '../session/MergeBaseRecorder';
 import { TransferService } from '../transfer/TransferService';
+import { EXPECT_ABSENT } from '../transfer/localExpectation';
 import { FileLogger } from '../../util/FileLogger';
 import { isSafeVaultRelativePath } from '../../network/remotePath';
 import { collectSubtreePaths, dropSubtreeTracking } from './subtreeTracking';
@@ -68,7 +69,7 @@ export class DeletionService {
     if (serverHash && serverHash !== base.localHash) {
       // The server copy diverged after our base; restore it so a remote edit is never dropped.
       void this.deps.logger?.log(`conflict(local-delete vs remote-edit): restoring remote → ${remote.path}`);
-      await this.deps.transfer.downloadFile(client, remote, remoteId, idType, summary);
+      await this.deps.transfer.downloadFile(client, remote, remoteId, idType, summary, EXPECT_ABSENT);
       return 'restored';
     }
     // Without a reliable checksum (plain WebDAV, or recalc failed) do NOT delete: etag/size do not prove

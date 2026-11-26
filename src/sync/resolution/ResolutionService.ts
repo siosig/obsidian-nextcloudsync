@@ -15,7 +15,7 @@ import { IUploadStrategy } from '../upload/IUploadStrategy';
 import { SyncJournal } from '../session/SyncJournal';
 import { MergeBaseRecorder } from '../session/MergeBaseRecorder';
 import { TransferService } from '../transfer/TransferService';
-import { withLocalSignature } from '../../data/localSignature';
+import { withLocalSignature, withPreReadSignature } from '../../data/localSignature';
 import { isTextEligible } from '../policy';
 import { FileLogger } from '../../util/FileLogger';
 import { sha256 } from '../../util/hash';
@@ -157,11 +157,13 @@ export class ResolutionService {
       localHash, remoteId: localHash, remoteIdType: 'sha256',
       localSize: stat.size, remoteSize: remote?.size,
     });
-    this.deps.stateDB.setFile(await withLocalSignature(this.deps.localAdapter, {
+    // The signature is the stat taken before the read: a save during the PUT must not look unchanged next sync
+    // (docs/spec.md §5.3b, docs/plan.md §7.4).
+    this.deps.stateDB.setFile(withPreReadSignature({
       path, localHash, remoteId: localHash, idType: 'sha256',
       size: stat.size, mtime: stat.mtime,
       remoteFileId: remote?.fileId ?? null, isConflicted: false,
-    }, remote?.lastModified));
+    }, stat, remote?.lastModified));
     await this.deps.stateDB.save();
     await this.deps.historyStore?.save();
   }

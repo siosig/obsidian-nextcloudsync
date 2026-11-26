@@ -17,6 +17,7 @@ import { RemoteListingSource } from '../../../../src/sync/scan/RemoteListingSour
 import { MirrorPlan } from '../../../../src/sync/mirrorPlan';
 import { FileState, RemoteFileInfo, SyncSessionSummary } from '../../../../src/types';
 import { IWebDAVClient } from '../../../../src/network/IWebDAVClient';
+import { sha256 } from '../../../../src/util/hash';
 import { CERT_TRUST_FAQ_TITLE, withCertTrustGuidance } from '../../../../src/network/certTrust';
 
 const remote = (path: string, over: Partial<RemoteFileInfo> = {}): RemoteFileInfo => ({
@@ -40,8 +41,11 @@ const fstate = (path: string, localHash = 'h'): FileState => ({
 function build(over: Partial<MirrorDeps> = {}, tracked: FileState[] = []) {
   const calls = {
     downloaded: [] as string[],
+    // The expectation (sixth argument) each download was started with.
+    expectations: [] as unknown[],
     deleted: [] as string[],
     setFile: [] as string[],
+    recorded: [] as FileState[],
     deleteFile: [] as string[],
     deleteDir: [] as string[],
     droppedBase: [] as string[],
@@ -69,7 +73,7 @@ function build(over: Partial<MirrorDeps> = {}, tracked: FileState[] = []) {
     } as unknown as MirrorDeps['localAdapter'],
     stateDB: {
       getFile: (p: string) => tracked.find((f) => f.path === p),
-      setFile: (f: FileState) => { calls.setFile.push(f.path); },
+      setFile: (f: FileState) => { calls.setFile.push(f.path); calls.recorded.push(f); },
       getAllFiles: () => tracked,
       deleteFile: (p: string) => { calls.deleteFile.push(p); },
       deleteDir: (p: string) => { calls.deleteDir.push(p); },
@@ -93,8 +97,8 @@ function build(over: Partial<MirrorDeps> = {}, tracked: FileState[] = []) {
     plugins: noopPluginSession,
     transfer: {
       downloadFile: async (
-        _c: IWebDAVClient, r: RemoteFileInfo, _id: string, _t: string, s: SyncSessionSummary,
-      ) => { calls.downloaded.push(r.path); s.downloadedCount++; },
+        _c: IWebDAVClient, r: RemoteFileInfo, _id: string, _t: string, s: SyncSessionSummary, expected: unknown,
+      ) => { calls.downloaded.push(r.path); calls.expectations.push(expected); s.downloadedCount++; },
     } as unknown as TransferService,
     deletion: {
       processRemoteDeletion: async (p: string, s: SyncSessionSummary) => {
@@ -175,6 +179,18 @@ describe('MirrorService.applyRemoteMirror — applying the plan', () => {
     });
     const result = await mirror.applyRemoteMirror(client, plan({ downloads: [remote('huge.bin')] }));
     expect(result.downloaded).toBe(0);
+  });
+});
+
+describe('[SPEC:ETG-8] mirror downloads overwrite without a re-check', () => {
+  // docs/spec.md §5.3b: mirror is an explicit "replace the local copy" command, so the local content is not re-checked.
+  it('starts every download with an overwrite expectation', async () => {
+    const { mirror, client, calls } = build();
+    await mirror.applyRemoteMirror(client, plan({
+      downloads: [remote('a.md'), remote('b.md')], remoteFiles: [remote('a.md'), remote('b.md')],
+    }));
+    expect(calls.downloaded.slice().sort()).toEqual(['a.md', 'b.md']);
+    expect(calls.expectations).toEqual([{ kind: 'overwrite' }, { kind: 'overwrite' }]);
   });
 });
 
@@ -273,6 +289,49 @@ describe('MirrorService.applyRemoteMirror — converging the state DB', () => {
     await mirror.applyRemoteMirror(client, plan());
     expect(rootEtag).toEqual([null]);
     expect(tokens).toEqual(['']);
+  });
+});
+
+describe('[SPEC:ETG-3] mirror records pre-read signatures', () => {
+  it('records the signature of the stat taken for the plan check, not a later re-stat', async () => {
+    // The first stat is the one that matched the plan; any further stat would describe a file that may have moved on.
+    const stat = jest.fn()
+      .mockResolvedValueOnce({ size: 10, mtime: 1000 })
+      .mockResolvedValue({ size: 99, mtime: 2000 });
+    const { mirror, client, calls } = build({
+      localAdapter: { stat, readBinary: async () => new ArrayBuffer(10) } as unknown as MirrorDeps['localAdapter'],
+    });
+    await mirror.applyRemoteMirror(client, plan({
+      skipCount: 1, remoteFiles: [remote('same.md', { checksum: 'abc', lastModified: 4242 })],
+      skipped: [{ path: 'same.md', size: 10, mtime: 1000 }],
+    }));
+    expect(calls.recorded).toHaveLength(1);
+    expect(calls.recorded[0]).toMatchObject({ path: 'same.md', localMtime: 1000, localSize: 10, remoteMtime: 4242 });
+    // One stat per tracked file: the plan check doubles as the signature source (the old re-stat is gone).
+    expect(stat).toHaveBeenCalledTimes(1);
+  });
+
+  it('records a leftover file with the signature taken before its bytes were read', async () => {
+    // The file is saved again right after readBinary returns: the signature must still be the pre-read one.
+    const bytes = new TextEncoder().encode('left over').buffer as ArrayBuffer;
+    let mtime = 555;
+    const stat = jest.fn(async () => ({ size: 7, mtime }));
+    const readBinary = jest.fn(async () => { const out = bytes; mtime = 9999; return out; });
+    const { mirror, client, calls } = build({
+      localAdapter: { stat, readBinary } as unknown as MirrorDeps['localAdapter'],
+      app: {
+        vault: { getAllFolders: () => [], adapter: { mkdir: async () => undefined, exists: async () => true } },
+      } as unknown as MirrorDeps['app'],
+      deletion: {
+        processRemoteDeletion: async () => ({ status: 'failed' as const, message: 'locked' }),
+      } as unknown as DeletionService,
+    }, [fstate('left.md')]);
+    await mirror.applyRemoteMirror(client, plan({ deleteFiles: ['left.md'] }));
+    expect(calls.recorded).toHaveLength(1);
+    expect(calls.recorded[0]).toMatchObject({
+      path: 'left.md', localHash: await sha256(bytes), localMtime: 555, localSize: 7,
+    });
+    expect(stat).toHaveBeenCalledTimes(1);
   });
 });
 
